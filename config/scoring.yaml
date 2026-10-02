@@ -1,0 +1,70 @@
+# FPL Oracle - 2026/27 Scoring Rules Configuration
+# Verified against live FPL API: https://fantasy.premierleague.com/api/bootstrap-static/ (game_config.scoring)
+
+season: "2026/27"
+
+minutes:
+  short_play: 1 # Playing up to 59 minutes
+  long_play: 2 # Playing 60 minutes or more (excluding added stoppage time)
+  min_minutes_for_clean_sheet: 60 # Player must be on the pitch >= 60 mins to earn clean sheet
+
+goals_scored:
+  GKP: 10
+  DEF: 6
+  MID: 5
+  FWD: 4
+
+assists:
+  GKP: 3
+  DEF: 3
+  MID: 3
+  FWD: 3
+
+clean_sheets:
+  GKP: 4
+  DEF: 4
+  MID: 1
+  FWD: 0
+
+goals_conceded:
+  # Deducted for every 2 goals conceded while player is on pitch
+  per_goals: 2
+  GKP: -1
+  DEF: -1
+  MID: 0
+  FWD: 0
+
+saves:
+  # Awarded for every 3 saves made by goalkeeper
+  per_saves: 3
+  points: 1
+
+penalties:
+  saved: 5
+  missed: -2
+
+discipline:
+  yellow_card: -1
+  red_card: -3
+  own_goal: -2
+
+defensive_contribution:
+  # Verified from live game_config.scoring: "defensive_contribution"
+  # Awarded to outfielders reaching the defensive action count threshold in a match
+  # (clearances, blocks, interceptions, recoveries, tackles)
+  DEF: 2
+  MID: 2
+  FWD: 2
+  GKP: 0
+  # Empirical threshold for achieving the 2-point DefCon bonus
+  # Defenders/Midfielders trigger at >= 10 combined CBIRT actions
+  threshold_def: 10
+  threshold_mid: 12
+  threshold_fwd: 12
+
+bonus_points_system:
+  # Top 3 players in each match receive 3, 2, 1 bonus points
+  rank_1: 3
+  rank_2: 2
+  rank_3: 1
+  rebalanced_for_2026_27: true # Rebalanced in 2026/27 to prevent double-counting DefCon

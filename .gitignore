@@ -1,0 +1,42 @@
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.egg-info/
+build/
+dist/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment & local credentials
+.env
+
+# Runtime database & caches
+*.db
+*.sqlite
+*.sqlite3
+data/cache/*
+data/snapshots/*
+!data/cache/.gitkeep
+!data/snapshots/.gitkeep
+
+# Scratch & temporary files
+scratch/
+tmp/
+temp/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

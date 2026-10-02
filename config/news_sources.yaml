@@ -1,0 +1,36 @@
+# FPL Oracle - News Sources Configuration
+# Premier League and FPL news RSS feeds with quality weighting
+
+rss_feeds:
+  - id: bbc_football
+    name: "BBC Sport - Premier League"
+    url: "https://feeds.bbci.co.uk/sport/football/premier-league/rss.xml"
+    weight: 0.95
+    enabled: true
+  - id: guardian_football
+    name: "The Guardian - Football"
+    url: "https://www.theguardian.com/football/rss"
+    weight: 0.90
+    enabled: true
+  - id: sky_sports
+    name: "Sky Sports - Premier League"
+    url: "https://www.skysports.com/rss/12040"
+    weight: 0.90
+    enabled: true
+  - id: talksport_football
+    name: "TalkSport - Premier League"
+    url: "https://talksport.com/football/premier-league/feed/"
+    weight: 0.85
+    enabled: true
+
+search_apis:
+  tavily:
+    endpoint: "https://api.tavily.com/search"
+    env_key: "TAVILY_API_KEY"
+  brave:
+    endpoint: "https://api.search.brave.com/res/v1/web/search"
+    env_key: "BRAVE_API_KEY"
+
+sentiment_and_signals:
+  confidence_threshold: 0.65
+  max_article_age_days: 7

@@ -1,0 +1,47 @@
+# FPL Oracle - Global Application Settings
+
+server:
+  host: "127.0.0.1"
+  port: 8000
+  reload: false
+
+storage:
+  db_url: "sqlite:///data/fpl_oracle.db"
+  cache_dir: "data/cache"
+  snapshots_dir: "data/snapshots"
+  models_dir: "data/models"
+
+cache:
+  bootstrap_ttl_seconds: 300
+  live_gw_ttl_seconds: 60
+  summary_ttl_seconds: 1800
+  fixtures_ttl_seconds: 900
+
+fpl:
+  base_url: "https://fantasy.premierleague.com/api"
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 FPLOracle/1.0"
+  max_concurrency: 5
+  request_timeout_seconds: 15
+  rate_limit_delay_seconds: 0.15
+
+ml:
+  horizon_gameweeks: 8
+  min_minutes_filter: 90
+  quantile_alpha_low: 0.10
+  quantile_alpha_high: 0.90
+  rolling_windows: [3, 5, 8]
+  expanding_cv_min_gws: 10
+
+optimizer:
+  default_horizon: 5
+  discount_factor: 0.95
+  max_hits: 2
+  hit_penalty: 4.0
+
+chips:
+  first_set_deadline_gw: 19
+
+llm:
+  default_provider: "gemini"
+  temperature: 0.2
+  max_output_tokens: 2048

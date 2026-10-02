@@ -1,0 +1,111 @@
+# FPL Oracle - 2026/27 Rules Configuration
+# Verified against live FPL API: https://fantasy.premierleague.com/api/bootstrap-static/ (game_settings, chips)
+
+season: "2026/27"
+
+squad:
+  total_players: 15
+  squad_play: 11
+  bench_size: 4
+  positions:
+    GKP:
+      id: 1
+      select: 2
+      min_play: 1
+      max_play: 1
+    DEF:
+      id: 2
+      select: 5
+      min_play: 3
+      max_play: 5
+    MID:
+      id: 3
+      select: 5
+      min_play: 2
+      max_play: 5
+    FWD:
+      id: 4
+      select: 3
+      min_play: 1
+      max_play: 3
+  max_per_team: 3
+  starting_budget_tenths: 1000 # £100.0m (prices stored in tenths, e.g. 100 = 10.0m)
+
+transfers:
+  free_transfers_per_event: 1
+  max_banked_free_transfers: 5 # 1 base + max_extra_free_transfers (4) = 5
+  cost_per_extra_transfer: 4 # -4 points per additional transfer
+  sell_on_fee: 0.5 # 50% profit retained, rounded down to nearest 0.1m
+
+chips:
+  total_chips_in_season: 8
+  max_chips_per_event: 1
+  assistant_manager_enabled: false # Removed for 2026/27 season
+
+  # Set 1: First half of season (GW 1-19)
+  set_1:
+    deadline_event: 19
+    deadline_description: "Gameweek 19 deadline (Saturday 2 January 2027 13:30 GMT). Chips cannot be carried over."
+    chips:
+      wildcard:
+        name: "Wildcard 1"
+        code: "wildcard"
+        chip_type: "transfer"
+        start_event: 2
+        stop_event: 19
+        description: "Unlimited free transfers; team changes are permanent"
+      freehit:
+        name: "Free Hit 1"
+        code: "freehit"
+        chip_type: "transfer"
+        start_event: 2
+        stop_event: 19
+        description: "Make unlimited transfers for a single gameweek; squad reverts next gameweek"
+      3xc:
+        name: "Triple Captain 1"
+        code: "3xc"
+        chip_type: "team"
+        start_event: 1
+        stop_event: 19
+        description: "Captain points multiplied by 3 instead of 2"
+      bboost:
+        name: "Bench Boost 1"
+        code: "bboost"
+        chip_type: "team"
+        start_event: 1
+        stop_event: 19
+        description: "Points scored by all 4 bench substitutes are included in total"
+
+  # Set 2: Second half of season (GW 20-38)
+  set_2:
+    start_event: 20
+    stop_event: 38
+    chips:
+      wildcard:
+        name: "Wildcard 2"
+        code: "wildcard"
+        chip_type: "transfer"
+        start_event: 20
+        stop_event: 38
+        description: "Second Wildcard of the season"
+      freehit:
+        name: "Free Hit 2"
+        code: "freehit"
+        chip_type: "transfer"
+        start_event: 20
+        stop_event: 38
+        description: "Second Free Hit of the season"
+      3xc:
+        name: "Triple Captain 2"
+        code: "3xc"
+        chip_type: "team"
+        start_event: 20
+        stop_event: 38
+        description: "Second Triple Captain of the season"
+      bboost:
+        name: "Bench Boost 2"
+        code: "bboost"
+        chip_type: "team"
+        start_event: 20
+        stop_event: 38
+        description: "Second Bench Boost of the season"

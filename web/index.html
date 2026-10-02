@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FPL Oracle — 2026/27 AI & Optimization Expert</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 for reactive state -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#064e3b'
+            },
+            pitch: '#0f3823',
+            pitchline: 'rgba(255,255,255,0.18)'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [v-cloak] { display: none; }
+    .pitch-bg {
+      background: linear-gradient(180deg, #134e2b 0%, #0d3a20 50%, #134e2b 100%);
+      box-shadow: inset 0 0 80px rgba(0,0,0,0.5);
+    }
+    .fdr-2 { background-color: #059669; color: white; }
+    .fdr-3 { background-color: #4b5563; color: white; }
+    .fdr-4 { background-color: #dc2626; color: white; }
+    .fdr-5 { background-color: #831843; color: white; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-black">
+
+<div id="app" v-cloak class="flex flex-col flex-1">
+  <!-- Top Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50 px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center font-black text-xl text-black shadow-lg shadow-brand-500/20">
+        ⚽
+      </div>
+      <div>
+        <h1 class="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-emerald-400 bg-clip-text text-transparent">
+          FPL Oracle <span class="text-xs px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-semibold border border-brand-500/30">2026/27</span>
+        </h1>
+        <p class="text-xs text-slate-400 flex items-center gap-2">
+          <span>GW{{ health.current_gameweek || 5 }} Finished</span>
+          <span class="inline-block w-1 h-1 rounded-full bg-slate-600"></span>
+          <span class="text-emerald-400 font-medium">Next: GW{{ health.next_gameweek || 6 }}</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Live Sync & Team Controls -->
+    <div class="flex items-center gap-2.5">
+      <div v-if="health.is_stale" class="text-xs px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        Data may be stale
+      </div>
+      <div v-else class="text-xs px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span>Live Synced</span>
+        <span v-if="health.last_sync" class="text-[10px] text-slate-400">({{ formatTime(health.last_sync) }})</span>
+      </div>
+
+      <!-- Paste/Upload Squad Button -->
+      <button @click="openSquadModal" class="text-xs px-3 py-1.5 rounded-lg bg-brand-600/20 hover:bg-brand-600/30 text-brand-300 border border-brand-500/40 font-semibold transition flex items-center gap-1.5">
+        <span>📋</span>
+        <span>Paste / Upload Squad</span>
+      </button>
+
+      <!-- Manager Profile Settings Trigger -->
+      <button @click="showProfileModal = true" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition flex items-center gap-2">
+        <span>👤</span>
+        <span>{{ squadData.team_name || 'Manager Setup' }}</span>
+        <span v-if="profile.manager_id" class="px-1.5 py-0.2 rounded bg-slate-700 text-[10px] text-slate-300">#{{ profile.manager_id }}</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="border-b border-slate-800 bg-slate-900/60 px-4 flex space-x-1 overflow-x-auto text-sm">
+    <button @click="activeTab = 'squad'" :class="activeTab === 'squad' ? 'border-brand-500 text-brand-400 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-200'" class="py-3 px-4 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      🏟️ Pitch & Lineup
+    </button>
+    <button @click="activeTab = 'optimizer'" :class="activeTab === 'optimizer' ? 'border-brand-500 text-brand-400 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-200'" class="py-3 px-4 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      🔄 Transfer Optimizer & What-If
+    </button>
+    <button @click="activeTab = 'chips'" :class="activeTab === 'chips' ? 'border-brand-500 text-brand-400 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-200'" class="py-3 px-4 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      🃏 Chip Strategy Engine
+    </button>
+    <button @click="activeTab = 'league'" :class="activeTab === 'league' ? 'border-brand-500 text-brand-400 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-200'" class="py-3 px-4 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      🏆 Mini-League Intel
+    </button>
+    <button @click="activeTab = 'briefing'" :class="activeTab === 'briefing' ? 'border-brand-500 text-brand-400 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-200'" class="py-3 px-4 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      📋 Gameweek Briefing
+    </button>
+    <button @click="activeTab = 'chat'" :class="activeTab === 'chat' ? 'border-brand-500 text-brand-400 font-semibold' : 'border-transparent text-slate-400 hover:text-slate-200'" class="py-3 px-4 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      💬 FPL Expert Chat
+    </button>
+  </nav>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 p-4 max-w-7xl mx-auto w-full">
+
+    <!-- 1. PITCH & SQUAD VIEW -->
+    <section v-if="activeTab === 'squad'" class="space-y-6">
+      <!-- Status Summary Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-xs text-slate-400 font-medium">GW{{ health.next_gameweek || 6 }} Projected Points</div>
+          <div class="text-2xl font-black text-brand-400 mt-1">{{ squadData.total_expected_points || '0.0' }} <span class="text-xs font-normal text-slate-400">xP</span></div>
+        </div>
+        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-xs text-slate-400 font-medium">Starting Formation</div>
+          <div class="text-2xl font-black text-white mt-1">{{ squadData.formation || '3-5-2' }}</div>
+        </div>
+        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-xs text-slate-400 font-medium">Available Bank</div>
+          <div class="text-2xl font-black text-amber-400 mt-1">£{{ squadData.bank_millions || '0.0' }}m</div>
+        </div>
+        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-xs text-slate-400 font-medium">Captain</div>
+          <div class="text-lg font-bold text-emerald-300 mt-1 flex items-center gap-1.5 truncate">
+            <span>⭐</span>
+            <span>{{ squadData.captain?.web_name || 'TBD' }}</span>
+            <span class="text-xs text-slate-400">({{ squadData.captain?.expected_points }} xP)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Risk-Aware Captaincy Advisor -->
+      <div v-if="squadData.captain" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-xs font-bold text-brand-400 flex items-center justify-between">
+            <span>⭐ Primary Captain</span>
+            <span class="text-[10px] bg-brand-500/20 text-brand-300 px-1.5 py-0.5 rounded font-mono">{{ Math.round((squadData.captain.prob_outscore_next || 0.65) * 100) }}% outscore prob</span>
+          </div>
+          <div class="text-base font-bold text-white mt-1">{{ squadData.captain.web_name }} ({{ squadData.captain.expected_points }} xP)</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">Floor P10: {{ squadData.captain.p10 }} pts | Ceiling P90: {{ squadData.captain.p90 }} pts</div>
+        </div>
+
+        <div v-if="squadData.captain.safe_alternative" class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-xs font-bold text-blue-400 flex items-center justify-between">
+            <span>🛡️ Safe Pick (Lead Protection)</span>
+            <span class="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded">High Floor</span>
+          </div>
+          <div class="text-base font-bold text-white mt-1">{{ squadData.captain.safe_alternative.web_name }}</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">P10 Floor: {{ squadData.captain.safe_alternative.floor_p10 }} pts ({{ squadData.captain.safe_alternative.expected_points }} xP)</div>
+        </div>
+
+        <div v-if="squadData.captain.differential_alternative" class="p-3.5 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="text-xs font-bold text-amber-400 flex items-center justify-between">
+            <span>🚀 Ceiling Differential (Chasing)</span>
+            <span class="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded">High Upside</span>
+          </div>
+          <div class="text-base font-bold text-white mt-1">{{ squadData.captain.differential_alternative.web_name }}</div>
+          <div class="text-[11px] text-slate-400 mt-0.5">P90 Ceiling: {{ squadData.captain.differential_alternative.ceiling_p90 }} pts ({{ squadData.captain.differential_alternative.expected_points }} xP)</div>
+        </div>
+      </div>
+
+      <!-- Football Pitch Display -->
+      <div class="pitch-bg rounded-2xl border-2 border-emerald-900/60 p-4 relative overflow-hidden flex flex-col justify-between min-h-[580px]">
+        <!-- Pitch Center Markings -->
+        <div class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4">
+          <div class="w-full border-t border-pitchline"></div>
+          <div class="w-full border-b border-pitchline flex items-center justify-center my-auto">
+            <div class="w-28 h-28 rounded-full border border-pitchline"></div>
+          </div>
+          <div class="w-full border-b border-pitchline"></div>
+        </div>
+
+        <!-- Pitch Rows: GK, DEF, MID, FWD -->
+        <div class="relative z-10 space-y-6 my-auto">
+          <!-- Goalkeepers -->
+          <div class="flex justify-center gap-4">
+            <div v-for="p in getPositionPlayers('GKP')" :key="p.element" class="bg-slate-900/90 backdrop-blur rounded-xl p-2.5 border border-slate-700/80 shadow-lg text-center w-36 hover:scale-105 transition cursor-pointer">
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">GKP</span>
+                <span v-if="p.is_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-brand-500 text-black">C</span>
+                <span v-if="p.is_vice_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">VC</span>
+              </div>
+              <div class="font-bold text-sm truncate text-white">{{ p.web_name }}</div>
+              <div class="text-xs font-semibold text-brand-400">{{ p.expected_points }} xP</div>
+              <div class="text-[10px] text-slate-400">£{{ p.now_cost }}m</div>
+              <!-- Next 3 Fixtures -->
+              <div class="flex justify-center gap-1 mt-1.5">
+                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold">
+                  {{ f.opp_short }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Defenders -->
+          <div class="flex justify-center flex-wrap gap-3">
+            <div v-for="p in getPositionPlayers('DEF')" :key="p.element" class="bg-slate-900/90 backdrop-blur rounded-xl p-2.5 border border-slate-700/80 shadow-lg text-center w-36 hover:scale-105 transition cursor-pointer">
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">DEF</span>
+                <span v-if="p.exp_defcon_pts > 0" class="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300">DefCon</span>
+                <span v-if="p.is_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-brand-500 text-black">C</span>
+                <span v-if="p.is_vice_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">VC</span>
+              </div>
+              <div class="font-bold text-sm truncate text-white">{{ p.web_name }}</div>
+              <div class="text-xs font-semibold text-brand-400">{{ p.expected_points }} xP</div>
+              <div class="text-[10px] text-slate-400">£{{ p.now_cost }}m</div>
+              <div class="flex justify-center gap-1 mt-1.5">
+                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold">
+                  {{ f.opp_short }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Midfielders -->
+          <div class="flex justify-center flex-wrap gap-3">
+            <div v-for="p in getPositionPlayers('MID')" :key="p.element" class="bg-slate-900/90 backdrop-blur rounded-xl p-2.5 border border-slate-700/80 shadow-lg text-center w-36 hover:scale-105 transition cursor-pointer">
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">MID</span>
+                <span v-if="p.exp_defcon_pts > 0" class="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300">DefCon</span>
+                <span v-if="p.is_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-brand-500 text-black">C</span>
+                <span v-if="p.is_vice_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">VC</span>
+              </div>
+              <div class="font-bold text-sm truncate text-white">{{ p.web_name }}</div>
+              <div class="text-xs font-semibold text-brand-400">{{ p.expected_points }} xP</div>
+              <div class="text-[10px] text-slate-400">£{{ p.now_cost }}m</div>
+              <div class="flex justify-center gap-1 mt-1.5">
+                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold">
+                  {{ f.opp_short }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Forwards -->
+          <div class="flex justify-center flex-wrap gap-3">
+            <div v-for="p in getPositionPlayers('FWD')" :key="p.element" class="bg-slate-900/90 backdrop-blur rounded-xl p-2.5 border border-slate-700/80 shadow-lg text-center w-36 hover:scale-105 transition cursor-pointer">
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">FWD</span>
+                <span v-if="p.is_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-brand-500 text-black">C</span>
+                <span v-if="p.is_vice_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-slate-700 text-slate-200">VC</span>
+              </div>
+              <div class="font-bold text-sm truncate text-white">{{ p.web_name }}</div>
+              <div class="text-xs font-semibold text-brand-400">{{ p.expected_points }} xP</div>
+              <div class="text-[10px] text-slate-400">£{{ p.now_cost }}m</div>
+              <div class="flex justify-center gap-1 mt-1.5">
+                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold">
+                  {{ f.opp_short }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bench Container -->
+        <div class="mt-6 pt-4 border-t border-slate-800/80 bg-slate-950/70 -mx-4 -mb-4 p-4 rounded-b-2xl">
+          <div class="text-xs font-semibold text-slate-400 mb-2 flex items-center justify-between">
+            <span>BENCH SUBSTITUTES</span>
+            <span class="text-[11px] text-slate-500">Ordered by Priority</span>
+          </div>
+          <div class="flex justify-center flex-wrap gap-3">
+            <div v-for="(b, idx) in squadData.bench" :key="b.element" class="bg-slate-900/90 rounded-xl p-2 border border-slate-800 text-center w-32">
+              <div class="text-[10px] font-bold text-slate-400 mb-0.5">#{{ idx + 1 }} {{ b.position }}</div>
+              <div class="font-semibold text-xs truncate text-slate-200">{{ b.web_name }}</div>
+              <div class="text-xs text-slate-300">{{ b.expected_points }} xP</div>
+              <div class="text-[10px] text-slate-500">£{{ b.now_cost }}m</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. TRANSFER OPTIMIZER & WHAT-IF -->
+    <section v-if="activeTab === 'optimizer'" class="space-y-6">
+      <div class="flex flex-wrap justify-between items-center gap-4 bg-slate-900 p-4 rounded-xl border border-slate-800">
+        <div>
+          <h2 class="text-lg font-bold text-white">Mathematical Transfer Optimizer (PuLP MILP)</h2>
+          <p class="text-xs text-slate-400">Multi-gameweek horizon optimization, banking up to 5 FTs, selling prices, and -4 hit break-even analysis.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button @click="showWhatIf = !showWhatIf" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs transition flex items-center gap-1.5">
+            <span>🎛️</span>
+            <span>What-If Constraints</span>
+          </button>
+          <button @click="runOptimizer" :disabled="loadingOpt" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-black font-bold text-xs transition flex items-center gap-2">
+            <span v-if="loadingOpt">Optimizing...</span>
+            <span v-else>⚡ Re-Optimize Squad</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- What-If Mode Panel -->
+      <div v-if="showWhatIf" class="p-4 rounded-xl bg-slate-900/90 border border-brand-500/40 space-y-3">
+        <div class="flex justify-between items-center">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-brand-400">What-If Optimization Controls</h3>
+          <span class="text-[11px] text-slate-400">Simulate custom tactical constraints</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-slate-300 font-semibold mb-1">Lock Player (Must Keep)</label>
+            <input v-model="whatIf.lockInName" type="text" placeholder="e.g. Salah, Haaland" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 font-semibold mb-1">Exclude Player (Force Sell)</label>
+            <input v-model="whatIf.lockOutName" type="text" placeholder="e.g. Watkins, Saka" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-300 font-semibold mb-1">Exclude Club (No Players From)</label>
+            <input v-model="whatIf.excludedClub" type="text" placeholder="e.g. Chelsea, Arsenal" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white">
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <button @click="resetWhatIf" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white text-xs">Reset</button>
+          <button @click="applyWhatIf" :disabled="loadingOpt" class="px-4 py-1.5 rounded-lg bg-brand-500 text-black font-bold text-xs">Run What-If</button>
+        </div>
+      </div>
+
+      <!-- Hit Verdict Callout -->
+      <div class="p-4 rounded-xl bg-slate-900 border-l-4 border-brand-500 border border-slate-800">
+        <div class="text-xs font-bold uppercase tracking-wider text-brand-400">Transfer Verdict</div>
+        <div class="text-base font-bold text-white mt-1">{{ optimizerData.hit_verdict || 'Evaluating...' }}</div>
+      </div>
+
+      <!-- Price Change Momentum & Urgency Watch -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span>📈</span> Imminent Price Rises (Buy Before Rise)
+            </span>
+            <span class="text-[10px] text-slate-400">Transfer Velocity & Momentum</span>
+          </div>
+          <div class="space-y-1.5">
+            <div v-for="r in (priceChanges.rises || []).slice(0, 5)" :key="r.element" class="flex justify-between items-center text-xs p-2 rounded bg-slate-950 border border-slate-800/80">
+              <div>
+                <span class="font-bold text-white">{{ r.web_name }}</span>
+                <span class="text-[10px] text-slate-400 ml-1.5">£{{ r.cost }}m</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-mono text-emerald-400">+{{ r.transfers_in_event }} in</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase">Buy Urgency</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span>📉</span> Imminent Price Falls (Sell Before Drop)
+            </span>
+            <span class="text-[10px] text-slate-400">Net Sales Pressure</span>
+          </div>
+          <div class="space-y-1.5">
+            <div v-for="f in (priceChanges.falls || []).slice(0, 5)" :key="f.element" class="flex justify-between items-center text-xs p-2 rounded bg-slate-950 border border-slate-800/80">
+              <div>
+                <span class="font-bold text-white">{{ f.web_name }}</span>
+                <span class="text-[10px] text-slate-400 ml-1.5">£{{ f.cost }}m</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-mono text-rose-400">-{{ f.transfers_out_event }} out</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded font-black bg-rose-500/20 text-rose-300 border border-rose-500/30 uppercase">Sell Urgency</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Candidate Plans Comparison -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div v-for="plan in optimizerData.candidate_plans" :key="plan.type" :class="plan.type === optimizerData.recommended_plan?.plan_type ? 'border-brand-500 bg-brand-950/20' : 'border-slate-800 bg-slate-900'" class="p-4 rounded-xl border flex flex-col justify-between">
+          <div>
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300">{{ plan.type }}</span>
+              <span v-if="plan.type === optimizerData.recommended_plan?.plan_type" class="text-[10px] font-black px-2 py-0.5 rounded bg-brand-500 text-black uppercase">Recommended</span>
+            </div>
+            <div class="font-bold text-sm text-white mb-2">{{ plan.summary }}</div>
+            <div class="text-xs text-slate-400 space-y-1">
+              <div>Gross Expected Points: <span class="text-slate-200 font-semibold">{{ plan.gross_expected_points }} xP</span></div>
+              <div>Transfer Hit Penalty: <span class="text-rose-400 font-semibold">-{{ plan.hit_cost }} pts</span></div>
+              <div>Net Expected Points: <span class="text-brand-400 font-bold">{{ plan.net_expected_points }} xP</span></div>
+            </div>
+          </div>
+          <div class="mt-4 pt-3 border-t border-slate-800/80 text-xs font-bold text-right" :class="plan.expected_gain >= 0 ? 'text-brand-400' : 'text-rose-400'">
+            Net Gain: {{ plan.expected_gain >= 0 ? '+' : '' }}{{ plan.expected_gain }} xP
+          </div>
+        </div>
+      </div>
+
+      <!-- Multi-Gameweek Transfer Roadmap -->
+      <div class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-4">
+        <div class="flex justify-between items-center">
+          <h3 class="font-bold text-sm text-white flex items-center gap-2">
+            <span>🗺️</span> Transfer Roadmap (Next 5 Gameweeks)
+          </h3>
+          <span class="text-xs text-slate-400">Sequencing & Banked FT Projections</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          <div v-for="step in optimizerData.transfer_roadmap" :key="step.gameweek" class="p-3.5 rounded-lg bg-slate-950 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex justify-between items-center mb-2">
+                <span class="font-black text-sm text-brand-400">GW {{ step.gameweek }}</span>
+                <span :class="step.status === 'FIRM' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'" class="text-[9px] px-1.5 py-0.5 rounded border font-semibold">
+                  {{ step.status }}
+                </span>
+              </div>
+              <div class="text-xs font-semibold text-slate-200 mb-1">{{ step.action }}</div>
+              <div class="text-[10px] text-amber-300 mb-1.5">FT Banked: {{ step.banked_free_transfers_projected || 1 }}/5</div>
+              <div class="text-[11px] text-slate-400 mb-2">{{ step.strategic_focus }}</div>
+            </div>
+            <div class="pt-2 border-t border-slate-900 text-[10px] text-slate-500">
+              Targets: {{ (step.key_targets || []).join(', ') }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. CHIP STRATEGY -->
+    <section v-if="activeTab === 'chips'" class="space-y-6">
+      <!-- Critical Set 1 Warning Banner & Opportunity Cost -->
+      <div v-if="chipData.set_1_deadline_warning" class="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div class="flex items-start gap-3">
+          <span class="text-2xl">⚠️</span>
+          <div>
+            <div class="font-bold text-amber-300 text-sm">2026/27 Chip Expiry Rule Notice</div>
+            <p class="text-xs text-amber-200/80 mt-1 leading-relaxed">{{ chipData.set_1_deadline_warning }}</p>
+          </div>
+        </div>
+        <div class="p-3 bg-amber-900/40 border border-amber-500/30 rounded-xl text-center min-w-[180px]">
+          <div class="text-[10px] text-amber-300 uppercase font-bold tracking-wider">Opportunity Cost of Lapsing</div>
+          <div class="text-2xl font-black text-rose-400 mt-0.5">-{{ chipData.total_set_1_opportunity_cost || 0.0 }} pts</div>
+          <div class="text-[10px] text-slate-400">Permanent points forfeited</div>
+        </div>
+      </div>
+
+      <!-- Chip Plan Table -->
+      <div class="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+          <div>
+            <h2 class="text-sm font-bold text-white">Optimal Joint Chip Schedule (Set 1 & Set 2)</h2>
+            <p class="text-xs text-slate-400">8 Chips Total (Assistant Manager removed for 2026/27)</p>
+          </div>
+          <div class="text-xs font-bold text-brand-400 bg-brand-500/10 px-3 py-1 rounded-lg border border-brand-500/30">
+            Total Expected Uplift: +{{ chipData.optimal_joint_gain || 0.0 }} pts
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-950/60 text-slate-400 border-b border-slate-800">
+              <tr>
+                <th class="p-3 font-semibold">Chip</th>
+                <th class="p-3 font-semibold">Set</th>
+                <th class="p-3 font-semibold">Recommended GW</th>
+                <th class="p-3 font-semibold">Exp. Gain</th>
+                <th class="p-3 font-semibold">Confidence</th>
+                <th class="p-3 font-semibold">Alternative GW</th>
+                <th class="p-3 font-semibold">Trigger Conditions</th>
+                <th class="p-3 font-semibold">Strategic Role</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">
+              <tr v-for="c in chipData.chip_plan_table" :key="c.chip" class="hover:bg-slate-800/40 transition">
+                <td class="p-3 font-bold text-white">{{ c.chip }}</td>
+                <td class="p-3 text-slate-300">Set {{ c.set }}</td>
+                <td class="p-3 font-black text-brand-400">GW {{ c.recommended_gw }}</td>
+                <td class="p-3 font-bold text-emerald-400">+{{ c.expected_gain }} pts</td>
+                <td class="p-3">
+                  <span :class="c.confidence === 'HIGH' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'" class="px-1.5 py-0.5 rounded text-[10px] font-bold">
+                    {{ c.confidence }}
+                  </span>
+                </td>
+                <td class="p-3 text-slate-400">GW {{ c.alternative_gw }}</td>
+                <td class="p-3 text-slate-300 max-w-xs text-[11px]">{{ c.trigger_conditions }}</td>
+                <td class="p-3 text-slate-300 max-w-sm text-[11px]">{{ c.reasoning }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Alternative Schedules Comparison -->
+      <div v-if="chipData.set_1_alternative_plans && chipData.set_1_alternative_plans.length > 0" class="bg-slate-900 p-5 rounded-xl border border-slate-800 space-y-3">
+        <h3 class="font-bold text-sm text-white">Robust Alternative Chip Schedules</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div v-for="(alt, idx) in chipData.set_1_alternative_plans.slice(0, 2)" :key="idx" class="p-4 rounded-xl bg-slate-950 border border-slate-800">
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-xs font-bold text-slate-200">Alternative Schedule #{{ idx + 1 }}</span>
+              <span class="text-xs font-mono font-bold text-brand-400">+{{ alt.total_gain }} xP</span>
+            </div>
+            <div class="text-xs text-slate-400 space-y-1">
+              <div v-for="(gw, chip) in alt.assignment" :key="chip" class="flex justify-between">
+                <span class="capitalize">{{ chip }}:</span>
+                <span class="font-semibold text-slate-200">GW {{ gw }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. MINI-LEAGUE INTEL -->
+    <section v-if="activeTab === 'league'" class="space-y-6">
+      <div v-if="!profile.target_league_id" class="p-8 text-center bg-slate-900 rounded-xl border border-slate-800 space-y-3">
+        <div class="text-3xl">🏆</div>
+        <h3 class="font-bold text-white">No Target Mini-League Configured</h3>
+        <p class="text-xs text-slate-400 max-w-md mx-auto">Set your Mini-League ID in Manager Settings to unlock rival squad tracking, Effective Ownership (EO), and Monte Carlo win probability simulations.</p>
+        <button @click="showProfileModal = true" class="px-4 py-2 rounded-lg bg-brand-600 text-black font-bold text-xs">Configure League ID</button>
+      </div>
+
+      <div v-else class="space-y-6">
+        <!-- Strategy Mode & Win Probability -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="md:col-span-2 p-5 rounded-xl bg-slate-900 border border-slate-800">
+            <div class="flex justify-between items-center">
+              <div class="text-xs font-bold text-brand-400 uppercase tracking-wider">Tactical Strategy Mode</div>
+              <span class="text-[10px] font-black px-2 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/40 uppercase">{{ leagueData.strategy?.mode || 'BALANCED' }}</span>
+            </div>
+            <h3 class="text-lg font-bold text-white mt-1">{{ leagueData.strategy?.mode_title || 'Analyzing...' }}</h3>
+            <p class="text-xs text-slate-300 mt-2 leading-relaxed">{{ leagueData.strategy?.rationale }}</p>
+            <div class="mt-4 space-y-1">
+              <div v-for="t in leagueData.strategy?.tactical_recommendations" :key="t" class="text-xs text-slate-400 flex items-center gap-2">
+                <span class="text-brand-400">▸</span> {{ t }}
+              </div>
+            </div>
+          </div>
+
+          <div class="p-5 rounded-xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Monte Carlo Win Probability</div>
+              <div class="text-4xl font-black text-brand-400 mt-2">{{ leagueData.simulation?.user_win_probability_pct || '0.0' }}%</div>
+              <p class="text-[11px] text-slate-400 mt-1">Probability of finishing 1st based on 500 stochastic season simulations.</p>
+            </div>
+            <div class="text-xs text-slate-400 pt-3 border-t border-slate-800">
+              Expected Final Rank: <span class="font-bold text-white">#{{ leagueData.simulation?.expected_final_rank || '1.0' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Effective Ownership (EO) Breakdown -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+            <h4 class="text-xs font-bold text-slate-300 mb-3 uppercase tracking-wider">Template Players (High Rival Ownership)</h4>
+            <div class="space-y-2">
+              <div v-for="p in leagueData.template_players" :key="p.element" class="flex justify-between items-center text-xs p-2 rounded bg-slate-950 border border-slate-800/80">
+                <span class="font-bold text-white">{{ p.web_name }}</span>
+                <span class="font-black text-amber-400">{{ p.effective_ownership }}% EO</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-900 border border-slate-800">
+            <h4 class="text-xs font-bold text-slate-300 mb-3 uppercase tracking-wider">Key Differentials (&lt;20% Ownership)</h4>
+            <div class="space-y-2">
+              <div v-for="p in leagueData.differential_players" :key="p.element" class="flex justify-between items-center text-xs p-2 rounded bg-slate-950 border border-slate-800/80">
+                <span class="font-bold text-white">{{ p.web_name }}</span>
+                <span class="font-black text-brand-400">{{ p.effective_ownership }}% EO</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Standings Table -->
+        <div v-if="leagueData.standings && leagueData.standings.length > 0" class="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+          <div class="p-4 border-b border-slate-800">
+            <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider">Mini-League Standings: {{ leagueData.league_name }}</h4>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-950/60 text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="p-3">Rank</th>
+                  <th class="p-3">Team & Manager</th>
+                  <th class="p-3 text-right">GW Points</th>
+                  <th class="p-3 text-right">Total Points</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/60">
+                <tr v-for="s in leagueData.standings.slice(0, 15)" :key="s.entry" :class="s.entry === profile.manager_id ? 'bg-brand-950/20 font-bold' : ''" class="hover:bg-slate-800/40">
+                  <td class="p-3 text-slate-400">#{{ s.rank }}</td>
+                  <td class="p-3 text-white">
+                    <div>{{ s.entry_name }}</div>
+                    <div class="text-[10px] text-slate-500">{{ s.player_name }}</div>
+                  </td>
+                  <td class="p-3 text-right text-slate-300">{{ s.event_total }}</td>
+                  <td class="p-3 text-right font-black text-brand-400">{{ s.total }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. GAMEWEEK BRIEFING -->
+    <section v-if="activeTab === 'briefing'" class="space-y-6">
+      <div class="flex justify-between items-center bg-slate-900 p-4 rounded-xl border border-slate-800">
+        <div>
+          <h2 class="text-base font-bold text-white">Gameweek {{ health.next_gameweek || 6 }} Executive Briefing</h2>
+          <p class="text-xs text-slate-400">One-click complete strategic overview prior to deadline.</p>
+        </div>
+        <button @click="copyBriefingMarkdown" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-xs">
+          📋 Copy as Markdown
+        </button>
+      </div>
+
+      <div class="bg-slate-900 p-6 rounded-xl border border-slate-800 prose prose-invert max-w-none text-slate-200 text-sm leading-relaxed whitespace-pre-wrap font-mono">
+{{ briefingData.markdown || 'Generating briefing...' }}
+      </div>
+    </section>
+
+    <!-- 6. EXPERT CHAT -->
+    <section v-if="activeTab === 'chat'" class="space-y-4">
+      <div class="bg-slate-900 rounded-xl border border-slate-800 flex flex-col h-[640px]">
+        <!-- Chat Header -->
+        <div class="p-3.5 border-b border-slate-800 flex justify-between items-center">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-brand-500 animate-pulse"></span>
+            <span class="font-bold text-sm text-white">FPL Oracle Live Expert</span>
+            <span class="text-xs text-slate-400 font-mono">Tool-Calling Active</span>
+          </div>
+          <button @click="chatMessages = []" class="text-xs text-slate-500 hover:text-slate-300">Clear History</button>
+        </div>
+
+        <!-- Chat Messages Scroll Area -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+          <div v-if="chatMessages.length === 0" class="text-center py-12 space-y-4">
+            <div class="text-4xl">🤖</div>
+            <div class="max-w-md mx-auto">
+              <h3 class="font-bold text-white text-base">Talk to your 2026/27 FPL Assistant</h3>
+              <p class="text-xs text-slate-400 mt-1">Ask questions about captaincy, transfer hits, chips, price changes, or mini-league rivals. The assistant queries live projections and official rules.</p>
+            </div>
+            <!-- Quick Prompt Suggestions -->
+            <div class="flex flex-wrap justify-center gap-2 max-w-xl mx-auto pt-2">
+              <button v-for="prompt in suggestedPrompts" :key="prompt" @click="sendPrompt(prompt)" class="text-xs px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+                "{{ prompt }}"
+              </button>
+            </div>
+          </div>
+
+          <div v-for="(msg, i) in chatMessages" :key="i" class="flex gap-3" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+            <div v-if="msg.role === 'assistant'" class="w-8 h-8 rounded-lg bg-brand-600/20 border border-brand-500/40 text-brand-400 flex items-center justify-center font-bold text-sm shrink-0">
+              🤖
+            </div>
+            <div :class="msg.role === 'user' ? 'bg-brand-600 text-black font-medium' : 'bg-slate-950 border border-slate-800 text-slate-200'" class="p-3.5 rounded-2xl max-w-2xl text-xs leading-relaxed whitespace-pre-wrap">
+              {{ msg.content }}
+            </div>
+          </div>
+
+          <div v-if="isChatLoading" class="flex gap-3 justify-start items-center">
+            <div class="w-8 h-8 rounded-lg bg-brand-600/20 border border-brand-500/40 text-brand-400 flex items-center justify-center font-bold text-sm shrink-0">
+              🤖
+            </div>
+            <div class="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-brand-400 animate-ping"></span>
+              Analyzing projections, news & official rules...
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Bar -->
+        <div class="p-3 border-t border-slate-800 bg-slate-950/80 flex gap-2">
+          <input v-model="userInput" @keyup.enter="sendMessage" type="text" placeholder="Ask about transfers, captaincy, chips, or rivals..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+          <button @click="sendMessage" :disabled="!userInput.trim() || isChatLoading" class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:hover:bg-brand-600 text-black font-bold text-xs transition">
+            Send
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- SQUAD PASTE / UPLOAD MODAL -->
+  <div v-if="showSquadModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="font-bold text-lg text-white">Paste or Upload Squad (15 Players)</h3>
+          <p class="text-xs text-slate-400">Fuzzy matches player names against the official 2026/27 database.</p>
+        </div>
+        <button @click="showSquadModal = false" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+      </div>
+
+      <!-- Bank & Free Transfers Inputs -->
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Available Bank (£m)</label>
+          <input v-model.number="manualSquadBank" type="number" step="0.1" min="0" max="30" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Banked Free Transfers (1-5)</label>
+          <input v-model.number="manualSquadFT" type="number" min="1" max="5" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white">
+        </div>
+      </div>
+
+      <!-- Input text area & file upload -->
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="text-xs font-semibold text-slate-300">Player Names (Plain text, CSV, or JSON)</label>
+          <label class="text-xs text-brand-400 hover:text-brand-300 cursor-pointer font-medium">
+            📁 Upload .txt / .csv / .json
+            <input type="file" @change="handleFileUpload" accept=".txt,.csv,.json" class="hidden">
+          </label>
+        </div>
+        <textarea v-model="manualSquadText" rows="6" placeholder="Paste 15 player names, e.g.:
+David Raya
+Fabianski
+Gabriel Magalhães
+Alexander-Arnold
+Gvardiol
+Robinson
+Konsa
+Mohamed Salah
+Bukayo Saka
+Cole Palmer
+Bryan Mbeumo
+Morgan Rogers
+Erling Haaland
+Ollie Watkins
+Chris Wood" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-white font-mono"></textarea>
+      </div>
+
+      <div class="flex justify-between items-center">
+        <button @click="matchPastedSquad" :disabled="matchingInProgress" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-brand-400 border border-brand-500/40 font-bold text-xs flex items-center gap-1.5">
+          <span v-if="matchingInProgress">Matching...</span>
+          <span v-else>🔍 Match Players</span>
+        </button>
+
+        <span v-if="matchResult" class="text-xs" :class="matchResult.is_valid_15 ? 'text-brand-400 font-bold' : 'text-amber-400'">
+          {{ matchResult.total_matched }}/15 Matched
+          <span v-if="!matchResult.is_valid_15">({{ getFormationStatus(matchResult) }})</span>
+        </span>
+      </div>
+
+      <!-- Match Results Table -->
+      <div v-if="matchResult && matchResult.matches && matchResult.matches.length > 0" class="border border-slate-800 rounded-xl overflow-hidden">
+        <div class="p-2.5 bg-slate-950/80 border-b border-slate-800 flex justify-between items-center text-xs">
+          <span class="font-bold text-slate-300">Matched Candidates ({{ matchResult.matches.length }})</span>
+          <span class="text-slate-400">Total: £{{ matchResult.total_cost }}m | GKP: {{ matchResult.position_counts.GKP }}/2, DEF: {{ matchResult.position_counts.DEF }}/5, MID: {{ matchResult.position_counts.MID }}/5, FWD: {{ matchResult.position_counts.FWD }}/3</span>
+        </div>
+        <div class="max-h-60 overflow-y-auto divide-y divide-slate-800/60 text-xs">
+          <div v-for="(m, idx) in matchResult.matches" :key="m.element" class="p-2 flex items-center justify-between hover:bg-slate-800/30">
+            <div class="flex items-center gap-2">
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold" :class="m.position === 'GKP' ? 'bg-amber-500/20 text-amber-300' : m.position === 'DEF' ? 'bg-blue-500/20 text-blue-300' : m.position === 'MID' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'">{{ m.position }}</span>
+              <span class="font-bold text-white">{{ m.web_name }}</span>
+              <span class="text-[10px] text-slate-400">({{ m.team_short }} - £{{ m.cost }}m)</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] px-1.5 py-0.5 rounded font-mono" :class="m.score >= 0.8 ? 'text-emerald-400 bg-emerald-500/10' : 'text-amber-400 bg-amber-500/10'">{{ Math.round(m.score * 100) }}%</span>
+              <button @click="removeMatchedPlayer(idx)" class="text-slate-500 hover:text-rose-400 font-bold px-1.5">&times;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Unmatched Warnings -->
+      <div v-if="matchResult && matchResult.unmatched && matchResult.unmatched.length > 0" class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 space-y-1">
+        <div class="text-xs font-bold text-amber-400">Unmatched queries:</div>
+        <div v-for="u in matchResult.unmatched" :key="u.query" class="text-xs text-slate-300 flex items-center justify-between">
+          <span>"{{ u.query }}"</span>
+          <span v-if="u.alternatives && u.alternatives.length > 0" class="text-[10px] text-slate-400">
+            Did you mean:
+            <button v-for="alt in u.alternatives.slice(0, 2)" :key="alt.element" @click="addAlternativePlayer(alt)" class="underline hover:text-white mr-1">
+              {{ alt.web_name }} ({{ alt.position }})
+            </button>
+          </span>
+          <span v-else class="text-[10px] text-rose-400">No match found</span>
+        </div>
+      </div>
+
+      <!-- Modal Actions -->
+      <div class="pt-3 border-t border-slate-800 flex justify-between items-center">
+        <button @click="showSquadModal = false" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white text-xs">Close</button>
+        <button @click="saveManualSquad" :disabled="!matchResult || !matchResult.is_valid_15 || savingSquad" :class="matchResult && matchResult.is_valid_15 ? 'bg-brand-500 hover:bg-brand-400 text-black font-bold' : 'bg-slate-800 text-slate-500 cursor-not-allowed'" class="px-5 py-2 rounded-lg text-xs transition flex items-center gap-1.5">
+          <span v-if="savingSquad">Saving...</span>
+          <span v-else>✅ Confirm & Save Squad</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MANAGER SETUP MODAL -->
+  <div v-if="showProfileModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <h3 class="font-bold text-base text-white">Manager Settings & League Setup</h3>
+        <button @click="showProfileModal = false" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">FPL Manager ID</label>
+          <input v-model.number="profile.manager_id" type="number" placeholder="e.g. 123456" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
+          <p class="text-[10px] text-slate-500 mt-1">Found in your FPL URL: /entry/{ID}/event/1</p>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Target Mini-League ID</label>
+          <input v-model.number="profile.target_league_id" type="number" placeholder="e.g. 98765" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
+          <p class="text-[10px] text-slate-500 mt-1">Found in your League URL: /leagues/{ID}/standings/c</p>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Banked Free Transfers (1-5)</label>
+          <input v-model.number="profile.free_transfers" type="number" min="1" max="5" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
+        </div>
+
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1">Risk Preference</label>
+          <select v-model="profile.risk_preference" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-white">
+            <option value="balanced">Balanced Contender</option>
+            <option value="aggressive">Chasing Leader (High Differential)</option>
+            <option value="conservative">Defending Lead (Template Protection)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="pt-2 flex justify-end gap-2">
+        <button @click="showProfileModal = false" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white text-xs">Cancel</button>
+        <button @click="saveProfile" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-black font-bold text-xs">Save & Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Disclaimer Footer -->
+  <footer class="border-t border-slate-900 bg-slate-950 p-4 text-center text-[11px] text-slate-500">
+    FPL Oracle 2026/27 — Probabilistic ML projections & MILP optimization. DefCon & rebalanced BPS rules active. Not affiliated with the Premier League.
+  </footer>
+</div>
+
+<script>
+  const { createApp } = Vue;
+
+  createApp({
+    data() {
+      return {
+        activeTab: 'squad',
+        showProfileModal: false,
+        showSquadModal: false,
+        showWhatIf: false,
+        health: {},
+        profile: {
+          manager_id: null,
+          target_league_id: null,
+          free_transfers: 1,
+          risk_preference: 'balanced'
+        },
+        squadData: {},
+        optimizerData: {},
+        chipData: {},
+        leagueData: {},
+        briefingData: {},
+        priceChanges: { rises: [], falls: [] },
+        chatMessages: [],
+        userInput: '',
+        isChatLoading: false,
+        loadingOpt: false,
+        // Manual squad modal state
+        manualSquadText: '',
+        manualSquadBank: 0.5,
+        manualSquadFT: 1,
+        matchingInProgress: false,
+        matchResult: null,
+        savingSquad: false,
+        // What-if state
+        whatIf: {
+          lockInName: '',
+          lockOutName: '',
+          excludedClub: ''
+        },
+        suggestedPrompts: [
+          "Should I take a -4 for Haaland?",
+          "When should I use my Bench Boost?",
+          "Who's the best differential midfielder under 6.5?",
+          "Is it time to wildcard?",
+          "Who should I captain for Gameweek 6?"
+        ]
+      }
+    },
+    methods: {
+      formatTime(isoStr) {
+        if (!isoStr) return '';
+        try {
+          return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+          return '';
+        }
+      },
+      openSquadModal() {
+        this.showSquadModal = true;
+        this.manualSquadBank = this.squadData.bank_millions || this.profile.bank || 0.5;
+        this.manualSquadFT = this.profile.free_transfers || 1;
+      },
+      async loadHealth() {
+        const res = await fetch('/api/health');
+        this.health = await res.json();
+      },
+      async loadProfile() {
+        const res = await fetch('/api/profile');
+        this.profile = await res.json();
+      },
+      async saveProfile() {
+        await fetch('/api/profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.profile)
+        });
+        this.showProfileModal = false;
+        this.refreshAll();
+      },
+      async loadSquad() {
+        const res = await fetch('/api/squad');
+        this.squadData = await res.json();
+      },
+      async loadPriceChanges() {
+        try {
+          const res = await fetch('/api/price-changes');
+          if (res.ok) {
+            this.priceChanges = await res.json();
+          }
+        } catch (e) {}
+      },
+      async runOptimizer(constraints = {}) {
+        this.loadingOpt = true;
+        try {
+          const res = await fetch('/api/optimize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(constraints)
+          });
+          this.optimizerData = await res.json();
+        } finally {
+          this.loadingOpt = false;
+        }
+      },
+      async applyWhatIf() {
+        // Find element IDs if player names provided
+        const constraints = {};
+        if (this.whatIf.lockInName) {
+          // match in squad
+          const found = (this.squadData.starters || []).concat(this.squadData.bench || [])
+            .find(p => p.web_name.toLowerCase().includes(this.whatIf.lockInName.toLowerCase()));
+          if (found) constraints.locked_in = [found.element];
+        }
+        if (this.whatIf.lockOutName) {
+          const found = (this.squadData.starters || []).concat(this.squadData.bench || [])
+            .find(p => p.web_name.toLowerCase().includes(this.whatIf.lockOutName.toLowerCase()));
+          if (found) constraints.locked_out = [found.element];
+        }
+        await this.runOptimizer(constraints);
+      },
+      resetWhatIf() {
+        this.whatIf = { lockInName: '', lockOutName: '', excludedClub: '' };
+        this.runOptimizer({});
+      },
+      async loadChips() {
+        const res = await fetch('/api/chips');
+        this.chipData = await res.json();
+      },
+      async loadLeague() {
+        if (!this.profile.target_league_id) return;
+        try {
+          const res = await fetch('/api/league');
+          if (res.ok) {
+            this.leagueData = await res.json();
+          }
+        } catch (e) {}
+      },
+      async loadBriefing() {
+        const res = await fetch('/api/briefing');
+        this.briefingData = await res.json();
+      },
+      getPositionPlayers(pos) {
+        if (!this.squadData.starters) return [];
+        return this.squadData.starters.filter(p => p.position === pos);
+      },
+      // Manual Squad Matching & Upload
+      async matchPastedSquad() {
+        if (!this.manualSquadText.trim()) return;
+        this.matchingInProgress = true;
+        try {
+          const res = await fetch('/api/squad/match', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ raw_text: this.manualSquadText })
+          });
+          this.matchResult = await res.json();
+        } finally {
+          this.matchingInProgress = false;
+        }
+      },
+      handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          this.manualSquadText = e.target.result;
+          this.matchPastedSquad();
+        };
+        reader.readAsText(file);
+      },
+      removeMatchedPlayer(idx) {
+        if (!this.matchResult || !this.matchResult.matches) return;
+        this.matchResult.matches.splice(idx, 1);
+        this.recalculateMatchValidity();
+      },
+      addAlternativePlayer(alt) {
+        if (!this.matchResult) return;
+        if (!this.matchResult.matches) this.matchResult.matches = [];
+        this.matchResult.matches.push(alt);
+        this.recalculateMatchValidity();
+      },
+      recalculateMatchValidity() {
+        const pos = { GKP: 0, DEF: 0, MID: 0, FWD: 0 };
+        const clubs = {};
+        let cost = 0.0;
+        for (const m of this.matchResult.matches) {
+          pos[m.position] = (pos[m.position] || 0) + 1;
+          clubs[m.team] = (clubs[m.team] || 0) + 1;
+          cost += m.cost;
+        }
+        this.matchResult.position_counts = pos;
+        this.matchResult.total_matched = this.matchResult.matches.length;
+        this.matchResult.total_cost = Math.round(cost * 10) / 10;
+        this.matchResult.is_valid_15 = (
+          this.matchResult.matches.length === 15 &&
+          pos.GKP === 2 && pos.DEF === 5 && pos.MID === 5 && pos.FWD === 3 &&
+          Object.values(clubs).every(c => c <= 3)
+        );
+      },
+      getFormationStatus(res) {
+        if (!res || !res.position_counts) return '';
+        const p = res.position_counts;
+        return `GKP: ${p.GKP}/2, DEF: ${p.DEF}/5, MID: ${p.MID}/5, FWD: ${p.FWD}/3`;
+      },
+      async saveManualSquad() {
+        if (!this.matchResult || !this.matchResult.is_valid_15) return;
+        this.savingSquad = true;
+        try {
+          const playerIds = this.matchResult.matches.map(m => m.element);
+          const res = await fetch('/api/squad/manual', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              player_ids: playerIds,
+              bank: this.manualSquadBank,
+              free_transfers: this.manualSquadFT
+            })
+          });
+          if (res.ok) {
+            this.showSquadModal = false;
+            await this.refreshAll();
+          }
+        } finally {
+          this.savingSquad = false;
+        }
+      },
+      async sendMessage() {
+        if (!this.userInput.trim() || this.isChatLoading) return;
+        const q = this.userInput.trim();
+        this.chatMessages.push({ role: 'user', content: q });
+        this.userInput = '';
+        this.isChatLoading = true;
+
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: q })
+          });
+          const data = await res.json();
+          this.chatMessages.push({ role: 'assistant', content: data.response });
+        } catch (e) {
+          this.chatMessages.push({ role: 'assistant', content: "Error connecting to expert engine." });
+        } finally {
+          this.isChatLoading = false;
+        }
+      },
+      sendPrompt(p) {
+        this.userInput = p;
+        this.sendMessage();
+      },
+      copyBriefingMarkdown() {
+        navigator.clipboard.writeText(this.briefingData.markdown || '');
+        alert('Briefing markdown copied to clipboard!');
+      },
+      async refreshAll() {
+        await this.loadHealth();
+        await this.loadProfile();
+        await this.loadSquad();
+        await this.loadPriceChanges();
+        await this.runOptimizer();
+        await this.loadChips();
+        await this.loadLeague();
+        await this.loadBriefing();
+      }
+    },
+    mounted() {
+      this.refreshAll();
+    }
+  }).mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fpl-oracle"
+version = "1.0.0"
+description = "Local, ML-driven Fantasy Premier League expert and optimizer for the 2026/27 season"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "FPL Oracle Team"}
+]
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.6.0",
+    "sqlalchemy>=2.0.0",
+    "apscheduler>=3.10.0",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "scikit-learn>=1.4.0",
+    "lightgbm>=4.3.0",
+    "scipy>=1.12.0",
+    "statsmodels>=0.14.0",
+    "pulp>=2.8.0",
+    "feedparser>=6.0.0",
+    "beautifulsoup4>=4.12.0",
+    "pyyaml>=6.0.0",
+    "python-dotenv>=1.0.0",
+    "jinja2>=3.1.0",
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+fpl = "fpl_oracle.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
