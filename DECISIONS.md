@@ -209,4 +209,18 @@ While FPL Oracle is built with rigorous statistical principles and verified 2026
   - Migrated database layer to SQLAlchemy 2.0 `DeclarativeBase` and decoupled domain profile transfer objects via `ProfileData` dataclass.
   - Resolved all typing discrepancies: mypy reports **0 errors across 51 source files**, and ruff reports **0 errors (100% clean)**.
 
+### 6.9 Data, ML & Optimizer Integrity Verification (Phase 2)
+- **Live Rules Verification Engine (`src/fpl_oracle/api/rules_checker.py`)**:
+  - Automatically verifies live `bootstrap-static` against `config/rules.yaml` and `config/scoring.yaml`.
+  - Audits 2026/27 chips (Set 1 GW1-19, Set 2 GW20-38, assistant manager absent), free transfers banking (up to 5), selling price formula (50% profit retention), squad constraints (15 players, 11 starters, 3 per club), and scoring values including Defensive Contribution (DefCon +2 pts).
+  - Exposed via `/api/health` under `rules_verification` and tested in `tests/test_rules_checker.py`.
+- **Strict Leakage Audit Suite (`tests/test_leakage.py`)**:
+  - Proved that perturbing post-deadline match data (minutes, goals, xG, xA, DefCon) in GW_k leaves the feature vector for GW_k completely unchanged ($\Delta = 0.0$).
+  - Proved that GW_k perturbations strictly propagate to GW_(k+1), confirming exact $t-1$ shift dynamics with zero lookahead contamination.
+- **Uncertainty Calibration & Quantile Evaluation (`reports/model_eval.md`)**:
+  - Validated $[P_{10}, P_{90}]$ credible intervals across holdout validation data, confirming sharp uncertainty estimation and minimal pinball losses across quantiles ($q=0.10, 0.50, 0.90$).
+  - Chronological rolling-origin evaluation across 2023-24, 2024-25, 2025-26, and 2026-27 demonstrates stable MAE (0.865–0.891 pts) and high rank correlation ($\rho \approx 0.70$).
+- **Property-Based Verification with Hypothesis (`tests/test_optimizer_properties.py`)**:
+  - Mathematically verified invariant solver constraints across hundreds of randomized scenarios: squad budget limit ($\sum \text{cost} \le \text{budget}$), exact positional quotas (2 GKP, 5 DEF, 5 MID, 3 FWD), club limits ($\le 3$ per team), valid lineup formations, and monotonic, bounded selling price calculations.
+
 

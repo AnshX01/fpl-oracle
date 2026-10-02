@@ -1,8 +1,8 @@
 # FPL Oracle — Master Project Handoff & Progress
 
 **Status:** In Active Execution (Phased Overhaul)  
-**Current Phase:** Phase 2 (Data, ML & Optimizer Integrity)  
-**Last Updated:** 2026-10-03 01:05 UTC  
+**Current Phase:** Phase 3 (Live "My Money" Flow & Background Analysis Job)  
+**Last Updated:** 2026-10-03 01:21 UTC  
 **Repository:** https://github.com/AnshX01/fpl-oracle.git  
 **Working Directory:** `C:\Users\anshw\Documents\fpl-expert`
 
@@ -26,8 +26,8 @@ FPL Oracle is an autonomous, machine-learning-driven Fantasy Premier League deci
 |---|---|:---:|---|
 | **Phase 0** | Orient, Secure, Baseline & Security Audit | **DONE** | Clean secrets check, baseline report in `reports/baseline.md` |
 | **Phase 1** | Correctness & Robustness (Fault injection, safe JSON, error boundaries, GameState) | **DONE** | All 13 endpoints pass live + 5 fault injection tests; ruff & mypy 0 errors |
-| **Phase 2** | Data, ML & Optimizer Integrity (Leakage test, rolling backtest, live rules check, uncertainty, hypothesis) | **IN PROGRESS** | Leakage test pass, model_eval.md, live rules diff, hypothesis tests |
-| **Phase 3** | Live "My Money" Flow & Background Analysis Job (SSE progress, overrides, bank sync) | **PENDING** | End-to-end 1-click sync & override verification |
+| **Phase 2** | Data, ML & Optimizer Integrity (Leakage test, rolling backtest, live rules check, uncertainty, hypothesis) | **DONE** | Leakage test 3/3 pass, rules check 4/4 pass, hypothesis 3/3 pass, model_eval.md updated |
+| **Phase 3** | Live "My Money" Flow & Background Analysis Job (SSE progress, overrides, bank sync) | **IN PROGRESS** | End-to-end 1-click sync & override verification |
 | **Phase 4** | Expert Behaviour & Contingency Engine (Plan B/C, panic button, pre-deadline checklist, news citations) | **PENDING** | Grounded chat test pass, panic button scenario pass |
 | **Phase 5** | UI Rebuild (React + Vite + TypeScript + Tailwind + Framer Motion, sleek editorial design) | **PENDING** | Lighthouse perf/a11y ≥ 90, Playwright screenshots |
 | **Phase 6** | Scheduling & Automation (APScheduler, live GW polling, auto-retrain rollback) | **PENDING** | Scheduler jobs verified, idempotency checked |
@@ -52,19 +52,23 @@ FPL Oracle is an autonomous, machine-learning-driven Fantasy Premier League deci
   - Hermetic fault-injection test suite (`tests/test_fault_injection.py`) passing 5/5 scenarios.
   - 100% live server test suite (`scripts/test_server_live.py`) passing across all 13 endpoints and fault injections.
   - `mypy` passing with 0 errors across 51 source files; `ruff` passing with 0 errors.
+- **Phase 2 (Data, ML & Optimizer Integrity)**:
+  - Live Rules Verification Engine (`src/fpl_oracle/api/rules_checker.py`) verifying 2026/27 official rules against live API and exposed in `/api/health` (tested in `tests/test_rules_checker.py`, 4/4 passing).
+  - Strict Leakage Audit test suite (`tests/test_leakage.py`) proving zero lookahead or contemporaneous data leakage (3/3 passing).
+  - Hypothesis Property-Based Testing (`tests/test_optimizer_properties.py`) verifying budget limits, 15-player structure, club limits, lineup formations, and monotonic selling prices across randomized cases (3/3 passing).
+  - Uncertainty Calibration and Rolling-Origin Time-Series Cross-Validation implemented in `src/fpl_oracle/ml/eval.py` and documented in `reports/model_eval.md`.
+  - All 29 unit and property tests passing in `pytest`!
 
 ### In Progress
-- **Phase 2 (Data, ML & Optimizer Integrity)**:
-  - Live rules verification diffing `bootstrap-static` against `config/rules.yaml` and `config/scoring.yaml`.
-  - Strict leakage audit test (`tests/test_leakage.py`) asserting $(p, GW)$ predictions use strictly pre-kickoff data.
-  - Rolling-origin backtest and uncertainty calibration ($P_{10}/P_{50}/P_{90}$) documented in `reports/model_eval.md`.
-  - Property-based tests (`hypothesis`) for MILP optimization constraints.
-
-### Next
 - **Phase 3 (Live "My Money" Flow & Background Analysis Job)**:
   - SSE background progress stream `/api/sync/stream` reporting staged pipeline steps.
   - Immediate user overrides and selling price math sync.
 
+### Next
+- **Phase 4 (Expert Behaviour & Contingency Engine)**:
+  - Plan B/C contingency strategies.
+  - Panic button for 1-click last-minute lineup repairs.
+  - Pre-deadline checklist and verified news citations.
+
 ### Known Issues & Technical Debt
 1. PuLP deprecation warnings regarding `LpVariable` directly in v4 and `PULP_CBC_CMD` (purely informational deprecation warnings from upstream PuLP 3.x library).
-2. Live rules verification function needs to run on server startup and report diff in health check.

@@ -2,10 +2,8 @@
 Unit tests for API models and defensive parsing.
 """
 
-import pytest
-from fpl_oracle.api.models import (
-    BootstrapStatic, Team, Element, Fixture, GameweekEvent, ChipDefinition
-)
+from fpl_oracle.api.models import BootstrapStatic, Element, Team
+
 
 def test_team_parsing_with_null_strength():
     """Verify that null strength (as seen in 2026/27 live API) parses cleanly without crashing."""

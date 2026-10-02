@@ -2,10 +2,10 @@
 Unit tests for 2026/27 Chip Strategy Engine, Set boundaries, and Banking rules.
 """
 
-import pytest
+from fpl_oracle.api.models import ChipHistoryItem, ManagerHistory
 from fpl_oracle.chips.planner import chip_planner
-from fpl_oracle.api.models import ManagerHistory, ChipHistoryItem
 from fpl_oracle.config import RULES
+
 
 def test_chip_rules_config_2026_27():
     """Verify that chip configuration matches official 2026/27 rules."""

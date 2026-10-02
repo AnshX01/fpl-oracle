@@ -79,7 +79,8 @@ class SquadOptimizer:
             # Talisman Anchor constraint: If pool has ultra-premiums (>= 115) and budget allows,
             # guarantee at least 1 talisman anchor in squad
             if require_talisman and budget >= 950.0:
-                prem_indices = [idx for idx in df.index if float(df.loc[idx, "value"]) >= 115.0]
+                cost_col = "value" if "value" in df.columns else "now_cost"
+                prem_indices = [idx for idx in df.index if float(df.loc[idx, cost_col]) >= 115.0]
                 if prem_indices:
                     prob += pulp.lpSum([x[idx] for idx in prem_indices]) >= 1
         else:

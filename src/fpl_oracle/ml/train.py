@@ -53,7 +53,14 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     ml_preds = val_preds_df["expected_points"].values
 
     # Run evaluation and generate reports/model_eval.md
-    metrics = model_evaluator.evaluate_expanding_window(X_val, Y_val, ml_preds)
+    metrics = model_evaluator.evaluate_expanding_window(
+        X=X_val,
+        Y=Y_val,
+        ml_preds=ml_preds,
+        p10=val_preds_df["p10"].values,
+        p50=val_preds_df["p50"].values,
+        p90=val_preds_df["p90"].values,
+    )
     logger.info(f"Validation MAE: ML={metrics['ml_mae']} vs Baseline={metrics['base_mae']} ({metrics['mae_improvement_pct']}% improvement)")
     logger.info(f"Validation Spearman Correlation: ML={metrics['ml_spearman']} vs Baseline={metrics['base_spearman']}")
 

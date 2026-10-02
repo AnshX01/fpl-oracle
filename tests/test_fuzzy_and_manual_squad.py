@@ -2,21 +2,20 @@
 Tests for fuzzy player matching, manual squad input, JSON/CSV parsing, and persistence.
 """
 
-import pytest
 import json
-import httpx
-from pathlib import Path
 
-from fpl_oracle.data.fuzzy_match import fuzzy_matcher, clean_query, strip_accents
-from fpl_oracle.data.store import data_store
+import httpx
+import pytest
+
+from fpl_oracle.data.fuzzy_match import clean_query, fuzzy_matcher, strip_accents
 from fpl_oracle.server.main import app
-from fpl_oracle.api.models import Element
+
 
 def test_clean_query_and_accents():
     # Accented characters
     assert strip_accents("Ødegaard") == "Odegaard"
     assert strip_accents("Magalhães") == "Magalhaes"
-    
+
     # Parenthetical club and position stripping
     assert "Arsenal" not in clean_query("David Raya (Arsenal)")
     assert "DEF" not in clean_query("Gabriel [DEF] - £6.0m")

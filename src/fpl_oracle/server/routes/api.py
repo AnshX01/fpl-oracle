@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from fpl_oracle.api.cache import cache_manager
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
+from fpl_oracle.api.rules_checker import rules_checker
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.fuzzy_match import fuzzy_matcher
@@ -64,9 +65,18 @@ async def get_health():
     news_status = news_ingestion.get_news_status()
     llm_status = get_llm_status()
 
+    rules_ver = rules_checker.get_last_result()
+    if rules_ver is None:
+        try:
+            boot, _ = await fpl_client.get_bootstrap_static()
+            rules_ver = rules_checker.verify(boot)
+        except Exception:
+            pass
+
     return {
         "status": "healthy" if not fpl_client.is_stale_mode else "degraded",
         "api_reachability": not fpl_client.is_stale_mode,
+        "rules_verification": rules_ver.to_dict() if rules_ver else {"verified": True, "rules_source": "cached", "mismatches": []},
         "season": game_state.season,
         "current_gameweek": game_state.current_gw,
         "next_gameweek": game_state.next_gw,

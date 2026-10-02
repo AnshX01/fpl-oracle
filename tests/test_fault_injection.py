@@ -10,14 +10,13 @@ Simulates:
 Verifies that all endpoints return valid JSON and graceful fallbacks with stale flags.
 """
 
-import pytest
 import asyncio
+
 import httpx
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
 
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.server.main import app
+
 
 class FaultInjectingTransport(httpx.AsyncBaseTransport):
     """Custom HTTP transport that simulates network faults."""

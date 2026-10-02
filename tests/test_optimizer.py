@@ -2,13 +2,12 @@
 Unit tests for Mathematical Optimizer (PuLP MILP), Formation rules, and Selling Price math.
 """
 
-import pytest
 import pandas as pd
-import numpy as np
 
-from fpl_oracle.optimise.squad import squad_optimizer
 from fpl_oracle.optimise.lineup import lineup_optimizer
+from fpl_oracle.optimise.squad import squad_optimizer
 from fpl_oracle.optimise.transfers import transfer_optimizer
+
 
 def make_mock_pool():
     rows = []
