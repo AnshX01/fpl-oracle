@@ -8,25 +8,23 @@ Generates comprehensive report in reports/backtest.md.
 """
 
 import logging
-from typing import Dict, Any, List, Optional
-from pathlib import Path
-import numpy as np
-import pandas as pd
+from typing import Any
 
+import numpy as np
+
+from fpl_oracle.config import REPORTS_DIR
+from fpl_oracle.data.features import feature_engineering
 from fpl_oracle.data.historical import historical_manager
-from fpl_oracle.data.features import feature_engineering, FEATURE_COLUMNS
-from fpl_oracle.ml.components.minutes import MinutesModel
+from fpl_oracle.data.store import data_store
 from fpl_oracle.ml.components.attacking import AttackingModel
-from fpl_oracle.ml.components.defending import DefendingModel
-from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.bonus import BonusModel
 from fpl_oracle.ml.components.cards_saves import CardsSavesModel
+from fpl_oracle.ml.components.defcon import DefConModel
+from fpl_oracle.ml.components.defending import DefendingModel
+from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
-from fpl_oracle.optimise.squad import squad_optimizer
 from fpl_oracle.optimise.lineup import lineup_optimizer
-from fpl_oracle.optimise.transfers import transfer_optimizer
-from fpl_oracle.data.store import data_store
-from fpl_oracle.config import REPORTS_DIR
+from fpl_oracle.optimise.squad import squad_optimizer
 
 logger = logging.getLogger("fpl_oracle.backtest")
 
@@ -34,13 +32,13 @@ class BacktestHarness:
     def __init__(self):
         self.report_path = REPORTS_DIR / "backtest.md"
 
-    def run_backtest(self, num_gws: int = 5) -> Dict[str, Any]:
+    def run_backtest(self, num_gws: int = 5) -> dict[str, Any]:
         """
         Run authentic blind out-of-time backtest over completed gameweeks in 2026/27.
         """
         logger.info(f"Starting Blind Out-of-Time Backtest across {num_gws} completed gameweeks...")
         df = historical_manager.ensure_dataset_ready()
-        
+
         # Build pre-deadline features on historical master data (grouped by name, shifted by 1)
         X, Y = feature_engineering.build_historical_features(df)
         df_sorted = df.sort_values(by=["name", "season", "round"]).reset_index(drop=True)
@@ -51,12 +49,18 @@ class BacktestHarness:
         Y_train = Y[train_mask].copy()
 
         logger.info(f"Fitting blind models on {len(X_train)} historical records (pre-2026/27)...")
-        min_m = MinutesModel(); min_m.fit(X_train, Y_train)
-        att_m = AttackingModel(); att_m.fit(X_train, Y_train)
-        def_m = DefendingModel(); def_m.fit(X_train, Y_train)
-        defc_m = DefConModel(); defc_m.fit(X_train, Y_train)
-        bon_m = BonusModel(); bon_m.fit(X_train, Y_train)
-        crd_m = CardsSavesModel(); crd_m.fit(X_train, Y_train)
+        min_m = MinutesModel()
+        min_m.fit(X_train, Y_train)
+        att_m = AttackingModel()
+        att_m.fit(X_train, Y_train)
+        def_m = DefendingModel()
+        def_m.fit(X_train, Y_train)
+        defc_m = DefConModel()
+        defc_m.fit(X_train, Y_train)
+        bon_m = BonusModel()
+        bon_m.fit(X_train, Y_train)
+        crd_m = CardsSavesModel()
+        crd_m.fit(X_train, Y_train)
 
         # 2. Isolate 2026-27 season rounds
         s26_mask = df_sorted["season"] == "2026-27"
@@ -82,7 +86,7 @@ class BacktestHarness:
 
         # Check user's manual squad from profile
         profile = data_store.get_profile()
-        user_elem_ids = set()
+        user_elem_ids: set[int] = set()
         if profile.manual_squad:
             if isinstance(profile.manual_squad, str):
                 try:
@@ -125,7 +129,7 @@ class BacktestHarness:
 
             # Strategy 1: FPL Oracle Elite Strategy (Joint Starter/Bench MILP + Talisman Anchor)
             oracle_squad_res = squad_optimizer.solve_best_squad(actual_r, budget=budget, metric_col="expected_points")
-            
+
             # Select lineup and captain
             if "starters" in oracle_squad_res and len(oracle_squad_res["starters"]) == 11:
                 oracle_lineup = lineup_optimizer.select_lineup_and_captain(oracle_squad_res["squad"])
@@ -263,7 +267,7 @@ class BacktestHarness:
         self.generate_report(results)
         return results
 
-    def generate_report(self, res: Dict[str, Any]):
+    def generate_report(self, res: dict[str, Any]):
         gw_rows = []
         for r in res["per_gw_results"]:
             gw_rows.append(

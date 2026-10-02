@@ -21,14 +21,24 @@ htmlcov/
 # Environment & local credentials
 .env
 
-# Runtime database & caches
+# Runtime database, user profile & caches
 *.db
 *.sqlite
 *.sqlite3
+data/profile.json
 data/cache/*
 data/snapshots/*
 !data/cache/.gitkeep
 !data/snapshots/.gitkeep
+
+# Logs & monitoring
+logs/
+*.log
+
+# Frontend build & dependencies
+frontend/dist/
+frontend/node_modules/
+web/dist/
 
 # Scratch & temporary files
 scratch/

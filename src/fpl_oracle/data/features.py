@@ -4,12 +4,12 @@ Computes rolling form, season-to-date stats, team ratings, and contextual match 
 """
 
 import logging
-from typing import List, Tuple, Dict, Any, Optional
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
-from fpl_oracle.config import RULES, SCORING
 
 logger = logging.getLogger("fpl_oracle.features")
 
@@ -41,7 +41,7 @@ class FeatureEngineering:
     def __init__(self):
         pass
 
-    def build_historical_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def build_historical_features(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Build pre-deadline features on historical match data.
         Returns (features_df, targets_df).
@@ -71,10 +71,10 @@ class FeatureEngineering:
 
         # Shifted rolling stats (Strictly pre-match!)
         for window in [3, 5, 8]:
-            df[f"roll_minutes_{window}"] = grouped["minutes"].apply(lambda s: s.shift(1).rolling(window, min_periods=1).mean()).fillna(0.0)
-            df[f"roll_points_{window}"] = grouped["total_points"].apply(lambda s: s.shift(1).rolling(window, min_periods=1).mean()).fillna(0.0)
-            df[f"roll_xG_{window}"] = grouped["expected_goals"].apply(lambda s: s.shift(1).rolling(window, min_periods=1).mean()).fillna(0.0)
-            df[f"roll_xA_{window}"] = grouped["expected_assists"].apply(lambda s: s.shift(1).rolling(window, min_periods=1).mean()).fillna(0.0)
+            df[f"roll_minutes_{window}"] = grouped["minutes"].apply(lambda s, w=window: s.shift(1).rolling(w, min_periods=1).mean()).fillna(0.0)
+            df[f"roll_points_{window}"] = grouped["total_points"].apply(lambda s, w=window: s.shift(1).rolling(w, min_periods=1).mean()).fillna(0.0)
+            df[f"roll_xG_{window}"] = grouped["expected_goals"].apply(lambda s, w=window: s.shift(1).rolling(w, min_periods=1).mean()).fillna(0.0)
+            df[f"roll_xA_{window}"] = grouped["expected_assists"].apply(lambda s, w=window: s.shift(1).rolling(w, min_periods=1).mean()).fillna(0.0)
 
         df["roll_starts_ratio_5"] = grouped["starts"].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(0.0)
         df["roll_min60_ratio_5"] = grouped["minutes"].apply(lambda s: (s.shift(1) >= 60).astype(float).rolling(5, min_periods=1).mean()).fillna(0.0)
@@ -135,9 +135,9 @@ class FeatureEngineering:
     def extract_live_features_for_upcoming(
         self,
         bootstrap: BootstrapStatic,
-        fixtures: List[Fixture],
+        fixtures: list[Fixture],
         target_gw: int,
-        history_df: Optional[pd.DataFrame] = None
+        history_df: pd.DataFrame | None = None
     ) -> pd.DataFrame:
         """
         Build feature records for all 667 players for a target upcoming gameweek.
@@ -151,7 +151,7 @@ class FeatureEngineering:
         gw_fixtures = [f for f in fixtures if f.event == target_gw]
 
         # Map team fixtures: team_id -> list of (opponent_id, was_home, difficulty)
-        team_fixtures: Dict[int, List[Dict[str, Any]]] = {t.id: [] for t in bootstrap.teams}
+        team_fixtures: dict[int, list[dict[str, Any]]] = {t.id: [] for t in bootstrap.teams}
         for f in gw_fixtures:
             team_fixtures[f.team_h].append({
                 "opponent": f.team_a,
@@ -171,9 +171,7 @@ class FeatureEngineering:
 
             # Injury & chance of playing
             cop = 100.0
-            if elem.status == "i":
-                cop = 0.0
-            elif elem.status == "s":
+            if elem.status == "i" or elem.status == "s":
                 cop = 0.0
             elif elem.chance_of_playing_next_round is not None:
                 cop = float(elem.chance_of_playing_next_round)
@@ -241,8 +239,8 @@ class FeatureEngineering:
                 opp_team = team_dict.get(fix["opponent"])
                 my_team = team_dict.get(elem.team)
 
-                my_att = float((my_team.strength_attack_home if fix["was_home"] else my_team.strength_attack_away) or 1000) / 300.0
-                opp_def = float((opp_team.strength_defence_away if fix["was_home"] else opp_team.strength_defence_home) or 1000) / 300.0
+                my_att = float((my_team.strength_attack_home if fix["was_home"] else my_team.strength_attack_away) or 1000) / 300.0 if my_team else 3.33
+                opp_def = float((opp_team.strength_defence_away if fix["was_home"] else opp_team.strength_defence_home) or 1000) / 300.0 if opp_team else 3.33
 
                 starts_ratio = min(1.0, float(elem.starts or 0) / 5.0) if (elem.starts or 0) > 0 else 0.0
                 min60_ratio = 1.0 if (elem.minutes or 0) >= 270 else (float(elem.minutes or 0) / 300.0)

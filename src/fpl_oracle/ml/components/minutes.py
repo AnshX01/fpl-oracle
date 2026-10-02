@@ -3,13 +3,14 @@ Minutes and Starting probability component model.
 Predicts P(starts), P(min60+), and expected minutes.
 """
 
-from typing import Dict
+
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 
-from fpl_oracle.ml.components.base import BaseComponent
 from fpl_oracle.ml.calibration import Calibrator
+from fpl_oracle.ml.components.base import BaseComponent
+
 
 class MinutesModel(BaseComponent):
     def __init__(self):
@@ -56,7 +57,7 @@ class MinutesModel(BaseComponent):
 
         self.is_fitted = True
 
-    def predict(self, X: pd.DataFrame) -> Dict[str, np.ndarray]:
+    def predict(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
         if not self.is_fitted:
             raise RuntimeError("MinutesModel is not fitted.")
 

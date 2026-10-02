@@ -2,8 +2,9 @@
 Anthropic Claude LLM Provider with tool calling.
 """
 
-from typing import List, Dict, Any
 import logging
+from typing import Any
+
 import httpx
 
 from fpl_oracle.llm.tools import TOOL_DEFINITIONS, tool_executor
@@ -16,7 +17,7 @@ class AnthropicProvider:
         self.model = model
         self.url = "https://api.anthropic.com/v1/messages"
 
-    async def chat(self, messages: List[Dict[str, str]], system_prompt: str) -> str:
+    async def chat(self, messages: list[dict[str, Any]], system_prompt: str) -> str:
         formatted_tools = [
             {
                 "name": t["name"],

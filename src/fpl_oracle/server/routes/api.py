@@ -3,66 +3,98 @@ FastAPI REST API routes for FPL Oracle.
 """
 
 import json
-from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Query, Body
-from pydantic import BaseModel
-import pandas as pd
 
+import pandas as pd
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
+from fpl_oracle.api.cache import cache_manager
 from fpl_oracle.api.fpl_client import fpl_client
+from fpl_oracle.api.game_state import game_state_manager
+from fpl_oracle.briefing.weekly import weekly_briefing_generator
+from fpl_oracle.chips.planner import chip_planner
+from fpl_oracle.data.fuzzy_match import fuzzy_matcher
+from fpl_oracle.data.store import data_store
+from fpl_oracle.league.montecarlo import monte_carlo_simulator
+from fpl_oracle.league.rivals import rival_analyzer
+from fpl_oracle.league.standings import league_standings_manager
+from fpl_oracle.league.strategy import league_strategy_advisor
+from fpl_oracle.llm.agent import expert_agent
+from fpl_oracle.llm.provider import get_llm_status
 from fpl_oracle.ml.predict import projection_engine
-from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.news.ingest import news_ingestion
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.chips.planner import chip_planner
-from fpl_oracle.league.standings import league_standings_manager
-from fpl_oracle.league.rivals import rival_analyzer
-from fpl_oracle.league.montecarlo import monte_carlo_simulator
-from fpl_oracle.league.strategy import league_strategy_advisor
-from fpl_oracle.briefing.weekly import weekly_briefing_generator
-from fpl_oracle.llm.agent import expert_agent
-from fpl_oracle.data.store import data_store
-from fpl_oracle.data.fuzzy_match import fuzzy_matcher
+from fpl_oracle.optimise.transfers import transfer_optimizer
 from fpl_oracle.server.safe_json import SafeJSONResponse, safe_json_serialize
 
 router = APIRouter(prefix="/api", default_response_class=SafeJSONResponse)
 
 class ProfileUpdateRequest(BaseModel):
-    manager_id: Optional[int] = None
-    target_league_id: Optional[int] = None
-    risk_preference: Optional[str] = None
-    llm_provider: Optional[str] = None
-    bank: Optional[float] = None
-    free_transfers: Optional[int] = None
+    manager_id: int | None = None
+    target_league_id: int | None = None
+    risk_preference: str | None = None
+    llm_provider: str | None = None
+    bank: float | None = None
+    free_transfers: int | None = None
 
 class MatchSquadRequest(BaseModel):
     raw_text: str
 
 class ManualSquadRequest(BaseModel):
-    player_ids: List[int]
-    bank: Optional[float] = 0.0
-    free_transfers: Optional[int] = 1
+    player_ids: list[int]
+    bank: float | None = 0.0
+    free_transfers: int | None = 1
 
 class OptimizeRequest(BaseModel):
-    locked_in: Optional[List[int]] = None
-    locked_out: Optional[List[int]] = None
-    excluded_teams: Optional[List[int]] = None
-    custom_budget: Optional[float] = None
+    locked_in: list[int] | None = None
+    locked_out: list[int] | None = None
+    excluded_teams: list[int] | None = None
+    custom_budget: float | None = None
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: Optional[str] = "default"
+    session_id: str | None = "default"
 
 @router.get("/health")
 async def get_health():
-    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    game_state = await game_state_manager.get_game_state()
+    cache_ages = cache_manager.get_all_cache_ages()
+    model_status = projection_engine.get_model_status()
+    news_status = news_ingestion.get_news_status()
+    llm_status = get_llm_status()
+
     return {
-        "status": "healthy",
-        "season": "2026/27",
-        "current_gameweek": curr_gw,
-        "next_gameweek": next_gw,
+        "status": "healthy" if not fpl_client.is_stale_mode else "degraded",
+        "api_reachability": not fpl_client.is_stale_mode,
+        "season": game_state.season,
+        "current_gameweek": game_state.current_gw,
+        "next_gameweek": game_state.next_gw,
+        "game_state": {
+            "phase": game_state.phase.value,
+            "deadline_time": game_state.deadline_time,
+            "seconds_to_deadline": game_state.seconds_to_deadline,
+            "is_live": game_state.is_live,
+            "bonus_added": game_state.bonus_added,
+            "leagues_updated": game_state.leagues_updated,
+            "blank_gws": game_state.blank_gws,
+            "double_gws": game_state.double_gws,
+            "postponed_fixtures_count": game_state.postponed_fixtures_count
+        },
+        "cache_age_seconds": cache_ages,
+        "model": model_status,
+        "news": news_status,
+        "llm": llm_status,
         "is_stale": fpl_client.is_stale_mode,
-        "last_sync": fpl_client.last_sync_time.isoformat() if fpl_client.last_sync_time else None
+        "stale": fpl_client.is_stale_mode,
+        "last_sync": fpl_client.last_sync_time.isoformat() if fpl_client.last_sync_time else None,
+        "data_as_of": game_state.data_as_of
     }
+
+@router.get("/game-state")
+async def get_game_state_endpoint():
+    state = await game_state_manager.get_game_state()
+    return safe_json_serialize(state.model_dump())
 
 @router.get("/profile")
 def get_profile():
@@ -89,7 +121,7 @@ def update_profile(req: ProfileUpdateRequest):
     return {"status": "success", "profile": get_profile()}
 
 @router.get("/squad")
-async def get_squad(manager_id: Optional[int] = None):
+async def get_squad(manager_id: int | None = None):
     profile = data_store.get_profile()
     m_id = manager_id or profile.manager_id
 
@@ -224,7 +256,10 @@ async def get_squad(manager_id: Optional[int] = None):
         "vice_captain": lineup_res["vice_captain"],
         "starters": starters_out,
         "bench": bench_out,
-        "total_expected_points": lineup_res["total_gameweek_expected_points"]
+        "total_expected_points": lineup_res["total_gameweek_expected_points"],
+        "stale": is_stale,
+        "is_stale": is_stale,
+        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
     })
 
 @router.post("/squad/match")
@@ -243,7 +278,7 @@ async def save_manual_squad(req: ManualSquadRequest):
 
     # Verify positions and 3-per-club rule
     pos_counts = {1: 0, 2: 0, 3: 0, 4: 0}
-    team_counts = {}
+    team_counts: dict[int, int] = {}
     for pid in req.player_ids:
         if pid not in elem_dict:
             raise HTTPException(status_code=400, detail=f"Player ID {pid} is invalid.")
@@ -269,11 +304,11 @@ async def save_manual_squad(req: ManualSquadRequest):
 
 @router.get("/projections")
 async def get_projections(
-    position: Optional[str] = None,
-    team_id: Optional[int] = None,
+    position: str | None = None,
+    team_id: int | None = None,
     horizon: int = Query(5, ge=1, le=8)
 ):
-    boot, _ = await fpl_client.get_bootstrap_static()
+    boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, _ = await fpl_client.get_fixtures()
     _, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
@@ -300,12 +335,19 @@ async def get_projections(
             "exp_defcon_pts": round(float(r.get("exp_defcon_pts", 0.0)), 2)
         })
 
-    return safe_json_serialize({"gameweek": target_gw, "horizon": horizon, "players": results})
+    return safe_json_serialize({
+        "gameweek": target_gw,
+        "horizon": horizon,
+        "players": results,
+        "stale": is_stale,
+        "is_stale": is_stale,
+        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
+    })
 
 @router.post("/optimize")
-async def run_optimizer(req: Optional[OptimizeRequest] = None):
+async def run_optimizer(req: OptimizeRequest | None = None):
     profile = data_store.get_profile()
-    boot, _ = await fpl_client.get_bootstrap_static()
+    boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, _ = await fpl_client.get_fixtures()
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
@@ -357,12 +399,15 @@ async def run_optimizer(req: Optional[OptimizeRequest] = None):
         locked_out_ids=locked_out,
         excluded_team_ids=excl_teams
     )
+    res["stale"] = is_stale
+    res["is_stale"] = is_stale
+    res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     return safe_json_serialize(res)
 
 @router.get("/chips")
 async def get_chip_strategy():
     profile = data_store.get_profile()
-    boot, _ = await fpl_client.get_bootstrap_static()
+    boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, _ = await fpl_client.get_fixtures()
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
@@ -400,10 +445,13 @@ async def get_chip_strategy():
         bootstrap=boot,
         manager_history=hist
     )
+    res["stale"] = is_stale
+    res["is_stale"] = is_stale
+    res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     return safe_json_serialize(res)
 
 @router.get("/league")
-async def get_league_intel(league_id: Optional[int] = None):
+async def get_league_intel(league_id: int | None = None):
     profile = data_store.get_profile()
     l_id = league_id or profile.target_league_id
     if not l_id:
@@ -416,11 +464,14 @@ async def get_league_intel(league_id: Optional[int] = None):
             "template_players": [],
             "differential_players": [],
             "simulation": {"user_win_probability_pct": 0.0, "expected_final_rank": 1.0},
-            "strategy": {"mode_title": "Setup Required", "rationale": "Set your mini-league ID in settings to activate rival analysis.", "tactical_recommendations": []}
+            "strategy": {"mode_title": "Setup Required", "rationale": "Set your mini-league ID in settings to activate rival analysis.", "tactical_recommendations": []},
+            "stale": False,
+            "is_stale": False,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
         })
 
     standings_data = await league_standings_manager.get_league_standings(l_id, max_pages=2)
-    boot, _ = await fpl_client.get_bootstrap_static()
+    boot, is_stale = await fpl_client.get_bootstrap_static()
     curr_gw, _ = await fpl_client.get_current_and_next_gw()
 
     if not standings_data.get("standings"):
@@ -433,7 +484,10 @@ async def get_league_intel(league_id: Optional[int] = None):
             "template_players": [],
             "differential_players": [],
             "simulation": {"user_win_probability_pct": 0.0, "expected_final_rank": 1.0},
-            "strategy": {"mode_title": "No Standings", "rationale": "No standings data returned from FPL API for this league.", "tactical_recommendations": []}
+            "strategy": {"mode_title": "No Standings", "rationale": "No standings data returned from FPL API for this league.", "tactical_recommendations": []},
+            "stale": is_stale,
+            "is_stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
         })
 
     rivals_res = await rival_analyzer.analyze_rivals(
@@ -481,7 +535,10 @@ async def get_league_intel(league_id: Optional[int] = None):
         "template_players": rivals_res["template_players"],
         "differential_players": rivals_res["differential_players"],
         "simulation": mc_res,
-        "strategy": strategy
+        "strategy": strategy,
+        "stale": is_stale,
+        "is_stale": is_stale,
+        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
     })
 
 @router.get("/briefing")
@@ -491,13 +548,19 @@ async def get_briefing():
 @router.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     ans = await expert_agent.answer(user_message=req.message, session_id=req.session_id or "default")
-    return safe_json_serialize({"response": ans})
+    return safe_json_serialize({
+        "response": ans,
+        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
+    })
 
 @router.get("/price-changes")
 async def get_price_changes():
-    boot, _ = await fpl_client.get_bootstrap_static()
+    boot, is_stale = await fpl_client.get_bootstrap_static()
     preds = price_change_predictor.analyze_price_changes(boot)
     return safe_json_serialize({
         "rises": [p for p in preds if p["direction"] in ["RISE_IMMINENT", "LIKELY_RISE"]][:10],
-        "falls": [p for p in preds if p["direction"] in ["FALL_IMMINENT", "LIKELY_FALL"]][:10]
+        "falls": [p for p in preds if p["direction"] in ["FALL_IMMINENT", "LIKELY_FALL"]][:10],
+        "stale": is_stale,
+        "is_stale": is_stale,
+        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
     })

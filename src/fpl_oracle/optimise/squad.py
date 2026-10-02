@@ -8,10 +8,11 @@ Solves exact 15-player squad optimization subject to real FPL rules:
 - Joint Starters/Bench weighting and Talisman Anchoring
 """
 
-from typing import List, Dict, Any, Optional, Set
-import pulp
+from typing import Any
+
 import pandas as pd
-import numpy as np
+import pulp
+
 
 class SquadOptimizer:
     def __init__(self):
@@ -22,12 +23,12 @@ class SquadOptimizer:
         player_pool_df: pd.DataFrame,
         budget: float, # in tenths, e.g. 1000 = £100.0m
         metric_col: str = "expected_points",
-        locked_in_ids: Optional[List[int]] = None,
-        locked_out_ids: Optional[List[int]] = None,
-        excluded_team_ids: Optional[List[int]] = None,
+        locked_in_ids: list[int] | None = None,
+        locked_out_ids: list[int] | None = None,
+        excluded_team_ids: list[int] | None = None,
         bench_weight: float = 0.05,
         require_talisman: bool = True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Solve optimal 15-man squad within budget.
         When optimizing for expected_points, uses joint Starter/Captain/Bench weighting

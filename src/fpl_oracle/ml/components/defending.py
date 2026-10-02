@@ -3,13 +3,14 @@ Defending component model.
 Predicts clean sheet probability P(CS) and expected goals conceded.
 """
 
-from typing import Dict
+
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 
-from fpl_oracle.ml.components.base import BaseComponent
 from fpl_oracle.ml.calibration import Calibrator
+from fpl_oracle.ml.components.base import BaseComponent
+
 
 class DefendingModel(BaseComponent):
     def __init__(self):
@@ -42,7 +43,7 @@ class DefendingModel(BaseComponent):
 
         self.is_fitted = True
 
-    def predict(self, X: pd.DataFrame) -> Dict[str, np.ndarray]:
+    def predict(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
         if not self.is_fitted:
             raise RuntimeError("DefendingModel is not fitted.")
 

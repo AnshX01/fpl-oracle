@@ -10,9 +10,9 @@ This document contains verbatim transcripts from test interactions with the FPL 
 **The Decision:** Roll transfer. Bank 3 free transfers for next gameweek.
 
 **The Numbers (Candidate Plans Evaluated):**
-- **ROLL_TRANSFER**: Roll transfer. Bank 3 free transfers for next gameweek. (Net xP: 76.93, Net Gain: 0.0)
-- **1_TRANSFER**: Transfer out Boscagli -> Maguire (+0.0 xP) (Net xP: 76.93, Net Gain: 0.0)
-- **2_TRANSFERS**: Take 2 free transfers (Net +-0.22 xP) (Net xP: 76.71, Net Gain: -0.22)
+- **ROLL_TRANSFER**: Roll transfer. Bank 3 free transfers for next gameweek. (Net xP: 76.6, Net Gain: 0.0)
+- **1_TRANSFER**: Transfer out Thomas -> Lindelöf (+0.0 xP) (Net xP: 76.6, Net Gain: 0.0)
+- **2_TRANSFERS**: Take 2 free transfers (Net +-0.45 xP) (Net xP: 76.15, Net Gain: -0.45)
 
 **Hit Verdict:** No hit recommended
 
@@ -27,14 +27,14 @@ This document contains verbatim transcripts from test interactions with the FPL 
 ### 🃏 2026/27 Chip Strategy Plan
 **The Decision:** Execute your 4 Set 1 chips before the Gameweek 19 deadline (Saturday 2 January 2027).
 
-⚠️ **SET 1 DEADLINE NOTICE: Gameweek 19 (Saturday 2 January 2027) is the hard deadline for your first set of chips. Any unused Set 1 chips (Wildcard, Free Hit, Triple Captain, Bench Boost) will be permanently forfeited without rollover. Total opportunity cost if unused: ~48.2 expected points.**
+⚠️ **SET 1 DEADLINE NOTICE: Gameweek 19 (Saturday 2 January 2027) is the hard deadline for your first set of chips. Any unused Set 1 chips (Wildcard, Free Hit, Triple Captain, Bench Boost) will be permanently forfeited without rollover. Total opportunity cost if unused: ~46.7 expected points.**
 
 | Chip | Recommended GW | Exp. Gain | Confidence | Tactical Role |
 |---|---|---|---|---|
 | **Wildcard (Set 1)** | GW 5 | +14.0 pts | HIGH | Deploy Wildcard in GW5 to maximize Set 1 returns (+14.0 pts) before the GW19 hard expiry. |
 | **Free Hit (Set 1)** | GW 6 | +6.0 pts | MEDIUM | Deploy Free Hit in GW6 to maximize Set 1 returns (+6.0 pts) before the GW19 hard expiry. |
-| **Triple Captain (Set 1)** | GW 7 | +7.8 pts | MEDIUM | Deploy Triple Captain in GW7 to maximize Set 1 returns (+7.8 pts) before the GW19 hard expiry. |
-| **Bench Boost (Set 1)** | GW 8 | +20.4 pts | HIGH | Deploy Bench Boost in GW8 to maximize Set 1 returns (+20.4 pts) before the GW19 hard expiry. |
+| **Triple Captain (Set 1)** | GW 7 | +7.3 pts | MEDIUM | Deploy Triple Captain in GW7 to maximize Set 1 returns (+7.3 pts) before the GW19 hard expiry. |
+| **Bench Boost (Set 1)** | GW 8 | +19.4 pts | HIGH | Deploy Bench Boost in GW8 to maximize Set 1 returns (+19.4 pts) before the GW19 hard expiry. |
 
 **Key 2026/27 Rule Note:** Remember that Set 1 chips DO NOT carry over into Set 2. The Assistant Manager chip has been removed for 2026/27.
 
@@ -48,9 +48,9 @@ This document contains verbatim transcripts from test interactions with the FPL 
 **The Decision:** Target **Lewis-Skelly** as your premier budget differential for the upcoming fixture swing.
 
 **The Numbers:**
-- **Lewis-Skelly** (£5.4m): 2.32 xP (DefCon: +1.1)
-- **Eze** (£6.2m): 1.67 xP (DefCon: +0.62)
-- **Madueke** (£6.2m): 1.69 xP (DefCon: +0.67)
+- **Lewis-Skelly** (£5.4m): 2.91 xP (DefCon: +1.16)
+- **Eze** (£6.2m): 0.8 xP (DefCon: +0.38)
+- **Madueke** (£6.2m): 0.85 xP (DefCon: +0.38)
 
 **The Why:** High baseline minutes reliability and substantial upside from the 2026/27 DefCon actions and attacking output.
 **Mini-League Strategy:** Under 20% Effective Ownership allows you to rapidly gain ground on rivals holding template assets.
@@ -64,14 +64,14 @@ This document contains verbatim transcripts from test interactions with the FPL 
 ### 🃏 2026/27 Chip Strategy Plan
 **The Decision:** Execute your 4 Set 1 chips before the Gameweek 19 deadline (Saturday 2 January 2027).
 
-⚠️ **SET 1 DEADLINE NOTICE: Gameweek 19 (Saturday 2 January 2027) is the hard deadline for your first set of chips. Any unused Set 1 chips (Wildcard, Free Hit, Triple Captain, Bench Boost) will be permanently forfeited without rollover. Total opportunity cost if unused: ~48.2 expected points.**
+⚠️ **SET 1 DEADLINE NOTICE: Gameweek 19 (Saturday 2 January 2027) is the hard deadline for your first set of chips. Any unused Set 1 chips (Wildcard, Free Hit, Triple Captain, Bench Boost) will be permanently forfeited without rollover. Total opportunity cost if unused: ~46.7 expected points.**
 
 | Chip | Recommended GW | Exp. Gain | Confidence | Tactical Role |
 |---|---|---|---|---|
 | **Wildcard (Set 1)** | GW 5 | +14.0 pts | HIGH | Deploy Wildcard in GW5 to maximize Set 1 returns (+14.0 pts) before the GW19 hard expiry. |
 | **Free Hit (Set 1)** | GW 6 | +6.0 pts | MEDIUM | Deploy Free Hit in GW6 to maximize Set 1 returns (+6.0 pts) before the GW19 hard expiry. |
-| **Triple Captain (Set 1)** | GW 7 | +7.8 pts | MEDIUM | Deploy Triple Captain in GW7 to maximize Set 1 returns (+7.8 pts) before the GW19 hard expiry. |
-| **Bench Boost (Set 1)** | GW 8 | +20.4 pts | HIGH | Deploy Bench Boost in GW8 to maximize Set 1 returns (+20.4 pts) before the GW19 hard expiry. |
+| **Triple Captain (Set 1)** | GW 7 | +7.3 pts | MEDIUM | Deploy Triple Captain in GW7 to maximize Set 1 returns (+7.3 pts) before the GW19 hard expiry. |
+| **Bench Boost (Set 1)** | GW 8 | +19.4 pts | HIGH | Deploy Bench Boost in GW8 to maximize Set 1 returns (+19.4 pts) before the GW19 hard expiry. |
 
 **Key 2026/27 Rule Note:** Remember that Set 1 chips DO NOT carry over into Set 2. The Assistant Manager chip has been removed for 2026/27.
 
@@ -84,14 +84,14 @@ This document contains verbatim transcripts from test interactions with the FPL 
 ### 🃏 2026/27 Chip Strategy Plan
 **The Decision:** Execute your 4 Set 1 chips before the Gameweek 19 deadline (Saturday 2 January 2027).
 
-⚠️ **SET 1 DEADLINE NOTICE: Gameweek 19 (Saturday 2 January 2027) is the hard deadline for your first set of chips. Any unused Set 1 chips (Wildcard, Free Hit, Triple Captain, Bench Boost) will be permanently forfeited without rollover. Total opportunity cost if unused: ~48.2 expected points.**
+⚠️ **SET 1 DEADLINE NOTICE: Gameweek 19 (Saturday 2 January 2027) is the hard deadline for your first set of chips. Any unused Set 1 chips (Wildcard, Free Hit, Triple Captain, Bench Boost) will be permanently forfeited without rollover. Total opportunity cost if unused: ~46.7 expected points.**
 
 | Chip | Recommended GW | Exp. Gain | Confidence | Tactical Role |
 |---|---|---|---|---|
 | **Wildcard (Set 1)** | GW 5 | +14.0 pts | HIGH | Deploy Wildcard in GW5 to maximize Set 1 returns (+14.0 pts) before the GW19 hard expiry. |
 | **Free Hit (Set 1)** | GW 6 | +6.0 pts | MEDIUM | Deploy Free Hit in GW6 to maximize Set 1 returns (+6.0 pts) before the GW19 hard expiry. |
-| **Triple Captain (Set 1)** | GW 7 | +7.8 pts | MEDIUM | Deploy Triple Captain in GW7 to maximize Set 1 returns (+7.8 pts) before the GW19 hard expiry. |
-| **Bench Boost (Set 1)** | GW 8 | +20.4 pts | HIGH | Deploy Bench Boost in GW8 to maximize Set 1 returns (+20.4 pts) before the GW19 hard expiry. |
+| **Triple Captain (Set 1)** | GW 7 | +7.3 pts | MEDIUM | Deploy Triple Captain in GW7 to maximize Set 1 returns (+7.3 pts) before the GW19 hard expiry. |
+| **Bench Boost (Set 1)** | GW 8 | +19.4 pts | HIGH | Deploy Bench Boost in GW8 to maximize Set 1 returns (+19.4 pts) before the GW19 hard expiry. |
 
 **Key 2026/27 Rule Note:** Remember that Set 1 chips DO NOT carry over into Set 2. The Assistant Manager chip has been removed for 2026/27.
 
@@ -111,11 +111,11 @@ No target mini-league ID set in profile. Please enter your League ID.
 ### Assistant Response:
 
 ### ⚖️ Head-to-Head Comparison: Saka vs Palmer (GW6)
-**The Decision:** Start / Prioritize **Saka** over **Palmer** (+0.74 net xP advantage).
+**The Decision:** Start / Prioritize **Saka** over **Palmer** (+1.64 net xP advantage).
 
 **The Numbers:**
-- **Saka** (£9.5m): **7.04 xP** (Floor P10: 2.5, Ceiling P90: 11.57, DefCon: +1.49 pts)
-- **Palmer** (£9.7m): **6.3 xP** (Floor P10: 2.01, Ceiling P90: 10.6, DefCon: +1.72 pts)
+- **Saka** (£9.5m): **7.35 xP** (Floor P10: 2.71, Ceiling P90: 11.98, DefCon: +1.74 pts)
+- **Palmer** (£9.7m): **5.71 xP** (Floor P10: 1.62, Ceiling P90: 9.79, DefCon: +1.94 pts)
 
 **The Why:** Saka holds higher expected minutes and superior underlying box touches and non-penalty xG for the upcoming fixture. Both benefit from the 2026/27 scoring rules.
 **The Risk:** Monitor pre-match team news for any late tactical rotation.
@@ -128,14 +128,14 @@ No target mini-league ID set in profile. Please enter your League ID.
 ### Assistant Response:
 
 ### 🎯 Captaincy Recommendation for Gameweek 6
-**The Decision:** Captain **B.Fernandes** (Safe/Template) or **Mbeumo** (High-Variance Differential).
+**The Decision:** Captain **Saka** (Safe/Template) or **Haaland** (High-Variance Differential).
 
 **The Numbers:**
-- **B.Fernandes**: 7.76 xP (Floor: 2.99, Ceiling: 12.52)
-- **Mbeumo**: 7.33 xP (Floor: 2.7, Ceiling: 11.96)
-- **Saka**: 7.04 xP (Floor: 2.5, Ceiling: 11.57)
+- **Saka**: 7.35 xP (Floor: 2.71, Ceiling: 11.98)
+- **Haaland**: 7.29 xP (Floor: 2.31, Ceiling: 12.28)
+- **Gibbs-White**: 6.85 xP (Floor: 2.38, Ceiling: 11.33)
 
-**The Why:** B.Fernandes ranks highest in the 2026/27 ML model with an elite minutes expectation and attack volume. Mbeumo provides higher ceiling differential upside if you are chasing in your mini-league.
+**The Why:** Saka ranks highest in the 2026/27 ML model with an elite minutes expectation and attack volume. Haaland provides higher ceiling differential upside if you are chasing in your mini-league.
 **The Risk:** Guard against late press-conference rotation notes.
 **What would change the call:** If press conferences indicate minutes management, pivot immediately to your vice-captain.
 
@@ -163,11 +163,11 @@ No target mini-league ID set in profile. Please enter your League ID.
 
 | Gameweek | Status | Action | Banked FT | Key Targets |
 |---|---|---|---|---|
-| **GW 6** | FIRM | Execute Primary Transfer (or Roll to Bank) | Banked FT: 2 | B.Fernandes (7.76 xP), Mbeumo (7.33 xP) |
-| **GW 7** | PROBABLE | Targeted Transfer / Bank FT | Banked FT: 2 | B.Fernandes (7.34 xP), Mbeumo (7.04 xP) |
-| **GW 8** | CONTINGENT_ON_NEWS | Target Fixture Swing / Build toward Chip | Banked FT: 3 | B.Fernandes (7.76 xP), Mbeumo (7.33 xP) |
-| **GW 9** | CONTINGENT_ON_NEWS | Target Fixture Swing / Build toward Chip | Banked FT: 4 | B.Fernandes (7.34 xP), Mbeumo (7.04 xP) |
-| **GW 10** | CONTINGENT_ON_NEWS | Target Fixture Swing / Build toward Chip | Banked FT: 5 | B.Fernandes (7.76 xP), Mbeumo (7.33 xP) |
+| **GW 6** | FIRM | Execute Primary Transfer (or Roll to Bank) | Banked FT: 2 | Saka (7.35 xP), Haaland (7.29 xP) |
+| **GW 7** | PROBABLE | Targeted Transfer / Bank FT | Banked FT: 2 | Saka (6.97 xP), Rogers (6.91 xP) |
+| **GW 8** | CONTINGENT_ON_NEWS | Target Fixture Swing / Build toward Chip | Banked FT: 3 | Saka (7.35 xP), Haaland (7.29 xP) |
+| **GW 9** | CONTINGENT_ON_NEWS | Target Fixture Swing / Build toward Chip | Banked FT: 4 | Saka (6.97 xP), Gibbs-White (6.85 xP) |
+| **GW 10** | CONTINGENT_ON_NEWS | Target Fixture Swing / Build toward Chip | Banked FT: 5 | Saka (7.35 xP), Haaland (7.29 xP) |
 
 **Strategic Note:** Firm steps are locked for the upcoming deadline; contingent steps adjust based on post-match injuries and European cup congestion.
 

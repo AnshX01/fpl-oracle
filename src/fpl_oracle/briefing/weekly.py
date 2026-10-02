@@ -3,30 +3,30 @@ Weekly Gameweek Briefing Automation.
 Generates an executive, data-backed pre-deadline briefing card and markdown export.
 """
 
-from typing import Dict, Any, Optional
-from datetime import datetime, timezone
-import pandas as pd
-import numpy as np
+from datetime import UTC, datetime
+from typing import Any
 
-from fpl_oracle.server.safe_json import safe_json_serialize
+import pandas as pd
 
 from fpl_oracle.api.fpl_client import fpl_client
+from fpl_oracle.chips.planner import chip_planner
+from fpl_oracle.data.store import data_store
+from fpl_oracle.league.rivals import rival_analyzer
+from fpl_oracle.league.standings import league_standings_manager
+from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.ml.predict import projection_engine
-from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.chips.planner import chip_planner
-from fpl_oracle.league.standings import league_standings_manager
-from fpl_oracle.league.rivals import rival_analyzer
-from fpl_oracle.league.strategy import league_strategy_advisor
-from fpl_oracle.news.analyse import news_analyzer
-from fpl_oracle.data.store import data_store
+from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.server.safe_json import safe_json_serialize
+
 
 class WeeklyBriefingGenerator:
     def __init__(self):
         pass
 
-    async def generate_briefing(self, manager_id: Optional[int] = None) -> Dict[str, Any]:
+    async def generate_briefing(self, manager_id: int | None = None) -> dict[str, Any]:
         profile = data_store.get_profile()
         m_id = manager_id or profile.manager_id
 
@@ -137,7 +137,7 @@ class WeeklyBriefingGenerator:
 
         markdown = f"""# ⚽ FPL Oracle — Gameweek {target_gw} Executive Briefing
 
-**Generated:** {datetime.now(timezone.utc).strftime('%A, %d %B %Y %H:%M UTC')}
+**Generated:** {datetime.now(UTC).strftime('%A, %d %B %Y %H:%M UTC')}
 **Deadline:** {deadline_str}
 **Status:** {'⚠️ STALE DATA (API Unavailable)' if is_stale else '🟢 LIVE & SYNCHRONIZED'}
 
@@ -199,6 +199,8 @@ class WeeklyBriefingGenerator:
             "target_gameweek": target_gw,
             "deadline_time": deadline_str,
             "is_stale": is_stale,
+            "stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
             "captain": cap,
             "vice_captain": vc,
             "lineup": lineup_res,

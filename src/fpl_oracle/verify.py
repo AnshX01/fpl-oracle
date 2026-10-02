@@ -10,21 +10,20 @@ Performs:
 6. Summary reporting
 """
 
-import sys
 import asyncio
-from pathlib import Path
+import sys
 
 # Fix Windows console encoding
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+        sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     except Exception:
         pass
 
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
 console = Console(force_terminal=True, legacy_windows=False)
 
@@ -52,7 +51,7 @@ def run_verification() -> bool:
     try:
         from fpl_oracle.data.store import data_store
         prof = data_store.get_profile()
-        checks.append(("Database & Persistent Store", "PASS", f"Profile loaded, DB initialized at {data_store.session_factory}"))
+        checks.append(("Database & Persistent Store", "PASS", f"Profile loaded (risk: {prof.risk_preference}), DB initialized at {data_store.session_factory}"))
     except Exception as e:
         checks.append(("Database & Persistent Store", "FAIL", str(e)))
 

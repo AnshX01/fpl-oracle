@@ -4,11 +4,10 @@ Supports Google Gemini (default), Anthropic, OpenAI, and a standalone OfflineExp
 that operates purely on live data, projections, and mathematical optimizations.
 """
 
-from typing import List, Dict, Any, Optional
-import os
 import logging
+from typing import Any
 
-from fpl_oracle.config import GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY
+from fpl_oracle.config import ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 from fpl_oracle.llm.tools import tool_executor
 
 logger = logging.getLogger("fpl_oracle.llm.provider")
@@ -31,7 +30,7 @@ class OfflineExpertProvider:
     Offline data-grounded expert analyst that executes live tools
     and generates structured FPL Oracle recommendations without external API keys.
     """
-    async def chat(self, messages: List[Dict[str, str]], system_prompt: str) -> str:
+    async def chat(self, messages: list[dict[str, str]], system_prompt: str) -> str:
         last_raw = messages[-1]["content"] if messages else ""
         last_msg = last_raw.lower()
         import re
@@ -98,8 +97,8 @@ class OfflineExpertProvider:
                 f"### 🚀 Top Differential {pos_filter}s (Under £6.5m)\n"
                 f"**The Decision:** Target **{best_diff}** as your premier budget differential for the upcoming fixture swing.\n\n"
                 f"**The Numbers:**\n" + "\n".join(c_lines) + "\n\n"
-                f"**The Why:** High baseline minutes reliability and substantial upside from the 2026/27 DefCon actions and attacking output.\n"
-                f"**Mini-League Strategy:** Under 20% Effective Ownership allows you to rapidly gain ground on rivals holding template assets."
+                "**The Why:** High baseline minutes reliability and substantial upside from the 2026/27 DefCon actions and attacking output.\n"
+                "**Mini-League Strategy:** Under 20% Effective Ownership allows you to rapidly gain ground on rivals holding template assets."
             )
 
         # 4. Captaincy questions
@@ -194,9 +193,30 @@ class OfflineExpertProvider:
             f"I have analyzed the current gameweek based on live FPL API data and ML component projections.\n\n"
             f"**Top Projected Assets for Upcoming Gameweek {proj.get('gameweek')}:**\n"
             + "\n".join([f"- {p}" for p in top_players]) + "\n\n"
-            f"**Scoring Insights:** Projections account for the 2026/27 Defensive Contribution (+2 pts) rule and rebalanced BPS.\n"
-            f"Ask me about specific players, transfer plans, captaincy, chip strategy, or your mini-league rivals!"
+            "**Scoring Insights:** Projections account for the 2026/27 Defensive Contribution (+2 pts) rule and rebalanced BPS.\n"
+            "Ask me about specific players, transfer plans, captaincy, chip strategy, or your mini-league rivals!"
         )
+
+def get_llm_status() -> dict[str, Any]:
+    """Report LLM provider status for diagnostic health checks."""
+    if GEMINI_API_KEY and GEMINI_API_KEY.strip():
+        provider = "gemini"
+        configured = True
+    elif OPENAI_API_KEY and OPENAI_API_KEY.strip():
+        provider = "openai"
+        configured = True
+    elif ANTHROPIC_API_KEY and ANTHROPIC_API_KEY.strip():
+        provider = "anthropic"
+        configured = True
+    else:
+        provider = "offline_expert"
+        configured = False
+    return {
+        "active_provider": provider,
+        "is_api_key_configured": configured,
+        "fallback_available": True,
+        "supported_providers": ["gemini", "openai", "anthropic", "offline_expert"]
+    }
 
 def get_llm_provider() -> Any:
     """Factory to instantiate the appropriate LLM provider."""

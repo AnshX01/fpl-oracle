@@ -4,12 +4,13 @@ Accounts for 2026/27 BPS rebalancing by weighting recent gameweeks
 and utilizing the is_2026_27 indicator feature.
 """
 
-from typing import Dict
+
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 
 from fpl_oracle.ml.components.base import BaseComponent
+
 
 class BonusModel(BaseComponent):
     def __init__(self):
@@ -32,7 +33,7 @@ class BonusModel(BaseComponent):
         self.reg.fit(X, y, sample_weight=weights)
         self.is_fitted = True
 
-    def predict(self, X: pd.DataFrame) -> Dict[str, np.ndarray]:
+    def predict(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
         if not self.is_fitted:
             raise RuntimeError("BonusModel is not fitted.")
 

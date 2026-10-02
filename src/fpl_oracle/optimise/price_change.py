@@ -4,17 +4,18 @@ Uses official API price change metrics, hourly rate, and transfer momentum
 to predict imminent rises and falls tonight.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 import numpy as np
-import pandas as pd
 
 from fpl_oracle.api.models import BootstrapStatic
+
 
 class PriceChangePredictor:
     def __init__(self):
         pass
 
-    def analyze_price_changes(self, bootstrap: BootstrapStatic) -> List[Dict[str, Any]]:
+    def analyze_price_changes(self, bootstrap: BootstrapStatic) -> list[dict[str, Any]]:
         """
         Analyze all elements for price change likelihood tonight.
         Returns sorted list of players near price change thresholds.
@@ -34,7 +35,7 @@ class PriceChangePredictor:
             # 2. Heuristic momentum from transfers_in_event vs transfers_out_event
             net_transfers = (elem.transfers_in_event or 0) - (elem.transfers_out_event or 0)
             ownership = float(elem.selected_by_percent or 1.0)
-            
+
             # Hourly rate from 2026/27 API
             hourly_rate = elem.price_change_hourly_rate or 0
 
@@ -46,9 +47,7 @@ class PriceChangePredictor:
             else:
                 score = (net_transfers / max(5000, ownership * 10000)) * 50.0
 
-            if hourly_rate > 0:
-                score += hourly_rate * 0.5
-            elif hourly_rate < 0:
+            if hourly_rate > 0 or hourly_rate < 0:
                 score += hourly_rate * 0.5
 
             score = float(np.clip(score, -100.0, 100.0))
@@ -82,7 +81,7 @@ class PriceChangePredictor:
             })
 
         # Sort by urgency
-        predictions.sort(key=lambda x: abs(x["urgency_score"]), reverse=True)
+        predictions.sort(key=lambda x: abs(float(str(x["urgency_score"]))), reverse=True)
         return predictions
 
 price_change_predictor = PriceChangePredictor()

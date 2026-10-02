@@ -7,12 +7,12 @@ Enforces verified 2026/27 rules:
 - Assistant Manager chip removed for 2026/27
 """
 
-from typing import List, Dict, Any, Optional, Set, Tuple
 import itertools
-import pandas as pd
-import numpy as np
+from typing import Any
 
-from fpl_oracle.api.models import ManagerHistory, BootstrapStatic, Fixture
+import pandas as pd
+
+from fpl_oracle.api.models import BootstrapStatic, Fixture, ManagerHistory
 from fpl_oracle.chips.calendar import fixture_calendar
 from fpl_oracle.chips.simulate import chip_simulator
 from fpl_oracle.config import RULES
@@ -36,7 +36,7 @@ class ChipPlanner:
     def __init__(self):
         self.rules = RULES
 
-    def get_remaining_chips(self, history: Optional[ManagerHistory]) -> Dict[str, Any]:
+    def get_remaining_chips(self, history: ManagerHistory | None) -> dict[str, Any]:
         """
         Determine remaining chips in Set 1 (GW 1-19) and Set 2 (GW 20-38).
         """
@@ -70,11 +70,11 @@ class ChipPlanner:
         chip: str,
         gw: int,
         current_squad_df: pd.DataFrame,
-        horizon_projections: Dict[int, pd.DataFrame],
-        dgw_gws: List[int],
-        bgw_gws: List[int],
+        horizon_projections: dict[int, pd.DataFrame],
+        dgw_gws: list[int],
+        bgw_gws: list[int],
         budget: float = 1000.0
-    ) -> Tuple[float, str]:
+    ) -> tuple[float, str]:
         """
         Computes expected point gain and confidence for playing a specific chip in gameweek `gw`.
         """
@@ -122,15 +122,15 @@ class ChipPlanner:
 
     def optimize_joint_assignment(
         self,
-        available_gws: List[int],
-        remaining_chips: List[str],
+        available_gws: list[int],
+        remaining_chips: list[str],
         current_squad_df: pd.DataFrame,
-        horizon_projections: Dict[int, pd.DataFrame],
-        dgw_gws: List[int],
-        bgw_gws: List[int],
+        horizon_projections: dict[int, pd.DataFrame],
+        dgw_gws: list[int],
+        bgw_gws: list[int],
         budget: float = 1000.0,
         beam_width: int = 50
-    ) -> Tuple[Dict[str, int], float, List[Dict[str, Any]]]:
+    ) -> tuple[dict[str, int], float, list[dict[str, Any]]]:
         """
         Search joint space of chip assignments using Dynamic Programming / Beam Search.
         Takes into account:
@@ -143,7 +143,7 @@ class ChipPlanner:
             return {}, 0.0, []
 
         # Precompute utilities for each (chip, gw) pair
-        utilities: Dict[str, Dict[int, Tuple[float, str]]] = {c: {} for c in remaining_chips}
+        utilities: dict[str, dict[int, tuple[float, str]]] = {c: {} for c in remaining_chips}
         for c in remaining_chips:
             for g in available_gws:
                 utilities[c][g] = self.compute_chip_utility(
@@ -158,7 +158,7 @@ class ChipPlanner:
 
         # Beam Search over chip assignments
         # State: (assigned_chips: frozenset, used_gws: frozenset, assignment: tuple, total_gain: float)
-        candidates: List[Tuple[float, Dict[str, int]]] = []
+        candidates: list[tuple[float, dict[str, int]]] = []
 
         # If number of combinations is small enough (at most 4 chips over <= 19 gameweeks),
         # an exact search over permutations is fast and provably optimal
@@ -171,7 +171,7 @@ class ChipPlanner:
 
             for combo in gw_combos:
                 for perm in itertools.permutations(remaining_chips):
-                    curr_assign = dict(zip(perm, combo))
+                    curr_assign = dict(zip(perm, combo, strict=False))
                     tot_gain = 0.0
 
                     for chip, gw in curr_assign.items():
@@ -189,7 +189,7 @@ class ChipPlanner:
             # More chips than gameweeks (critical congestion)
             # Assign chips greedily to all available gameweeks
             for perm in itertools.permutations(remaining_chips, len(available_gws)):
-                curr_assign = dict(zip(perm, available_gws))
+                curr_assign = dict(zip(perm, available_gws, strict=False))
                 tot_gain = sum(utilities[chip][gw][0] for chip, gw in curr_assign.items())
                 candidates.append((tot_gain, curr_assign))
 
@@ -222,12 +222,12 @@ class ChipPlanner:
         self,
         current_gw: int,
         current_squad_df: pd.DataFrame,
-        horizon_projections: Dict[int, pd.DataFrame],
-        fixtures: List[Fixture],
+        horizon_projections: dict[int, pd.DataFrame],
+        fixtures: list[Fixture],
         bootstrap: BootstrapStatic,
-        manager_history: Optional[ManagerHistory] = None,
+        manager_history: ManagerHistory | None = None,
         budget: float = 1000.0
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Compute optimal joint chip strategy for both Set 1 (up to GW19) and Set 2 (GW20-38)
         using joint beam search / DP.
@@ -248,11 +248,11 @@ class ChipPlanner:
         # ----------------------------------------------------------------------
         set_1_remaining = chips_status["set_1_remaining"]
         set_1_warning = None
-        set_1_opportunity_cost: Dict[str, float] = {}
+        set_1_opportunity_cost: dict[str, float] = {}
 
-        set1_best_assign = {}
-        set1_best_gain = 0.0
-        set1_alternatives = []
+        set1_best_assign: dict[str, int] = {}
+        set1_best_gain: float = 0.0
+        set1_alternatives: list[dict[str, Any]] = []
 
         if current_gw <= 19 and set_1_remaining:
             available_gws_set_1 = list(range(current_gw, 20))
@@ -267,7 +267,6 @@ class ChipPlanner:
             )
 
             # Check if any chips will expire unused
-            unassigned_set1 = [c for c in set_1_remaining if c not in set1_best_assign]
             total_opp_cost = 0.0
             for c in set_1_remaining:
                 # Opportunity cost is the expected value of deploying that chip

@@ -3,15 +3,16 @@ Fuzzy player name matcher for manual / paste / upload squad input.
 Supports plain text lists, JSON arrays/objects, and CSV formats with accented characters.
 """
 
-from typing import List, Dict, Any, Optional, Union
-import difflib
-import re
-import json
 import csv
+import difflib
 import io
+import json
+import re
 import unicodedata
+from typing import Any
 
 from fpl_oracle.api.models import Element
+
 
 def strip_accents(text: str) -> str:
     """Normalize and remove diacritics/accents (e.g. Ødegaard -> Odegaard, Magalhães -> Magalhaes)."""
@@ -39,9 +40,9 @@ class FuzzyPlayerMatcher:
     def match_single_name(
         self,
         query: str,
-        elements: List[Element],
-        team_map: Optional[Dict[int, str]] = None
-    ) -> Dict[str, Any]:
+        elements: list[Element],
+        team_map: dict[int, str] | None = None
+    ) -> dict[str, Any]:
         """
         Fuzzy match a single player name string against element candidates.
         """
@@ -54,8 +55,8 @@ class FuzzyPlayerMatcher:
         scored_candidates = []
         for elem in elements:
             web_name_norm = strip_accents(elem.web_name).lower()
-            first_name_norm = strip_accents(elem.first_name).lower()
-            second_name_norm = strip_accents(elem.second_name).lower()
+            first_name_norm = strip_accents(str(elem.first_name or "")).lower()
+            second_name_norm = strip_accents(str(elem.second_name or "")).lower()
             full_name_norm = f"{first_name_norm} {second_name_norm}"
 
             # Exact matching
@@ -88,9 +89,9 @@ class FuzzyPlayerMatcher:
                     "score": round(score, 2)
                 })
 
-        scored_candidates.sort(key=lambda x: x["score"], reverse=True)
+        scored_candidates.sort(key=lambda x: float(str(x["score"])), reverse=True)
 
-        if scored_candidates and scored_candidates[0]["score"] >= 0.55:
+        if scored_candidates and float(str(scored_candidates[0]["score"])) >= 0.55:
             best = scored_candidates[0]
             alts = scored_candidates[1:5]
             return {
@@ -109,7 +110,7 @@ class FuzzyPlayerMatcher:
                 "alternatives": scored_candidates[:4]
             }
 
-    def extract_names_from_raw(self, raw_input: Union[str, List[Any]]) -> List[str]:
+    def extract_names_from_raw(self, raw_input: str | list[Any]) -> list[str]:
         """
         Parse raw input string or object list into individual player name queries.
         Handles JSON arrays/objects, CSV strings, or newline-delimited text.
@@ -178,10 +179,10 @@ class FuzzyPlayerMatcher:
 
     def parse_and_match_squad(
         self,
-        raw_input: Union[str, List[str]],
-        elements: List[Element],
-        team_map: Optional[Dict[int, str]] = None
-    ) -> Dict[str, Any]:
+        raw_input: str | list[str],
+        elements: list[Element],
+        team_map: dict[int, str] | None = None
+    ) -> dict[str, Any]:
         """
         Parse raw input (plain text, JSON, CSV) and fuzzy match all candidate players.
         """
@@ -206,7 +207,7 @@ class FuzzyPlayerMatcher:
 
         # Validate formation & constraints
         pos_counts = {"GKP": 0, "DEF": 0, "MID": 0, "FWD": 0}
-        club_counts: Dict[int, int] = {}
+        club_counts: dict[int, int] = {}
         total_cost = 0.0
 
         for m in matches:

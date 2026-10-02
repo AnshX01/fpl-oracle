@@ -4,9 +4,10 @@ Fetches official FPL injury and status data, and pulls live RSS feeds from
 verified football news outlets (BBC, Sky Sports, The Guardian).
 """
 
-from typing import List, Dict, Any, Optional, Set
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
+
 import feedparser
 import httpx
 
@@ -18,9 +19,24 @@ logger = logging.getLogger("fpl_oracle.news.ingest")
 class NewsIngestion:
     def __init__(self):
         self.sources_cfg = NEWS_SOURCES.get("rss_feeds", [])
-        self.dead_feeds: Set[str] = set()
+        self.dead_feeds: set[str] = set()
+        self.last_fetch_time: datetime | None = None
+        self.last_articles_count: int = 0
 
-    def fetch_official_fpl_signals(self, bootstrap: BootstrapStatic) -> List[Dict[str, Any]]:
+    def get_news_status(self) -> dict[str, Any]:
+        """Return diagnostic metrics for news pipeline."""
+        total_feeds = len(self.sources_cfg)
+        active_feeds = total_feeds - len(self.dead_feeds)
+        return {
+            "last_fetch": self.last_fetch_time.isoformat() if self.last_fetch_time else None,
+            "total_configured_feeds": total_feeds,
+            "active_feeds": active_feeds,
+            "dead_feeds_count": len(self.dead_feeds),
+            "dead_feed_ids": list(self.dead_feeds),
+            "last_articles_count": self.last_articles_count
+        }
+
+    def fetch_official_fpl_signals(self, bootstrap: BootstrapStatic) -> list[dict[str, Any]]:
         """
         Extract authoritative injury, suspension, and availability updates from FPL bootstrap.
         """
@@ -45,12 +61,12 @@ class NewsIngestion:
                     "chance_of_playing_this_round": elem.chance_of_playing_this_round,
                     "source": "Official FPL API",
                     "confidence": 1.0,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "timestamp": datetime.now(UTC).isoformat()
                 })
 
         return updates
 
-    async def fetch_rss_articles(self) -> List[Dict[str, Any]]:
+    async def fetch_rss_articles(self) -> list[dict[str, Any]]:
         """
         Fetch articles from configured RSS feeds with graceful error handling and automatic dead feed dropping.
         """
@@ -73,7 +89,7 @@ class NewsIngestion:
                             title = getattr(entry, "title", "")
                             summary = getattr(entry, "summary", "")
                             link = getattr(entry, "link", "")
-                            published = getattr(entry, "published", datetime.now(timezone.utc).isoformat())
+                            published = getattr(entry, "published", datetime.now(UTC).isoformat())
 
                             articles.append({
                                 "source_id": feed_id,
@@ -91,6 +107,8 @@ class NewsIngestion:
                 logger.warning(f"Dropping unreachable RSS feed {feed_name} ({feed_url}): {e}")
                 self.dead_feeds.add(feed_id)
 
+        self.last_fetch_time = datetime.now(UTC)
+        self.last_articles_count = len(articles)
         return articles
 
 news_ingestion = NewsIngestion()

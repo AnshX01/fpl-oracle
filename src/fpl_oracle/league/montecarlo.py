@@ -4,9 +4,11 @@ Simulates player point distributions across rivals to estimate
 championship probability P(1st) and rank distributions.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 import numpy as np
 import pandas as pd
+
 
 class MonteCarloSimulator:
     def __init__(self, n_simulations: int = 500):
@@ -16,10 +18,10 @@ class MonteCarloSimulator:
         self,
         user_points: float,
         user_squad_df: pd.DataFrame,
-        rival_squads: List[Dict[str, Any]],
+        rival_squads: list[dict[str, Any]],
         projections_df: pd.DataFrame,
         horizon_gws: int = 5
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Run Monte Carlo simulations across user and rivals over the horizon.
         """
@@ -61,8 +63,6 @@ class MonteCarloSimulator:
         user_wins = 0
         user_top3 = 0
         user_ranks = []
-
-        n_rivals = len(rival_entries)
 
         for _ in range(self.n_simulations):
             # Simulate gameweeks

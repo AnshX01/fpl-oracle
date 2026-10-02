@@ -3,9 +3,8 @@ Google Gemini LLM Provider with tool-calling capabilities.
 Connects directly to Google Generative Language API via httpx.
 """
 
-from typing import List, Dict, Any, Optional
-import json
 import logging
+
 import httpx
 
 from fpl_oracle.llm.tools import TOOL_DEFINITIONS, tool_executor
@@ -18,7 +17,7 @@ class GeminiProvider:
         self.model = model
         self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
 
-    async def chat(self, messages: List[Dict[str, str]], system_prompt: str) -> str:
+    async def chat(self, messages: list[dict[str, str]], system_prompt: str) -> str:
         """
         Execute multi-turn conversation with tool calling loop against Gemini API.
         """

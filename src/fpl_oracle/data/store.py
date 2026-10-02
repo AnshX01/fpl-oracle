@@ -4,30 +4,41 @@ Persists API cache, snapshots, user profile, decisions log, and chat sessions.
 """
 
 import json
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Text, Float, DateTime, Boolean, text
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    text,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
-from fpl_oracle.config import DB_PATH, BASE_DIR
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+from fpl_oracle.config import BASE_DIR, DB_PATH
 
 PROFILE_JSON_PATH = BASE_DIR / "data" / "profile.json"
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 class APICacheEntry(Base):
     __tablename__ = "api_cache"
     key = Column(String(255), primary_key=True)
     data_json = Column(Text, nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
     expires_at = Column(DateTime, nullable=False)
 
 class RawSnapshot(Base):
     __tablename__ = "raw_snapshots"
     id = Column(Integer, primary_key=True, autoincrement=True)
     endpoint = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     payload_json = Column(Text, nullable=False)
 
 class UserProfile(Base):
@@ -40,7 +51,7 @@ class UserProfile(Base):
     bank = Column(Float, default=0.0) # in millions, e.g. 1.5
     free_transfers = Column(Integer, default=1)
     manual_squad = Column(Text, nullable=True) # JSON list of element IDs
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 class DecisionRecord(Base):
     __tablename__ = "decision_records"
@@ -52,7 +63,7 @@ class DecisionRecord(Base):
     expected_points = Column(Float, nullable=True)
     actual_points = Column(Float, nullable=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -60,7 +71,7 @@ class ChatMessage(Base):
     session_id = Column(String(100), default="default")
     role = Column(String(20), nullable=False) # user, assistant, system
     content = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 # Engine and session initialization
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
@@ -78,6 +89,18 @@ def init_db():
 
 init_db()
 
+@dataclass
+class ProfileData:
+    id: int = 1
+    manager_id: int | None = None
+    target_league_id: int | None = None
+    risk_preference: str = "balanced"
+    llm_provider: str = "gemini"
+    bank: float = 0.0
+    free_transfers: int = 1
+    manual_squad: str | None = None
+    updated_at: datetime | None = None
+
 class DataStore:
     def __init__(self):
         self.session_factory = SessionLocal
@@ -85,42 +108,60 @@ class DataStore:
     def get_session(self) -> Session:
         return self.session_factory()
 
-    def get_cache(self, key: str) -> Optional[Dict[str, Any]]:
+    def get_cache_entry(self, key: str) -> tuple[dict[str, Any], datetime] | None:
+        """Return (data, updated_at) if valid cache entry exists."""
         with self.get_session() as session:
             entry = session.query(APICacheEntry).filter(APICacheEntry.key == key).first()
             if entry:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 exp = entry.expires_at
                 if exp.tzinfo is None:
-                    exp = exp.replace(tzinfo=timezone.utc)
+                    exp = exp.replace(tzinfo=UTC)
                 if exp > now:
                     try:
-                        return json.loads(entry.data_json)
+                        upd = entry.updated_at
+                        if upd and upd.tzinfo is None:
+                            upd = upd.replace(tzinfo=UTC)
+                        upd_dt: datetime = upd if isinstance(upd, datetime) else now
+                        return json.loads(str(entry.data_json)), upd_dt
                     except Exception:
                         return None
         return None
 
-    def get_stale_cache(self, key: str) -> Optional[Dict[str, Any]]:
-        """Fallback to any existing cache when API is unreachable."""
+    def get_stale_cache_entry(self, key: str) -> tuple[dict[str, Any], datetime] | None:
+        """Return (data, updated_at) for any existing cache entry when API is unreachable."""
         with self.get_session() as session:
             entry = session.query(APICacheEntry).filter(APICacheEntry.key == key).first()
             if entry:
                 try:
-                    return json.loads(entry.data_json)
+                    upd = entry.updated_at
+                    if upd and upd.tzinfo is None:
+                        upd = upd.replace(tzinfo=UTC)
+                    upd_dt: datetime = upd if isinstance(upd, datetime) else datetime.now(UTC)
+                    return json.loads(str(entry.data_json)), upd_dt
                 except Exception:
                     return None
         return None
 
+    def get_cache(self, key: str) -> dict[str, Any] | None:
+        res = self.get_cache_entry(key)
+        return res[0] if res else None
+
+    def get_stale_cache(self, key: str) -> dict[str, Any] | None:
+        """Fallback to any existing cache when API is unreachable."""
+        res = self.get_stale_cache_entry(key)
+        return res[0] if res else None
+
     def set_cache(self, key: str, data: Any, ttl_seconds: int):
         with self.get_session() as session:
-            now = datetime.now(timezone.utc)
-            expires_at = datetime.fromtimestamp(now.timestamp() + ttl_seconds, tz=timezone.utc)
+            now = datetime.now(UTC)
+            expires_at = datetime.fromtimestamp(now.timestamp() + ttl_seconds, tz=UTC)
             data_str = json.dumps(data)
             entry = session.query(APICacheEntry).filter(APICacheEntry.key == key).first()
             if entry:
-                entry.data_json = data_str
-                entry.updated_at = now
-                entry.expires_at = expires_at
+                entry.data_json = data_str  # type: ignore[assignment]
+                entry.updated_at = now  # type: ignore[assignment]
+                entry.expires_at = expires_at  # type: ignore[assignment]
             else:
                 entry = APICacheEntry(key=key, data_json=data_str, updated_at=now, expires_at=expires_at)
                 session.add(entry)
@@ -130,11 +171,30 @@ class DataStore:
         with self.get_session() as session:
             rec = RawSnapshot(
                 endpoint=endpoint,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 payload_json=json.dumps(data)
             )
             session.add(rec)
             session.commit()
+
+    def get_latest_snapshot(self, endpoint: str) -> tuple[dict[str, Any], datetime] | None:
+        """Retrieve most recent raw snapshot as ultimate fallback."""
+        with self.get_session() as session:
+            rec = (
+                session.query(RawSnapshot)
+                .filter(RawSnapshot.endpoint == endpoint)
+                .order_by(RawSnapshot.created_at.desc())
+                .first()
+            )
+            if rec:
+                try:
+                    upd = rec.created_at
+                    if upd and upd.tzinfo is None:
+                        upd = upd.replace(tzinfo=UTC)
+                    return json.loads(rec.payload_json), upd or datetime.now(UTC)
+                except Exception:
+                    return None
+        return None
 
     def _sync_profile_json(self, profile: UserProfile):
         """Persist profile state to data/profile.json."""
@@ -147,22 +207,22 @@ class DataStore:
                 "llm_provider": profile.llm_provider,
                 "bank": profile.bank,
                 "free_transfers": profile.free_transfers,
-                "manual_squad": json.loads(profile.manual_squad) if profile.manual_squad else None,
-                "updated_at": profile.updated_at.isoformat() if profile.updated_at else datetime.now(timezone.utc).isoformat()
+                "manual_squad": json.loads(str(profile.manual_squad)) if profile.manual_squad else None,
+                "updated_at": profile.updated_at.isoformat() if profile.updated_at else datetime.now(UTC).isoformat()
             }
             with open(PROFILE_JSON_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception:
             pass
 
-    def get_profile(self) -> UserProfile:
+    def get_profile(self) -> ProfileData:
         with self.get_session() as session:
             profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
             if not profile:
                 profile = UserProfile(id=1, manager_id=None, target_league_id=None)
                 if PROFILE_JSON_PATH.exists():
                     try:
-                        with open(PROFILE_JSON_PATH, "r", encoding="utf-8") as f:
+                        with open(PROFILE_JSON_PATH, encoding="utf-8") as f:
                             p_data = json.load(f)
                             profile.manager_id = p_data.get("manager_id")
                             profile.target_league_id = p_data.get("target_league_id")
@@ -171,7 +231,7 @@ class DataStore:
                             profile.bank = p_data.get("bank", 0.0)
                             profile.free_transfers = p_data.get("free_transfers", 1)
                             if p_data.get("manual_squad"):
-                                profile.manual_squad = json.dumps(p_data["manual_squad"])
+                                profile.manual_squad = json.dumps(p_data["manual_squad"])  # type: ignore[assignment]
                     except Exception:
                         pass
                 session.add(profile)
@@ -181,16 +241,16 @@ class DataStore:
             if not PROFILE_JSON_PATH.exists():
                 self._sync_profile_json(profile)
 
-            return UserProfile(
-                id=profile.id,
-                manager_id=profile.manager_id,
-                target_league_id=profile.target_league_id,
-                risk_preference=profile.risk_preference,
-                llm_provider=profile.llm_provider,
-                bank=profile.bank,
-                free_transfers=profile.free_transfers,
-                manual_squad=profile.manual_squad,
-                updated_at=profile.updated_at
+            return ProfileData(
+                id=int(profile.id) if profile.id is not None else 1,
+                manager_id=int(profile.manager_id) if profile.manager_id is not None else None,
+                target_league_id=int(profile.target_league_id) if profile.target_league_id is not None else None,
+                risk_preference=str(profile.risk_preference or "balanced"),
+                llm_provider=str(profile.llm_provider or "gemini"),
+                bank=float(profile.bank or 0.0),
+                free_transfers=int(profile.free_transfers or 1),
+                manual_squad=str(profile.manual_squad) if profile.manual_squad else None,
+                updated_at=profile.updated_at if isinstance(profile.updated_at, datetime) else None
             )
 
     def update_profile(self, **kwargs):
@@ -201,27 +261,27 @@ class DataStore:
                 session.add(profile)
             for k, v in kwargs.items():
                 if k == "manual_squad" and isinstance(v, list):
-                    setattr(profile, "manual_squad", json.dumps(v))
+                    profile.manual_squad = json.dumps(v)
                 elif hasattr(profile, k) and v is not None:
                     setattr(profile, k, v)
-            profile.updated_at = datetime.now(timezone.utc)
+            profile.updated_at = datetime.now(UTC)
             session.commit()
             session.refresh(profile)
             self._sync_profile_json(profile)
 
-    def log_decision(self, gameweek: int, decision_type: str, recommendation: str, expected_points: Optional[float] = None):
+    def log_decision(self, gameweek: int, decision_type: str, recommendation: str, expected_points: float | None = None):
         with self.get_session() as session:
             rec = DecisionRecord(
                 gameweek=gameweek,
                 decision_type=decision_type,
                 recommendation=recommendation,
                 expected_points=expected_points,
-                created_at=datetime.now(timezone.utc)
+                created_at=datetime.now(UTC)
             )
             session.add(rec)
             session.commit()
 
-    def get_chat_history(self, session_id: str = "default", limit: int = 50) -> List[Dict[str, str]]:
+    def get_chat_history(self, session_id: str = "default", limit: int = 50) -> list[dict[str, str]]:
         with self.get_session() as session:
             msgs = (
                 session.query(ChatMessage)
@@ -234,7 +294,7 @@ class DataStore:
 
     def add_chat_message(self, role: str, content: str, session_id: str = "default"):
         with self.get_session() as session:
-            msg = ChatMessage(session_id=session_id, role=role, content=content, created_at=datetime.now(timezone.utc))
+            msg = ChatMessage(session_id=session_id, role=role, content=content, created_at=datetime.now(UTC))
             session.add(msg)
             session.commit()
 

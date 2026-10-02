@@ -3,15 +3,17 @@ Gameweek Calendar & Blank/Double Gameweek Detector.
 Analyzes fixtures across the 38 gameweeks to detect blanks, doubles, and reschedulings.
 """
 
-from typing import List, Dict, Any, Tuple
 from collections import defaultdict
-from fpl_oracle.api.models import Fixture, BootstrapStatic
+from typing import Any
+
+from fpl_oracle.api.models import BootstrapStatic, Fixture
+
 
 class FixtureCalendar:
     def __init__(self):
         pass
 
-    def analyze_calendar(self, fixtures: List[Fixture], bootstrap: BootstrapStatic) -> Dict[str, Any]:
+    def analyze_calendar(self, fixtures: list[Fixture], bootstrap: BootstrapStatic) -> dict[str, Any]:
         """
         Analyze all fixtures to detect Blank Gameweeks (BGW) and Double Gameweeks (DGW).
         """
@@ -19,8 +21,8 @@ class FixtureCalendar:
         team_short = {t.id: t.short_name for t in bootstrap.teams}
 
         # Count fixtures per team per gameweek: (gw, team_id) -> list of fixture_ids
-        team_gw_fixtures = defaultdict(list)
-        gw_fixtures_count = defaultdict(int)
+        team_gw_fixtures: dict[tuple[int, int], list[Fixture]] = defaultdict(list)
+        gw_fixtures_count: dict[int, int] = defaultdict(int)
 
         for f in fixtures:
             if f.event is not None:
@@ -36,7 +38,7 @@ class FixtureCalendar:
             dgw_teams = []
             bgw_teams = []
 
-            for t_id in team_names.keys():
+            for t_id in team_names:
                 count = len(team_gw_fixtures[(gw, t_id)])
                 if count > 1:
                     dgw_teams.append({

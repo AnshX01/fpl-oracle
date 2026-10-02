@@ -2,8 +2,10 @@
 Text extraction and HTML sanitization for news articles.
 """
 
-from bs4 import BeautifulSoup
 import re
+
+from bs4 import BeautifulSoup
+
 
 class TextExtractor:
     def clean_html(self, raw_html: str) -> str:

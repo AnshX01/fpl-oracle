@@ -5,20 +5,20 @@ to deliver single and multi-gameweek player point distributions.
 """
 
 import logging
-from typing import Dict, List, Optional, Any
-from pathlib import Path
-import numpy as np
+from datetime import UTC
+from typing import Any
+
 import pandas as pd
 
-from fpl_oracle.config import MODELS_DIR
 from fpl_oracle.api.models import BootstrapStatic, Fixture
-from fpl_oracle.data.features import feature_engineering, FEATURE_COLUMNS
-from fpl_oracle.ml.components.minutes import MinutesModel
+from fpl_oracle.config import MODELS_DIR
+from fpl_oracle.data.features import FEATURE_COLUMNS, feature_engineering
 from fpl_oracle.ml.components.attacking import AttackingModel
-from fpl_oracle.ml.components.defending import DefendingModel
-from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.bonus import BonusModel
 from fpl_oracle.ml.components.cards_saves import CardsSavesModel
+from fpl_oracle.ml.components.defcon import DefConModel
+from fpl_oracle.ml.components.defending import DefendingModel
+from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
 
 logger = logging.getLogger("fpl_oracle.predict")
@@ -34,7 +34,7 @@ class ProjectionEngine:
         self.cards_saves_model = CardsSavesModel()
         self.is_loaded = False
 
-    def load_or_train(self, X: Optional[pd.DataFrame] = None, Y: Optional[pd.DataFrame] = None):
+    def load_or_train(self, X: pd.DataFrame | None = None, Y: pd.DataFrame | None = None):
         """Load trained model weights from disk or train if missing."""
         weights = [
             (self.minutes_model, self.models_dir / "minutes_model.pkl"),
@@ -92,7 +92,7 @@ class ProjectionEngine:
         self,
         target_gw: int,
         bootstrap: BootstrapStatic,
-        fixtures: List[Fixture]
+        fixtures: list[Fixture]
     ) -> pd.DataFrame:
         """
         Generate expected points for all players for a specific gameweek.
@@ -175,8 +175,8 @@ class ProjectionEngine:
         start_gw: int,
         horizon: int,
         bootstrap: BootstrapStatic,
-        fixtures: List[Fixture]
-    ) -> Dict[int, pd.DataFrame]:
+        fixtures: list[Fixture]
+    ) -> dict[int, pd.DataFrame]:
         """
         Generate projections across an N-gameweek horizon.
         """
@@ -187,5 +187,30 @@ class ProjectionEngine:
             gw_df = self.predict_gameweek(gw, bootstrap, fixtures)
             multi_projections[gw] = gw_df
         return multi_projections
+
+    def get_model_status(self) -> dict[str, Any]:
+        """Return diagnostic metrics on trained model files and loaded state."""
+        weights = [
+            "minutes_model.pkl",
+            "attacking_model.pkl",
+            "defending_model.pkl",
+            "defcon_model.pkl",
+            "bonus_model.pkl",
+            "cards_saves_model.pkl"
+        ]
+        existing = [w for w in weights if (self.models_dir / w).exists()]
+        mtimes = [(self.models_dir / w).stat().st_mtime for w in existing]
+        latest_mtime = max(mtimes) if mtimes else None
+
+        from datetime import datetime
+        trained_iso = datetime.fromtimestamp(latest_mtime, tz=UTC).isoformat() if latest_mtime else None
+
+        return {
+            "version": "v1.0.0-lgbm-2026/27",
+            "is_loaded": self.is_loaded,
+            "components_ready": f"{len(existing)}/{len(weights)}",
+            "all_components_present": len(existing) == len(weights),
+            "last_trained_timestamp": trained_iso
+        }
 
 projection_engine = ProjectionEngine()

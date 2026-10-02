@@ -5,12 +5,15 @@ Generates comprehensive evaluation report in reports/model_eval.md.
 """
 
 import logging
-from typing import Dict, Any, Tuple
-from pathlib import Path
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr, pearsonr
-from sklearn.metrics import mean_absolute_error, root_mean_squared_error, brier_score_loss
+from scipy.stats import pearsonr, spearmanr
+from sklearn.metrics import (
+    mean_absolute_error,
+    root_mean_squared_error,
+)
 
 from fpl_oracle.config import REPORTS_DIR
 
@@ -39,7 +42,7 @@ class ModelEvaluator:
         X: pd.DataFrame,
         Y: pd.DataFrame,
         ml_preds: np.ndarray
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Evaluate ML model predictions vs baseline against ground truth targets.
         """
@@ -92,7 +95,7 @@ class ModelEvaluator:
         self.generate_markdown_report(results)
         return results
 
-    def generate_markdown_report(self, res: Dict[str, Any]):
+    def generate_markdown_report(self, res: dict[str, Any]):
         content = f"""# FPL Oracle — Model Evaluation & Validation Report
 
 ## 1. Executive Summary

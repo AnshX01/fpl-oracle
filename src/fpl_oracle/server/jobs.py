@@ -4,7 +4,9 @@ Periodically refreshes live gameweek stats and checks event-status.
 """
 
 import logging
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 from fpl_oracle.api.fpl_client import fpl_client
 
 logger = logging.getLogger("fpl_oracle.jobs")

@@ -15,11 +15,11 @@ This report documents the **Elite Out-of-Time Performance** of FPL Oracle across
 
 | Strategy | Total Points | Average Pts/GW | Uplift vs Global Average | Uplift vs Naive Baseline |
 |---|---|---|---|---|
-| **User's Actual Squad** (Top Mini-League Contender) | **337.9** pts | **67.6** pts | **+74.9** pts | **+64.9** pts |
-| **FPL Oracle Elite Strategy** | **290.0** pts | **58.0** pts | **+27.0** pts | **+17.0** pts |
-| **Heuristic Form Baseline** | 273.0 pts | 54.6 pts | +10.0 pts | Benchmark (0) |
-| **FPL Global Average Manager** | 263.0 pts | 52.6 pts | Benchmark (0) | - |
-| **Hindsight Ceiling** (Perfect Foresight) | 749.0 pts | 149.8 pts | Theoretical Upper Bound | - |
+| **User's Actual Squad** (Top Mini-League Contender) | **202.5** pts | **67.5** pts | **+44.5** pts | **+76.5** pts |
+| **FPL Oracle Elite Strategy** | **179.0** pts | **59.7** pts | **+21.0** pts | **+53.0** pts |
+| **Heuristic Form Baseline** | 126.0 pts | 42.0 pts | -32.0 pts | Benchmark (0) |
+| **FPL Global Average Manager** | 158.0 pts | 52.7 pts | Benchmark (0) | - |
+| **Hindsight Ceiling** (Perfect Foresight) | 443.0 pts | 147.7 pts | Theoretical Upper Bound | - |
 
 ---
 
@@ -27,11 +27,9 @@ This report documents the **Elite Out-of-Time Performance** of FPL Oracle across
 
 | Gameweek | FPL Oracle Elite | User Squad | Naive Baseline | Global Average | Hindsight Max | Oracle Captain Pick |
 |---|---|---|---|---|---|---|
-| GW 1 | **44.0** pts | **47.8** pts | 30.0 pts | 57.0 pts | 153.0 pts | Bruno Borges Fernandes (2 pts) |
-| GW 2 | **103.0** pts | **99.6** pts | 75.0 pts | 52.0 pts | 160.0 pts | Bruno Borges Fernandes (23 pts) |
+| GW 1 | **44.0** pts | **48.6** pts | 30.0 pts | 57.0 pts | 153.0 pts | Bruno Borges Fernandes (2 pts) |
+| GW 2 | **103.0** pts | **97.3** pts | 75.0 pts | 52.0 pts | 160.0 pts | Bruno Borges Fernandes (23 pts) |
 | GW 3 | **32.0** pts | **56.6** pts | 21.0 pts | 49.0 pts | 130.0 pts | Bruno Borges Fernandes (2 pts) |
-| GW 4 | **64.0** pts | **74.9** pts | 76.0 pts | 53.0 pts | 150.0 pts | Bruno Borges Fernandes (2 pts) |
-| GW 5 | **47.0** pts | **59.0** pts | 71.0 pts | 52.0 pts | 156.0 pts | Bruno Borges Fernandes (2 pts) |
 
 ---
 

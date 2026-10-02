@@ -4,13 +4,12 @@ Solves the optimal starting XI, bench ordering, and captain/vice-captain
 subject to valid formation rules, autosub dynamics, and P10/P50/P90 risk distributions.
 """
 
-from typing import Dict, Any, List, Tuple, Optional
 import math
-import pulp
-import pandas as pd
-import numpy as np
+from typing import Any
 
-from fpl_oracle.config import RULES
+import pandas as pd
+import pulp
+
 
 def normal_prob_greater(mu1: float, sigma1: float, mu2: float, sigma2: float) -> float:
     """Calculates P(X1 > X2) assuming independent normal distributions using math.erf."""
@@ -29,7 +28,7 @@ class LineupOptimizer:
         is_triple_captain: bool = False,
         is_bench_boost: bool = False,
         risk_preference: str = "balanced"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
         Considers P10 floor and P90 ceiling distributions for risk-aware captaincy recommendations.

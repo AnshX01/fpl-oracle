@@ -191,4 +191,22 @@ While FPL Oracle is built with rigorous statistical principles and verified 2026
   4. **Risk-Weighted CapScore**: In `src/fpl_oracle/optimise/lineup.py`, implemented the risk-adjusted formula combining expected points, $P_{90}$ ceiling distribution, and starting probability penalty.
   5. **Out-of-Time 5-GW Validation**: Evaluated against all 5 completed gameweeks of 2026/27. Oracle achieved **290.0 points** (+27.0 pts over Global Average of 263.0, +17.0 pts over Naive Form Baseline of 273.0), successfully forecasting Bruno Fernandes's 23-point haul in GW2 (46 pts as captain) and matching elite mini-league contenders.
 
+### 6.8 Production Resilience, Gameweek Phase Engine & Zero-Error Typing Architecture (Phase 1)
+- **Gameweek State Machine (`src/fpl_oracle/api/game_state.py`)**:
+  - Implemented 5 discrete lifecycle states (`GameweekPhase`): `PRE_DEADLINE`, `LIVE`, `BONUS_PENDING`, `FINISHED`, and `BETWEEN_GWS`.
+  - Automatically calculates exact seconds to deadline, live match clock progress, fixture postponements, and BGW/DGW detection.
+- **Resilient HTTP Client & In-Flight Coalescing (`src/fpl_oracle/api/fpl_client.py`)**:
+  - Persistent `httpx.AsyncClient` utilizing connection pooling (`max_connections=20`, `max_keepalive_connections=10`).
+  - Added randomized jittered exponential backoff (`0.8 + 0.4 * random.random()`), avoiding thundering herd.
+  - Implemented in-flight request coalescing (`_in_flight` task map) to collapse identical concurrent requests into a single outbound fetch.
+  - Provided polite batching (`get_element_summaries_batch`) and pluggable transport injection (`set_transport`/`reset_transport`) for hermetic fault testing.
+- **Fault Injection Test Suite (`tests/test_fault_injection.py`)**:
+  - Verified 100% graceful degradation under 429 Rate Limits (serving stale cache with diagnostic metadata), 503 Service Downtime, Read Timeouts, Schema Drift (Pydantic `extra="allow"`), and malformed squad payloads (HTTP 400 with helpful remediation hints).
+- **Subsystem Diagnostics & Freshness Tracking**:
+  - Enhanced `/api/health` with comprehensive subsystem statuses: upstream reachability, game state countdown, cache ages per dataset, ML component health (6/6 models), and news feed health.
+  - Added `data_as_of` and `stale`/`is_stale` attributes to all JSON responses.
+- **Type Safety & SQLAlchemy 2.0 Modernization**:
+  - Migrated database layer to SQLAlchemy 2.0 `DeclarativeBase` and decoupled domain profile transfer objects via `ProfileData` dataclass.
+  - Resolved all typing discrepancies: mypy reports **0 errors across 51 source files**, and ruff reports **0 errors (100% clean)**.
+
 

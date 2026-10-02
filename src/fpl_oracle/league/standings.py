@@ -3,12 +3,11 @@ Mini-league standings fetcher and parser.
 Paginates through classic leagues and extracts competitor rankings.
 """
 
-from typing import List, Dict, Any, Optional
-import asyncio
 import logging
+from typing import Any
 
 from fpl_oracle.api.fpl_client import fpl_client
-from fpl_oracle.api.models import ClassicLeagueResponse, ClassicStandingResult
+from fpl_oracle.api.models import ClassicStandingResult
 
 logger = logging.getLogger("fpl_oracle.league.standings")
 
@@ -16,12 +15,12 @@ class LeagueStandingsManager:
     def __init__(self):
         pass
 
-    async def get_league_standings(self, league_id: int, max_pages: int = 3) -> Dict[str, Any]:
+    async def get_league_standings(self, league_id: int, max_pages: int = 3) -> dict[str, Any]:
         """
         Fetch standings for a classic mini-league up to max_pages (up to 150 teams).
         """
-        all_results: List[ClassicStandingResult] = []
-        league_info: Dict[str, Any] = {}
+        all_results: list[ClassicStandingResult] = []
+        league_info: dict[str, Any] = {}
 
         for page in range(1, max_pages + 1):
             try:

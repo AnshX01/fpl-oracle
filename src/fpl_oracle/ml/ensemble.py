@@ -4,17 +4,17 @@ Combines decomposed ML components strictly according to verified 2026/27 rules.
 Computes point distributions: P10, P50 (median), P90, and variance.
 """
 
-from typing import Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 
 from fpl_oracle.config import SCORING
 
+
 class ScoringEnsemble:
     def __init__(self):
         self.scoring = SCORING
 
-    def aggregate_components(self, components: Dict[str, np.ndarray], X: pd.DataFrame) -> pd.DataFrame:
+    def aggregate_components(self, components: dict[str, np.ndarray], X: pd.DataFrame) -> pd.DataFrame:
         """
         Aggregate component predictions into expected points and distributions.
         """

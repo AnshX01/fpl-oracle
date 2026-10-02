@@ -4,11 +4,10 @@ Coordinates multi-turn dialogue, tool calling, conversation memory,
 and factual citation generation.
 """
 
-from typing import List, Dict, Any, Optional
 import logging
 
 from fpl_oracle.data.store import data_store
-from fpl_oracle.llm.provider import get_llm_provider, SYSTEM_PROMPT
+from fpl_oracle.llm.provider import SYSTEM_PROMPT, get_llm_provider
 
 logger = logging.getLogger("fpl_oracle.llm.agent")
 

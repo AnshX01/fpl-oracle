@@ -4,19 +4,19 @@ Interactive terminal commands powered by Typer and Rich.
 """
 
 import asyncio
+import sys
+
 import typer
 from rich.console import Console
-from rich.table import Table
-import sys
-import io
-from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
 
 # Ensure utf-8 output on Windows
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+        sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     except Exception:
         pass
 
@@ -28,11 +28,9 @@ def analyze():
     """Run full team, projection, and transfer analysis."""
     async def _run():
         from fpl_oracle.api.fpl_client import fpl_client
+        from fpl_oracle.data.store import data_store
         from fpl_oracle.ml.predict import projection_engine
         from fpl_oracle.optimise.lineup import lineup_optimizer
-        from fpl_oracle.optimise.transfers import transfer_optimizer
-        from fpl_oracle.chips.planner import chip_planner
-        from fpl_oracle.data.store import data_store
 
         console.print("[bold green]=== FPL Oracle 2026/27 Squad Analysis ===[/bold green]")
         boot, _ = await fpl_client.get_bootstrap_static()
@@ -96,9 +94,8 @@ def optimize():
     async def _run():
         from fpl_oracle.api.fpl_client import fpl_client
         from fpl_oracle.ml.predict import projection_engine
-        from fpl_oracle.optimise.transfers import transfer_optimizer
         from fpl_oracle.optimise.squad import squad_optimizer
-        from fpl_oracle.data.store import data_store
+        from fpl_oracle.optimise.transfers import transfer_optimizer
 
         console.print("[bold green]=== FPL Oracle Mathematical Transfer Optimizer ===[/bold green]")
         boot, _ = await fpl_client.get_bootstrap_static()
@@ -142,8 +139,8 @@ def chips():
     """Display 2026/27 dual-set chip strategy plan."""
     async def _run():
         from fpl_oracle.api.fpl_client import fpl_client
-        from fpl_oracle.ml.predict import projection_engine
         from fpl_oracle.chips.planner import chip_planner
+        from fpl_oracle.ml.predict import projection_engine
         from fpl_oracle.optimise.squad import squad_optimizer
 
         console.print("[bold green]=== FPL Oracle 2026/27 Chip Strategy Plan ===[/bold green]")

@@ -4,8 +4,10 @@ Adapts tactical recommendations based on league rank, points deficit/lead,
 and rival effective ownership profiles.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 import pandas as pd
+
 
 class LeagueStrategyAdvisor:
     def __init__(self):
@@ -15,9 +17,9 @@ class LeagueStrategyAdvisor:
         self,
         user_rank: int,
         user_total_points: int,
-        rivals_analysis: Dict[str, Any],
+        rivals_analysis: dict[str, Any],
         user_squad_df: pd.DataFrame
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Formulate tailored strategy mode (DEFENDING_LEAD, CHASING_PACK, BALANCED_ATTACK).
         """

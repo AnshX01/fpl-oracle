@@ -5,7 +5,8 @@ Reads YAML configs from config/ and environment variables from .env.
 
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
+
 import yaml
 from dotenv import load_dotenv
 
@@ -15,18 +16,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Load environment variables
 load_dotenv(BASE_DIR / ".env")
 
-def _load_yaml(path: Path) -> Dict[str, Any]:
+def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 # Load config files
 CONFIG_DIR = BASE_DIR / "config"
-SETTINGS: Dict[str, Any] = _load_yaml(CONFIG_DIR / "settings.yaml")
-RULES: Dict[str, Any] = _load_yaml(CONFIG_DIR / "rules.yaml")
-SCORING: Dict[str, Any] = _load_yaml(CONFIG_DIR / "scoring.yaml")
-NEWS_SOURCES: Dict[str, Any] = _load_yaml(CONFIG_DIR / "news_sources.yaml")
+SETTINGS: dict[str, Any] = _load_yaml(CONFIG_DIR / "settings.yaml")
+RULES: dict[str, Any] = _load_yaml(CONFIG_DIR / "rules.yaml")
+SCORING: dict[str, Any] = _load_yaml(CONFIG_DIR / "scoring.yaml")
+NEWS_SOURCES: dict[str, Any] = _load_yaml(CONFIG_DIR / "news_sources.yaml")
 
 # Environment keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -48,8 +49,9 @@ SNAPSHOTS_DIR = DATA_DIR / "snapshots"
 MODELS_DIR = DATA_DIR / "models"
 HISTORICAL_DIR = DATA_DIR / "historical"
 REPORTS_DIR = BASE_DIR / "reports"
+LOGS_DIR = BASE_DIR / "logs"
 
-for d in [DATA_DIR, CACHE_DIR, SNAPSHOTS_DIR, MODELS_DIR, HISTORICAL_DIR, REPORTS_DIR]:
+for d in [DATA_DIR, CACHE_DIR, SNAPSHOTS_DIR, MODELS_DIR, HISTORICAL_DIR, REPORTS_DIR, LOGS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = DATA_DIR / "fpl_oracle.db"

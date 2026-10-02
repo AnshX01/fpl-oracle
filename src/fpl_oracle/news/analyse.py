@@ -4,14 +4,13 @@ Matches players to news items, categorizes injury severity, rotation risk,
 and quotes, strictly without hallucination.
 """
 
-from typing import List, Dict, Any, Optional
 import re
-from datetime import datetime, timezone
-import pandas as pd
+from typing import Any
 
 from fpl_oracle.api.models import BootstrapStatic
-from fpl_oracle.news.ingest import news_ingestion
 from fpl_oracle.news.extract import text_extractor
+from fpl_oracle.news.ingest import news_ingestion
+
 
 class NewsAnalyzer:
     def __init__(self):
@@ -20,8 +19,8 @@ class NewsAnalyzer:
     async def get_player_news_signals(
         self,
         bootstrap: BootstrapStatic,
-        player_filter_id: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        player_filter_id: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Combine official FPL news and live RSS articles into structured signals.
         """

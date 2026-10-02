@@ -3,12 +3,13 @@ Attacking component model.
 Predicts expected goals (xG) and expected assists (xA).
 """
 
-from typing import Dict
+
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import lightgbm as lgb
 
 from fpl_oracle.ml.components.base import BaseComponent
+
 
 class AttackingModel(BaseComponent):
     def __init__(self):
@@ -37,7 +38,7 @@ class AttackingModel(BaseComponent):
         self.reg_assists.fit(X, Y["target_assists"].values)
         self.is_fitted = True
 
-    def predict(self, X: pd.DataFrame) -> Dict[str, np.ndarray]:
+    def predict(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
         if not self.is_fitted:
             raise RuntimeError("AttackingModel is not fitted.")
 

@@ -2,12 +2,13 @@
 Base class for ML component models.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
 import pickle
+from abc import ABC, abstractmethod
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
 
 class BaseComponent(ABC):
     def __init__(self, name: str):
@@ -19,7 +20,7 @@ class BaseComponent(ABC):
         pass
 
     @abstractmethod
-    def predict(self, X: pd.DataFrame) -> Dict[str, np.ndarray]:
+    def predict(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
         pass
 
     def save(self, filepath: Path):

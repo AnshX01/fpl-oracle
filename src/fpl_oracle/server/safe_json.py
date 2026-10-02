@@ -3,18 +3,20 @@ Safe JSON serialization utilities for FPL Oracle.
 Guarantees clean JSON conversion for NumPy, pandas, datetime, NaNs/infinities, and Pydantic models.
 """
 
-import math
 import json
-from datetime import datetime, date
+import math
+from datetime import date, datetime
 from pathlib import PurePath
+from typing import Any
 from uuid import UUID
-from typing import Any, Dict, List, Set, Union
+
+import fastapi.encoders as fastapi_enc
 import numpy as np
 import pandas as pd
 from starlette.responses import JSONResponse
-import fastapi.encoders as fastapi_enc
 
-def safe_json_serialize(obj: Any, seen: Set[int] = None) -> Any:
+
+def safe_json_serialize(obj: Any, seen: set[int] | None = None) -> Any:
     """
     Recursively serialize any object into JSON-compliant standard Python types:
     - NumPy integers -> int
@@ -78,9 +80,9 @@ def safe_json_serialize(obj: Any, seen: Set[int] = None) -> Any:
             return [safe_json_serialize(x, seen) for x in obj.tolist()]
 
         # Pydantic v2 or v1 model
-        if hasattr(obj, "model_dump") and callable(getattr(obj, "model_dump")):
+        if hasattr(obj, "model_dump") and callable(obj.model_dump):
             return safe_json_serialize(obj.model_dump(), seen)
-        if hasattr(obj, "dict") and callable(getattr(obj, "dict")):
+        if hasattr(obj, "dict") and callable(obj.dict):
             return safe_json_serialize(obj.dict(), seen)
 
         if isinstance(obj, dict):
@@ -90,7 +92,7 @@ def safe_json_serialize(obj: Any, seen: Set[int] = None) -> Any:
             return [safe_json_serialize(x, seen) for x in obj]
 
         # Objects with custom to_dict
-        if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
+        if hasattr(obj, "to_dict") and callable(obj.to_dict):
             return safe_json_serialize(obj.to_dict(), seen)
 
         # Dataclass or objects with __dict__

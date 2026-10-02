@@ -9,15 +9,13 @@ Features:
 - Actionable Transfer Roadmap output
 """
 
-from typing import List, Dict, Any, Optional, Tuple, Set
-import copy
-import pandas as pd
-import numpy as np
+from typing import Any
 
-from fpl_oracle.optimise.squad import squad_optimizer
+import pandas as pd
+
+from fpl_oracle.config import SETTINGS
 from fpl_oracle.optimise.lineup import lineup_optimizer
-from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.config import RULES, SETTINGS
+
 
 def _safe_team(val: Any) -> Any:
     try:
@@ -43,8 +41,8 @@ class TransferOptimizer:
     def compute_squad_selling_prices(
         self,
         squad_df: pd.DataFrame,
-        transfer_history: Optional[List[Any]] = None,
-        bootstrap: Optional[Any] = None
+        transfer_history: list[Any] | None = None,
+        bootstrap: Any | None = None
     ) -> pd.DataFrame:
         """
         Calculates exact purchase price and selling price for each player in squad
@@ -89,8 +87,8 @@ class TransferOptimizer:
 
     def compute_available_free_transfers(
         self,
-        entry_history: Optional[List[Any]] = None,
-        transfer_history: Optional[List[Any]] = None,
+        entry_history: list[Any] | None = None,
+        transfer_history: list[Any] | None = None,
         current_gw: int = 5
     ) -> int:
         """
@@ -120,13 +118,13 @@ class TransferOptimizer:
         player_pool_df: pd.DataFrame,
         bank: float, # In tenths (£1.0m = 10)
         free_transfers: int, # 1 to 5
-        horizon_projections: Dict[int, pd.DataFrame],
+        horizon_projections: dict[int, pd.DataFrame],
         current_gw: int,
         target_gw: int,
-        locked_in_ids: Optional[List[int]] = None,
-        locked_out_ids: Optional[List[int]] = None,
-        excluded_team_ids: Optional[List[int]] = None
-    ) -> Dict[str, Any]:
+        locked_in_ids: list[int] | None = None,
+        locked_out_ids: list[int] | None = None,
+        excluded_team_ids: list[int] | None = None
+    ) -> dict[str, Any]:
         """
         Evaluates candidate plans for target_gw:
         - Plan 0: Roll the transfer (bank +1 FT)
@@ -142,7 +140,7 @@ class TransferOptimizer:
         # Compute baseline lineup for target_gw with current squad
         current_elements = set(current_squad_df["element"].tolist())
         target_gw_df = horizon_projections.get(target_gw, player_pool_df)
-        
+
         # Merge target_gw expected points onto current squad
         curr_squad_gw = target_gw_df[target_gw_df["element"].isin(current_elements)].copy()
         if len(curr_squad_gw) < 15:
@@ -369,11 +367,11 @@ class TransferOptimizer:
     def _generate_roadmap(
         self,
         current_squad_df: pd.DataFrame,
-        horizon_projections: Dict[int, pd.DataFrame],
+        horizon_projections: dict[int, pd.DataFrame],
         start_gw: int,
         horizon_length: int = 5,
         starting_banked_ft: int = 1
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Generate sequential transfer roadmap for next 4-6 gameweeks with banking and firm vs contingent status.
         """
@@ -385,7 +383,7 @@ class TransferOptimizer:
                 break
             gw_df = horizon_projections[gw]
             top_performers = gw_df.sort_values(by="expected_points", ascending=False).head(3)
-            
+
             if offset == 0:
                 firmness = "FIRM"
                 action = "Execute Primary Transfer (or Roll to Bank)"
@@ -401,7 +399,7 @@ class TransferOptimizer:
                 action = "Target Fixture Swing / Build toward Chip"
                 reasoning = "Contingent on injury returns, form trends, and Set 1 GW19 chip preparation."
                 ft_next = min(5, running_ft + 1)
-            
+
             roadmap_steps.append({
                 "gameweek": gw,
                 "status": firmness,

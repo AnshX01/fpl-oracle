@@ -4,25 +4,20 @@ Connects conversational queries directly to live ML projections, MILP optimizati
 chip strategies, news, and league simulations.
 """
 
-from typing import Dict, Any, List, Optional
-import json
 import logging
+from typing import Any
+
 import pandas as pd
 
 from fpl_oracle.api.fpl_client import fpl_client
+from fpl_oracle.chips.planner import chip_planner
+from fpl_oracle.data.store import data_store
+from fpl_oracle.league.rivals import rival_analyzer
+from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.ml.predict import projection_engine
+from fpl_oracle.optimise.price_change import price_change_predictor
 from fpl_oracle.optimise.squad import squad_optimizer
 from fpl_oracle.optimise.transfers import transfer_optimizer
-from fpl_oracle.optimise.lineup import lineup_optimizer
-from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.chips.planner import chip_planner
-from fpl_oracle.chips.calendar import fixture_calendar
-from fpl_oracle.league.standings import league_standings_manager
-from fpl_oracle.league.rivals import rival_analyzer
-from fpl_oracle.league.montecarlo import monte_carlo_simulator
-from fpl_oracle.league.strategy import league_strategy_advisor
-from fpl_oracle.news.analyse import news_analyzer
-from fpl_oracle.data.store import data_store
 
 logger = logging.getLogger("fpl_oracle.llm.tools")
 
@@ -112,7 +107,7 @@ class ToolExecutor:
     def __init__(self):
         pass
 
-    async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         logger.info(f"Executing tool {tool_name} with args {arguments}")
         try:
             if tool_name == "get_my_team":
@@ -137,7 +132,7 @@ class ToolExecutor:
             logger.error(f"Error in tool {tool_name}: {e}", exc_info=True)
             return {"error": str(e)}
 
-    async def _tool_get_my_team(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_get_my_team(self, args: dict[str, Any]) -> dict[str, Any]:
         profile = data_store.get_profile()
         m_id = args.get("manager_id") or profile.manager_id
         if not m_id:
@@ -176,7 +171,7 @@ class ToolExecutor:
             "squad": squad
         }
 
-    async def _tool_get_projections(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_get_projections(self, args: dict[str, Any]) -> dict[str, Any]:
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
@@ -211,7 +206,7 @@ class ToolExecutor:
 
         return {"gameweek": target_gw, "horizon": horizon, "players": results}
 
-    async def _tool_optimise_transfers(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_optimise_transfers(self, args: dict[str, Any]) -> dict[str, Any]:
         profile = data_store.get_profile()
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
@@ -269,7 +264,7 @@ class ToolExecutor:
             "roadmap": opt_res["transfer_roadmap"]
         }
 
-    async def _tool_plan_chips(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_plan_chips(self, args: dict[str, Any]) -> dict[str, Any]:
         profile = data_store.get_profile()
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
@@ -299,7 +294,7 @@ class ToolExecutor:
             "chip_table": chip_res["chip_plan_table"]
         }
 
-    async def _tool_captain_options(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_captain_options(self, args: dict[str, Any]) -> dict[str, Any]:
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         gw = args.get("gameweek") or (await fpl_client.get_current_and_next_gw())[1] or 6
@@ -314,7 +309,7 @@ class ToolExecutor:
             "candidates": top5[["web_name", "position", "team", "expected_points", "p10", "p90"]].to_dict(orient="records")
         }
 
-    async def _tool_league_analysis(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_league_analysis(self, args: dict[str, Any]) -> dict[str, Any]:
         profile = data_store.get_profile()
         league_id = args.get("league_id") or profile.target_league_id
         if not league_id:
@@ -348,7 +343,7 @@ class ToolExecutor:
             ]
         }
 
-    async def _tool_price_change_watch(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_price_change_watch(self, args: dict[str, Any]) -> dict[str, Any]:
         boot, _ = await fpl_client.get_bootstrap_static()
         predictions = price_change_predictor.analyze_price_changes(boot)
         rises = [p for p in predictions if p["direction"] in ["RISE_IMMINENT", "LIKELY_RISE"]][:5]
@@ -358,7 +353,7 @@ class ToolExecutor:
             "imminent_falls": falls
         }
 
-    async def _tool_compare_players(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_compare_players(self, args: dict[str, Any]) -> dict[str, Any]:
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()

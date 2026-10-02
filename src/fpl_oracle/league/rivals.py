@@ -4,10 +4,11 @@ Computes Effective Ownership (EO), detects template vs differentials,
 and monitors rival squad compositions and chip usage.
 """
 
-from typing import List, Dict, Any, Optional, Tuple
 import asyncio
-from collections import defaultdict
 import logging
+from collections import defaultdict
+from typing import Any
+
 import pandas as pd
 
 from fpl_oracle.api.fpl_client import fpl_client
@@ -21,12 +22,12 @@ class RivalAnalyzer:
 
     async def analyze_rivals(
         self,
-        standings: List[Dict[str, Any]],
-        user_manager_id: Optional[int],
+        standings: list[dict[str, Any]],
+        user_manager_id: int | None,
         current_gw: int,
         bootstrap: BootstrapStatic,
         max_rivals_to_inspect: int = 8
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Extract squad compositions for top rivals and compute effective ownership.
         """
@@ -34,8 +35,8 @@ class RivalAnalyzer:
         top_entries = standings[:max_rivals_to_inspect]
 
         rival_squads = []
-        player_multipliers = defaultdict(float)
-        rival_chips_burned = defaultdict(list)
+        player_multipliers: dict[int, float] = defaultdict(float)
+        rival_chips_burned: dict[int, list[str]] = defaultdict(list)
 
         sem = asyncio.Semaphore(5)
 
@@ -85,7 +86,7 @@ class RivalAnalyzer:
         await asyncio.gather(*tasks)
 
         n_rivals = max(1, len(rival_squads))
-        
+
         # Calculate Effective Ownership (EO) %
         eo_records = []
         for elem_id, total_mult in player_multipliers.items():

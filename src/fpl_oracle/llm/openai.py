@@ -2,8 +2,8 @@
 OpenAI LLM Provider with tool calling.
 """
 
-from typing import List, Dict, Any
 import logging
+
 import httpx
 
 from fpl_oracle.llm.tools import TOOL_DEFINITIONS, tool_executor
@@ -16,7 +16,7 @@ class OpenAIProvider:
         self.model = model
         self.url = "https://api.openai.com/v1/chat/completions"
 
-    async def chat(self, messages: List[Dict[str, str]], system_prompt: str) -> str:
+    async def chat(self, messages: list[dict[str, str]], system_prompt: str) -> str:
         formatted_tools = [
             {
                 "type": "function",
@@ -50,7 +50,7 @@ class OpenAIProvider:
             res = resp.json()
             msg = res["choices"][0]["message"]
 
-            if "tool_calls" in msg and msg["tool_calls"]:
+            if msg.get("tool_calls"):
                 tool_call = msg["tool_calls"][0]
                 fn_name = tool_call["function"]["name"]
                 import json

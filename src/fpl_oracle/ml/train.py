@@ -4,19 +4,18 @@ Run with: python -m fpl_oracle.ml.train or python run.py train.
 """
 
 import logging
-from typing import Tuple
-import pandas as pd
-import numpy as np
 
+import pandas as pd
+
+from fpl_oracle.data.features import feature_engineering
 from fpl_oracle.data.historical import historical_manager
-from fpl_oracle.data.features import feature_engineering, FEATURE_COLUMNS
-from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.ml.eval import model_evaluator
+from fpl_oracle.ml.predict import projection_engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("fpl_oracle.train")
 
-def train_all_models() -> Tuple[pd.DataFrame, pd.DataFrame]:
+def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     logger.info("=== Starting FPL Oracle ML Training Pipeline ===")
 
     # 1. Load historical master dataset

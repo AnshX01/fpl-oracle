@@ -1,67 +1,70 @@
-# FPL Oracle — Project Handoff & Status
+# FPL Oracle — Master Project Handoff & Progress
 
-**Last Updated:** Session 3 Final Polish (2026-10-02)
-
-## 1. Project Goal & Overview
-FPL Oracle is a local, ML-driven Fantasy Premier League decision support system and conversational AI expert designed to maximize expected points and mini-league win probability for the 2026/27 season (October 2026, GW6 upcoming).
-
----
-
-## 2. Real Verified Current State (All Milestones Complete)
-- **Unit Tests:** 14/14 passing across `tests/test_api_parsing.py`, `tests/test_chips.py`, `tests/test_optimizer.py`, and `tests/test_fuzzy_and_manual_squad.py`.
-- **FastAPI Server Endpoints:** All 12 endpoints verified returning HTTP 200 OK (`scripts/test_server_live.py`) with safe JSON serialization covering all numpy/pandas/NaN/datetime types.
-- **Rule Verification 2026/27:**
-  - 8 chips total across 2 sets (Set 1: GW1-19 with hard cutoff Jan 2, 2027; Set 2: GW20-38).
-  - Assistant Manager chip removed.
-  - Up to 5 banked free transfers (`max_extra_free_transfers: 4`).
-  - DefCon (+2 for DEF/MID/FWD) verified from live fixtures stats.
-  - Rebalanced BPS verified from live rules config.
-  - Selling price = purchase price + floor((current - purchase) / 2) verified.
-- **Manual / Paste / Upload Team Input:**
-  - `FuzzyPlayerMatcher` in `src/fpl_oracle/data/fuzzy_match.py` with diacritic stripping (`Ødegaard`, `Magalhães`), parenthetical tag removal, and CSV/JSON/plain-text extractors.
-  - Web UI modal in `web/index.html` with candidate review, alternatives selector, bank & FT inputs, and formation checker (2 GKP, 5 DEF, 5 MID, 3 FWD, max 3 per club).
-  - Persistence synced across SQLite and `data/profile.json`.
-- **Transfer Optimizer & What-If:**
-  - PuLP CBC integer linear programming over 1-5 GW horizon with hit break-even analysis.
-  - Interactive What-If controls (lock in must-keep players, exclude force-sell players, exclude clubs).
-  - Price Change Urgency Watch (imminent rises "buy before rise" vs imminent falls "sell before drop").
-  - 5-Gameweek Transfer Roadmap with Firm, Probable, and Contingent tagging, banked FT progression (1-5), and strategic reasoning.
-- **Dynamic Chip Strategy Planner:**
-  - Exact joint search / beam search over 38 gameweeks enforcing 1 chip per GW and rewarding Wildcard -> Bench Boost build-up synergies (+5.0 pts).
-  - Prominent GW19 Set 1 deadline expiry warning with total opportunity cost calculation (-48.2 pts).
-  - Comprehensive Chip Plan Table with Trigger Conditions and 2 robust alternative schedules.
-- **Captaincy & Risk Distribution:**
-  - Calibrated $P_{10}$ (floor) and $P_{90}$ (ceiling) probability distributions.
-  - Safe captain pick (lead protection) vs differential captain pick (chasing) with analytical probability of outscoring next best option.
-- **Mini-League Intelligence:**
-  - Standings pagination, rival squad tracking, Effective Ownership (EO).
-  - 500-iteration Monte Carlo stochastic championship simulator ($P(\text{1st})$).
-  - Strategy Mode: Leading (template protection, low variance) vs Chasing (high-variance differentials).
-- **Conversational Expert Chat:**
-  - 10 evaluated sample questions verified in `reports/chat_examples.md`.
-  - Tool calling across 12 live tools with zero hallucinated news/stats.
-  - Provider-agnostic: Gemini, Anthropic, OpenAI, or standalone `OfflineExpertProvider`.
-- **Specification Compliance:**
-  - 100% of requirements audited as **DONE** in `reports/spec_coverage.md`.
-- **Elite Championship Out-of-Time Backtest (Gameweeks 1–5):**
-  - Name-based multi-season player continuity linking 89,141 career match records.
-  - Joint Starter/Captaincy/Bench MILP with Talisman Anchoring and $P_{90}$ ceiling CapScore.
-  - Outperformed Global Average by **+27.0 pts** (290.0 vs 263.0) and Naive Form Baseline by **+17.0 pts** (290.0 vs 273.0), captaining Bruno Fernandes's 23-point haul in GW2.
-  - Benchmarked against the user's actual 338.0-point team, establishing the championship playbook (Arsenal defensive stack, Pascal Groß value exploit, EO defense, and banked transfer discipline).
+**Status:** In Active Execution (Phased Overhaul)  
+**Current Phase:** Phase 2 (Data, ML & Optimizer Integrity)  
+**Last Updated:** 2026-10-03 01:05 UTC  
+**Repository:** https://github.com/AnshX01/fpl-oracle.git  
+**Working Directory:** `C:\Users\anshw\Documents\fpl-expert`
 
 ---
 
-## 3. How to Launch and Verify
-```powershell
-# Run verification suite (API connectivity, SQLite, ML models, 14 pytest unit tests, backtest)
-python run.py verify
+## 1. Project Overview & Architecture
+FPL Oracle is an autonomous, machine-learning-driven Fantasy Premier League decision engine and conversational AI expert built for the 2026/27 season. Running 100% locally on Windows / Python 3.11, it combines:
+1. Decomposed ML components (Minutes, Attacking returns, Clean sheets, DefCon, Bonus, Cards/Saves) into calibrated $P_{10}/P_{50}/P_{90}$ distributions.
+2. Exact mathematical optimization (PuLP MILP for squad, starting XI, captaincy, and multi-GW transfer trajectory with banked transfer and hit penalty logic).
+3. Live FPL API integration with caching, fallback snapshots, and fuzzy matching for manual team inputs.
+4. Dynamic chip scheduling (Set 1 GW1-19 expiry warning, Set 2 planning, beam search).
+5. Mini-league Monte Carlo simulation and game-theoretic risk modes (Lead Protection vs Chasing).
+6. Grounded conversational agent with zero hallucination guarantee.
+7. Modern responsive UI dashboard with real-time SSE progress, Pitch View, Transfer Workbench, Chip Roadmap, and Contingency Engine.
 
-# Run live server test across all endpoints
-python scripts/test_server_live.py
+---
 
-# Run blind out-of-time backtest across all completed gameweeks (GW 1-5)
-python run.py backtest
+## 2. Phase-by-Phase Roadmap & Status
 
-# Launch web app dashboard (http://localhost:8000)
-python run.py run
-```
+| Phase | Description | Status | Verification Gate |
+|---|---|:---:|---|
+| **Phase 0** | Orient, Secure, Baseline & Security Audit | **DONE** | Clean secrets check, baseline report in `reports/baseline.md` |
+| **Phase 1** | Correctness & Robustness (Fault injection, safe JSON, error boundaries, GameState) | **DONE** | All 13 endpoints pass live + 5 fault injection tests; ruff & mypy 0 errors |
+| **Phase 2** | Data, ML & Optimizer Integrity (Leakage test, rolling backtest, live rules check, uncertainty, hypothesis) | **IN PROGRESS** | Leakage test pass, model_eval.md, live rules diff, hypothesis tests |
+| **Phase 3** | Live "My Money" Flow & Background Analysis Job (SSE progress, overrides, bank sync) | **PENDING** | End-to-end 1-click sync & override verification |
+| **Phase 4** | Expert Behaviour & Contingency Engine (Plan B/C, panic button, pre-deadline checklist, news citations) | **PENDING** | Grounded chat test pass, panic button scenario pass |
+| **Phase 5** | UI Rebuild (React + Vite + TypeScript + Tailwind + Framer Motion, sleek editorial design) | **PENDING** | Lighthouse perf/a11y ≥ 90, Playwright screenshots |
+| **Phase 6** | Scheduling & Automation (APScheduler, live GW polling, auto-retrain rollback) | **PENDING** | Scheduler jobs verified, idempotency checked |
+| **Phase 7** | Tests & CI (Complete test suite, GitHub Actions workflow with offline fixtures) | **PENDING** | Full pytest green, offline fixture tests |
+| **Phase 8** | Docs & Final Acceptance Scenario | **PENDING** | All acceptance tests, reports generated, secrets review |
+
+---
+
+## 3. Milestone State Tracking
+
+### Done
+- **Phase 0 (Orient, Secure, Baseline)**:
+  - Full codebase review against `fpl_expert_antigravity_goal_prompt.md`.
+  - Secrets and security audit (`scripts/check_secrets.py`) verified clean; .env and data files gitignored.
+  - Baseline execution recorded in `reports/baseline.md`.
+- **Phase 1 (Correctness & Robustness)**:
+  - `GameweekPhase` state machine (`PRE_DEADLINE`, `LIVE`, `BONUS_PENDING`, `FINISHED`, `BETWEEN_GWS`) with countdown.
+  - Persistent pooled `httpx.AsyncClient` with jittered backoff, in-flight coalescing, polite batching, and transport mock injection.
+  - Structured rotating logger to `logs/fpl_oracle.log`.
+  - Global error boundaries returning `{error, code, hint, fallback_used}` on all endpoints.
+  - Comprehensive `/api/health` and `/api/game-state` endpoints with data freshness attributes (`data_as_of`, `stale`).
+  - Hermetic fault-injection test suite (`tests/test_fault_injection.py`) passing 5/5 scenarios.
+  - 100% live server test suite (`scripts/test_server_live.py`) passing across all 13 endpoints and fault injections.
+  - `mypy` passing with 0 errors across 51 source files; `ruff` passing with 0 errors.
+
+### In Progress
+- **Phase 2 (Data, ML & Optimizer Integrity)**:
+  - Live rules verification diffing `bootstrap-static` against `config/rules.yaml` and `config/scoring.yaml`.
+  - Strict leakage audit test (`tests/test_leakage.py`) asserting $(p, GW)$ predictions use strictly pre-kickoff data.
+  - Rolling-origin backtest and uncertainty calibration ($P_{10}/P_{50}/P_{90}$) documented in `reports/model_eval.md`.
+  - Property-based tests (`hypothesis`) for MILP optimization constraints.
+
+### Next
+- **Phase 3 (Live "My Money" Flow & Background Analysis Job)**:
+  - SSE background progress stream `/api/sync/stream` reporting staged pipeline steps.
+  - Immediate user overrides and selling price math sync.
+
+### Known Issues & Technical Debt
+1. PuLP deprecation warnings regarding `LpVariable` directly in v4 and `PULP_CBC_CMD` (purely informational deprecation warnings from upstream PuLP 3.x library).
+2. Live rules verification function needs to run on server startup and report diff in health check.

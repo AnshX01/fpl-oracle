@@ -4,12 +4,13 @@ Simulates points gain of playing Wildcard, Free Hit, Triple Captain, or Bench Bo
 in candidate gameweeks.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 import pandas as pd
-import numpy as np
 
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.squad import squad_optimizer
+
 
 class ChipSimulator:
     def __init__(self):
@@ -19,8 +20,8 @@ class ChipSimulator:
         self,
         gw: int,
         squad_df: pd.DataFrame,
-        gw_projections_df: Optional[pd.DataFrame] = None
-    ) -> Dict[str, Any]:
+        gw_projections_df: pd.DataFrame | None = None
+    ) -> dict[str, Any]:
         """
         Bench Boost gain = sum of expected points of the 4 bench players.
         """
@@ -46,7 +47,7 @@ class ChipSimulator:
         self,
         gw: int,
         squad_df: pd.DataFrame
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Triple Captain gain = 1x expected points of top captain candidate.
         """
@@ -80,7 +81,7 @@ class ChipSimulator:
         current_squad_df: pd.DataFrame,
         player_pool_df: pd.DataFrame,
         budget: float = 1000.0
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Free Hit gain = optimal 1-week squad expected points minus current squad expected points.
         """
@@ -117,7 +118,7 @@ class ChipSimulator:
         player_pool_df: pd.DataFrame,
         budget: float = 1000.0,
         horizon_gws: int = 5
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Wildcard gain = cumulative uplift of restructuring the squad permanently.
         """

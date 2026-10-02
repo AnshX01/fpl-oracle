@@ -3,8 +3,10 @@ Pydantic v2 models for FPL API data.
 Defensive schemas with extra="allow" to ensure resilience against API changes.
 """
 
-from typing import List, Optional, Dict, Any, Union
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
+
 
 class FPLBaseModel(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -23,13 +25,13 @@ class Team(FPLBaseModel):
     id: int
     name: str
     short_name: str
-    strength: Optional[int] = 3
-    strength_overall_home: Optional[int] = 1000
-    strength_overall_away: Optional[int] = 1000
-    strength_attack_home: Optional[int] = 1000
-    strength_attack_away: Optional[int] = 1000
-    strength_defence_home: Optional[int] = 1000
-    strength_defence_away: Optional[int] = 1000
+    strength: int | None = 3
+    strength_overall_home: int | None = 1000
+    strength_overall_away: int | None = 1000
+    strength_attack_home: int | None = 1000
+    strength_attack_away: int | None = 1000
+    strength_defence_home: int | None = 1000
+    strength_defence_away: int | None = 1000
 
 class GameweekEvent(FPLBaseModel):
     id: int
@@ -39,8 +41,8 @@ class GameweekEvent(FPLBaseModel):
     is_next: bool = False
     finished: bool = False
     data_checked: bool = False
-    average_entry_score: Optional[int] = None
-    highest_score: Optional[int] = None
+    average_entry_score: int | None = None
+    highest_score: int | None = None
 
 class ChipDefinition(FPLBaseModel):
     name: str
@@ -51,20 +53,20 @@ class ChipDefinition(FPLBaseModel):
 class Element(FPLBaseModel):
     id: int
     web_name: str
-    first_name: Optional[str] = ""
-    second_name: Optional[str] = ""
+    first_name: str | None = ""
+    second_name: str | None = ""
     team: int
     element_type: int
     now_cost: int # In tenths, e.g. 100 = £10.0m
-    selected_by_percent: Optional[Union[str, float]] = "0.0"
-    form: Optional[Union[str, float]] = "0.0"
-    points_per_game: Optional[Union[str, float]] = "0.0"
+    selected_by_percent: str | float | None = "0.0"
+    form: str | float | None = "0.0"
+    points_per_game: str | float | None = "0.0"
     total_points: int = 0
     status: str = "a" # a: available, d: doubtful, i: injured, s: suspended, u: unavailable
-    news: Optional[str] = ""
-    news_added: Optional[str] = None
-    chance_of_playing_next_round: Optional[int] = None
-    chance_of_playing_this_round: Optional[int] = None
+    news: str | None = ""
+    news_added: str | None = None
+    chance_of_playing_next_round: int | None = None
+    chance_of_playing_this_round: int | None = None
     minutes: int = 0
     goals_scored: int = 0
     assists: int = 0
@@ -78,30 +80,30 @@ class Element(FPLBaseModel):
     saves: int = 0
     bonus: int = 0
     bps: int = 0
-    influence: Optional[Union[str, float]] = "0.0"
-    creativity: Optional[Union[str, float]] = "0.0"
-    threat: Optional[Union[str, float]] = "0.0"
-    ict_index: Optional[Union[str, float]] = "0.0"
-    starts: Optional[int] = 0
-    expected_goals: Optional[Union[str, float]] = "0.0"
-    expected_assists: Optional[Union[str, float]] = "0.0"
-    expected_goal_involvements: Optional[Union[str, float]] = "0.0"
-    expected_goals_conceded: Optional[Union[str, float]] = "0.0"
-    defensive_contribution: Optional[int] = 0
-    transfers_in_event: Optional[int] = 0
-    transfers_out_event: Optional[int] = 0
-    price_change_percent: Optional[Union[str, float]] = None
-    price_change_hourly_rate: Optional[int] = None
-    price_change_projections: Optional[List[Dict[str, Any]]] = None
+    influence: str | float | None = "0.0"
+    creativity: str | float | None = "0.0"
+    threat: str | float | None = "0.0"
+    ict_index: str | float | None = "0.0"
+    starts: int | None = 0
+    expected_goals: str | float | None = "0.0"
+    expected_assists: str | float | None = "0.0"
+    expected_goal_involvements: str | float | None = "0.0"
+    expected_goals_conceded: str | float | None = "0.0"
+    defensive_contribution: int | None = 0
+    transfers_in_event: int | None = 0
+    transfers_out_event: int | None = 0
+    price_change_percent: str | float | None = None
+    price_change_hourly_rate: int | None = None
+    price_change_projections: list[dict[str, Any]] | None = None
 
 class BootstrapStatic(FPLBaseModel):
-    chips: List[ChipDefinition] = []
-    events: List[GameweekEvent] = []
-    teams: List[Team] = []
-    elements: List[Element] = []
-    element_types: List[ElementType] = []
-    game_settings: Dict[str, Any] = {}
-    game_config: Optional[Dict[str, Any]] = None
+    chips: list[ChipDefinition] = []
+    events: list[GameweekEvent] = []
+    teams: list[Team] = []
+    elements: list[Element] = []
+    element_types: list[ElementType] = []
+    game_settings: dict[str, Any] = {}
+    game_config: dict[str, Any] | None = None
 
 class FixtureStatItem(FPLBaseModel):
     value: int
@@ -109,25 +111,25 @@ class FixtureStatItem(FPLBaseModel):
 
 class FixtureStat(FPLBaseModel):
     identifier: str
-    a: List[FixtureStatItem] = []
-    h: List[FixtureStatItem] = []
+    a: list[FixtureStatItem] = []
+    h: list[FixtureStatItem] = []
 
 class Fixture(FPLBaseModel):
     id: int
     code: int
-    event: Optional[int] = None
+    event: int | None = None
     finished: bool = False
     finished_provisional: bool = False
-    kickoff_time: Optional[str] = None
+    kickoff_time: str | None = None
     minutes: int = 0
     started: bool = False
     team_a: int
-    team_a_score: Optional[int] = None
+    team_a_score: int | None = None
     team_h: int
-    team_h_score: Optional[int] = None
-    team_h_difficulty: Optional[int] = 3
-    team_a_difficulty: Optional[int] = 3
-    stats: List[FixtureStat] = []
+    team_h_score: int | None = None
+    team_h_difficulty: int | None = 3
+    team_a_difficulty: int | None = 3
+    stats: list[FixtureStat] = []
 
 class PlayerMatchHistory(FPLBaseModel):
     element: int
@@ -135,9 +137,9 @@ class PlayerMatchHistory(FPLBaseModel):
     opponent_team: int
     total_points: int = 0
     was_home: bool = True
-    kickoff_time: Optional[str] = None
-    team_h_score: Optional[int] = None
-    team_a_score: Optional[int] = None
+    kickoff_time: str | None = None
+    team_h_score: int | None = None
+    team_a_score: int | None = None
     round: int
     minutes: int = 0
     goals_scored: int = 0
@@ -152,24 +154,24 @@ class PlayerMatchHistory(FPLBaseModel):
     saves: int = 0
     bonus: int = 0
     bps: int = 0
-    influence: Optional[Union[str, float]] = "0.0"
-    creativity: Optional[Union[str, float]] = "0.0"
-    threat: Optional[Union[str, float]] = "0.0"
-    ict_index: Optional[Union[str, float]] = "0.0"
-    starts: Optional[int] = 0
-    defensive_contribution: Optional[int] = 0
-    expected_goals: Optional[Union[str, float]] = "0.0"
-    expected_assists: Optional[Union[str, float]] = "0.0"
-    expected_goal_involvements: Optional[Union[str, float]] = "0.0"
-    expected_goals_conceded: Optional[Union[str, float]] = "0.0"
+    influence: str | float | None = "0.0"
+    creativity: str | float | None = "0.0"
+    threat: str | float | None = "0.0"
+    ict_index: str | float | None = "0.0"
+    starts: int | None = 0
+    defensive_contribution: int | None = 0
+    expected_goals: str | float | None = "0.0"
+    expected_assists: str | float | None = "0.0"
+    expected_goal_involvements: str | float | None = "0.0"
+    expected_goals_conceded: str | float | None = "0.0"
     value: int = 50
-    selected: Optional[int] = 0
-    transfers_balance: Optional[int] = 0
+    selected: int | None = 0
+    transfers_balance: int | None = 0
 
 class ElementSummary(FPLBaseModel):
-    fixtures: List[Dict[str, Any]] = []
-    history: List[PlayerMatchHistory] = []
-    history_past: List[Dict[str, Any]] = []
+    fixtures: list[dict[str, Any]] = []
+    history: list[PlayerMatchHistory] = []
+    history_past: list[dict[str, Any]] = []
 
 class Pick(FPLBaseModel):
     element: int
@@ -182,9 +184,9 @@ class EntryHistory(FPLBaseModel):
     event: int
     points: int = 0
     total_points: int = 0
-    rank: Optional[int] = None
-    rank_sort: Optional[int] = None
-    overall_rank: Optional[int] = None
+    rank: int | None = None
+    rank_sort: int | None = None
+    overall_rank: int | None = None
     bank: int = 0 # In tenths (£1.0m = 10)
     value: int = 1000 # In tenths
     event_transfers: int = 0
@@ -192,32 +194,32 @@ class EntryHistory(FPLBaseModel):
     points_on_bench: int = 0
 
 class SquadPicks(FPLBaseModel):
-    active_chip: Optional[str] = None
-    entry_history: Optional[EntryHistory] = None
-    picks: List[Pick] = []
+    active_chip: str | None = None
+    entry_history: EntryHistory | None = None
+    picks: list[Pick] = []
 
 class ChipHistoryItem(FPLBaseModel):
     name: str # e.g. "bboost", "3xc", "freehit", "wildcard"
-    time: Optional[str] = None
+    time: str | None = None
     event: int
 
 class ManagerHistory(FPLBaseModel):
-    current: List[EntryHistory] = []
-    past: List[Dict[str, Any]] = []
-    chips: List[ChipHistoryItem] = []
+    current: list[EntryHistory] = []
+    past: list[dict[str, Any]] = []
+    chips: list[ChipHistoryItem] = []
 
 class ManagerEntry(FPLBaseModel):
     id: int
     player_first_name: str = ""
     player_last_name: str = ""
     name: str = "" # Team name
-    summary_overall_points: Optional[int] = 0
-    summary_overall_rank: Optional[int] = None
-    current_event: Optional[int] = None
-    last_deadline_bank: Optional[int] = 0
-    last_deadline_value: Optional[int] = 1000
-    last_deadline_total_transfers: Optional[int] = 0
-    leagues: Optional[Dict[str, Any]] = None
+    summary_overall_points: int | None = 0
+    summary_overall_rank: int | None = None
+    current_event: int | None = None
+    last_deadline_bank: int | None = 0
+    last_deadline_value: int | None = 1000
+    last_deadline_total_transfers: int | None = 0
+    leagues: dict[str, Any] | None = None
 
 class TransferHistoryItem(FPLBaseModel):
     element_in: int
@@ -229,8 +231,8 @@ class TransferHistoryItem(FPLBaseModel):
     time: str
 
 class ClassicStandingResult(FPLBaseModel):
-    id: Optional[int] = None
-    club_badge_src: Optional[str] = None
+    id: int | None = None
+    club_badge_src: str | None = None
     event_total: int = 0
     player_name: str = ""
     rank: int = 0
@@ -243,8 +245,8 @@ class ClassicStandingResult(FPLBaseModel):
 class StandingsPage(FPLBaseModel):
     has_next: bool = False
     page: int = 1
-    results: List[ClassicStandingResult] = []
+    results: list[ClassicStandingResult] = []
 
 class ClassicLeagueResponse(FPLBaseModel):
-    league: Dict[str, Any] = {}
+    league: dict[str, Any] = {}
     standings: StandingsPage = Field(default_factory=StandingsPage)

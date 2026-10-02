@@ -4,19 +4,15 @@ Downloads past seasons (vaastav/Fantasy-Premier-League) and merges with
 live 2026/27 match data from the official FPL API.
 """
 
-import os
-import io
 import asyncio
+import io
 import logging
-from pathlib import Path
-from typing import List, Dict, Any, Optional
 import urllib.request
-import pandas as pd
-import numpy as np
 
-from fpl_oracle.config import HISTORICAL_DIR
+import pandas as pd
+
 from fpl_oracle.api.fpl_client import fpl_client
-from fpl_oracle.api.models import BootstrapStatic
+from fpl_oracle.config import HISTORICAL_DIR
 
 logger = logging.getLogger("fpl_oracle.historical")
 
@@ -81,7 +77,7 @@ class HistoricalDataManager:
             logger.info(f"Loading existing historical dataset from {self.output_file}")
             df = pd.read_csv(self.output_file)
             return df
-        
+
         logger.info("Building unified historical dataset...")
         dfs = []
 
@@ -106,7 +102,7 @@ class HistoricalDataManager:
         logger.info(f"Successfully saved master history ({len(master_df)} rows) to {self.output_file}")
         return master_df
 
-    def _fetch_vaastav_season(self, season: str) -> Optional[pd.DataFrame]:
+    def _fetch_vaastav_season(self, season: str) -> pd.DataFrame | None:
         cache_path = HISTORICAL_DIR / f"{season}_merged_gw.csv"
         if cache_path.exists():
             try:
@@ -131,7 +127,7 @@ class HistoricalDataManager:
             logger.warning(f"Could not download {season} from vaastav: {e}")
             return None
 
-    def _fetch_live_season_sync(self) -> Optional[pd.DataFrame]:
+    def _fetch_live_season_sync(self) -> pd.DataFrame | None:
         """Fetch 2026/27 completed gameweeks from live FPL API."""
         try:
             return asyncio.run(self._fetch_live_season_async())
@@ -142,10 +138,10 @@ class HistoricalDataManager:
     async def _fetch_live_season_async(self) -> pd.DataFrame:
         logger.info("Ingesting 2026/27 live match data from FPL API...")
         bootstrap, _ = await fpl_client.get_bootstrap_static()
-        
+
         team_id_to_name = {t.id: t.name for t in bootstrap.teams}
         pos_id_to_pos = {et.id: et.singular_name_short for et in bootstrap.element_types}
-        
+
         # Elements that have played or scored points
         active_elements = [e for e in bootstrap.elements if e.minutes > 0 or e.total_points > 0]
         logger.info(f"Fetching element match histories for {len(active_elements)} active players...")
