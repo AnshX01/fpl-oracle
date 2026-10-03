@@ -5,14 +5,13 @@ and write transcript to reports/chat_examples.md.
 
 import asyncio
 import sys
-from pathlib import Path
 
 # Configure stdout encoding for Windows UTF-8 support
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from fpl_oracle.llm.agent import expert_agent
 from fpl_oracle.config import REPORTS_DIR
+from fpl_oracle.llm.agent import expert_agent
 
 QUESTIONS = [
     "Should I take a -4 for Haaland?",

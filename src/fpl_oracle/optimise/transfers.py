@@ -38,6 +38,34 @@ class TransferOptimizer:
             return purchase_price + (profit // 2)
         return now_cost
 
+    def calculate_banked_free_transfers(self, history: Any) -> int:
+        """
+        Calculate banked free transfers (1 to 5) from manager history according to 2026/27 rules.
+        Start with 1 in GW1. Each GW adds +1 FT, minus transfers made, capped at 5.
+        """
+        if not history or not hasattr(history, "current") or not history.current:
+            return 1
+
+        entries = sorted(history.current, key=lambda e: getattr(e, "event", 0))
+        chips_used = {getattr(c, "event", 0): getattr(c, "name", "") for c in getattr(history, "chips", [])}
+
+        banked = 1
+        for entry in entries:
+            gw = getattr(entry, "event", 0)
+            transfers_made = getattr(entry, "event_transfers", 0)
+            active_chip = chips_used.get(gw, "")
+
+            if active_chip in ("wildcard", "freehit"):
+                # In 2026/27, Wildcard/Freehit preserve banked FTs and add 1 FT for next GW
+                banked = min(5, banked + 1)
+            else:
+                if transfers_made <= banked:
+                    banked = min(5, (banked - transfers_made) + 1)
+                else:
+                    banked = 1
+
+        return max(1, min(5, banked))
+
     def compute_squad_selling_prices(
         self,
         squad_df: pd.DataFrame,
@@ -123,7 +151,8 @@ class TransferOptimizer:
         target_gw: int,
         locked_in_ids: list[int] | None = None,
         locked_out_ids: list[int] | None = None,
-        excluded_team_ids: list[int] | None = None
+        excluded_team_ids: list[int] | None = None,
+        risk_preference: str = "balanced"
     ) -> dict[str, Any]:
         """
         Evaluates candidate plans for target_gw:
@@ -147,7 +176,7 @@ class TransferOptimizer:
             # Fallback to current_squad_df if any missing
             curr_squad_gw = current_squad_df.copy()
 
-        curr_lineup = lineup_optimizer.select_lineup_and_captain(curr_squad_gw)
+        curr_lineup = lineup_optimizer.select_lineup_and_captain(curr_squad_gw, risk_preference=risk_preference)
         base_xp = curr_lineup["total_gameweek_expected_points"]
 
         roll_plan = {
@@ -204,7 +233,7 @@ class TransferOptimizer:
                 ]).reset_index(drop=True)
 
                 if len(trial_squad) == 15:
-                    trial_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad)
+                    trial_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad, risk_preference=risk_preference)
                     trial_xp = trial_lineup["total_gameweek_expected_points"]
                     gain = trial_xp - base_xp
 
@@ -276,7 +305,7 @@ class TransferOptimizer:
                     ]).reset_index(drop=True)
 
                     if len(trial_squad_2) == 15:
-                        trial2_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad_2)
+                        trial2_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad_2, risk_preference=risk_preference)
                         trial2_xp = trial2_lineup["total_gameweek_expected_points"]
                         gross_gain = trial2_xp - base_xp
                         net_gain = gross_gain - hit_cost_2

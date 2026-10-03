@@ -3,9 +3,11 @@ FastAPI REST API routes for FPL Oracle.
 """
 
 import json
+from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from fpl_oracle.api.cache import cache_manager
@@ -27,6 +29,7 @@ from fpl_oracle.news.ingest import news_ingestion
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
 from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.server.pipeline import sync_pipeline
 from fpl_oracle.server.safe_json import SafeJSONResponse, safe_json_serialize
 
 router = APIRouter(prefix="/api", default_response_class=SafeJSONResponse)
@@ -38,6 +41,7 @@ class ProfileUpdateRequest(BaseModel):
     llm_provider: str | None = None
     bank: float | None = None
     free_transfers: int | None = None
+    manual_squad: list[int] | None = None
 
 class MatchSquadRequest(BaseModel):
     raw_text: str
@@ -115,20 +119,52 @@ def get_profile():
         "risk_preference": p.risk_preference,
         "llm_provider": p.llm_provider,
         "bank": p.bank,
-        "free_transfers": p.free_transfers
+        "free_transfers": p.free_transfers,
+        "manual_squad": json.loads(p.manual_squad) if p.manual_squad else None,
+        "updated_at": p.updated_at.isoformat() if p.updated_at else None,
     }
 
 @router.post("/profile")
 def update_profile(req: ProfileUpdateRequest):
-    data_store.update_profile(
-        manager_id=req.manager_id,
-        target_league_id=req.target_league_id,
-        risk_preference=req.risk_preference,
-        llm_provider=req.llm_provider,
-        bank=req.bank,
-        free_transfers=req.free_transfers
-    )
+    kwargs: dict[str, Any] = {}
+    if req.manager_id is not None:
+        kwargs["manager_id"] = req.manager_id
+    if req.target_league_id is not None:
+        kwargs["target_league_id"] = req.target_league_id
+    if req.risk_preference is not None:
+        kwargs["risk_preference"] = req.risk_preference
+    if req.llm_provider is not None:
+        kwargs["llm_provider"] = req.llm_provider
+    if req.bank is not None:
+        kwargs["bank"] = req.bank
+    if req.free_transfers is not None:
+        kwargs["free_transfers"] = req.free_transfers
+    if req.manual_squad is not None:
+        kwargs["manual_squad"] = req.manual_squad
+
+    data_store.update_profile(**kwargs)
     return {"status": "success", "profile": get_profile()}
+
+@router.get("/sync/stream")
+async def get_sync_stream():
+    """
+    Server-Sent Events (SSE) stream broadcasting background analysis pipeline progress.
+    Client disconnection does not terminate the underlying background analysis.
+    """
+    return StreamingResponse(
+        sync_pipeline.subscribe(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+@router.get("/sync/status")
+def get_sync_status():
+    """Return status and latest summary of the background synchronization pipeline."""
+    return sync_pipeline.get_status()
 
 @router.get("/squad")
 async def get_squad(manager_id: int | None = None):
@@ -143,7 +179,8 @@ async def get_squad(manager_id: int | None = None):
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df = None
-    bank = 5.0
+    bank = float(profile.bank or 0.5) * 10.0
+    free_transfers = int(profile.free_transfers or 1)
     chips_used = []
     manager_name = "Manager"
     team_name = "My FPL Squad"
@@ -162,7 +199,15 @@ async def get_squad(manager_id: int | None = None):
             overall_rank = entry.summary_overall_rank
             chips_used = [c.name for c in history.chips]
             if picks.entry_history:
-                bank = picks.entry_history.bank
+                bank = float(picks.entry_history.bank)
+            if profile.bank is not None and profile.bank > 0:
+                bank = float(profile.bank * 10.0)
+
+            auto_ft = transfer_optimizer.calculate_banked_free_transfers(history)
+            if profile.free_transfers and profile.free_transfers > 1:
+                free_transfers = profile.free_transfers
+            else:
+                free_transfers = auto_ft
 
             picks_ids = [p.element for p in picks.picks]
             user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
@@ -252,6 +297,10 @@ async def get_squad(manager_id: int | None = None):
             "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
             "next_fixtures": get_next_fixtures(int(b["team"]))
         })
+    squad_val = round(float(user_squad_df["value"].sum()) / 10.0, 1)
+    sell_val = round(float(user_squad_df.get("selling_price", user_squad_df["value"]).sum()) / 10.0, 1)
+    bank_m = round(bank / 10.0, 2)
+    team_val = round(sell_val + bank_m, 1)
 
     return safe_json_serialize({
         "manager_id": m_id,
@@ -259,7 +308,12 @@ async def get_squad(manager_id: int | None = None):
         "team_name": team_name,
         "overall_points": overall_points,
         "overall_rank": overall_rank,
-        "bank_millions": round(bank / 10.0, 2),
+        "bank_millions": bank_m,
+        "free_transfers": free_transfers,
+        "available_transfers": free_transfers,
+        "total_squad_value": squad_val,
+        "total_selling_value": sell_val,
+        "total_team_value": team_val,
         "chips_used": chips_used,
         "formation": lineup_res["formation"],
         "captain": lineup_res["captain"],

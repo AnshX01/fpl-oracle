@@ -18,9 +18,11 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import httpx
-from fpl_oracle.server.main import app
-from fpl_oracle.api.fpl_client import fpl_client
+
 from fpl_oracle.api.cache import cache_manager
+from fpl_oracle.api.fpl_client import fpl_client
+from fpl_oracle.server.main import app
+
 
 class FaultInjectingTransport(httpx.AsyncBaseTransport):
     def __init__(self, mode: str = "429"):
@@ -87,8 +89,26 @@ async def run_tests():
         prof = res.json()
         print(f"    Manager ID: {prof.get('manager_id')}, Risk: {prof.get('risk_preference')}")
 
-        # 4. Profile POST
-        res = await client.post("/api/profile", json={"risk_preference": "balanced"})
+        # 3b. Sync Status GET
+        res = await client.get("/api/sync/status")
+        print(f"3b. GET /api/sync/status -> Status {res.status_code}")
+        assert res.status_code == 200
+        sync_stat = res.json()
+        print(f"    Pipeline running: {sync_stat.get('is_running')}, Step: {sync_stat.get('current_step')}")
+
+        # 3c. Sync Stream SSE GET
+        async with client.stream("GET", "/api/sync/stream") as sse_stream:
+            print(f"3c. GET /api/sync/stream -> Status {sse_stream.status_code}, Media: {sse_stream.headers.get('content-type')}")
+            assert sse_stream.status_code == 200
+            assert "text/event-stream" in sse_stream.headers.get("content-type", "")
+            async for chunk in sse_stream.aiter_lines():
+                if chunk.startswith("data:"):
+                    stream_payload = json.loads(chunk[5:].strip())
+                    print(f"    SSE Event received: step={stream_payload.get('step')}, progress={stream_payload.get('progress_pct')}%")
+                    break
+
+        # 4. Profile POST with overrides (Bank & Free Transfers)
+        res = await client.post("/api/profile", json={"risk_preference": "balanced", "bank": 1.5, "free_transfers": 3})
         print(f"4.  POST /api/profile -> Status {res.status_code}")
         assert res.status_code == 200
 
@@ -102,8 +122,14 @@ async def run_tests():
         total_players = len(starters) + len(bench)
         print(f"    Total squad players: {total_players} (Starters: {len(starters)}, Bench: {len(bench)})")
         print(f"    Formation: {squad_data.get('formation')}, Captain: {squad_data.get('captain', {}).get('web_name')}")
+        print(f"    Bank: £{squad_data.get('bank_millions')}m, Free Transfers: {squad_data.get('free_transfers')}")
+        print(f"    Squad Val: £{squad_data.get('total_squad_value')}m, Selling Val: £{squad_data.get('total_selling_value')}m, Team Val: £{squad_data.get('total_team_value')}m")
         print(f"    Data as of: {squad_data.get('data_as_of')}, Stale: {squad_data.get('stale')}")
         assert total_players == 15, f"Expected 15 players, got {total_players}"
+        assert squad_data.get("bank_millions") == 1.5
+        assert squad_data.get("free_transfers") == 3
+        assert squad_data.get("total_squad_value", 0) > 80.0
+        assert squad_data.get("total_selling_value", 0) > 80.0
 
         # 6. Projections
         res = await client.get("/api/projections?horizon=3")

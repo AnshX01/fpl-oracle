@@ -5,11 +5,10 @@ Scans the working tree and git tracking status for accidental secret leaks,
 tokens, private keys, and tracked user-identifiable data files (.env, profile.json, *.db).
 """
 
-import sys
 import re
 import subprocess
+import sys
 from pathlib import Path
-from typing import List, Tuple
 
 # Ensure stdout handles UTF-8 on Windows
 if hasattr(sys.stdout, "reconfigure"):
@@ -49,7 +48,7 @@ FORBIDDEN_TRACKED_PATTERNS = [
     r"^.*\.sqlite3$",
 ]
 
-def check_git_tracked_files() -> List[str]:
+def check_git_tracked_files() -> list[str]:
     """Verify that sensitive user data files are not tracked in git."""
     violations = []
     try:
@@ -70,7 +69,7 @@ def check_git_tracked_files() -> List[str]:
         print(f"[WARN] Could not run git ls-files: {e}")
     return violations
 
-def check_file_contents(file_path: Path) -> List[Tuple[int, str, str]]:
+def check_file_contents(file_path: Path) -> list[tuple[int, str, str]]:
     """Scan a single file for secret patterns."""
     findings = []
     try:
@@ -91,7 +90,7 @@ def check_file_contents(file_path: Path) -> List[Tuple[int, str, str]]:
                 findings.append((line_num, desc, line[:40] + "... [MASKED]"))
     return findings
 
-def scan_working_tree() -> List[str]:
+def scan_working_tree() -> list[str]:
     """Scan all tracked and candidate files in repo."""
     findings = []
     for p in REPO_ROOT.rglob("*"):
