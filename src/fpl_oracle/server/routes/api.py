@@ -14,6 +14,7 @@ from fpl_oracle.api.cache import cache_manager
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
 from fpl_oracle.api.rules_checker import rules_checker
+from fpl_oracle.briefing.review import post_gameweek_reviewer
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.fuzzy_match import fuzzy_matcher
@@ -26,6 +27,7 @@ from fpl_oracle.llm.agent import expert_agent
 from fpl_oracle.llm.provider import get_llm_status
 from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.ingest import news_ingestion
+from fpl_oracle.optimise.contingency import contingency_engine
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
 from fpl_oracle.optimise.transfers import transfer_optimizer
@@ -56,6 +58,10 @@ class OptimizeRequest(BaseModel):
     locked_out: list[int] | None = None
     excluded_teams: list[int] | None = None
     custom_budget: float | None = None
+
+class PanicRequest(BaseModel):
+    query: str | None = None
+    ruled_out_ids: list[int] | None = None
 
 class ChatRequest(BaseModel):
     message: str
@@ -628,3 +634,175 @@ async def get_price_changes():
         "is_stale": is_stale,
         "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
     })
+
+async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple[pd.DataFrame, float, int]:
+    profile = data_store.get_profile()
+    curr_gw, _ = await fpl_client.get_current_and_next_gw()
+    bank = float(profile.bank or 0.5) * 10.0
+    free_transfers = int(profile.free_transfers or 1)
+    user_squad_df = None
+
+    if profile.manager_id:
+        try:
+            picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw or 5)
+            history, _ = await fpl_client.get_manager_history(profile.manager_id)
+            transfers, _ = await fpl_client.get_manager_transfers(profile.manager_id)
+            if picks.entry_history:
+                bank = float(picks.entry_history.bank)
+            if profile.bank is not None and profile.bank > 0:
+                bank = float(profile.bank * 10.0)
+            auto_ft = transfer_optimizer.calculate_banked_free_transfers(history)
+            if profile.free_transfers and profile.free_transfers > 1:
+                free_transfers = profile.free_transfers
+            else:
+                free_transfers = auto_ft
+            picks_ids = [p.element for p in picks.picks]
+            user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
+            user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, transfers, boot)
+        except Exception:
+            pass
+
+    if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad:
+        try:
+            manual_ids = json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            if manual_ids and len(manual_ids) == 15:
+                user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
+                bank = float(profile.bank or 0.0) * 10.0
+                user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
+        except Exception:
+            pass
+
+    if user_squad_df is None or len(user_squad_df) < 15:
+        from fpl_oracle.optimise.squad import squad_optimizer
+        squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
+        user_squad_df = squad_res["squad"].copy()
+        user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
+
+    return user_squad_df, bank, free_transfers
+
+@router.get("/contingency/plans")
+async def get_contingency_plans():
+    """Returns precomputed Plan A, Plan B (injury pivot), and Plan C (differential/price pivot)."""
+    boot, is_stale = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = next_gw or 6
+
+    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+
+    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
+    profile = data_store.get_profile()
+
+    plans = contingency_engine.generate_contingency_plans(
+        current_squad_df=user_squad_df,
+        player_pool_df=target_df,
+        bank=bank,
+        free_transfers=free_transfers,
+        horizon_projections=horizon_proj,
+        current_gw=curr_gw or 5,
+        target_gw=target_gw,
+        risk_preference=profile.risk_preference or "balanced"
+    )
+    plans["stale"] = is_stale
+    plans["is_stale"] = is_stale
+    plans["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
+    return safe_json_serialize(plans)
+
+@router.get("/contingency/matrix")
+async def get_contingency_matrix():
+    """Returns 'What if Player X is ruled out' matrix comparing auto-sub vs emergency transfer."""
+    boot, is_stale = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = next_gw or 6
+
+    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+
+    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
+
+    matrix = contingency_engine.compute_injury_matrix(
+        squad_df=user_squad_df,
+        player_pool_df=target_df,
+        bank=bank,
+        free_transfers=free_transfers,
+        bootstrap=boot
+    )
+    return safe_json_serialize({
+        "gameweek": target_gw,
+        "contingency_matrix": matrix,
+        "stale": is_stale,
+        "is_stale": is_stale,
+        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
+    })
+
+@router.post("/contingency/panic")
+async def post_contingency_panic(req: PanicRequest):
+    """Emergency 1-click crisis solver for breaking team news (e.g. 'Saka ruled out 6 weeks')."""
+    boot, is_stale = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = next_gw or 6
+
+    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+
+    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
+
+    crisis_res = contingency_engine.panic_button_reoptimize(
+        query=req.query or "",
+        squad_df=user_squad_df,
+        player_pool_df=target_df,
+        bank=bank,
+        free_transfers=free_transfers,
+        ruled_out_ids=req.ruled_out_ids
+    )
+    crisis_res["stale"] = is_stale
+    crisis_res["is_stale"] = is_stale
+    crisis_res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
+    return safe_json_serialize(crisis_res)
+
+@router.get("/contingency/checklist")
+async def get_pre_deadline_checklist():
+    """Generates 5-point operational pre-deadline audit."""
+    boot, is_stale = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = next_gw or 6
+
+    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+
+    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
+    game_state = await game_state_manager.get_game_state()
+
+    profile = data_store.get_profile()
+    history = None
+    if profile.manager_id:
+        try:
+            history, _ = await fpl_client.get_manager_history(profile.manager_id)
+        except Exception:
+            pass
+
+    chips_status = chip_planner.get_remaining_chips(history)
+    checklist = contingency_engine.generate_pre_deadline_checklist(
+        squad_df=user_squad_df,
+        bootstrap=boot,
+        game_state_data=game_state.model_dump(),
+        chips_status=chips_status
+    )
+    return safe_json_serialize({
+        "gameweek": target_gw,
+        "seconds_to_deadline": game_state.seconds_to_deadline,
+        "checklist": checklist,
+        "stale": is_stale,
+        "is_stale": is_stale,
+        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
+    })
+
+@router.get("/review")
+async def get_gameweek_review(gameweek: int | None = None):
+    """Produces post-gameweek review and performance diagnostics."""
+    profile = data_store.get_profile()
+    return await post_gameweek_reviewer.generate_gameweek_review(profile.manager_id, gameweek)

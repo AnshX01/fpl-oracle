@@ -100,6 +100,28 @@ TOOL_DEFINITIONS = [
             },
             "required": ["player_names"]
         }
+    },
+    {
+        "name": "get_news",
+        "description": "Fetch official injury, availability, and press conference signals for a specific player.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "player_name": {"type": "string", "description": "Player name or web_name"}
+            },
+            "required": ["player_name"]
+        }
+    },
+    {
+        "name": "get_fixtures",
+        "description": "Retrieve upcoming fixtures and difficulty ratings for a team or gameweek.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "team_id": {"type": "integer", "description": "Team ID"},
+                "gameweek": {"type": "integer", "description": "Gameweek number"}
+            }
+        }
     }
 ]
 
@@ -126,6 +148,10 @@ class ToolExecutor:
                 return await self._tool_price_change_watch(arguments)
             elif tool_name == "compare_players":
                 return await self._tool_compare_players(arguments)
+            elif tool_name == "get_news":
+                return await self._tool_get_news(arguments)
+            elif tool_name == "get_fixtures":
+                return await self._tool_get_fixtures(arguments)
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
@@ -377,5 +403,56 @@ class ToolExecutor:
                 })
 
         return {"gameweek": next_gw or 6, "comparisons": matches}
+
+    async def _tool_get_news(self, args: dict[str, Any]) -> dict[str, Any]:
+        player_query = (args.get("player_name") or args.get("query") or "").strip().lower()
+        boot, _ = await fpl_client.get_bootstrap_static()
+        team_map = {t.id: t.name for t in boot.teams}
+
+        matching = [
+            e for e in boot.elements
+            if player_query in e.web_name.lower() or
+            player_query in f"{e.first_name} {e.second_name}".lower()
+        ]
+        if not matching:
+            return {"status": "not_found", "message": f"No player matching '{player_query}' found in database."}
+
+        p = matching[0]
+        is_fit = p.status == "a" and (p.chance_of_playing_next_round in [None, 100]) and not p.news
+        return {
+            "status": "found",
+            "element": p.id,
+            "web_name": p.web_name,
+            "team": team_map.get(p.team, "Unknown"),
+            "is_fit": is_fit,
+            "availability_status": p.status,
+            "chance_of_playing": p.chance_of_playing_next_round if p.chance_of_playing_next_round is not None else (100 if is_fit else 0),
+            "news": p.news or "No current injury or suspension news reported.",
+            "source": "Official Premier League / FPL API",
+            "confidence": 1.0
+        }
+
+    async def _tool_get_fixtures(self, args: dict[str, Any]) -> dict[str, Any]:
+        fixtures, _ = await fpl_client.get_fixtures()
+        boot, _ = await fpl_client.get_bootstrap_static()
+        team_map = {t.id: t.short_name for t in boot.teams}
+        team_id = args.get("team_id")
+        gw = args.get("gameweek")
+
+        res = []
+        for f in fixtures:
+            if gw and f.event != gw:
+                continue
+            if team_id and f.team_h != team_id and f.team_a != team_id:
+                continue
+            res.append({
+                "event": f.event,
+                "home_team": team_map.get(f.team_h, f"Team {f.team_h}"),
+                "away_team": team_map.get(f.team_a, f"Team {f.team_a}"),
+                "difficulty_home": f.team_h_difficulty,
+                "difficulty_away": f.team_a_difficulty,
+                "kickoff_time": f.kickoff_time
+            })
+        return {"fixtures": res[:10]}
 
 tool_executor = ToolExecutor()

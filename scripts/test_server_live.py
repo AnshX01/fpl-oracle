@@ -193,9 +193,53 @@ async def run_tests():
         print(f"    Chat response preview: {resp_text[:80].encode('ascii', 'backslashreplace').decode('ascii')}...")
         assert len(resp_text) > 20
 
-        # 13. Web UI root
+        # 13. Contingency Plans
+        res = await client.get("/api/contingency/plans")
+        print(f"13. GET /api/contingency/plans -> Status {res.status_code}")
+        assert res.status_code == 200
+        contingency_plans = res.json()
+        print(f"    Plans returned: plan_a={bool(contingency_plans.get('plan_a'))}, plan_b={bool(contingency_plans.get('plan_b'))}, plan_c={bool(contingency_plans.get('plan_c'))}")
+        assert "plan_a" in contingency_plans
+        assert "plan_b" in contingency_plans
+        assert "plan_c" in contingency_plans
+
+        # 14. Injury Contingency Matrix
+        res = await client.get("/api/contingency/matrix")
+        print(f"14. GET /api/contingency/matrix -> Status {res.status_code}")
+        assert res.status_code == 200
+        matrix_data = res.json()
+        print(f"    Matrix entries: {len(matrix_data.get('contingency_matrix', []))}")
+        assert "contingency_matrix" in matrix_data
+        assert len(matrix_data["contingency_matrix"]) > 0
+
+        # 15. Panic Button Re-optimizer
+        res = await client.post("/api/contingency/panic", json={"query": "haaland out injured"})
+        print(f"15. POST /api/contingency/panic -> Status {res.status_code}")
+        assert res.status_code == 200
+        panic_data = res.json()
+        print(f"    Panic response status: {panic_data.get('status')}, Recommendation: {panic_data.get('recommendation', '')[:60]}...")
+        assert panic_data.get("status") == "crisis_resolved"
+        assert "lineup_action" in panic_data
+
+        # 16. Pre-Deadline Checklist
+        res = await client.get("/api/contingency/checklist")
+        print(f"16. GET /api/contingency/checklist -> Status {res.status_code}")
+        assert res.status_code == 200
+        chk_data = res.json()
+        print(f"    Checklist gameweek: {chk_data.get('gameweek')}, Items: {len(chk_data.get('checklist', []))}")
+        assert len(chk_data.get("checklist", [])) >= 5
+
+        # 17. Post-GW Review
+        res = await client.get("/api/review")
+        print(f"17. GET /api/review -> Status {res.status_code}")
+        assert res.status_code == 200
+        rev_data = res.json()
+        print(f"    Review target GW: {rev_data.get('target_gameweek')}, Markdown length: {len(rev_data.get('review_markdown', ''))}")
+        assert len(rev_data.get("review_markdown", "")) > 50
+
+        # 18. Web UI root
         res = await client.get("/")
-        print(f"13. GET / (Web UI root) -> Status {res.status_code}")
+        print(f"18. GET / (Web UI root) -> Status {res.status_code}")
         assert res.status_code == 200
         assert "<title>FPL Oracle" in res.text
 

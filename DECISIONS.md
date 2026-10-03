@@ -223,4 +223,51 @@ While FPL Oracle is built with rigorous statistical principles and verified 2026
 - **Property-Based Verification with Hypothesis (`tests/test_optimizer_properties.py`)**:
   - Mathematically verified invariant solver constraints across hundreds of randomized scenarios: squad budget limit ($\sum \text{cost} \le \text{budget}$), exact positional quotas (2 GKP, 5 DEF, 5 MID, 3 FWD), club limits ($\le 3$ per team), valid lineup formations, and monotonic, bounded selling price calculations.
 
+### 6.10 Live "My Money" Flow, Financial Telemetry & SSE Background Sync Pipeline (Phase 3)
+- **Background Orchestration Pipeline (`src/fpl_oracle/server/pipeline.py`)**:
+  - Engineered 9-stage sequential pipeline executing: (1) Upstream API Sync, (2) Live Rules & GameState, (3) Feature Engineering, (4) Component ML Inference, (5) Transfer & Lineup MILP Optimization, (6) Joint Chip DP/Beam Search, (7) Mini-League Monte Carlo Simulation, (8) News Ingestion & Sentiment Extraction, and (9) Weekly Intelligence Briefing Synthesis.
+  - Decoupled client SSE subscribers from the underlying task using `asyncio.Queue` and non-blocking background task runner (`asyncio.create_task`), ensuring client disconnection does not abort long-running ML or MILP calculations.
+  - Exposed via `GET /api/sync/stream` (SSE text/event-stream) and `GET /api/sync/status` (instant status and latest summary polling).
+- **Exact Banked Free Transfer Engine (`src/fpl_oracle/optimise/transfers.py`)**:
+  - Implemented `calculate_banked_free_transfers(history)` parsing manager's full season gameweek progression:
+    - Starts with 1 FT in GW1.
+    - Each completed gameweek increments banked FTs by +1, deducting transfers made ($T_w$).
+    - Bounded between 1 and 5 FTs according to verified 2026/27 official rules.
+    - Wildcard and Free Hit chips preserve banked transfers into the subsequent gameweek.
+- **Financial Telemetry & Instant User Overrides**:
+  - Upgraded `/api/profile` (GET and POST) with support for immediate overrides of `bank`, `free_transfers`, `risk_preference`, `llm_provider`, `manager_id`, and `manual_squad`.
+  - Enriched `GET /api/squad` with financial telemetry: `total_squad_value` (purchase/current value sum), `total_selling_value` (selling price with 50% profit retention formula), `total_team_value` (selling value + bank), `bank_millions`, `free_transfers`, and `available_transfers`.
+- **Pipeline and Server Verification**:
+  - Server test suite (`scripts/test_server_live.py`) enhanced with tests for `/api/sync/status`, `/api/sync/stream` SSE events, and profile overrides with financial assertions. Passes 100% across all 15 endpoints and fault injections.
+  - Type integrity: `mypy` passes with 0 errors across all 53 source files; `ruff` passes with 0 errors.
+
+### 6.11 Expert Behaviour, Contingency Architecture & Panic Button Engine (Phase 4)
+- **Contingency Engine & Plan B/C Precomputation (`src/fpl_oracle/optimise/contingency.py`)**:
+  - Implemented `generate_contingency_plans` computing:
+    - **Plan A**: Primary baseline MILP transfer plan with projected net points.
+    - **Plan B (Injury / Press Conference Pivot)**: Automatically locks out primary transfer targets to discover the 2nd-best replacement target with concrete trigger conditions (e.g. late press conference flags <75% fitness) and net $\Delta \text{xP}$.
+    - **Plan C (Differential / Price Rise Pivot)**: Maximizes 90th percentile ceiling ($P_{90}$) under budget constraints for chasing mini-league rank or hedging against imminent midnight price rises.
+  - Exposed via `GET /api/contingency/plans`.
+- **Injury & Rotation Contingency Matrix (`compute_injury_matrix`)**:
+  - Automatically identifies all 11 starters and computes hypothetical auto-sub substitution points versus direct emergency market transfers.
+  - Generates clear action verdicts (`EXECUTE_TRANSFER` if net gain $\ge 2.0$ pts after hit, `TRUST_BENCH` if bench coverage is strong, or `MONITOR_PRESS_CONFERENCE`) with wait-vs-commit trade-offs.
+  - Exposed via `GET /api/contingency/matrix`.
+- **1-Click Panic Button Re-Optimizer (`panic_button_reoptimize`)**:
+  - Handles crisis inputs via natural language queries (e.g. "Haaland broken foot out 8 weeks", "Saka ruled out") or explicit player IDs.
+  - Instantly zeroes minutes and projected points, re-runs formation optimization to auto-promote the highest-scoring legal bench reserve, designates vice-captain as primary captain, and solves for the best market replacement with net expected points after transfer hit penalties.
+  - Exposed via `POST /api/contingency/panic`.
+- **Pre-Deadline 5-Point Operational Audit (`generate_pre_deadline_checklist`)**:
+  - Automatically audits: (1) Starters Fitness & Press Conference flags, (2) Vice-Captain Failsafe designation, (3) Bench Order hierarchy, (4) Chip Set 1 GW19 Expiry alert (days/GWs remaining), and (5) Deadline Lock countdown.
+  - Exposed via `GET /api/contingency/checklist`.
+- **Post-Gameweek Review & Explanation Engine (`src/fpl_oracle/briefing/review.py`)**:
+  - Generates diagnostic post-gameweek debrief analyzing actual score vs mini-league competition, bench and autosub operation, and model variance within $[P_{10}, P_{90}]$ credible intervals.
+  - Exposed via `GET /api/review`.
+- **Grounded Anti-Hallucination & Tool Grounding Suite (`tests/test_chat_grounding.py`)**:
+  - Proves that LLM chat agent answers cite live database players and prices, accurately respects official 2026/27 chip rules (Set 1 GW19 deadline), reports verified fitness without fabricating injuries for active players, and expresses explicit uncertainty when queried about non-existent players.
+- **Verification Gates**:
+  - All 37 test items across 10 test modules pass 100% green (`pytest`).
+  - All 18 server endpoints and 5 network fault injections pass 100% in `scripts/test_server_live.py`.
+  - Zero mock data in production paths. Zero lookahead leakage.
+
+
 

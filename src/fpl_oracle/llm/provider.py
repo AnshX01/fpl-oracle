@@ -101,23 +101,7 @@ class OfflineExpertProvider:
                 "**Mini-League Strategy:** Under 20% Effective Ownership allows you to rapidly gain ground on rivals holding template assets."
             )
 
-        # 4. Captaincy questions
-        if any(w in tokens for w in ["captain", "armband", "vice", "vc"]):
-            res = await tool_executor.execute("captain_options", {})
-            safe = res["safe_captain"]
-            diff = res["differential_captain"]
-            cands = res["candidates"]
-            lines = [f"- **{c['web_name']}**: {c['expected_points']} xP (Floor: {c['p10']}, Ceiling: {c['p90']})" for c in cands[:3]]
-            return (
-                f"### 🎯 Captaincy Recommendation for Gameweek {res['gameweek']}\n"
-                f"**The Decision:** Captain **{safe}** (Safe/Template) or **{diff}** (High-Variance Differential).\n\n"
-                f"**The Numbers:**\n" + "\n".join(lines) + "\n\n"
-                f"**The Why:** {safe} ranks highest in the 2026/27 ML model with an elite minutes expectation and attack volume. {diff} provides higher ceiling differential upside if you are chasing in your mini-league.\n"
-                f"**The Risk:** Guard against late press-conference rotation notes.\n"
-                f"**What would change the call:** If press conferences indicate minutes management, pivot immediately to your vice-captain."
-            )
-
-        # 5. Chip questions (Wildcard, Free Hit, Bench Boost, Triple Captain)
+        # 4. Chip questions (Wildcard, Free Hit, Bench Boost, Triple Captain)
         chip_tokens = {"chip", "chips", "wildcard", "freehit", "bboost", "bb", "fh", "tc"}
         chip_phrases = ["bench boost", "free hit", "triple captain"]
         if (tokens & chip_tokens) or any(p in last_msg for p in chip_phrases):
@@ -138,6 +122,48 @@ class OfflineExpertProvider:
                 f"**Key 2026/27 Rule Note:** Remember that Set 1 chips DO NOT carry over into Set 2. The Assistant Manager chip has been removed for 2026/27."
             )
 
+        # 5. Captaincy questions
+        if any(w in tokens for w in ["captain", "armband", "vice", "vc"]):
+            res = await tool_executor.execute("captain_options", {})
+            safe = res["safe_captain"]
+            diff = res["differential_captain"]
+            cands = res["candidates"]
+            lines = [f"- **{c['web_name']}**: {c['expected_points']} xP (Floor: {c['p10']}, Ceiling: {c['p90']})" for c in cands[:3]]
+            return (
+                f"### 🎯 Captaincy Recommendation for Gameweek {res['gameweek']}\n"
+                f"**The Decision:** Captain **{safe}** (Safe/Template) or **{diff}** (High-Variance Differential).\n\n"
+                f"**The Numbers:**\n" + "\n".join(lines) + "\n\n"
+                f"**The Why:** {safe} ranks highest in the 2026/27 ML model with an elite minutes expectation and attack volume. {diff} provides higher ceiling differential upside if you are chasing in your mini-league.\n"
+                f"**The Risk:** Guard against late press-conference rotation notes.\n"
+                f"**What would change the call:** If press conferences indicate minutes management, pivot immediately to your vice-captain."
+            )
+
+        # 6. Injury & Availability questions
+        if any(w in tokens for w in ["injury", "injuries", "injured", "fit", "fitness", "available", "availability", "doubt", "doubtful", "knock"]):
+            ignore_words = {"is", "are", "the", "for", "upcoming", "match", "game", "gameweek", "gw", "injured", "injury", "fit", "available", "out", "doubtful", "playing", "next", "round"}
+            cand_tokens = [w for w in tokens if w not in ignore_words and len(w) > 2]
+            player_cand = cand_tokens[0] if cand_tokens else last_msg
+            news_res = await tool_executor.execute("get_news", {"query": player_cand})
+            if news_res.get("status") == "found":
+                p_name = news_res["web_name"]
+                t_name = news_res["team"]
+                if news_res.get("is_fit"):
+                    return (
+                        f"### 🩺 Player Availability: **{p_name}** ({t_name})\n"
+                        f"**Status:** Fully Fit & Available (100% chance of playing).\n"
+                        f"**Official FPL Signal:** No current injury or suspension flags reported in the Premier League database.\n"
+                        f"**Expected Minutes:** Projected to start with full 100% match availability."
+                    )
+                else:
+                    return (
+                        f"### 🩺 Player Availability: **{p_name}** ({t_name})\n"
+                        f"**Status:** Flagged ({news_res['availability_status']}) with {news_res['chance_of_playing']}% chance of playing.\n"
+                        f"**Official FPL Signal:** {news_res['news']}\n"
+                        f"**Source:** {news_res['source']} (Confidence: 1.0)."
+                    )
+            else:
+                return f"### 🩺 Player Availability: Not Found\nI could not find active Premier League records for '{player_cand}'. No injury signals reported."
+
         # 6. Mini-league questions
         if any(w in tokens for w in ["league", "rival", "rivals", "standings", "catch", "win", "rank"]):
             res = await tool_executor.execute("league_analysis", {})
@@ -154,8 +180,35 @@ class OfflineExpertProvider:
                 f"**Strategy Mode:** If leading, mirror the template to protect against rival hauls. If chasing, back differentials to make up points."
             )
 
-        # 7. Price changes
-        if any(w in tokens for w in ["price", "prices", "rise", "fall", "value", "cost"]):
+        # 7. Specific entity / player projection lookup and unknown player handling
+        entity_match = re.search(r"(?:for|about|is|on)\s+([a-zA-Z0-9_\-]+)", last_raw, re.IGNORECASE)
+        if ("projected" in tokens or "points" in tokens or "xp" in tokens) and entity_match:
+            entity = entity_match.group(1).strip()
+            proj_res = await tool_executor.execute("get_projections", {"query": entity})
+            players = proj_res.get("players", [])
+            exact_or_close = [
+                p for p in players
+                if entity.lower() in p["web_name"].lower() or p["web_name"].lower() in entity.lower()
+            ]
+            if exact_or_close:
+                p = exact_or_close[0]
+                return (
+                    f"### 📊 Player Profile & Projections: **{p['web_name']}**\n"
+                    f"- **Position:** {p['position']} | **Cost:** £{p.get('cost', 5.0)}m\n"
+                    f"- **Gameweek {proj_res.get('gameweek')} Projected Points:** **{p['expected_points_gw']} xP**\n"
+                    f"- **Uncertainty:** Floor P10: {p['p10']}, Ceiling P90: {p['p90']}\n"
+                    f"- **Defensive Contribution:** +{p.get('exp_defcon_points', 0.0)} pts\n\n"
+                    f"**Source:** Sourced directly from live 2026/27 ML component inference."
+                )
+            else:
+                return (
+                    f"### 🔍 Player Lookup: Not Found\n"
+                    f"I could not find any active Premier League player matching **'{entity}'** in the official 2026/27 database. "
+                    f"Unable to locate data or player records."
+                )
+
+        # 8. Price changes
+        if any(w in tokens for w in ["rise", "rises", "fall", "falls", "drop", "drops"]) or ("price" in tokens and any(w in tokens for w in ["change", "changes", "tonight", "watch", "imminent"])):
             res = await tool_executor.execute("price_change_watch", {})
             rises = [f"**{p['web_name']}** ({p['urgency_message']})" for p in res.get("imminent_rises", [])[:3]]
             falls = [f"**{p['web_name']}** ({p['urgency_message']})" for p in res.get("imminent_falls", [])[:3]]
@@ -166,7 +219,7 @@ class OfflineExpertProvider:
                 f"**Action:** Make scheduled transfers before 01:30 GMT to avoid losing purchasing power."
             )
 
-        # 8. Transfer & Hit questions
+        # 9. Transfer & Hit questions
         if any(w in tokens for w in ["transfer", "transfers", "hit", "hits", "sell", "buy", "haaland"]):
             res = await tool_executor.execute("optimise_transfers", {})
             if "error" in res:
