@@ -538,12 +538,30 @@ class FeatureEngineering:
             "team_roll_clean_sheets_5": PRIOR_TEAM_CLEAN_SHEET,
         }
 
-        # Calculate rest days if kickoff_time exists
+        # Calculate rest days per team match if kickoff_time exists
         has_kickoff = "kickoff_time" in df.columns
         if has_kickoff:
-            df["_dt"] = pd.to_datetime(df["kickoff_time"], errors="coerce")
-            df["_prev_dt"] = df.groupby(["season", "team"])["_dt"].shift(1)
-            df["days_rest"] = ((df["_dt"] - df["_prev_dt"]).dt.total_seconds() / 86400.0).clip(2.0, 14.0).fillna(7.0)
+            team_matches = (
+                df[["season", "round", "team", "kickoff_time"]]
+                .dropna(subset=["kickoff_time"])
+                .drop_duplicates(subset=["season", "round", "team"])
+                .copy()
+            )
+            team_matches["_dt"] = pd.to_datetime(team_matches["kickoff_time"], errors="coerce")
+            team_matches = team_matches.sort_values(by=["season", "team", "_dt"])
+            team_matches["_prev_dt"] = team_matches.groupby(["season", "team"])["_dt"].shift(1)
+            team_matches["days_rest"] = (
+                (team_matches["_dt"] - team_matches["_prev_dt"]).dt.total_seconds() / 86400.0
+            ).clip(2.0, 14.0).fillna(7.0)
+
+            rest_map = {
+                (str(r["season"]), int(r["round"]), str(r["team"])): float(r["days_rest"])
+                for _, r in team_matches.iterrows()
+            }
+            df["days_rest"] = [
+                rest_map.get((str(row.get("season", "2025-26")), int(row.get("round", 1)), str(row.get("team", "Unknown"))), 7.0)
+                for _, row in df.iterrows()
+            ]
         else:
             df["days_rest"] = 7.0
 
@@ -1064,6 +1082,11 @@ class FeatureEngineering:
                 imp_team_xg = float(np.clip(1.35 * (my_att / 1.35) * (opp_def / 1.35) * home_mult, 0.25, 4.5))
                 imp_opp_xg = float(np.clip(1.35 * (opp_att / 1.35) * (my_def / 1.35) * away_mult, 0.25, 4.5))
 
+                diff_val = 3.0 + (1.35 - opp_def) * 1.2
+                if not was_h:
+                    diff_val += 0.4
+                opp_diff_val = float(np.clip(round(diff_val), 2.0, 5.0))
+
                 row = {
                     "element": elem.id,
                     "web_name": elem.web_name,
@@ -1079,7 +1102,7 @@ class FeatureEngineering:
                     "team_strength_attack": my_att,
                     "opp_strength_defence": opp_def,
                     "net_strength_diff": my_att - opp_def,
-                    "opponent_difficulty": float(fix["difficulty"]),
+                    "opponent_difficulty": opp_diff_val,
                     "days_rest": days_rest_val,
                     "implied_team_xG": imp_team_xg,
                     "implied_team_cs_prob": float(np.exp(-imp_opp_xg)),
