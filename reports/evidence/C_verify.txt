@@ -1,0 +1,19 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 8 items
+
+tests/test_chips.py::test_chip_rules_config_2026_27 PASSED               [ 12%]
+tests/test_chips.py::test_remaining_chips_set_boundaries PASSED          [ 25%]
+tests/test_chips.py::test_joint_chip_assignment_no_conflicts PASSED      [ 37%]
+tests/test_chips.py::test_chip_set_1_expiry_opportunity_cost PASSED      [ 50%]
+tests/test_chips.py::test_chip_calendar_benefit_vs_baseline PASSED       [ 62%]
+tests/test_chips.py::test_joint_chip_and_transfer_planning PASSED        [ 75%]
+tests/test_chips.py::test_strict_recommendation_threshold_and_set1_cutoff PASSED [ 87%]
+tests/test_chips.py::test_rival_chips_tracking_context PASSED            [100%]
+
+============================= 8 passed in 37.39s ==============================
