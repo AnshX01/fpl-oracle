@@ -344,30 +344,45 @@
         </div>
       </div>
 
-      <!-- 📋 SQUAD AVAILABILITY & INJURY RADAR -->
+      <!-- 📋 SQUAD AVAILABILITY & INJURY RADAR (N7) -->
       <div class="council-card p-5 space-y-3">
         <h3 class="font-bold text-sm text-white flex items-center justify-between">
           <span>🩺 Squad Availability & News Alerts</span>
-          <span class="text-xs font-normal text-zinc-400">Verified official Premier League flags</span>
+          <span class="text-xs font-normal text-zinc-400">Verified official Premier League flags & manager press quotes</span>
         </h3>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div v-for="starter in (squadData.starters || []).filter(s => s.status !== 'a' || s.chance_of_playing < 100)" :key="starter.element" class="p-3 rounded-lg bg-zinc-950 border border-amber-500/30 flex items-start justify-between gap-2">
-            <div>
-              <div class="font-bold text-white flex items-center gap-1.5">
-                <span>⚠️</span>
-                <span>{{ starter.web_name }}</span>
-                <span class="text-[10px] text-amber-400 font-mono">({{ starter.chance_of_playing || 75 }}% chance)</span>
+          <div v-for="player in (squadData.starters || []).concat(squadData.bench || []).filter(s => s.status !== 'a' || s.chance_of_playing < 100 || s.news_quote)" :key="player.element" class="p-3 rounded-lg bg-zinc-950 border border-amber-500/30 flex items-start justify-between gap-2">
+            <div class="space-y-1.5 w-full">
+              <div class="font-bold text-white flex items-center justify-between">
+                <div class="flex items-center gap-1.5">
+                  <span>⚠️</span>
+                  <span>{{ player.web_name }}</span>
+                  <span class="text-[10px] text-amber-400 font-mono">({{ player.chance_of_playing ?? 75 }}% chance)</span>
+                </div>
+                <span v-if="player.news_mode === 'gated_active'" class="px-1.5 py-0.5 rounded text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40">Gated Active</span>
+                <span v-else-if="player.news_mode === 'shadow'" class="px-1.5 py-0.5 rounded text-[9px] bg-purple-950 text-purple-300 border border-purple-500/40">Shadow Mode</span>
               </div>
-              <p class="text-zinc-400 text-[11px] mt-1">{{ starter.news || 'Assessing knock; fitness test prior to kickoff.' }}</p>
+              <p class="text-zinc-400 text-[11px]">{{ player.news || player.reconciliation_reason || 'Assessing knock; fitness test prior to kickoff.' }}</p>
+              
+              <!-- Verbatim Manager Quote (N7) -->
+              <div v-if="player.news_quote" class="p-2 rounded bg-zinc-900 border-l-2 border-amber-400 text-[11px] text-zinc-300 italic">
+                "{{ player.news_quote }}"
+              </div>
+              
+              <!-- Minutes Delta & Source Link (N7) -->
+              <div class="flex items-center justify-between text-[10px] text-zinc-500 pt-1 border-t border-zinc-900">
+                <span v-if="player.expected_minutes_limit" class="text-amber-400 font-medium">Minutes Cap: {{ player.expected_minutes_limit }}m</span>
+                <span v-else class="text-zinc-500">Unrestricted</span>
+                <a v-if="player.source_url" :href="player.source_url" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:underline flex items-center gap-1 font-mono">
+                  Source ↗
+                </a>
+              </div>
             </div>
-            <button @click="openPanicModal; panicQuery = starter.web_name + ' ruled out injured'" class="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 whitespace-nowrap text-[10px]">
-              Pivot Plan
-            </button>
           </div>
 
-          <div v-if="(squadData.starters || []).filter(s => s.status !== 'a' || s.chance_of_playing < 100).length === 0" class="col-span-2 p-3 rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 italic text-center">
-            ✅ All 11 starting players are fully fit and available with 100% playing chance.
+          <div v-if="(squadData.starters || []).concat(squadData.bench || []).filter(s => s.status !== 'a' || s.chance_of_playing < 100 || s.news_quote).length === 0" class="col-span-2 p-3 rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 italic text-center">
+            ✅ All squad players are fully fit and available with 100% playing chance.
           </div>
         </div>
       </div>

@@ -8,6 +8,7 @@ and bounded rate limits.
 import hashlib
 import ipaddress
 import logging
+import socket
 import urllib.parse
 from datetime import UTC, datetime
 from typing import Any
@@ -23,21 +24,57 @@ logger = logging.getLogger("fpl_oracle.news.ingest")
 SAFE_ALLOWED_SCHEMES = {"http", "https"}
 
 
-def is_safe_external_url(url: str) -> bool:
-    """SSRF Protection: Block private network, loopback, and disallowed schemes."""
+def is_safe_ip(ip_str: str) -> bool:
+    """Validate whether an IP address is safe (not private, loopback, metadata, or reserved)."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_reserved
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return False
+        # Block cloud metadata addresses explicitly
+        if ip_str in ("169.254.169.254", "fd00:ec2::254"):
+            return False
+        return True
+    except ValueError:
+        return False
+
+
+def is_safe_external_url(url: str, resolve_dns: bool = True) -> bool:
+    """SSRF Protection: Block private network, loopback, cloud metadata, and disallowed schemes with DNS resolution (N6)."""
     try:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in SAFE_ALLOWED_SCHEMES:
             return False
         hostname = (parsed.hostname or "").lower()
-        if not hostname or hostname in ("localhost", "127.0.0.1", "0.0.0.0"):
+        if not hostname or hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal"):
             return False
+
+        # If hostname is an IP literal
         try:
-            ip = ipaddress.ip_address(hostname)
-            if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
-                return False
+            ipaddress.ip_address(hostname)
+            return is_safe_ip(hostname)
         except ValueError:
-            pass  # Valid domain name
+            pass  # It is a domain name, proceed to DNS resolution
+
+        # Resolve hostname via DNS to prevent rebinding
+        if resolve_dns:
+            try:
+                addr_info = socket.getaddrinfo(hostname, None)
+                if not addr_info:
+                    return False
+                for family, _, _, _, sockaddr in addr_info:
+                    ip_str = sockaddr[0]
+                    if not is_safe_ip(ip_str):
+                        return False
+            except socket.gaierror:
+                return False
+
         return True
     except Exception:
         return False
@@ -129,9 +166,24 @@ class NewsIngestion:
                 continue
 
             try:
-                async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
-                    resp = await client.get(feed_url, headers={"User-Agent": "Mozilla/5.0 FPLOracle/1.0"})
-                    if resp.status_code == 200:
+                async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
+                    current_url = feed_url
+                    resp = None
+                    for _ in range(5):
+                        if not is_safe_external_url(current_url):
+                            logger.warning(f"Rejecting unsafe URL or redirect hop: {current_url}")
+                            resp = None
+                            break
+                        resp = await client.get(current_url, headers={"User-Agent": "Mozilla/5.0 FPLOracle/1.0"})
+                        if resp.is_redirect:
+                            loc = resp.headers.get("location")
+                            if not loc:
+                                break
+                            current_url = urllib.parse.urljoin(current_url, loc)
+                        else:
+                            break
+
+                    if resp is not None and resp.status_code == 200:
                         parsed = feedparser.parse(resp.text)
                         for entry in parsed.entries[:15]:
                             title = getattr(entry, "title", "").strip()

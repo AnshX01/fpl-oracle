@@ -28,6 +28,7 @@ from fpl_oracle.llm.agent import expert_agent
 from fpl_oracle.llm.provider import get_llm_status
 from fpl_oracle.ml.model_registry import model_registry
 from fpl_oracle.ml.predict import projection_engine
+from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.news.ingest import news_ingestion
 from fpl_oracle.optimise.contingency import contingency_engine
 from fpl_oracle.optimise.lineup import lineup_optimizer
@@ -264,10 +265,20 @@ async def get_squad(manager_id: int | None = None):
                     })
         return f_list[:5]
 
+    news_map = {}
+    try:
+        raw_signals = await news_analyzer.get_player_news_signals(boot, target_gw=target_gw)
+        for sig in raw_signals:
+            news_map[sig["element_id"]] = sig
+    except Exception:
+        pass
+
     starters_out = []
     for _, s in lineup_res["starters"].iterrows():
+        elem_id = int(s["element"])
+        sig = news_map.get(elem_id, {})
         starters_out.append({
-            "element": int(s["element"]),
+            "element": elem_id,
             "web_name": s["web_name"],
             "team": int(s["team"]),
             "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
@@ -282,15 +293,22 @@ async def get_squad(manager_id: int | None = None):
             "chance_of_playing": s.get("chance_of_playing", 100),
             "status": s.get("status", "a"),
             "news": s.get("news", ""),
-            "is_captain": int(s["element"]) == lineup_res["captain"]["element"],
-            "is_vice_captain": int(s["element"]) == lineup_res["vice_captain"]["element"],
+            "news_quote": sig.get("quote", ""),
+            "source_url": sig.get("source_url", ""),
+            "news_mode": "gated_active" if sig.get("applied_to_production") else ("shadow" if sig.get("quote") else "official"),
+            "expected_minutes_limit": sig.get("expected_minutes_limit"),
+            "reconciliation_reason": sig.get("reconciliation_reason", ""),
+            "is_captain": elem_id == lineup_res["captain"]["element"],
+            "is_vice_captain": elem_id == lineup_res["vice_captain"]["element"],
             "next_fixtures": get_next_fixtures(int(s["team"])),
         })
 
     bench_out = []
     for idx, (_, b) in enumerate(lineup_res["bench"].iterrows(), start=1):
+        b_elem_id = int(b["element"])
+        b_sig = news_map.get(b_elem_id, {})
         bench_out.append({
-            "element": int(b["element"]),
+            "element": b_elem_id,
             "web_name": b["web_name"],
             "team": int(b["team"]),
             "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
@@ -305,6 +323,11 @@ async def get_squad(manager_id: int | None = None):
             "chance_of_playing": b.get("chance_of_playing", 100),
             "status": b.get("status", "a"),
             "news": b.get("news", ""),
+            "news_quote": b_sig.get("quote", ""),
+            "source_url": b_sig.get("source_url", ""),
+            "news_mode": "gated_active" if b_sig.get("applied_to_production") else ("shadow" if b_sig.get("quote") else "official"),
+            "expected_minutes_limit": b_sig.get("expected_minutes_limit"),
+            "reconciliation_reason": b_sig.get("reconciliation_reason", ""),
             "bench_order": idx,
             "next_fixtures": get_next_fixtures(int(b["team"])),
         })
@@ -619,6 +642,22 @@ async def get_league_intel(league_id: int | None = None):
             "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
         }
     )
+
+
+@router.get("/news")
+async def get_news_signals(
+    gw: int | None = None,
+    fpl_client: FPLClient = Depends(get_fpl_client),
+):
+    """Return all reconciled news signals with verbatim quotes, source links, and mode badges (N7)."""
+    boot, _ = await fpl_client.get_bootstrap_static()
+    target_gw = gw or 6
+    signals = await news_analyzer.get_player_news_signals(boot, target_gw=target_gw)
+    return safe_json_serialize({
+        "target_gw": target_gw,
+        "count": len(signals),
+        "signals": signals,
+    })
 
 
 @router.get("/briefing")

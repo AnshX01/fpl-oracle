@@ -136,6 +136,9 @@ class SyncPipeline:
                 logger.warning("News ingestion warning: %s", e)
                 analyzed_news = []
 
+            # Extract unified reconciled availability map (N1)
+            reconciled_map = news_analyzer.get_reconciled_availabilities_map(boot, target_gw=target_gw)
+
             # ------------------------------------------------------------------
             # Stage 4: Feature Engineering
             # ------------------------------------------------------------------
@@ -151,7 +154,11 @@ class SyncPipeline:
                 f"Generating calibrated xP, P10 floor & P90 ceiling across GW {target_gw}-{target_gw + horizon - 1}...",
             )
             projections = projection_engine.predict_multi_gameweeks(
-                start_gw=target_gw, horizon=horizon, bootstrap=boot, fixtures=fixtures
+                start_gw=target_gw,
+                horizon=horizon,
+                bootstrap=boot,
+                fixtures=fixtures,
+                reconciled_availabilities=reconciled_map,
             )
             target_df = projections.get(target_gw)
 

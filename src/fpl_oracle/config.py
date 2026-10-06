@@ -63,12 +63,12 @@ class FPLSettings(BaseModel):
     gated_active_opt_in: bool = Field(default=False, description="Explicit opt-in to apply candidate news to production")
 
     # Optional Providers
-    odds_api_key: str = Field(default="", description="Optional free odds API key")
+    odds_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses continuous Dixon-Coles team ratings")
     llm_provider: str = Field(default="gemini", description="LLM provider for chat/briefings")
     anthropic_api_key: str = Field(default="", description="Optional Anthropic API Key")
     openai_api_key: str = Field(default="", description="Optional OpenAI API Key")
-    tavily_api_key: str = Field(default="", description="Optional Tavily API Key")
-    brave_api_key: str = Field(default="", description="Optional Brave API Key")
+    tavily_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds")
+    brave_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds")
     discord_webhook_url: str = Field(default="", description="Optional Discord webhook")
     telegram_bot_token: str = Field(default="", description="Optional Telegram bot token")
     telegram_chat_id: str = Field(default="", description="Optional Telegram chat ID")

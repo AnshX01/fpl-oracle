@@ -12,6 +12,7 @@ Verifies:
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pandas as pd
 import pytest
 
 from fpl_oracle.api.models import Element
@@ -308,3 +309,142 @@ def test_web_index_no_secret_input_forms():
     assert 'name="fpl_league_id"' not in content
     assert 'v-model="fplTeamId"' not in content
     assert 'v-model="geminiApiKey"' not in content
+
+
+def test_controlled_mock_xp_shadow_vs_gated_active():
+    """
+    N2 CONTROLLED MOCK TEST:
+    Asserts that a manager quote ruling a player out:
+    1. Changes xP to 0.0 in gated_active mode (candidate evidence applied to production).
+    2. Leaves xP completely unchanged in shadow mode (official baseline preserved).
+    """
+    from fpl_oracle.data.features import feature_engineering
+    from fpl_oracle.ml.ensemble import scoring_ensemble
+
+    shadow_reconciler = AvailabilityReconciler(mode="shadow")
+    gated_reconciler = AvailabilityReconciler(mode="gated_active")
+
+    element = MagicMock(spec=Element)
+    element.id = 101
+    element.web_name = "Haaland"
+    element.team = 1
+    element.status = "a"
+    element.chance_of_playing_this_round = 100.0
+    element.chance_of_playing_next_round = 100.0
+    element.news = ""
+    element.scout_risks = []
+
+    quote_evidence = [
+        PlayerEvidence(
+            player_id=101,
+            player_name="Haaland",
+            category=EvidenceCategory.RULED_OUT,
+            quote="Haaland twisted his ankle in training and is definitely out for the weekend.",
+            confidence=0.95,
+        )
+    ]
+
+    # Reconcile under SHADOW mode
+    res_shadow = shadow_reconciler.reconcile_player_fixture(
+        element=element, target_gw=10, candidate_evidence=quote_evidence
+    )
+    assert res_shadow.applied_to_production is False
+    assert res_shadow.is_shadow_override is True
+    assert res_shadow.effective_chance_of_playing == 100.0  # Official baseline preserved
+
+    # Reconcile under GATED_ACTIVE mode
+    res_gated = gated_reconciler.reconcile_player_fixture(
+        element=element, target_gw=10, candidate_evidence=quote_evidence
+    )
+    assert res_gated.applied_to_production is True
+    assert res_gated.is_shadow_override is True
+    assert res_gated.effective_chance_of_playing == 0.0  # Overridden by verified evidence
+
+    # Verify xP propagation through ScoringEnsemble
+    # Create synthetic component predictions representing a peak-form forward
+    import numpy as np
+
+    comps = {
+        "expected_minutes": np.array([88.0]),
+        "p_starts": np.array([0.95]),
+        "p_min60": np.array([0.92]),
+        "expected_goals": np.array([0.85]),
+        "expected_assists": np.array([0.25]),
+        "p_clean_sheet": np.array([0.45]),
+        "expected_goals_conceded": np.array([0.80]),
+        "p_defcon": np.array([0.0]),
+        "expected_bonus": np.array([1.80]),
+        "expected_card_deduction": np.array([0.10]),
+        "expected_saves": np.array([0.0]),
+    }
+
+    # Evaluate shadow mode (chance_of_playing = 100.0)
+    df_shadow_features = pd.DataFrame([{
+        "pos_FWD": 1.0,
+        "pos_MID": 0.0,
+        "pos_DEF": 0.0,
+        "pos_GKP": 0.0,
+        "chance_of_playing": res_shadow.effective_chance_of_playing,
+    }])
+    df_shadow_pred = scoring_ensemble.aggregate_components(comps, df_shadow_features)
+    shadow_xp = df_shadow_pred["expected_points"].iloc[0]
+
+    # Evaluate gated_active mode (chance_of_playing = 0.0)
+    df_gated_features = pd.DataFrame([{
+        "pos_FWD": 1.0,
+        "pos_MID": 0.0,
+        "pos_DEF": 0.0,
+        "pos_GKP": 0.0,
+        "chance_of_playing": res_gated.effective_chance_of_playing,
+    }])
+    df_gated_pred = scoring_ensemble.aggregate_components(comps, df_gated_features)
+    gated_xp = df_gated_pred["expected_points"].iloc[0]
+
+    # Verification assertions:
+    assert shadow_xp > 5.0, f"Expected unmutated shadow xP > 5.0, got {shadow_xp}"
+    assert gated_xp == 0.0, f"Expected gated active xP == 0.0, got {gated_xp}"
+    assert shadow_xp - gated_xp > 5.0, "Delta between shadow and gated_active must be significant"
+
+
+def test_reconcile_named_probability_settings():
+    """
+    N3 NAMED SETTINGS VERIFICATION:
+    Asserts that AvailabilityReconciler respects configurable ReconcileProbabilitySettings.
+    """
+    from fpl_oracle.news.reconcile import ReconcileProbabilitySettings
+
+    custom_settings = ReconcileProbabilitySettings(
+        prob_start_high_base=0.95,
+        prob_start_low_base=0.40,
+        prob_start_minutes_limit=0.60,
+        prob_avail_returned_training=0.80,
+        prob_start_returned_training=0.55,
+        prob_avail_doubtful=0.45,
+        prob_start_doubtful=0.35,
+    )
+
+    reconciler = AvailabilityReconciler(mode="gated_active", prob_settings=custom_settings)
+
+    element = MagicMock(spec=Element)
+    element.id = 202
+    element.web_name = "Player"
+    element.team = 2
+    element.status = "d"
+    element.chance_of_playing_next_round = 25.0
+    element.news = ""
+    element.scout_risks = []
+
+    ev = [
+        PlayerEvidence(
+            player_id=202,
+            player_name="Player",
+            category=EvidenceCategory.RETURNED_TO_TRAINING,
+            quote="Back in full training yesterday.",
+            confidence=0.90,
+        )
+    ]
+
+    res = reconciler.reconcile_player_fixture(element, target_gw=12, candidate_evidence=ev)
+    assert res.p_available == 0.80
+    assert res.p_start_given_available == 0.55
+

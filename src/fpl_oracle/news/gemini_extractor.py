@@ -54,10 +54,10 @@ class GeminiBudgetManager:
     def check_and_increment(self, estimated_tokens: int = 1500) -> tuple[bool, str]:
         """Check if request is within free daily budget. Returns (allowed, reason)."""
         state = self._load_budget_state()
-        if state["requests_count"] >= MAX_DAILY_REQUESTS:
+        if state["requests_count"] + 1 > MAX_DAILY_REQUESTS:
             return False, f"Daily free request budget exceeded ({state['requests_count']}/{MAX_DAILY_REQUESTS})"
-        if state["tokens_count"] >= MAX_DAILY_TOKENS:
-            return False, f"Daily free token budget exceeded ({state['tokens_count']}/{MAX_DAILY_TOKENS})"
+        if state["tokens_count"] + estimated_tokens > MAX_DAILY_TOKENS:
+            return False, f"Daily free token budget exceeded ({state['tokens_count']} + {estimated_tokens} > {MAX_DAILY_TOKENS})"
 
         state["requests_count"] += 1
         state["tokens_count"] += estimated_tokens

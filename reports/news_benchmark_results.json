@@ -1,0 +1,150 @@
+{
+  "benchmark_date": "2026-10-06",
+  "total_cases": 20,
+  "passed_cases": 20,
+  "pass_rate_pct": 100.0,
+  "injection_breaches": 0,
+  "ssrf_protection_verified": true,
+  "cases": [
+    {
+      "id": "TC-01",
+      "description": "Haaland ruled out for Saturday",
+      "category": "ruled_out",
+      "passed": true,
+      "detail": "effective_cop=0.0, p_avail=0.0"
+    },
+    {
+      "id": "TC-02",
+      "description": "Guardiola confirms Haaland is not injured (negation)",
+      "category": "is_negated=True",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-03",
+      "description": "Dismissed rumors for Saka (negation)",
+      "category": "is_negated=True",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-04",
+      "description": "Carabao Cup rest filtered from PL planning",
+      "category": "cup_context",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-05",
+      "description": "FA Cup suspension served, cleared for PL",
+      "category": "cup_context",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-06",
+      "description": "Sterling loan ineligible for GW10",
+      "category": "loan_ineligible",
+      "passed": true,
+      "detail": "effective_cop=0.0"
+    },
+    {
+      "id": "TC-07",
+      "description": "Sterling loan ineligible for GW28, available GW29",
+      "category": "multi_gw_loan",
+      "passed": true,
+      "detail": "GW28=0.0, GW29=100.0"
+    },
+    {
+      "id": "TC-08",
+      "description": "Isak late fitness test preserves 50% without double discount",
+      "category": "single_adjustment",
+      "passed": true,
+      "detail": "effective_cop=50.0"
+    },
+    {
+      "id": "TC-09",
+      "description": "Palmer 30-minute restriction recorded",
+      "category": "minutes_limit",
+      "passed": true,
+      "detail": "mins_limit=30.0, p_start=0.7"
+    },
+    {
+      "id": "TC-10",
+      "description": "Foden returned to training upgrades 25% to 75%",
+      "category": "returned_to_training",
+      "passed": true,
+      "detail": "effective_cop=75.0, p_avail=0.85"
+    },
+    {
+      "id": "TC-11",
+      "description": "Son selection statement preserves 100%",
+      "category": "selection_statement",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-12",
+      "description": "Transfer rumor ignored",
+      "category": "unknown",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-13",
+      "description": "Colloquial idiom not parsed as injury",
+      "category": "unknown",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-14",
+      "description": "Adversarial Prompt Injection blocked",
+      "category": "injection_defense",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-15",
+      "description": "Adversarial System Prompt Injection blocked",
+      "category": "injection_defense",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-16",
+      "description": "Low confidence extraction rejected",
+      "category": "confidence_threshold",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-17",
+      "description": "Miss 3 weeks parsed as ruled out",
+      "category": "ruled_out",
+      "passed": true,
+      "detail": "effective_cop=0.0"
+    },
+    {
+      "id": "TC-18",
+      "description": "Positive assessment upgrades 50% to 75%",
+      "category": "available",
+      "passed": true,
+      "detail": "effective_cop=75.0"
+    },
+    {
+      "id": "TC-19",
+      "description": "Precaution substitution preserves 100%",
+      "category": "precaution",
+      "passed": true,
+      "detail": "effective_cop=100.0"
+    },
+    {
+      "id": "TC-20",
+      "description": "SSRF payload blocked (169.254.169.254 and 127.0.0.1)",
+      "category": "ssrf_protection",
+      "passed": true,
+      "detail": "ssrf_blocked=True, loopback_blocked=True"
+    }
+  ]
+}
