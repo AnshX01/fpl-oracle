@@ -1,0 +1,10 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collected 4 items
+
+tests\test_calibration_persist.py ....                                   [100%]
+
+============================== 4 passed in 0.53s ==============================
