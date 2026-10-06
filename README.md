@@ -2,7 +2,7 @@
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests: Passing](https://img.shields.io/badge/Tests-14%20Passing-brightgreen.svg)]()
+[![Tests: Passing](https://img.shields.io/badge/Tests-77%20Passing-brightgreen.svg)]()
 [![2026/27 Rules: Verified](https://img.shields.io/badge/FPL%20Rules-2026%2F27%20Verified-orange.svg)]()
 
 > **FPL Oracle** is an autonomous, machine-learning-driven Fantasy Premier League decision engine and conversational AI expert designed to help managers dominate their mini-leagues. Running 100% locally on your machine, it couples a decomposed ML projection engine with a mixed-integer linear programming (MILP) transfer optimizer and Monte Carlo mini-league game theory.
@@ -40,7 +40,83 @@
 
 ---
 
-## 🏗 Architecture Overview
+## ⚙️ Complete Setup: Baseline, Repaired Model & Integrated LLM Extraction
+
+FPL Oracle runs **100% free and locally** on your machine. You can run the entire pipeline out of the box using public official FPL endpoints without any API keys, or optionally enable Google Gemini's generous Free Tier for AI press conference extraction and chat.
+
+### 1. Environment Configuration (`.env`)
+All configuration, manager IDs, and API keys reside exclusively in the local, gitignored `.env` file. There are **zero credentials or ID inputs in the web interface** for privacy and security.
+
+Create your `.env` file by copying the template:
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your settings:
+```ini
+# ==============================================================================
+# FPL User & League Settings
+# ==============================================================================
+# Find your Team ID on the FPL website under the 'Points' or 'Gameweek history' URL:
+# https://fantasy.premierleague.com/entry/<YOUR_ID>/event/1
+FPL_MANAGER_ID=1234567
+
+# Find your Mini-League ID under 'Leagues & Cups' -> Standings URL:
+# https://fantasy.premierleague.com/leagues/<YOUR_LEAGUE_ID>/standings/c
+FPL_TARGET_LEAGUE_ID=7654321
+
+# ==============================================================================
+# Google Gemini Free-Tier Integration (Optional, 100% Free)
+# ==============================================================================
+# Obtain a free API key with no billing required: https://aistudio.google.com/
+GEMINI_API_KEY=your_free_key_here
+
+# Safety confirmation safeguard: MUST be set to true to enable Gemini Free Tier.
+# If omitted or false, the system safely disables Gemini calls and falls back.
+GEMINI_FREE_TIER_CONFIRMED=true
+
+# Fast, non-billable free-tier model (defaults to gemini-2.5-flash-lite)
+GEMINI_MODEL=gemini-2.5-flash-lite
+
+# ==============================================================================
+# Availability & News Recommendation Mode
+# ==============================================================================
+# Operating modes:
+#   - 'shadow' (Default & Recommended): News quotes, publication age, and candidate
+#     reconciliations are logged and displayed in the UI, but production projections
+#     remain strictly anchored to official FPL API availability.
+#   - 'gated_active': Candidate news updates (e.g. manager quotes) actively adjust
+#     expected availability in production once verified.
+#   - 'api_only': Completely ignores RSS/news feeds and relies 100% on official FPL API.
+NEWS_RECOMMENDATION_MODE=shadow
+
+# News ingestion polling interval in minutes (default: 60)
+NEWS_FETCH_INTERVAL_MINUTES=60
+```
+
+> [!NOTE]
+> **Free-Tier Protection Guaranteed:** The built-in `GeminiBudgetManager` persistently enforces a maximum limit of **150 requests/day** and **500,000 tokens/day** in `data/cache/gemini_budget.json`. If this threshold is reached, or if you run without an API key, the system automatically falls back to official FPL API data without raising any errors.
+
+---
+
+### 2. Quickstart Execution Commands
+
+```bash
+# 1. Install dependencies (Python 3.11 recommended)
+pip install -e .
+
+# 2. Run the complete automated test suite (77 tests, ~3 min)
+pytest tests/ -v
+
+# 3. Train or evaluate the 6 LightGBM component models
+python -m fpl_oracle.ml.train
+
+# 4. Start the local FastAPI server and dashboard
+uvicorn fpl_oracle.server.main:app --host 127.0.0.1 --port 8000
+```
+Open your browser at **http://127.0.0.1:8000** to access the dashboard.
+
+---
 
 ```mermaid
 flowchart TD
@@ -140,16 +216,18 @@ When running `python run.py run`, navigate to `http://localhost:8000` for the si
 FPL Oracle is thoroughly validated against expanding-window out-of-sample data. Full reports are generated in the `reports/` directory:
 
 - [Model Evaluation Report](file:///C:/Users/anshw/Documents/fpl-expert/reports/model_eval.md):
-  - **Rank Correlation ($\rho$)**: **0.667** (ML Ensemble) vs 0.662 (Heuristic Form Baseline)
-  - **Root Mean Squared Error (RMSE)**: **1.894** (ML Ensemble) vs 1.922 (Baseline)
-  - Position-stratified accuracy and isotonic probability calibration for 60+ minutes.
+  - **Rank Correlation ($\rho$)**: **0.706** (Production Ensemble) vs 0.697 (Baseline)
+  - **Mean Absolute Error (MAE)**: **1.045** (ML Ensemble) vs 1.083 (Fixture-Adjusted Baseline) and 1.142 (Weighted Form Baseline)
+  - **Fixture Feature Gain**: +2.88% out-of-time MAE gain with continuous opponent defensive form and match signals
+  - **Uncertainty Interval Coverage**: **91.13%** empirical coverage for nominal 80% credible interval ($P_{10}$–$P_{90}$)
+- [Gap Closure Audit Matrix](file:///C:/Users/anshw/Documents/fpl-expert/reports/gap_closure.md): Full audit matrix confirming resolution of all gaps A1–A8 and B.1–B.8.
+- [News & Single Availability Evaluation](file:///C:/Users/anshw/Documents/fpl-expert/reports/news_availability_eval.md): 20/20 adversarial benchmark verification, zero double-discounting invariant, and shadow mode gating policy.
 - [Historical Backtest Report](file:///C:/Users/anshw/Documents/fpl-expert/reports/backtest.md):
   - **Blind Out-of-Time Backtest (GW 1–4)**: Models fitted strictly on prior seasons with shifted ($t-1$) features; zero future data leakage.
   - **Oracle Strategy Points**: **205.0 pts** (vs **178.0 pts** naive baseline, **+27.0 pts** uplift).
   - **Spearman Rank Correlation**: Rapidly converges from 0.012 (GW1) to **0.470 (GW3)** and **0.451 (GW4)**.
   - **Run on Demand**: Execute `python run.py backtest` to re-run the complete evaluation pipeline.
-- [Chat Evaluation Examples](file:///C:/Users/anshw/Documents/fpl-expert/reports/chat_examples.md):
-  - 10 realistic FPL queries with multi-tool calling responses.
+- [Final Status Report](file:///C:/Users/anshw/Documents/fpl-expert/reports/final_status.md): Comprehensive summary of changes, before/after comparison, and operational guide.
 
 ---
 
