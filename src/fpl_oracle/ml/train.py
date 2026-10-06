@@ -20,7 +20,7 @@ from fpl_oracle.ml.components.cards_saves import CardsSavesModel
 from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.defending import DefendingModel
 from fpl_oracle.ml.components.minutes import MinutesModel
-from fpl_oracle.ml.ensemble import scoring_ensemble
+from fpl_oracle.ml.ensemble import ScoringEnsemble, scoring_ensemble
 from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.model_registry import model_registry
 
@@ -77,43 +77,37 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
         cards_p = models["cards_saves_model"].predict(X_te)
 
         comps = {**mins_p, **att_p, **def_p, **defcon_p, **bonus_p, **cards_p}
-        preds_df = scoring_ensemble.aggregate_components(comps, X_te)
-        preds = preds_df["expected_points"].values
-        actual = Y_te["target_points"].values
 
-        # For current-season holdout (2026-27), apply validation-learned stacking blend (F2)
+        ens = ScoringEnsemble(blend_weights=(0.72, 0.04, 0.24))
+
+        # Out-of-fold validation block strictly prior to holdout origin for calibration and stacking weights (G5)
+        val_mask = pd.Series(False, index=seasons.index)
         if test_label == "2026-27":
             val_mask = seasons == "2025-26"
-            if val_mask.sum() > 0:
-                X_v, Y_v = X[val_mask], Y[val_mask]
-                v_comps = {
-                    **models["minutes_model"].predict(X_v),
-                    **models["attacking_model"].predict(X_v),
-                    **models["defending_model"].predict(X_v),
-                    **models["defcon_model"].predict(X_v),
-                    **models["bonus_model"].predict(X_v),
-                    **models["cards_saves_model"].predict(X_v),
-                }
-                v_preds = scoring_ensemble.aggregate_components(v_comps, X_v)["expected_points"].values
-                v_rec = model_evaluator.compute_baseline_projections(X_v)
-                v_sea = model_evaluator.compute_season_avg_baseline(X_v)
-                v_act = Y_v["target_points"].values
+        elif test_label == "2025-26":
+            val_mask = seasons == "2024-25"
+        elif test_label == "2024-25":
+            val_mask = (seasons == "2023-24") & (meta["round"] >= 30)
 
-                from scipy.optimize import minimize
+        if val_mask.sum() > 0:
+            X_v, Y_v = X[val_mask], Y[val_mask]
+            v_comps = {
+                **models["minutes_model"].predict(X_v),
+                **models["attacking_model"].predict(X_v),
+                **models["defending_model"].predict(X_v),
+                **models["defcon_model"].predict(X_v),
+                **models["bonus_model"].predict(X_v),
+                **models["cards_saves_model"].predict(X_v),
+            }
+            ens.calibrate(v_comps, X_v, Y_v)
+            ens.fit_stacking_weights(v_comps, X_v, Y_v)
 
-                def _mae_loss(w, _act=v_act, _p=v_preds, _r=v_rec, _s=v_sea):
-                    return mean_absolute_error(_act, w[0] * _p + w[1] * _r + w[2] * _s)
-
-                res = minimize(
-                    _mae_loss,
-                    [0.72, 0.04, 0.24],
-                    bounds=[(0, 1), (0, 1), (0, 1)],
-                    constraints={"type": "eq", "fun": lambda w: sum(w) - 1.0},
-                )
-                w_opt = res.x
-                base_recent_te = model_evaluator.compute_baseline_projections(X_te)
-                base_season_te = model_evaluator.compute_season_avg_baseline(X_te)
-                preds = w_opt[0] * preds + w_opt[1] * base_recent_te + w_opt[2] * base_season_te
+        # Unified single recipe: aggregate_components produces final blended expected_points and intervals
+        preds_df = ens.aggregate_components(comps, X_te)
+        preds = preds_df["expected_points"].values
+        p10 = preds_df["p10"].values
+        p90 = preds_df["p90"].values
+        actual = Y_te["target_points"].values
 
         mae = float(np.round(mean_absolute_error(actual, preds), 3))
         rmse = float(np.round(root_mean_squared_error(actual, preds), 3))
@@ -130,6 +124,9 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
         b3_mae = float(np.round(mean_absolute_error(actual, base_fixture), 3))
         best_base = min(b1_mae, b2_mae, b3_mae)
 
+        exp_mins = comps.get("expected_minutes", np.zeros(len(X_te)))
+        cov_info = model_evaluator.compute_interval_coverage_breakdown(actual, p10, p90, X_te, exp_mins)
+
         results.append(
             {
                 "season": f"Holdout {test_label} (trained on {', '.join(train_seasons)})",
@@ -143,6 +140,9 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
                 "base_fixture_mae": b3_mae,
                 "best_baseline_mae": best_base,
                 "gain_vs_baseline": float(np.round(best_base - mae, 3)),
+                "interval_80_coverage_pct": cov_info["interval_80_coverage_pct"],
+                "position_coverage": cov_info["position_coverage"],
+                "minutes_bucket_coverage": cov_info["minutes_bucket_coverage"],
             }
         )
 
@@ -231,7 +231,8 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         **cal_comps["cards_saves_model"],
     }
     z10, z90 = scoring_ensemble.calibrate(cal_comps_flat, X_cal, Y_cal)
-    logger.info(f"Empirical quantile calibration fit: z10={z10:.3f}, z90={z90:.3f}")
+    bw = scoring_ensemble.fit_stacking_weights(cal_comps_flat, X_cal, Y_cal)
+    logger.info(f"Empirical quantile calibration fit: z10={z10:.3f}, z90={z90:.3f}, blend_weights={bw}")
 
     # 7. Evaluate candidate models on holdout validation split with real dynamic ablation (M8)
     logger.info("Evaluating candidate models on holdout validation split with real ablation...")

@@ -20,11 +20,70 @@ from fpl_oracle.config import REPORTS_DIR
 
 logger = logging.getLogger("fpl_oracle.eval")
 
+# Canonical schema constants for evaluation and promotion gate verification (Requirement G5)
+ROLLING_ORIGIN_SCHEMA_KEYS: list[str] = [
+    "season",
+    "train_size",
+    "test_size",
+    "mae",
+    "rmse",
+    "spearman",
+    "best_baseline_mae",
+    "gain_vs_baseline",
+    "interval_80_coverage_pct",
+]
+
+EVAL_METRICS_SCHEMA_KEYS: list[str] = [
+    "ml_mae",
+    "base_mae",
+    "rolling_origins",
+    "calibration",
+]
+
 
 class ModelEvaluator:
     def __init__(self):
         self.report_path = REPORTS_DIR / "model_eval.md"
         self.json_path = REPORTS_DIR / "model_eval.json"
+
+    def compute_interval_coverage_breakdown(
+        self,
+        actual: np.ndarray,
+        p10: np.ndarray,
+        p90: np.ndarray,
+        X: pd.DataFrame,
+        exp_mins: np.ndarray | None = None,
+    ) -> dict[str, Any]:
+        """
+        Compute empirical 80% credible interval coverage across all test samples,
+        broken down by position (GKP, DEF, MID, FWD) and minutes categories (low, mid, high).
+        """
+        in_interval = (actual >= p10) & (actual <= p90)
+        cov_80 = float(np.round(np.mean(in_interval) * 100.0, 2))
+
+        pos_cov: dict[str, float] = {}
+        for pos in ["GKP", "DEF", "MID", "FWD"]:
+            col = f"pos_{pos}"
+            if col in X.columns:
+                mask = X[col].values > 0
+                if mask.sum() > 0:
+                    pos_cov[pos] = float(np.round(np.mean(in_interval[mask]) * 100.0, 2))
+
+        mins_cov: dict[str, float] = {}
+        if exp_mins is not None:
+            for cat, mask in [
+                ("low", exp_mins < 30),
+                ("mid", (exp_mins >= 30) & (exp_mins < 65)),
+                ("high", exp_mins >= 65),
+            ]:
+                if mask.sum() > 0:
+                    mins_cov[cat] = float(np.round(np.mean(in_interval[mask]) * 100.0, 2))
+
+        return {
+            "interval_80_coverage_pct": cov_80,
+            "position_coverage": pos_cov,
+            "minutes_bucket_coverage": mins_cov,
+        }
 
     def compute_baseline_projections(self, X: pd.DataFrame) -> np.ndarray:
         """
@@ -165,6 +224,7 @@ class ModelEvaluator:
         rolling_origins: list[dict[str, Any]] | None = None,
         ablation_metrics: dict[str, Any] | None = None,
         upcoming_projections: list[dict[str, Any]] | None = None,
+        gate_verdict: dict[str, Any] | None = None,
         save_reports: bool = True,
         custom_json_path: Path | None = None,
         custom_md_path: Path | None = None,
@@ -271,6 +331,7 @@ class ModelEvaluator:
             "ablation": ablation_metrics or {},
             "partial_dependence": pdp_diagnostics,
             "upcoming_projections": upcoming_projections or [],
+            "gate_verdict": gate_verdict or {},
         }
 
         if save_reports:
@@ -395,6 +456,18 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 """
         for p in res.get("upcoming_projections", []):
             content += f"| **{p.get('position', '')}** | {p.get('name', '')} | {p.get('team', '')} | {p.get('opponent', '')} | {p.get('venue', 'H')} | **{p.get('xp', 0.0)} pts** | {p.get('drivers', '')} |\n"
+
+        gv = res.get("gate_verdict", {})
+        if gv:
+            status_str = "PASSED" if gv.get("passed") else "REJECTED"
+            content += f"""
+---
+
+## 9. Model Promotion Gate Verdict
+
+- **Gate Status**: **{status_str}**
+- **Gate Details**: {gv.get("reason", "N/A")}
+"""
 
         content += """
 ---

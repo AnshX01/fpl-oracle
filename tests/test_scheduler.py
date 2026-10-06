@@ -176,7 +176,46 @@ def test_model_registry_promotion_on_improved_metric(tmp_path):
     }
 
     # Superior candidate metrics: MAE = 1.35 (improvement)
-    cand_metrics_improved = {"ml_mae": 1.35, "ml_spearman": 0.58, "base_mae": 1.74}
+    cand_metrics_improved = {
+        "ml_mae": 1.35,
+        "ml_spearman": 0.58,
+        "base_mae": 1.74,
+        "rolling_origins": [
+            {
+                "season": "Holdout 2024-25",
+                "train_size": 30000,
+                "test_size": 27000,
+                "mae": 1.00,
+                "rmse": 2.00,
+                "spearman": 0.68,
+                "best_baseline_mae": 1.10,
+                "gain_vs_baseline": 0.10,
+                "interval_80_coverage_pct": 80.0,
+            },
+            {
+                "season": "Holdout 2025-26",
+                "train_size": 57000,
+                "test_size": 29000,
+                "mae": 0.94,
+                "rmse": 1.98,
+                "spearman": 0.70,
+                "best_baseline_mae": 1.04,
+                "gain_vs_baseline": 0.10,
+                "interval_80_coverage_pct": 80.0,
+            },
+            {
+                "season": "Holdout 2026-27",
+                "train_size": 87000,
+                "test_size": 2000,
+                "mae": 1.88,
+                "rmse": 2.82,
+                "spearman": 0.43,
+                "best_baseline_mae": 1.95,
+                "gain_vs_baseline": 0.07,
+                "interval_80_coverage_pct": 80.0,
+            },
+        ],
+    }
 
     res_promote = registry.verify_and_promote(
         candidate_models=cand_models,

@@ -1,215 +1,170 @@
 {
-  "evaluated_at": "2026-10-06T17:13:05.760490+00:00",
-  "sample_count": 13628,
-  "ml_mae": 1.016,
-  "ml_rmse": 2.054,
-  "ml_spearman": 0.704,
-  "ml_pearson": 0.541,
-  "base_mae": 1.078,
-  "base_rmse": 2.221,
-  "base_spearman": 0.698,
+  "evaluated_at": "2026-10-06T19:07:44.829775+00:00",
+  "sample_count": 2054,
+  "ml_mae": 1.883,
+  "ml_rmse": 2.828,
+  "ml_spearman": 0.429,
+  "ml_pearson": 0.354,
+  "base_mae": 1.963,
+  "base_rmse": 3.09,
+  "base_spearman": 0.374,
   "baselines": {
     "weighted_recent_form": {
-      "mae": 1.078,
-      "rmse": 2.221,
-      "spearman": 0.698
+      "mae": 1.963,
+      "rmse": 3.09,
+      "spearman": 0.374
     },
     "season_average": {
-      "mae": 1.076,
-      "rmse": 2.202,
-      "spearman": 0.687
+      "mae": 1.952,
+      "rmse": 3.06,
+      "spearman": 0.365
     },
     "fixture_adjusted": {
-      "mae": 1.211,
-      "rmse": 2.558,
-      "spearman": 0.708
+      "mae": 2.227,
+      "rmse": 3.498,
+      "spearman": 0.399
     }
   },
-  "mae_improvement_pct": 5.75,
-  "rmse_improvement_pct": 7.52,
-  "verdict": "The ML Projection Engine achieves an MAE of 1.016 and RMSE of 2.054 with a Spearman rank correlation of 0.704 (vs 0.698 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
+  "mae_improvement_pct": 4.08,
+  "rmse_improvement_pct": 8.48,
+  "verdict": "The ML Projection Engine achieves an MAE of 1.883 and RMSE of 2.828 with a Spearman rank correlation of 0.429 (vs 0.374 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
   "positions": {
     "GKP": {
-      "count": 1454,
-      "ml_mae": 0.689,
-      "ml_rmse": 1.608,
-      "base_mae": 0.709,
-      "base_rmse": 1.708,
-      "improvement_mae_pct": 2.82
+      "count": 120,
+      "ml_mae": 2.082,
+      "ml_rmse": 2.96,
+      "base_mae": 2.256,
+      "base_rmse": 3.25,
+      "improvement_mae_pct": 7.71
     },
     "DEF": {
-      "count": 4465,
-      "ml_mae": 1.175,
-      "ml_rmse": 2.261,
-      "base_mae": 1.247,
-      "base_rmse": 2.423,
-      "improvement_mae_pct": 5.77
+      "count": 721,
+      "ml_mae": 2.095,
+      "ml_rmse": 3.074,
+      "base_mae": 2.192,
+      "base_rmse": 3.349,
+      "improvement_mae_pct": 4.43
     },
     "MID": {
-      "count": 6171,
-      "ml_mae": 0.947,
-      "ml_rmse": 1.94,
-      "base_mae": 1.016,
-      "base_rmse": 2.119,
-      "improvement_mae_pct": 6.79
+      "count": 969,
+      "ml_mae": 1.701,
+      "ml_rmse": 2.631,
+      "base_mae": 1.776,
+      "base_rmse": 2.884,
+      "improvement_mae_pct": 4.22
     },
     "FWD": {
-      "count": 1538,
-      "ml_mae": 1.139,
-      "ml_rmse": 2.233,
-      "base_mae": 1.181,
-      "base_rmse": 2.425,
-      "improvement_mae_pct": 3.56
+      "count": 244,
+      "ml_mae": 1.879,
+      "ml_rmse": 2.757,
+      "base_mae": 1.883,
+      "base_rmse": 3.007,
+      "improvement_mae_pct": 0.21
     }
   },
   "calibration": {
-    "interval_80_coverage_pct": 83.76,
-    "below_p10_pct": 9.98,
-    "above_p90_pct": 6.26,
-    "pinball_loss_p10": 0.1545,
-    "pinball_loss_p50": 0.5032,
-    "pinball_loss_p90": 0.3966,
-    "avg_interval_width": 3.34,
-    "calibration_verdict": "CONSERVATIVE INTERVAL (83.76% vs 80% nominal)"
+    "interval_80_coverage_pct": 71.47,
+    "below_p10_pct": 14.9,
+    "above_p90_pct": 13.63,
+    "pinball_loss_p10": 0.284,
+    "pinball_loss_p50": 0.9298,
+    "pinball_loss_p90": 0.6456,
+    "avg_interval_width": 4.45,
+    "calibration_verdict": "NARROW INTERVAL (71.47% vs 80% nominal)"
   },
   "rolling_origins": [
     {
       "season": "Holdout 2024-25 (trained on 2023-24)",
       "train_size": 29725,
       "test_size": 27605,
-      "mae": 0.999,
-      "rmse": 2.098,
-      "spearman": 0.688,
-      "base_recent_mae": 1.045,
+      "mae": 1.013,
+      "rmse": 2.103,
+      "spearman": 0.681,
+      "base_recent_mae": 1.046,
       "base_season_mae": 1.041,
       "base_fixture_mae": 1.228,
       "best_baseline_mae": 1.041,
-      "gain_vs_baseline": 0.042
+      "gain_vs_baseline": 0.028,
+      "interval_80_coverage_pct": 77.36,
+      "position_coverage": {
+        "GKP": 72.39,
+        "DEF": 78.97,
+        "MID": 77.59,
+        "FWD": 76.24
+      },
+      "minutes_bucket_coverage": {
+        "low": 80.53,
+        "mid": 77.23,
+        "high": 66.76
+      }
     },
     {
       "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
       "train_size": 57330,
       "test_size": 29757,
-      "mae": 0.939,
-      "rmse": 1.988,
-      "spearman": 0.706,
+      "mae": 0.948,
+      "rmse": 1.978,
+      "spearman": 0.707,
       "base_recent_mae": 0.995,
       "base_season_mae": 0.99,
-      "base_fixture_mae": 1.093,
+      "base_fixture_mae": 1.094,
       "best_baseline_mae": 0.99,
-      "gain_vs_baseline": 0.051
+      "gain_vs_baseline": 0.042,
+      "interval_80_coverage_pct": 81.71,
+      "position_coverage": {
+        "GKP": 84.86,
+        "DEF": 78.93,
+        "MID": 82.31,
+        "FWD": 84.27
+      },
+      "minutes_bucket_coverage": {
+        "low": 86.34,
+        "mid": 76.23,
+        "high": 70.71
+      }
     },
     {
       "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
       "train_size": 87087,
       "test_size": 2054,
-      "mae": 1.896,
-      "rmse": 2.852,
-      "spearman": 0.424,
+      "mae": 1.883,
+      "rmse": 2.828,
+      "spearman": 0.429,
       "base_recent_mae": 1.963,
       "base_season_mae": 1.952,
       "base_fixture_mae": 2.227,
       "best_baseline_mae": 1.952,
-      "gain_vs_baseline": 0.056
+      "gain_vs_baseline": 0.069,
+      "interval_80_coverage_pct": 71.47,
+      "position_coverage": {
+        "GKP": 62.5,
+        "DEF": 71.43,
+        "MID": 72.24,
+        "FWD": 72.95
+      },
+      "minutes_bucket_coverage": {
+        "low": 60.45,
+        "mid": 79.1,
+        "high": 73.62
+      }
     }
   ],
-  "ablation": {
-    "full_mae": 1.016,
-    "full_rmse": 2.054,
-    "full_spearman": 0.704,
-    "ablated_mae": 1.144,
-    "ablated_rmse": 2.073,
-    "ablated_spearman": 0.667,
-    "mae_gain_pct": 11.19,
-    "odds_candidate_mae": "N/A (External odds omitted to preserve Rule 0.4 zero-cost API guarantee)",
-    "odds_candidate_rmse": "N/A",
-    "odds_candidate_spearman": "N/A",
-    "odds_verdict": "Candidate evaluated: Implied continuous team ratings provide honest match strength without external betting odds; external odds API kept out of production to maintain zero-cost API guarantee."
-  },
+  "ablation": {},
   "partial_dependence": {
-    "star_player_vs_tough_defence": 3.9,
-    "star_player_vs_avg_defence": 4.14,
-    "star_player_vs_weak_defence": 4.35,
-    "mid_player_vs_tough_defence": 2.91,
-    "mid_player_vs_avg_defence": 3.21,
-    "mid_player_vs_weak_defence": 3.37,
-    "low_player_vs_tough_defence": 0.72,
-    "low_player_vs_avg_defence": 0.87,
-    "low_player_vs_weak_defence": 0.99,
-    "home_advantage_premium_pts": 0.04
+    "star_player_vs_tough_defence": 4.69,
+    "star_player_vs_avg_defence": 4.9,
+    "star_player_vs_weak_defence": 5.45,
+    "mid_player_vs_tough_defence": 3.06,
+    "mid_player_vs_avg_defence": 3.68,
+    "mid_player_vs_weak_defence": 3.63,
+    "low_player_vs_tough_defence": 1.5,
+    "low_player_vs_avg_defence": 1.75,
+    "low_player_vs_weak_defence": 1.85,
+    "home_advantage_premium_pts": 0.08
   },
-  "upcoming_projections": [
-    {
-      "position": "MID",
-      "name": "Bruno Borges Fernandes",
-      "team": "Man Utd",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.99,
-      "drivers": "Form projection 6.99 xP, position role MID"
-    },
-    {
-      "position": "DEF",
-      "name": "Nobel Mendy",
-      "team": "Hull City",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.53,
-      "drivers": "Form projection 6.53 xP, position role DEF"
-    },
-    {
-      "position": "FWD",
-      "name": "Jo\u00e3o Pedro Junqueira de Jesus",
-      "team": "Chelsea",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.27,
-      "drivers": "Form projection 6.27 xP, position role FWD"
-    },
-    {
-      "position": "MID",
-      "name": "Cole Palmer",
-      "team": "Chelsea",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.27,
-      "drivers": "Form projection 6.27 xP, position role MID"
-    },
-    {
-      "position": "MID",
-      "name": "Mamadou Sangar\u00e9",
-      "team": "Brentford",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.14,
-      "drivers": "Form projection 6.14 xP, position role MID"
-    },
-    {
-      "position": "DEF",
-      "name": "Semi Ajayi",
-      "team": "Hull City",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.11,
-      "drivers": "Form projection 6.11 xP, position role DEF"
-    },
-    {
-      "position": "DEF",
-      "name": "Marc Gu\u00e9hi",
-      "team": "Man City",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.01,
-      "drivers": "Form projection 6.01 xP, position role DEF"
-    },
-    {
-      "position": "DEF",
-      "name": "Gabriel dos Santos Magalh\u00e3es",
-      "team": "Arsenal",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 5.92,
-      "drivers": "Form projection 5.92 xP, position role DEF"
-    }
-  ]
+  "upcoming_projections": [],
+  "gate_verdict": {
+    "passed": false,
+    "reason": "Candidate failed rolling origin gate: origin 'Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)' 80% interval coverage (71.47%) is outside target band [75.0%, 85.0%]."
+  }
 }

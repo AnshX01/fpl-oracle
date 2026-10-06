@@ -26,7 +26,7 @@ from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.defending import DefendingModel
 from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
-from fpl_oracle.ml.eval import model_evaluator
+from fpl_oracle.ml.eval import EVAL_METRICS_SCHEMA_KEYS, ROLLING_ORIGIN_SCHEMA_KEYS, model_evaluator
 
 logger = logging.getLogger("fpl_oracle.ml.registry")
 
@@ -48,29 +48,40 @@ def check_promotion_gate(
     candidate_metrics: dict[str, Any],
     active_metrics: dict[str, Any] | None = None,
     rolling_origins: list[dict[str, Any]] | None = None,
-    tolerance: float = 0.05,
+    tolerance: float = 0.0,
+    k_origins: int = 3,
+    coverage_min: float = 75.0,
+    coverage_max: float = 85.0,
 ) -> tuple[bool, str]:
     """
-    Tested promotion gate:
-    1. Overall candidate MAE must beat baseline within tolerance.
-    2. Overall candidate MAE must not degrade vs active production by more than tolerance.
-    3. If rolling origins are evaluated:
-       - Mean gain vs baseline across rolling origins must be strictly > 0.
-       - Latest rolling origin gain (e.g. 2026-27 current season holdout) must be strictly > 0.
+    Evidence-gated model promotion gate (Requirement G5):
+    1. Schema validation against shared EVAL_METRICS_SCHEMA_KEYS & ROLLING_ORIGIN_SCHEMA_KEYS.
+    2. Zero degradation tolerance against best baseline: cand_mae <= base_mae + tolerance.
+    3. Non-degradation vs active production: cand_mae <= active_mae + tolerance (if active exists).
+    4. Rolling origins out-of-time cross validation:
+       - Mean gain vs baseline across last K origins must be strictly > 0.
+       - Latest rolling origin gain (e.g. current season holdout) must be strictly > 0.
+       - Per-origin empirical 80% credible interval coverage must fall strictly within [coverage_min, coverage_max].
     """
-    cand_mae = candidate_metrics.get("ml_mae")
-    base_mae = candidate_metrics.get("base_mae")
+    cand_mae = candidate_metrics.get("ml_mae", candidate_metrics.get("mae"))
+    base_mae = candidate_metrics.get("base_mae", candidate_metrics.get("best_baseline_mae"))
 
-    # 1. Baseline superiority check
-    if cand_mae is not None and base_mae is not None and cand_mae > (base_mae + tolerance):
+    if cand_mae is None or base_mae is None:
+        return (
+            False,
+            f"Candidate metrics missing required MAE fields ('ml_mae'/'mae' and 'base_mae'/'best_baseline_mae') defined in {EVAL_METRICS_SCHEMA_KEYS}.",
+        )
+
+    # 1. Baseline superiority check (global degradation tolerance is 0 against best baseline)
+    if cand_mae > (base_mae + tolerance):
         return (
             False,
             f"Candidate MAE ({cand_mae:.3f}) failed baseline gate vs baseline ({base_mae:.3f} + {tolerance:.2f}).",
         )
 
     # 2. Active production degradation check
-    if active_metrics and cand_mae is not None:
-        active_mae = active_metrics.get("ml_mae")
+    if active_metrics:
+        active_mae = active_metrics.get("ml_mae", active_metrics.get("mae"))
         if active_mae is not None and cand_mae > (active_mae + tolerance):
             return (
                 False,
@@ -79,27 +90,52 @@ def check_promotion_gate(
 
     # 3. Rolling origins checks
     origins = rolling_origins if rolling_origins is not None else candidate_metrics.get("rolling_origins")
-    if origins:
-        gains = []
-        for o in origins:
-            ml_o = o.get("ml_mae")
-            base_o = o.get("best_base_mae", o.get("base_mae"))
-            if ml_o is not None and base_o is not None:
-                gains.append(base_o - ml_o)
+    if not origins:
+        return False, "Candidate failed promotion gate: no rolling origins evaluated."
 
-        if gains:
-            mean_gain = float(np.mean(gains))
-            if mean_gain <= 0.0:
-                return (
-                    False,
-                    f"Candidate failed rolling origin gate: mean gain vs baseline ({mean_gain:+.4f}) is <= 0.",
-                )
-            latest_gain = gains[-1]
-            if latest_gain <= 0.0:
-                return (
-                    False,
-                    f"Candidate failed rolling origin gate: latest origin gain ({latest_gain:+.4f}) is <= 0.",
-                )
+    eval_origins = origins[-k_origins:]
+    gains: list[float] = []
+    for o in eval_origins:
+        # Validate against shared schema keys
+        for req_k in ROLLING_ORIGIN_SCHEMA_KEYS:
+            if req_k not in o:
+                return False, f"Origin '{o.get('season', 'unknown')}' missing required schema key '{req_k}'."
+
+        gain_o = o.get("gain_vs_baseline")
+        if gain_o is not None:
+            gains.append(float(gain_o))
+        else:
+            ml_o = float(o["mae"])
+            base_o = float(o["best_baseline_mae"])
+            gains.append(base_o - ml_o)
+
+    if not gains:
+        return False, "Candidate failed promotion gate: unable to compute origin gains."
+
+    mean_gain = float(np.mean(gains))
+    if mean_gain <= 0.0:
+        return (
+            False,
+            f"Candidate failed rolling origin gate: mean gain vs baseline ({mean_gain:+.4f}) is <= 0.",
+        )
+
+    latest_gain = gains[-1]
+    if latest_gain <= 0.0:
+        return (
+            False,
+            f"Candidate failed rolling origin gate: latest origin gain ({latest_gain:+.4f}) is <= 0.",
+        )
+
+    # 4. Per-origin 80% credible interval coverage band check
+    for o in eval_origins:
+        cov = o.get("interval_80_coverage_pct")
+        if cov is None:
+            return False, f"Origin '{o.get('season', 'unknown')}' missing interval_80_coverage_pct."
+        if cov < coverage_min or cov > coverage_max:
+            return (
+                False,
+                f"Candidate failed rolling origin gate: origin '{o.get('season')}' 80% interval coverage ({cov:.2f}%) is outside target band [{coverage_min:.1f}%, {coverage_max:.1f}%].",
+            )
 
     return True, "Candidate passed all promotion gate criteria."
 
@@ -110,6 +146,7 @@ class ModelRegistry:
         self.versions_dir = VERSIONS_DIR
         self.rejected_dir = REJECTED_DIR
         self.manifest_path = MANIFEST_PATH
+        self.reports_dir = REPORTS_DIR
         self._ensure_dirs()
         self._init_manifest()
 
@@ -489,13 +526,14 @@ class ModelRegistry:
             # 12. Run immediate post-promotion integrity verification
             self.verify_weight_integrity(self.models_dir)
 
-            # 13. Synchronize reports
-            cand_json = REPORTS_DIR / "candidate_model_eval.json"
-            if cand_json.exists():
-                shutil.copy2(cand_json, REPORTS_DIR / "model_eval.json")
-            cand_md = REPORTS_DIR / "candidate_model_eval.md"
-            if cand_md.exists():
-                shutil.copy2(cand_md, REPORTS_DIR / "model_eval.md")
+            # 13. Synchronize reports (only when promoting to production MODELS_DIR)
+            if self.models_dir == MODELS_DIR:
+                cand_json = self.reports_dir / "candidate_model_eval.json"
+                if cand_json.exists():
+                    shutil.copy2(cand_json, self.reports_dir / "model_eval.json")
+                cand_md = self.reports_dir / "candidate_model_eval.md"
+                if cand_md.exists():
+                    shutil.copy2(cand_md, self.reports_dir / "model_eval.md")
 
             # 14. Record in database
             data_store.save_model_version(

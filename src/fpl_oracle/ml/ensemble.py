@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import mean_absolute_error
 
 from fpl_oracle.config import MODELS_DIR
 from fpl_oracle.domain.scoring import expected_floor_div
@@ -25,7 +26,7 @@ class ScoringEnsemble:
         self.calibrated_z10 = -0.806 if z10 is None else z10
         self.calibrated_z90 = 1.009 if z90 is None else z90
         # Learned validation stacking weights: (w_ml, w_recent_form, w_season_avg)
-        self.blend_weights = blend_weights or (0.72, 0.04, 0.24)
+        self.blend_weights: tuple[float, float, float] | None = blend_weights or (0.72, 0.04, 0.24)
         self.bucket_quantiles: dict[str, dict[str, float]] = {}
         if z10 is None and z90 is None and blend_weights is None:
             self._load_default_calibration()
@@ -56,7 +57,9 @@ class ScoringEnsemble:
         return {
             "z10": round(self.calibrated_z10, 4),
             "z90": round(self.calibrated_z90, 4),
-            "blend_weights": [round(w, 4) for w in self.blend_weights],
+            "blend_weights": (
+                [round(w, 4) for w in self.blend_weights] if self.blend_weights is not None else [0.72, 0.04, 0.24]
+            ),
             "bucket_quantiles": self.bucket_quantiles,
         }
 
@@ -111,6 +114,42 @@ class ScoringEnsemble:
         self.bucket_quantiles = buckets
         # In-memory fitting only; disk persistence is handled exclusively by promotion routine
         return self.calibrated_z10, self.calibrated_z90
+
+    def fit_stacking_weights(
+        self,
+        components_val: dict[str, np.ndarray],
+        X_val: pd.DataFrame,
+        Y_val: pd.DataFrame,
+    ) -> tuple[float, float, float]:
+        """
+        Fit optimal blending weights w = (w_ml, w_recent, w_season) on validation set.
+        Updates self.blend_weights in-place.
+        """
+        from scipy.optimize import minimize
+
+        from fpl_oracle.ml.eval import model_evaluator
+
+        old_weights = self.blend_weights
+        self.blend_weights = None  # Extract unblended ML xP
+        raw_preds = self.aggregate_components(components_val, X_val)["expected_points"].values
+        self.blend_weights = old_weights
+
+        base_rec = model_evaluator.compute_baseline_projections(X_val)
+        base_sea = model_evaluator.compute_season_avg_baseline(X_val)
+        actual = Y_val["target_points"].values
+
+        def _mae_loss(w: np.ndarray) -> float:
+            pred = w[0] * raw_preds + w[1] * base_rec + w[2] * base_sea
+            return float(mean_absolute_error(actual, pred))
+
+        res = minimize(
+            _mae_loss,
+            [0.72, 0.04, 0.24],
+            bounds=[(0, 1), (0, 1), (0, 1)],
+            constraints={"type": "eq", "fun": lambda w: sum(w) - 1.0},
+        )
+        self.blend_weights = (float(round(res.x[0], 4)), float(round(res.x[1], 4)), float(round(res.x[2], 4)))
+        return self.blend_weights
 
     def aggregate_components(self, components: dict[str, np.ndarray], X: pd.DataFrame) -> pd.DataFrame:
         """

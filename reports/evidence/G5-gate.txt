@@ -1,0 +1,21 @@
+command: .venv\Scripts\python.exe -m pytest tests/test_promotion_gate.py -v
+exit code: 0
+output:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 7 items
+
+tests/test_promotion_gate.py::test_schema_keys_defined PASSED            [ 14%]
+tests/test_promotion_gate.py::test_gate_rejects_inferior_baseline PASSED [ 28%]
+tests/test_promotion_gate.py::test_gate_rejects_low_coverage PASSED      [ 42%]
+tests/test_promotion_gate.py::test_gate_rejects_negative_rolling_origin_gain PASSED [ 57%]
+tests/test_promotion_gate.py::test_gate_rejects_negative_mean_rolling_origin_gain PASSED [ 71%]
+tests/test_promotion_gate.py::test_gate_accepts_valid_candidate PASSED   [ 85%]
+tests/test_promotion_gate.py::test_real_artifact_schema_and_gate_consistency PASSED [100%]
+
+============================== 7 passed in 1.43s ==============================
