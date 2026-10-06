@@ -517,11 +517,7 @@ async def get_chip_strategy():
         except Exception:
             pass
 
-    squad_df = effective_state.to_squad_dataframe()
-    if squad_df.empty or len(squad_df) < 15:
-        from fpl_oracle.optimise.squad import squad_optimizer
-
-        squad_df = squad_optimizer.solve_best_squad(pool_df, budget=1000.0)["squad"]
+    squad_df, _, _ = await _get_effective_user_squad(pool_df, boot)
 
     res = chip_planner.generate_chip_strategy(
         current_gw=curr_gw or 5,
@@ -716,6 +712,14 @@ async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple
         squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
         user_squad_df = squad_res["squad"].copy()
         user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
+
+    if not target_df.empty and "expected_points" in target_df.columns:
+        xp_map = {int(r["element"]): float(r["expected_points"]) for _, r in target_df.iterrows()}
+        p10_map = {int(r["element"]): float(r.get("p10", 0.0)) for _, r in target_df.iterrows()}
+        p90_map = {int(r["element"]): float(r.get("p90", 0.0)) for _, r in target_df.iterrows()}
+        user_squad_df["expected_points"] = user_squad_df["element"].map(xp_map).fillna(user_squad_df["expected_points"])
+        user_squad_df["p10"] = user_squad_df["element"].map(p10_map).fillna(0.0)
+        user_squad_df["p90"] = user_squad_df["element"].map(p90_map).fillna(0.0)
 
     return user_squad_df, float(effective_state.bank_tenths), int(effective_state.free_transfers)
 

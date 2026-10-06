@@ -43,7 +43,7 @@ class DecisionCardGenerator:
         # ----------------------------------------------------------------------
         # 1. Projections & Squad Resolution
         # ----------------------------------------------------------------------
-        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures=fixtures)
+        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 8, boot, fixtures=fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         user_squad_df = effective_state.to_squad_dataframe()

@@ -34,6 +34,7 @@ class ProjectionEngine:
         self.bonus_model = BonusModel()
         self.cards_saves_model = CardsSavesModel()
         self.is_loaded = False
+        self._cache: dict[tuple[int, int, int], pd.DataFrame] = {}
 
     def load_or_train(self, X: pd.DataFrame | None = None, Y: pd.DataFrame | None = None):
         """Load trained model weights from disk or train if missing."""
@@ -103,6 +104,10 @@ class ProjectionEngine:
         """
         if not self.is_loaded:
             self.load_or_train()
+
+        cache_key = (target_gw, len(bootstrap.elements), len(fixtures))
+        if reconciled_availabilities is None and cache_key in self._cache:
+            return self._cache[cache_key].copy()
 
         features_df = feature_engineering.extract_live_features_for_upcoming(
             bootstrap=bootstrap,
@@ -180,6 +185,9 @@ class ProjectionEngine:
 
         # Blank gameweek zeroing
         dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, ["expected_points", "p10", "p50", "p90", "variance"]] = 0.0
+
+        if reconciled_availabilities is None:
+            self._cache[cache_key] = dgw_grouped.copy()
 
         return dgw_grouped
 

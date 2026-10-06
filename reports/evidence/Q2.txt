@@ -1,0 +1,12 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 1 item
+
+tests/test_recommendation_consistency.py::test_cross_surface_recommendation_consistency PASSED [100%]
+
+======================== 1 passed in 105.59s (0:01:45) ========================
