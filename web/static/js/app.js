@@ -37,11 +37,11 @@ const app = createApp({
       // Profile & Overrides
       profile: {
         manager_id: null,
-        target_league_id: 314,
-        bank: 1.5,
-        free_transfers: 3,
+        target_league_id: null,
+        bank: null,
+        free_transfers: null,
         risk_preference: 'balanced',
-        llm_provider: 'no-key'
+        llm_provider: 'gemini'
       },
 
       // Core Squad & Lineup
@@ -71,7 +71,7 @@ const app = createApp({
 
       // Pre-deadline Audit Checklist
       checklistItems: [],
-      checklistSummary: { status: 'PASS', passed_count: 5 },
+      checklistSummary: { status: 'PENDING', passed_count: 0 },
 
       // Emergency Panic Re-Optimizer
       panicQuery: '',
@@ -80,8 +80,8 @@ const app = createApp({
 
       // Manual Squad Entry
       manualSquadText: '',
-      manualSquadBank: 1.5,
-      manualSquadFT: 3,
+      manualSquadBank: 0.0,
+      manualSquadFT: 1,
       matchingInProgress: false,
       matchResult: null,
       savingSquad: false,
@@ -271,13 +271,38 @@ const app = createApp({
       }, 3500);
     },
 
-    formatDeadline(seconds) {
-      if (!seconds || seconds <= 0) return 'Passed';
-      const days = Math.floor(seconds / 86400);
-      const hours = Math.floor((seconds % 86400) / 3600);
-      const mins = Math.floor((seconds % 3600) / 60);
-      if (days > 0) return `${days}d ${hours}h`;
-      return `${hours}h ${mins}m`;
+    formatDeadline(seconds, deadlineTime) {
+      if ((seconds === null || seconds === undefined) && !deadlineTime) {
+        return 'Deadline unknown';
+      }
+
+      let sec = seconds;
+      if (deadlineTime) {
+        const dt = new Date(deadlineTime).getTime();
+        if (!isNaN(dt)) {
+          sec = (dt - Date.now()) / 1000;
+        }
+      }
+
+      if (sec === null || sec === undefined || isNaN(sec)) {
+        return 'Deadline unknown';
+      }
+
+      if (sec <= 0) {
+        return 'Passed';
+      }
+
+      const days = Math.floor(sec / 86400);
+      const hours = Math.floor((sec % 86400) / 3600);
+      const mins = Math.floor((sec % 3600) / 60);
+
+      if (days > 0) {
+        return `${days}d ${hours}h`;
+      } else if (hours > 0) {
+        return `${hours}h ${mins}m`;
+      } else {
+        return `${mins}m`;
+      }
     },
 
     renderMarkdown(text) {

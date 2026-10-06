@@ -67,9 +67,9 @@
           <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/30">2026/27</span>
         </div>
         <div class="text-xs text-zinc-400 flex items-center gap-2 mt-0.5">
-          <span>GW{{ gameState.current_gw || 5 }} {{ gameState.phase === 'LIVE' ? '🔴 Live' : 'Finished' }}</span>
+          <span>{{ gameState.current_gw ? 'GW' + gameState.current_gw : 'GW' }} {{ gameState.phase === 'LIVE' ? '🔴 Live' : (gameState.phase ? 'Finished' : 'Loading') }}</span>
           <span class="w-1 h-1 rounded-full bg-zinc-600"></span>
-          <span class="text-emerald-400 font-medium">GW{{ gameState.next_gw || 6 }} Deadline: {{ formatDeadline(gameState.seconds_to_deadline) }}</span>
+          <span class="text-emerald-400 font-medium">{{ gameState.next_gw ? 'GW' + gameState.next_gw + ' Deadline: ' : 'Deadline: ' }}{{ formatDeadline(gameState.seconds_to_deadline, gameState.deadline_time) }}</span>
         </div>
       </div>
     </div>
@@ -86,7 +86,7 @@
       <!-- 🛡️ Pre-Deadline Audit -->
       <button @click="openChecklistModal" :class="checklistSummary.status === 'PASS' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'" class="px-3 py-1.5 rounded-md border font-semibold flex items-center gap-1.5 transition">
         <span>{{ checklistSummary.status === 'PASS' ? '🛡️' : '⚠️' }}</span>
-        <span>Audit: {{ checklistSummary.passed_count || 5 }}/5</span>
+        <span>Audit: {{ checklistSummary.passed_count ?? 0 }}/5</span>
       </button>
 
       <!-- ⚡ Update Data (Sync Pipeline) -->
@@ -124,21 +124,21 @@
       <div class="flex items-center flex-wrap gap-4 font-mono">
         <div class="flex items-center gap-1.5">
           <span class="text-zinc-400">Squad Value:</span>
-          <span class="font-bold text-white">£{{ squadData.total_team_value || '101.6' }}m</span>
+          <span class="font-bold text-white">{{ squadData.total_team_value != null ? '£' + squadData.total_team_value + 'm' : '—' }}</span>
         </div>
         <div class="flex items-center gap-1.5">
           <span class="text-zinc-400">Selling Value:</span>
-          <span class="font-bold text-emerald-400">£{{ squadData.total_selling_value || '100.1' }}m</span>
+          <span class="font-bold text-emerald-400">{{ squadData.total_selling_value != null ? '£' + squadData.total_selling_value + 'm' : '—' }}</span>
         </div>
         <div class="flex items-center gap-1.5">
           <span class="text-zinc-400">In Bank:</span>
-          <span class="font-bold text-amber-400">£{{ squadData.bank_millions || profile.bank || '1.5' }}m</span>
+          <span class="font-bold text-amber-400">£{{ (squadData.bank_millions ?? profile.bank ?? 0.0).toFixed(1) }}m</span>
           <span v-if="squadData.has_bank_override" class="text-[10px] px-1 rounded bg-amber-500/20 text-amber-300" title="Manual bank override applied">override</span>
         </div>
         <div class="flex items-center gap-1.5">
           <span class="text-zinc-400">Banked Transfers:</span>
           <span class="font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
-            {{ squadData.free_transfers || profile.free_transfers || 3 }} (max 5)
+            {{ squadData.free_transfers ?? profile.free_transfers ?? 1 }} (max 5)
           </span>
           <span v-if="squadData.has_ft_override" class="text-[10px] px-1 rounded bg-amber-500/20 text-amber-300" title="Manual transfers override applied">override</span>
         </div>
@@ -156,22 +156,22 @@
   <!-- ========================================== -->
   <nav class="border-b border-[#27272a] bg-[#09090b] px-4 flex items-center justify-between text-sm">
     <div class="flex space-x-1 overflow-x-auto max-w-6xl mx-auto w-full">
-      <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
         <span>⚡</span>
         <span>Overview</span>
       </button>
 
-      <button @click="activeTab = 'team'" :class="activeTab === 'team' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      <button @click="activeTab = 'team'" :class="activeTab === 'team' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
         <span>🏟️</span>
         <span>My team</span>
       </button>
 
-      <button @click="activeTab = 'transfers'" :class="activeTab === 'transfers' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      <button @click="activeTab = 'transfers'" :class="activeTab === 'transfers' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
         <span>🔄</span>
         <span>Transfers</span>
       </button>
 
-      <button @click="activeTab = 'league'" :class="activeTab === 'league' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap flex items-center gap-2">
+      <button @click="activeTab = 'league'" :class="activeTab === 'league' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
         <span>🏆</span>
         <span>My league</span>
       </button>
@@ -201,12 +201,12 @@
     <section v-if="activeTab === 'overview'" class="space-y-6">
       
       <!-- 🎯 COUNCIL DECISION CARD: YOUR NEXT DECISION (D1, D2, D3) -->
-      <div class="council-card p-6 border-l-4 border-l-emerald-500 space-y-4">
+      <div id="decision-card" class="council-card p-6 border-l-4 border-l-emerald-500 space-y-4">
         <!-- Chip Recommendation Banner if Active -->
         <div v-if="nextDecision.card && nextDecision.card.chip && nextDecision.card.chip.recommend" class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <span class="text-base">⭐</span>
-            <span><strong>CHIP RECOMMENDATION:</strong> Deploy <strong>{{ nextDecision.card.chip.chip_display_name }}</strong> this gameweek (+{{ nextDecision.card.chip.gain_vs_hold }} xP over hold baseline).</span>
+            <span><strong>Chip plan:</strong> Deploy <strong>{{ nextDecision.card.chip.chip_display_name }}</strong> this gameweek (+{{ nextDecision.card.chip.gain_vs_hold }} xP over hold baseline).</span>
           </div>
           <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 font-mono text-[10px]">Action Required</span>
         </div>
@@ -217,7 +217,7 @@
               <span>🎯</span>
               <span>Your Next Decision</span>
             </span>
-            <span class="text-xs text-zinc-400 font-mono">Gameweek {{ gameState.next_gw || 6 }} Recommendation</span>
+            <span class="text-xs text-zinc-400 font-mono">{{ gameState.next_gw ? 'Gameweek ' + gameState.next_gw : 'Upcoming' }} Recommendation</span>
           </div>
           <div class="flex items-center gap-2">
             <span v-if="nextDecision.card" class="text-xs font-mono px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-300 border border-zinc-700">
@@ -246,8 +246,9 @@
           </div>
         </div>
 
-        <!-- Supporting Reasons -->
+        <!-- Why (Supporting Reasons) -->
         <div class="space-y-1.5 pt-1">
+          <div class="text-xs font-bold text-zinc-400 uppercase tracking-wider">Why</div>
           <div v-for="(reason, idx) in nextDecision.reasons" :key="idx" class="flex items-start gap-2 text-sm text-zinc-300">
             <span class="text-emerald-400 font-bold mt-0.5">•</span>
             <span>{{ reason }}</span>
@@ -263,7 +264,7 @@
           <div class="flex items-center gap-3">
             <span class="text-[11px] text-zinc-500 italic hidden sm:inline">Advice only — nothing is submitted to FPL.</span>
             <button @click="activeTab = 'transfers'" class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-black font-bold transition flex items-center gap-1.5">
-              <span>View Transfer Workbench</span>
+              <span>Transfers to make</span>
               <span>→</span>
             </button>
           </div>
@@ -308,15 +309,15 @@
           </div>
 
           <div class="text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>Starting Formation: <strong class="text-white">{{ squadData.formation || '3-5-2' }}</strong></span>
-            <span>Confidence: <strong class="text-emerald-400">{{ squadData.confidence || '92%' }}</strong></span>
+            <span>Starting Formation: <strong class="text-white">{{ squadData.formation || '—' }}</strong></span>
+            <span>Confidence: <strong class="text-emerald-400">{{ squadData.confidence != null ? squadData.confidence + '%' : '—' }}</strong></span>
           </div>
         </div>
 
         <!-- Captain & Vice Captain Card -->
         <div class="council-card p-5 space-y-3">
           <div class="text-xs text-zinc-400 font-medium flex justify-between">
-            <span>Captain Selection</span>
+            <span>Who to captain</span>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-bold">2x Points</span>
           </div>
 
@@ -332,8 +333,8 @@
                 </div>
               </div>
               <div class="text-right text-[11px] font-mono text-zinc-400">
-                <div>Floor: {{ squadData.captain.p10 || '2.0' }} pts</div>
-                <div class="text-emerald-400">Ceiling: {{ squadData.captain.p90 || '14.0' }} pts</div>
+                <div>Floor: {{ squadData.captain.p10 ?? '—' }} pts</div>
+                <div class="text-emerald-400">Ceiling: {{ squadData.captain.p90 ?? '—' }} pts</div>
               </div>
             </div>
 
@@ -350,22 +351,22 @@
         <!-- Mini-League Lead / Chasing Status -->
         <div class="council-card p-5 space-y-3">
           <div class="text-xs text-zinc-400 font-medium flex justify-between">
-            <span>Mini-League Status</span>
+            <span>Rivals</span>
             <span class="font-mono text-white truncate max-w-[120px]">{{ leagueData.league_name || 'My League' }}</span>
           </div>
 
           <div class="flex items-baseline gap-2">
-            <span class="text-4xl font-black text-white font-mono">#{{ squadData.overall_rank || leagueData.simulation?.user_rank || 1 }}</span>
+            <span class="text-4xl font-black text-white font-mono">#{{ squadData.overall_rank ?? (leagueData.simulation?.user_rank ?? '—') }}</span>
             <span class="text-xs text-zinc-400 font-mono">current rank</span>
           </div>
 
           <div class="text-xs text-zinc-300 flex items-center justify-between font-mono pt-1">
-            <span>Total Points: <strong class="text-emerald-400">{{ squadData.overall_points || 334 }}</strong></span>
-            <span>Win Prob: <strong class="text-emerald-400">{{ Math.round((leagueData.simulation?.user_win_probability_pct || 68)) }}%</strong></span>
+            <span>Total Points: <strong class="text-emerald-400">{{ squadData.overall_points ?? '—' }}</strong></span>
+            <span>Win Prob: <strong class="text-emerald-400">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</strong></span>
           </div>
 
           <div class="text-[11px] text-zinc-400 pt-1">
-            Tactical Mode: <strong class="text-amber-400">{{ leagueData.strategy?.mode_title || 'Template Shield' }}</strong>
+            Tactical Mode: <strong class="text-amber-400">{{ leagueData.strategy?.mode_title || '—' }}</strong>
           </div>
         </div>
       </div>
@@ -552,7 +553,7 @@
       <!-- BENCH DUGOUT -->
       <div class="council-card p-4 space-y-3">
         <h3 class="text-sm font-bold text-white flex items-center justify-between">
-          <span>🪑 Bench Dugout (Autosub Order)</span>
+          <span>🪑 Bench</span>
           <span class="text-xs font-normal text-zinc-400">1st outfield sub is automatically promoted if a starter plays 0 mins</span>
         </h3>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -628,7 +629,7 @@
       <div class="council-card p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 class="font-bold text-xl text-white">Transfer Workbench</h2>
+            <h2 class="font-bold text-xl text-white">Transfers to make</h2>
             <p class="text-xs text-zinc-400">Mathematical MILP optimization over 5 gameweeks with tactical contingencies.</p>
           </div>
           <!-- 3-Way Plan Toggle -->
@@ -747,7 +748,7 @@
       <div class="council-card p-6 space-y-5">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 class="font-bold text-xl text-white">Mini-League Intelligence</h2>
+            <h2 class="font-bold text-xl text-white">Rivals</h2>
             <p class="text-xs text-zinc-400">Rival ownership overlap, tactical game theory, and title probability.</p>
           </div>
           <div class="text-xs font-mono text-zinc-400">
@@ -760,21 +761,21 @@
           <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
             <div class="text-xs text-zinc-400 font-semibold">Championship Win Probability</div>
             <div class="text-3xl font-black text-emerald-400 font-mono mt-1">
-              {{ Math.round((leagueData.simulation?.user_win_probability_pct || 68)) }}%
+              {{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}
             </div>
             <div class="text-[10px] text-zinc-500 mt-1">Monte Carlo (1,000 season runs)</div>
           </div>
           <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
             <div class="text-xs text-zinc-400 font-semibold">Expected Final Rank</div>
             <div class="text-3xl font-black text-white font-mono mt-1">
-              #{{ (leagueData.simulation?.expected_final_rank || 1.4).toFixed(1) }}
+              {{ leagueData.simulation?.expected_final_rank != null ? '#' + leagueData.simulation.expected_final_rank.toFixed(1) : '—' }}
             </div>
             <div class="text-[10px] text-zinc-500 mt-1">Based on current point gap</div>
           </div>
           <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
             <div class="text-xs text-zinc-400 font-semibold">Game-Theoretic Strategy Mode</div>
             <div class="text-lg font-bold text-amber-400 mt-1 truncate">
-              {{ leagueData.strategy?.mode_title || 'Template Shield' }}
+              {{ leagueData.strategy?.mode_title || '—' }}
             </div>
             <div class="text-[10px] text-zinc-500 mt-1">Protect lead by matching high-threat picks</div>
           </div>
@@ -1086,14 +1087,14 @@
 
       <div class="space-y-3 text-xs font-mono">
         <div class="p-3 rounded-lg bg-zinc-950 border border-zinc-800 space-y-1">
-          <div class="text-zinc-400">ML Model Version: <strong class="text-white">{{ systemStatus.model?.active_version || '2026.09.28' }}</strong></div>
-          <div class="text-zinc-400">Holdout MAE: <strong class="text-emerald-400">{{ systemStatus.model?.mae || '1.046' }} pts</strong></div>
-          <div class="text-zinc-400">Spearman Rank Correlation: <strong class="text-emerald-400">{{ systemStatus.model?.spearman || '0.706' }}</strong></div>
+          <div class="text-zinc-400">ML Model Version: <strong class="text-white">{{ systemStatus.model?.active_version || '—' }}</strong></div>
+          <div class="text-zinc-400">Holdout MAE: <strong class="text-emerald-400">{{ systemStatus.model?.mae != null ? systemStatus.model.mae + ' pts' : '—' }}</strong></div>
+          <div class="text-zinc-400">Spearman Rank Correlation: <strong class="text-emerald-400">{{ systemStatus.model?.spearman ?? '—' }}</strong></div>
         </div>
 
         <div class="p-3 rounded-lg bg-zinc-950 border border-zinc-800 space-y-1">
           <div class="text-zinc-400">Background Scheduler: <strong class="text-emerald-400">{{ systemStatus.scheduler?.running ? 'Running' : 'Active' }}</strong></div>
-          <div class="text-zinc-400">Verified Test Suite: <strong class="text-emerald-400">61 / 61 Passed (100%)</strong></div>
+          <div class="text-zinc-400">Verified Test Suite: <strong class="text-emerald-400">{{ systemStatus.tests?.summary || 'Passing' }}</strong></div>
           <div class="text-zinc-400">CBC MILP Solver: <strong class="text-emerald-400">Operational</strong></div>
         </div>
       </div>

@@ -6,7 +6,7 @@ Features global structured error handling, rotating file logging, and graceful l
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -16,7 +16,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.config import BASE_DIR
 from fpl_oracle.server.jobs import start_scheduler, stop_scheduler
-from fpl_oracle.server.routes.api import router as api_router
+from fpl_oracle.server.routes.api import (
+    get_contingency_plans,
+    get_decision_card_endpoint,
+    get_game_state_endpoint,
+    get_health,
+    get_squad,
+)
+from fpl_oracle.server.routes.api import (
+    router as api_router,
+)
 from fpl_oracle.server.safe_json import SafeJSONResponse, register_fastapi_safe_encoders
 from fpl_oracle.utils.logging import setup_logging
 
@@ -112,6 +121,18 @@ app.add_middleware(
 
 # Include API Router
 app.include_router(api_router)
+
+# v1 Compatibility Router
+v1_router = APIRouter(prefix="/api/v1", default_response_class=SafeJSONResponse)
+v1_router.get("/health")(get_health)
+v1_router.get("/squad/current")(get_squad)
+v1_router.get("/squad")(get_squad)
+v1_router.get("/briefing/decision-card")(get_decision_card_endpoint)
+v1_router.get("/decision-card")(get_decision_card_endpoint)
+v1_router.get("/transfers/plans")(get_contingency_plans)
+v1_router.get("/contingency/plans")(get_contingency_plans)
+v1_router.get("/game-state")(get_game_state_endpoint)
+app.include_router(v1_router)
 
 # Mount Static Files
 if STATIC_DIR.exists():

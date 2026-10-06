@@ -1,8 +1,12 @@
-"""
-Automated UI Screenshot Capture Script using Playwright Chromium (F14).
-Spawns the local FastAPI/Uvicorn server, navigates to the single-page web dashboard
-and decision card views, captures real visual screenshots to reports/screenshots/,
-and shuts down the server gracefully.
+"""Automated UI Screenshot Capture Script using Playwright Chromium (F14 & G3).
+
+Spawns the local FastAPI server, asserts HTTP 200 on key API endpoints,
+asserts non-empty recommendation elements in the UI, and captures:
+- 1920x1080 desktop dashboard
+- 1920x1080 desktop decision card
+- 390x844 mobile dashboard
+- 390x844 mobile decision card
+Saved directly into reports/screenshots/.
 """
 
 import subprocess
@@ -18,8 +22,17 @@ SCREENSHOTS_DIR = ROOT / "reports" / "screenshots"
 PORT = 8000
 SERVER_URL = f"http://127.0.0.1:{PORT}"
 
+ENDPOINTS_TO_CHECK = [
+    "/",
+    "/api/v1/health",
+    "/api/v1/squad/current",
+    "/api/v1/briefing/decision-card",
+    "/api/v1/transfers/plans",
+]
 
-def wait_for_server(timeout_sec: float = 20.0) -> bool:
+
+def wait_for_server(timeout_sec: float = 45.0) -> bool:
+    """Poll until server responds with HTTP 200 on root."""
     start = time.time()
     while time.time() - start < timeout_sec:
         try:
@@ -31,12 +44,29 @@ def wait_for_server(timeout_sec: float = 20.0) -> bool:
     return False
 
 
+def verify_endpoints():
+    """Verify HTTP 200 on all required endpoints."""
+    print("Verifying backend API endpoints:")
+    for path in ENDPOINTS_TO_CHECK:
+        url = f"{SERVER_URL}{path}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "FPL-Oracle-Screenshot-Test"})
+            with urllib.request.urlopen(req, timeout=120.0) as resp:
+                status = resp.status
+                assert status == 200, f"Endpoint {path} returned status {status}"
+                data_len = len(resp.read())
+                print(f"  [OK 200] {path} ({data_len:,} bytes)")
+        except Exception as e:
+            print(f"  [FAILED] {path}: {e}")
+            raise
+
+
 def capture_screenshots():
     SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
     python_exe = sys.executable
 
     print("=" * 60)
-    print("FPL ORACLE — AUTOMATED PLAYWRIGHT SCREENSHOT CAPTURE (F14)")
+    print("FPL ORACLE -- RESPONSIVE UI VERIFICATION & SCREENSHOTS (G3)")
     print("=" * 60)
 
     # 1. Start backend server
@@ -60,52 +90,79 @@ def capture_screenshots():
     )
 
     try:
-        print("Waiting for server health check...")
+        print("Waiting for server startup...")
         if not wait_for_server():
             print("ERROR: Server failed to start within timeout.")
             sys.exit(1)
-        print("Server is up and responsive!")
+        print("Server is up and responsive!\n")
+
+        # Verify backend endpoints
+        verify_endpoints()
+        print("")
 
         # 2. Launch headless browser
         with sync_playwright() as p:
             print("Launching headless Chromium...")
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(viewport={"width": 1920, "height": 1080})
-            page = context.new_page()
 
-            # Screenshot 1: Full Main Dashboard (Desktop View)
-            print("Navigating to main dashboard...")
-            page.goto(SERVER_URL, wait_until="domcontentloaded", timeout=15000)
-            page.wait_for_timeout(3000)  # Allow charts and dynamic UI to render
+            # --- DESKTOP VIEWPORT (1920x1080) ---
+            print("\n[Desktop Viewport: 1920x1080]")
+            context_desktop = browser.new_context(viewport={"width": 1920, "height": 1080})
+            page_desktop = context_desktop.new_page()
 
-            dash_path = SCREENSHOTS_DIR / "dashboard.png"
-            page.screenshot(path=str(dash_path), full_page=True)
-            print(f"Captured: {dash_path} ({dash_path.stat().st_size:,} bytes)")
+            page_desktop.goto(SERVER_URL, wait_until="networkidle", timeout=120000)
+            page_desktop.wait_for_timeout(2500)  # Wait for Vue to finish reactive render
 
-            # Screenshot 2: Decision Card Section
-            print("Navigating/focusing on decision card...")
-            # Check if decision card button or tab exists
-            dc_btn = page.query_selector(
-                "button:has-text('Decision Card'), a:has-text('Decision Card'), [data-tab='decision-card']"
-            )
-            if dc_btn:
-                dc_btn.click()
-                page.wait_for_timeout(1500)
+            # Assert recommendation element exists and is non-empty
+            card_el = page_desktop.query_selector("#decision-card")
+            assert card_el is not None, "Decision card element '#decision-card' not found in DOM"
+            card_text = card_el.inner_text().strip()
+            assert len(card_text) > 20, f"Decision card content is unexpectedly empty or short: {card_text}"
+            print(f"  Decision card rendered with {len(card_text)} characters of text content.")
 
-            dc_path = SCREENSHOTS_DIR / "decision_card.png"
-            page.screenshot(path=str(dc_path), full_page=False)
-            print(f"Captured: {dc_path} ({dc_path.stat().st_size:,} bytes)")
+            # Capture desktop dashboard
+            dash_desktop_path = SCREENSHOTS_DIR / "dashboard_desktop.png"
+            page_desktop.screenshot(path=str(dash_desktop_path), full_page=True)
+            print(f"  Captured: {dash_desktop_path.name} ({dash_desktop_path.stat().st_size:,} bytes)")
 
-            # Screenshot 3: Mobile / Tablet Viewport
-            print("Capturing mobile/tablet viewport...")
-            page.set_viewport_size({"width": 390, "height": 844})
-            page.wait_for_timeout(1000)
-            mobile_path = SCREENSHOTS_DIR / "dashboard_mobile.png"
-            page.screenshot(path=str(mobile_path), full_page=True)
-            print(f"Captured: {mobile_path} ({mobile_path.stat().st_size:,} bytes)")
+            # Also maintain dashboard.png symlink/copy for compatibility
+            (SCREENSHOTS_DIR / "dashboard.png").write_bytes(dash_desktop_path.read_bytes())
 
+            # Capture desktop decision card (scoped to element)
+            dc_desktop_path = SCREENSHOTS_DIR / "decision_card_desktop.png"
+            card_el.screenshot(path=str(dc_desktop_path))
+            print(f"  Captured: {dc_desktop_path.name} ({dc_desktop_path.stat().st_size:,} bytes)")
+            (SCREENSHOTS_DIR / "decision_card.png").write_bytes(dc_desktop_path.read_bytes())
+
+            context_desktop.close()
+
+            # --- MOBILE VIEWPORT (390x844) ---
+            print("\n[Mobile Viewport: 390x844]")
+            context_mobile = browser.new_context(viewport={"width": 390, "height": 844})
+            page_mobile = context_mobile.new_page()
+
+            page_mobile.goto(SERVER_URL, wait_until="networkidle", timeout=120000)
+            page_mobile.wait_for_timeout(2500)
+
+            # Assert recommendation element in mobile
+            card_el_m = page_mobile.query_selector("#decision-card")
+            assert card_el_m is not None, "Decision card element '#decision-card' not found in mobile DOM"
+            card_text_m = card_el_m.inner_text().strip()
+            assert len(card_text_m) > 20, f"Decision card mobile content is empty: {card_text_m}"
+
+            # Capture mobile dashboard
+            dash_mobile_path = SCREENSHOTS_DIR / "dashboard_mobile.png"
+            page_mobile.screenshot(path=str(dash_mobile_path), full_page=True)
+            print(f"  Captured: {dash_mobile_path.name} ({dash_mobile_path.stat().st_size:,} bytes)")
+
+            # Capture mobile decision card (scoped to element)
+            dc_mobile_path = SCREENSHOTS_DIR / "decision_card_mobile.png"
+            card_el_m.screenshot(path=str(dc_mobile_path))
+            print(f"  Captured: {dc_mobile_path.name} ({dc_mobile_path.stat().st_size:,} bytes)")
+
+            context_mobile.close()
             browser.close()
-            print("Browser closed.")
+            print("\nBrowser execution closed successfully.")
 
     finally:
         print("Terminating server process...")
@@ -117,7 +174,7 @@ def capture_screenshots():
         print("Server shutdown complete.")
 
     print("=" * 60)
-    print("SUCCESS: All visual screenshots captured and verified!")
+    print("SUCCESS: All visual screenshots and endpoint assertions passed!")
     print("=" * 60)
 
 
