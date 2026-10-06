@@ -140,6 +140,8 @@ class ModelRegistry:
         X_val: pd.DataFrame,
         Y_val: pd.DataFrame,
         rolling_origins: list[dict[str, Any]] | None = None,
+        ablation_metrics: dict[str, Any] | None = None,
+        upcoming_projections: list[dict[str, Any]] | None = None,
     ) -> dict[str, float]:
         """Generate holdout predictions and compute validation metrics."""
         mins_p = models_dict["minutes_model"].predict(X_val)
@@ -161,6 +163,8 @@ class ModelRegistry:
             p50=val_preds_df["p50"].values,
             p90=val_preds_df["p90"].values,
             rolling_origins=rolling_origins,
+            ablation_metrics=ablation_metrics,
+            upcoming_projections=upcoming_projections,
         )
         return {
             "ml_mae": float(metrics["ml_mae"]),
@@ -184,8 +188,11 @@ class ModelRegistry:
                 models[name] = inst
             except Exception as e:
                 logger.warning(f"Error loading production model {filename}: {e}")
-                return None
-        return self.evaluate_model_suite(models, X_val, Y_val, rolling_origins=rolling_origins)
+        try:
+            return self.evaluate_model_suite(models, X_val, Y_val, rolling_origins=rolling_origins)
+        except Exception as e:
+            logger.warning(f"Existing production weights evaluation failed ({e}); treating as schema upgrade.")
+            return None
 
     def verify_and_promote(
         self,

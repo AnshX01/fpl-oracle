@@ -1,6 +1,6 @@
 {
-  "active_version": "v2026.10.06.0724",
-  "last_updated": "2026-10-06T07:24:09.653001+00:00",
+  "active_version": "v2026.10.06.0833",
+  "last_updated": "2026-10-06T08:33:32.459446+00:00",
   "versions": [
     {
       "version": "v1.0.0",
@@ -17,8 +17,17 @@
       "ml_mae": 1.046,
       "ml_spearman": 0.706,
       "base_mae": 1.083,
-      "status": "production",
+      "status": "archived",
       "notes": "Candidate model passed verification. MAE: 1.046 (improvement: +0.128). Promoted to production. | Automated retrain pipeline with true rolling origins"
+    },
+    {
+      "version": "v2026.10.06.0833",
+      "created_at": "2026-10-06T08:33:32.459446+00:00",
+      "ml_mae": 1.045,
+      "ml_spearman": 0.706,
+      "base_mae": 1.083,
+      "status": "production",
+      "notes": "Candidate model passed verification. MAE: 1.045 (improvement: +0.001). Promoted to production. | Automated retrain pipeline with true rolling origins"
     }
   ]
 }

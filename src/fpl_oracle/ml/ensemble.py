@@ -71,6 +71,10 @@ class ScoringEnsemble:
         # 9. Bonus points
         exp_bonus_pts = components["expected_bonus"]
 
+        # 10. Goalkeeper penalty saves (+5 pts)
+        exp_pen_saves = components.get("expected_penalties_saved", np.zeros(n))
+        exp_pen_saves_pts = exp_pen_saves * 5.0 * pos_gkp
+
         # Total Expected Points (unclipped to preserve negative point outcomes!)
         xP = (
             appearance_pts
@@ -79,6 +83,7 @@ class ScoringEnsemble:
             + exp_cs_pts
             - exp_gc_deduction
             + exp_saves_pts
+            + exp_pen_saves_pts
             + exp_defcon_pts
             - exp_card_deduction
             + exp_bonus_pts
@@ -94,11 +99,11 @@ class ScoringEnsemble:
         base_sigma = 1.1 + (pos_fwd * 1.4) + (pos_mid * 1.2) + (pos_def * 0.9) + (pos_gkp * 0.7)
         sigma = base_sigma * np.sqrt(np.clip(np.maximum(0.1, xP) / 3.0, 0.4, 3.5))
 
-        # P10: Lower outcome floor (for starters, typically 1 or 2 appearance points; for subs 0)
+        # P10: Lower outcome floor (for 90%+ nailed starters: 2 appearance pts minus cards; otherwise 0 or 1)
         p10 = np.where(
-            zero_mask,
+            zero_mask | (p_play < 0.90),
             0.0,
-            np.maximum(-1.0, np.where(p_min60 > 0.7, 2.0 - np.clip(exp_card_deduction, 0.0, 1.0), p_play * 1.0)),
+            np.where(p_min60 >= 0.90, np.maximum(0.0, 2.0 - np.clip(exp_card_deduction, 0.0, 1.0)), 1.0),
         )
 
         # P50: True Median (below mean due to right skew of goal/bonus hauls)

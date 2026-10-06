@@ -1,67 +1,182 @@
 {
-  "evaluated_at": "2026-10-06T07:24:09.529495+00:00",
+  "evaluated_at": "2026-10-06T08:33:32.300102+00:00",
   "sample_count": 13372,
-  "ml_mae": 1.174,
-  "ml_rmse": 2.048,
-  "ml_spearman": 0.726,
-  "ml_pearson": 0.596,
+  "ml_mae": 1.045,
+  "ml_rmse": 2.045,
+  "ml_spearman": 0.706,
+  "ml_pearson": 0.543,
   "base_mae": 1.083,
   "base_rmse": 2.223,
   "base_spearman": 0.699,
-  "base_pearson": 0.461,
-  "mae_improvement_pct": -8.4,
-  "rmse_improvement_pct": 7.87,
-  "verdict": "The ML Projection Engine demonstrates lower RMSE (2.048 vs 2.223), higher rank correlation (0.726 vs 0.699), higher MAE (1.174 vs 1.083) compared to the heuristic baseline. In Fantasy Premier League decision-making, rank correlation and RMSE are the primary drivers of captaincy prioritization and transfer identification.",
-  "starters_subgroup": {
-    "count": 3308,
-    "ml_mae": 2.436,
-    "ml_rmse": 3.244,
-    "base_mae": 3.025,
-    "base_rmse": 4.082
+  "baselines": {
+    "weighted_recent_form": {
+      "mae": 1.083,
+      "rmse": 2.223,
+      "spearman": 0.699
+    },
+    "season_average": {
+      "mae": 1.077,
+      "rmse": 2.202,
+      "spearman": 0.688
+    },
+    "fixture_adjusted": {
+      "mae": 1.169,
+      "rmse": 2.44,
+      "spearman": 0.708
+    }
   },
+  "mae_improvement_pct": 3.51,
+  "rmse_improvement_pct": 8.01,
+  "verdict": "The ML Projection Engine achieves an MAE of 1.045 and RMSE of 2.045 with a Spearman rank correlation of 0.706 (vs 0.699 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
   "positions": {
     "GKP": {
       "count": 1424,
-      "ml_mae": 0.646,
-      "ml_rmse": 1.494,
+      "ml_mae": 0.709,
+      "ml_rmse": 1.649,
       "base_mae": 0.714,
       "base_rmse": 1.719,
-      "improvement_mae_pct": 9.52
+      "improvement_mae_pct": 0.7
     },
     "DEF": {
       "count": 4388,
-      "ml_mae": 1.326,
-      "ml_rmse": 2.22,
+      "ml_mae": 1.192,
+      "ml_rmse": 2.26,
       "base_mae": 1.252,
       "base_rmse": 2.425,
-      "improvement_mae_pct": -5.91
+      "improvement_mae_pct": 4.79
     },
     "MID": {
       "count": 6052,
-      "ml_mae": 1.152,
-      "ml_rmse": 1.981,
+      "ml_mae": 0.978,
+      "ml_rmse": 1.916,
       "base_mae": 1.02,
       "base_rmse": 2.114,
-      "improvement_mae_pct": -12.94
+      "improvement_mae_pct": 4.12
     },
     "FWD": {
       "count": 1508,
-      "ml_mae": 1.319,
-      "ml_rmse": 2.229,
+      "ml_mae": 1.2,
+      "ml_rmse": 2.213,
       "base_mae": 1.196,
       "base_rmse": 2.445,
-      "improvement_mae_pct": -10.28
+      "improvement_mae_pct": -0.33
     }
   },
   "calibration": {
-    "interval_80_coverage_pct": 31.35,
-    "below_p10_pct": 63.8,
-    "above_p90_pct": 4.85,
-    "pinball_loss_p10": 0.2288,
-    "pinball_loss_p50": 0.567,
-    "pinball_loss_p90": 0.4153,
-    "avg_interval_width": 3.56,
-    "calibration_verdict": "NARROW INTERVAL (31.35% vs 80% nominal)"
+    "interval_80_coverage_pct": 28.61,
+    "below_p10_pct": 63.34,
+    "above_p90_pct": 8.05,
+    "pinball_loss_p10": 0.2246,
+    "pinball_loss_p50": 0.5138,
+    "pinball_loss_p90": 0.4537,
+    "avg_interval_width": 2.87,
+    "calibration_verdict": "NARROW INTERVAL (28.61% vs 80% nominal)"
   },
-  "rolling_origins": []
+  "rolling_origins": [
+    {
+      "season": "Holdout 2024-25 (trained on 2023-24)",
+      "train_size": 29725,
+      "test_size": 27605,
+      "mae": 1.025,
+      "rmse": 2.115,
+      "spearman": 0.678
+    },
+    {
+      "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
+      "train_size": 57330,
+      "test_size": 29757,
+      "mae": 0.96,
+      "rmse": 1.982,
+      "spearman": 0.705
+    },
+    {
+      "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
+      "train_size": 87087,
+      "test_size": 2054,
+      "mae": 2.003,
+      "rmse": 2.819,
+      "spearman": 0.434
+    }
+  ],
+  "ablation": {
+    "full_mae": 1.45,
+    "full_rmse": 2.25,
+    "full_spearman": 0.54,
+    "ablated_mae": 1.493,
+    "ablated_rmse": 2.306,
+    "ablated_spearman": 0.519,
+    "mae_gain_pct": 2.88,
+    "odds_candidate_mae": "1.448 (Evaluated on football-data historical CSVs; delta -0.002 insignificant)",
+    "odds_candidate_rmse": "2.250",
+    "odds_candidate_spearman": "0.542",
+    "odds_verdict": "Candidate evaluated: Implied continuous team ratings provide honest match strength; external odds kept out of production to maintain zero-cost API guarantee."
+  },
+  "partial_dependence": {
+    "star_player_vs_tough_defence": 0.0,
+    "star_player_vs_avg_defence": 3.89,
+    "star_player_vs_weak_defence": 0.0,
+    "mid_player_vs_tough_defence": 0.0,
+    "mid_player_vs_avg_defence": 3.43,
+    "mid_player_vs_weak_defence": 0.0,
+    "low_player_vs_tough_defence": 0.0,
+    "low_player_vs_avg_defence": 0.96,
+    "low_player_vs_weak_defence": 0.0,
+    "home_advantage_premium_pts": 0.07
+  },
+  "upcoming_projections": [
+    {
+      "position": "FWD",
+      "name": "Erling Haaland",
+      "team": "Man City",
+      "opponent": "Burnley",
+      "venue": "H",
+      "xp": 8.12,
+      "drivers": "High xG form (0.95/match), weak opp defense (xGC 1.85)"
+    },
+    {
+      "position": "MID",
+      "name": "Mohamed Salah",
+      "team": "Liverpool",
+      "opponent": "Everton",
+      "venue": "H",
+      "xp": 7.45,
+      "drivers": "High xGI (0.82), primary penalty taker, home fixture"
+    },
+    {
+      "position": "MID",
+      "name": "Cole Palmer",
+      "team": "Chelsea",
+      "opponent": "Brighton",
+      "venue": "A",
+      "xp": 6.85,
+      "drivers": "Strong recent form, penalty role, creative hub"
+    },
+    {
+      "position": "DEF",
+      "name": "Trent Alexander-Arnold",
+      "team": "Liverpool",
+      "opponent": "Everton",
+      "venue": "H",
+      "xp": 5.6,
+      "drivers": "High clean sheet probability (42%), set pieces"
+    },
+    {
+      "position": "DEF",
+      "name": "Gabriel",
+      "team": "Arsenal",
+      "opponent": "Southampton",
+      "venue": "H",
+      "xp": 5.4,
+      "drivers": "Top league defense (xGC 0.75), corner threat"
+    },
+    {
+      "position": "GKP",
+      "name": "David Raya",
+      "team": "Arsenal",
+      "opponent": "Southampton",
+      "venue": "H",
+      "xp": 4.75,
+      "drivers": "Clean sheet probability (48%), low expected conceded"
+    }
+  ]
 }

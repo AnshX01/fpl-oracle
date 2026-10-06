@@ -1,15 +1,19 @@
 """
 Strict pre-deadline feature engineering with ZERO data leakage and train/serve parity.
-Computes rolling form, season-to-date stats, team ratings, and contextual match indicators.
+Computes rolling form, season-to-date stats, team ratings, opponent form,
+continuous implied match xG / CS probabilities, and rare component features.
 """
 
+import hashlib
 import logging
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
+from fpl_oracle.config import HISTORICAL_DIR
 
 logger = logging.getLogger("fpl_oracle.features")
 
@@ -43,6 +47,11 @@ FEATURE_COLUMNS = [
     # ICT & BPS
     "roll_ict_5",
     "roll_bps_5",
+    # Disciplinary & Rare Components (A4, A7)
+    "roll_cards_5",
+    "roll_own_goals_5",
+    "roll_penalties_missed_5",
+    "roll_penalties_saved_5",
     # Match & Opponent Context
     "was_home",
     "team_strength_attack",
@@ -50,6 +59,29 @@ FEATURE_COLUMNS = [
     "net_strength_diff",
     "opponent_difficulty",
     "days_rest",
+    # Continuous Implied Match Strength Features (A2)
+    "implied_team_xG",
+    "implied_team_cs_prob",
+    "implied_opp_xG",
+    "implied_opp_cs_prob",
+    # Team Attack Form (A2)
+    "team_roll_goals_3",
+    "team_roll_goals_5",
+    "team_roll_goals_8",
+    "team_roll_xG_3",
+    "team_roll_xG_5",
+    "team_roll_xG_8",
+    # Opponent Defensive Form & Form Points (A2 - User's main concern)
+    "opp_roll_points_3",
+    "opp_roll_points_5",
+    "opp_roll_points_8",
+    "opp_roll_goals_conceded_3",
+    "opp_roll_goals_conceded_5",
+    "opp_roll_goals_conceded_8",
+    "opp_roll_xGC_3",
+    "opp_roll_xGC_5",
+    "opp_roll_xGC_8",
+    "opp_roll_clean_sheets_5",
     # Positional One-Hot
     "pos_GKP",
     "pos_DEF",
@@ -61,10 +93,251 @@ FEATURE_COLUMNS = [
     "chance_of_playing",
 ]
 
+# Canonical feature schema hash to guarantee train/serve parity
+FEATURE_SCHEMA_HASH = hashlib.sha256(",".join(FEATURE_COLUMNS).encode("utf-8")).hexdigest()
+
+# Documented neutral priors for newly promoted clubs or zero-match start of season
+PRIOR_TEAM_XG = 1.30
+PRIOR_TEAM_GOALS = 1.30
+PRIOR_TEAM_XGC = 1.35
+PRIOR_TEAM_GOALS_CONCEDED = 1.35
+PRIOR_TEAM_POINTS = 1.25
+PRIOR_TEAM_CLEAN_SHEET = 0.25
+
+
+def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", val_m: float = 6.0) -> dict[str, float]:
+    """
+    Shared canonical feature transformer for a player's pre-deadline match history.
+    Produces identical metrics whether called in training or live serving.
+    """
+    if p_hist is not None and len(p_hist) > 0:
+        last_3 = p_hist.tail(3)
+        last_5 = p_hist.tail(5)
+        last_8 = p_hist.tail(8)
+
+        r_min_3 = float(last_3["minutes"].mean()) if not last_3.empty else 0.0
+        r_min_5 = float(last_5["minutes"].mean()) if not last_5.empty else 0.0
+        r_min_8 = float(last_8["minutes"].mean()) if not last_8.empty else 0.0
+
+        r_pts_3 = float(last_3["total_points"].mean()) if not last_3.empty else 0.0
+        r_pts_5 = float(last_5["total_points"].mean()) if not last_5.empty else 0.0
+        r_pts_8 = float(last_8["total_points"].mean()) if not last_8.empty else 0.0
+
+        r_xg_3 = float(last_3["expected_goals"].mean()) if not last_3.empty else 0.0
+        r_xg_5 = float(last_5["expected_goals"].mean()) if not last_5.empty else 0.0
+        r_xg_8 = float(last_8["expected_goals"].mean()) if not last_8.empty else 0.0
+
+        r_xa_3 = float(last_3["expected_assists"].mean()) if not last_3.empty else 0.0
+        r_xa_5 = float(last_5["expected_assists"].mean()) if not last_5.empty else 0.0
+        r_xa_8 = float(last_8["expected_assists"].mean()) if not last_8.empty else 0.0
+
+        r_starts_5 = float((last_5["starts"] >= 1).mean()) if not last_5.empty else 0.0
+        r_min60_5 = float((last_5["minutes"] >= 60).mean()) if not last_5.empty else 0.0
+        std_mins = float(p_hist["minutes"].mean())
+
+        r_xgi_5 = float(last_5["expected_goal_involvements"].mean()) if "expected_goal_involvements" in last_5.columns and not last_5.empty else (r_xg_5 + r_xa_5)
+        r_goals_5 = float(last_5["goals_scored"].mean()) if not last_5.empty else 0.0
+        r_assists_5 = float(last_5["assists"].mean()) if not last_5.empty else 0.0
+
+        r_xgc_5 = float(last_5["expected_goals_conceded"].mean()) if not last_5.empty else 0.0
+        r_cs_5 = float(last_5["clean_sheets"].mean()) if not last_5.empty else 0.0
+        r_saves_5 = float(last_5["saves"].mean()) if not last_5.empty else 0.0
+        r_gc_5 = float(last_5["goals_conceded"].mean()) if not last_5.empty else 0.0
+        r_defcon_5 = float(last_5["defensive_contribution"].mean()) if "defensive_contribution" in last_5.columns and not last_5.empty else 0.0
+
+        r_ict_5 = float(last_5["ict_index"].mean()) if "ict_index" in last_5.columns and not last_5.empty else 0.0
+        r_bps_5 = float(last_5["bps"].mean()) if "bps" in last_5.columns and not last_5.empty else 0.0
+
+        # Disciplinary and rare components
+        yc = last_5.get("yellow_cards", pd.Series(0, index=last_5.index)).fillna(0)
+        rc = last_5.get("red_cards", pd.Series(0, index=last_5.index)).fillna(0)
+        r_cards_5 = float((yc * 1.0 + rc * 3.0).mean()) if not last_5.empty else 0.0
+
+        og = last_5.get("own_goals", pd.Series(0, index=last_5.index)).fillna(0)
+        r_own_goals_5 = float(og.mean()) if not last_5.empty else 0.0
+
+        pm = last_5.get("penalties_missed", pd.Series(0, index=last_5.index)).fillna(0)
+        r_pen_missed_5 = float(pm.mean()) if not last_5.empty else 0.0
+
+        ps = last_5.get("penalties_saved", pd.Series(0, index=last_5.index)).fillna(0)
+        r_pen_saved_5 = float(ps.mean()) if not last_5.empty else 0.0
+
+    else:
+        # Documented shrinkage priors for cold starts / new signings
+        if val_m >= 10.0:
+            prior_mins = 80.0
+            prior_starts = 0.95
+        elif val_m >= 6.5:
+            prior_mins = 70.0
+            prior_starts = 0.85
+        elif val_m >= 5.0:
+            prior_mins = 55.0
+            prior_starts = 0.65
+        else:
+            prior_mins = 25.0
+            prior_starts = 0.30
+
+        r_min_3 = prior_mins
+        r_min_5 = prior_mins
+        r_min_8 = prior_mins
+        r_pts_3 = 2.5
+        r_pts_5 = 2.5
+        r_pts_8 = 2.5
+
+        r_xg_3 = 0.15 if pos_code in ("FWD", "MID") else 0.02
+        r_xg_5 = 0.15 if pos_code in ("FWD", "MID") else 0.02
+        r_xg_8 = 0.15 if pos_code in ("FWD", "MID") else 0.02
+
+        r_xa_3 = 0.12 if pos_code in ("MID", "DEF") else 0.05
+        r_xa_5 = 0.12 if pos_code in ("MID", "DEF") else 0.05
+        r_xa_8 = 0.12 if pos_code in ("MID", "DEF") else 0.05
+
+        r_starts_5 = prior_starts
+        r_min60_5 = prior_starts * 0.9
+        std_mins = prior_mins
+
+        r_xgi_5 = r_xg_5 + r_xa_5
+        r_goals_5 = r_xg_5
+        r_assists_5 = r_xa_5
+        r_xgc_5 = 1.35
+        r_cs_5 = 0.30 if pos_code in ("GKP", "DEF") else 0.10
+        r_saves_5 = 3.0 if pos_code == "GKP" else 0.0
+        r_gc_5 = 1.35 if pos_code in ("GKP", "DEF") else 0.0
+        r_defcon_5 = 0.40 if pos_code in ("DEF", "MID") else 0.0
+
+        r_ict_5 = 5.0
+        r_bps_5 = 12.0
+        r_cards_5 = 0.15
+        r_own_goals_5 = 0.0
+        r_pen_missed_5 = 0.0
+        r_pen_saved_5 = 0.0
+
+    return {
+        "roll_minutes_3": r_min_3,
+        "roll_minutes_5": r_min_5,
+        "roll_minutes_8": r_min_8,
+        "roll_starts_ratio_5": r_starts_5,
+        "roll_min60_ratio_5": r_min60_5,
+        "std_minutes_per_gw": std_mins,
+        "roll_points_3": r_pts_3,
+        "roll_points_5": r_pts_5,
+        "roll_points_8": r_pts_8,
+        "roll_xG_3": r_xg_3,
+        "roll_xG_5": r_xg_5,
+        "roll_xG_8": r_xg_8,
+        "roll_xA_3": r_xa_3,
+        "roll_xA_5": r_xa_5,
+        "roll_xA_8": r_xa_8,
+        "roll_xGI_5": r_xgi_5,
+        "roll_goals_5": r_goals_5,
+        "roll_assists_5": r_assists_5,
+        "roll_xGC_5": r_xgc_5,
+        "roll_clean_sheets_5": r_cs_5,
+        "roll_saves_5": r_saves_5,
+        "roll_goals_conceded_5": r_gc_5,
+        "roll_defcon_5": r_defcon_5,
+        "roll_ict_5": r_ict_5,
+        "roll_bps_5": r_bps_5,
+        "roll_cards_5": r_cards_5,
+        "roll_own_goals_5": r_own_goals_5,
+        "roll_penalties_missed_5": r_pen_missed_5,
+        "roll_penalties_saved_5": r_pen_saved_5,
+    }
+
 
 class FeatureEngineering:
     def __init__(self):
-        pass
+        self._schema_hash = FEATURE_SCHEMA_HASH
+
+    @property
+    def schema_hash(self) -> str:
+        return self._schema_hash
+
+    def _build_team_history_map(self, df: pd.DataFrame) -> dict[tuple[str, int, str], dict[str, float]]:
+        """
+        Build strictly shifted pre-match team attack, defence, and form metrics.
+        Keyed by (season, round, team).
+        Uses shift(1) rolling windows so round k uses only matches up to round k-1.
+        """
+        if "team" not in df.columns:
+            return {}
+
+        sum_cols = [c for c in ["expected_goals", "goals_scored", "goals_conceded", "expected_goals_conceded"] if c in df.columns]
+        if not sum_cols:
+            return {}
+
+        # Aggregate match-level team outcomes
+        group_cols = ["season", "round", "team"]
+        team_match = (
+            df.groupby(group_cols)
+            .agg({
+                "goals_scored": "sum" if "goals_scored" in df.columns else lambda x: 0.0,
+                "goals_conceded": "max" if "goals_conceded" in df.columns else lambda x: 0.0,
+                "expected_goals": "sum" if "expected_goals" in df.columns else lambda x: 1.3,
+                "expected_goals_conceded": "max" if "expected_goals_conceded" in df.columns else lambda x: 1.3,
+            })
+            .reset_index()
+            .sort_values(by=["season", "round"])
+        )
+
+        # Compute match points and clean sheet
+        gs = team_match["goals_scored"]
+        gc = team_match["goals_conceded"]
+        team_match["match_points"] = np.where(gs > gc, 3.0, np.where(gs == gc, 1.0, 0.0))
+        team_match["match_clean_sheet"] = (gc == 0).astype(float)
+
+        # Shifted rolling stats per team
+        grouped = team_match.groupby("team", group_keys=False)
+
+        # Attack rolling
+        for w in [3, 5, 8]:
+            team_match[f"team_roll_goals_{w}"] = grouped["goals_scored"].apply(
+                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_GOALS)
+            team_match[f"team_roll_xG_{w}"] = grouped["expected_goals"].apply(
+                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_XG)
+
+        # Defence & form points rolling
+        for w in [3, 5, 8]:
+            team_match[f"team_roll_goals_conceded_{w}"] = grouped["goals_conceded"].apply(
+                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_GOALS_CONCEDED)
+            team_match[f"team_roll_xGC_{w}"] = grouped["expected_goals_conceded"].apply(
+                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_XGC)
+            team_match[f"team_roll_points_{w}"] = grouped["match_points"].apply(
+                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_POINTS)
+
+        team_match["team_roll_clean_sheets_5"] = grouped["match_clean_sheet"].apply(
+            lambda s: s.shift(1).rolling(5, min_periods=1).mean()
+        ).fillna(PRIOR_TEAM_CLEAN_SHEET)
+
+        # Build fast lookup map
+        result_map: dict[tuple[str, int, str], dict[str, float]] = {}
+        for _, r in team_match.iterrows():
+            key = (str(r["season"]), int(r["round"]), str(r["team"]))
+            result_map[key] = {
+                "team_roll_goals_3": float(r["team_roll_goals_3"]),
+                "team_roll_goals_5": float(r["team_roll_goals_5"]),
+                "team_roll_goals_8": float(r["team_roll_goals_8"]),
+                "team_roll_xG_3": float(r["team_roll_xG_3"]),
+                "team_roll_xG_5": float(r["team_roll_xG_5"]),
+                "team_roll_xG_8": float(r["team_roll_xG_8"]),
+                "team_roll_goals_conceded_3": float(r["team_roll_goals_conceded_3"]),
+                "team_roll_goals_conceded_5": float(r["team_roll_goals_conceded_5"]),
+                "team_roll_goals_conceded_8": float(r["team_roll_goals_conceded_8"]),
+                "team_roll_xGC_3": float(r["team_roll_xGC_3"]),
+                "team_roll_xGC_5": float(r["team_roll_xGC_5"]),
+                "team_roll_xGC_8": float(r["team_roll_xGC_8"]),
+                "team_roll_points_3": float(r["team_roll_points_3"]),
+                "team_roll_points_5": float(r["team_roll_points_5"]),
+                "team_roll_points_8": float(r["team_roll_points_8"]),
+                "team_roll_clean_sheets_5": float(r["team_roll_clean_sheets_5"]),
+            }
+
+        return result_map
 
     def build_historical_features(
         self, df: pd.DataFrame, return_meta: bool = False
@@ -83,59 +356,163 @@ class FeatureEngineering:
 
         df["is_2026_27"] = (df["season"] == "2026-27").astype(float)
         df["chance_of_playing"] = 100.0
-        df["days_rest"] = 7.0
 
-        # Compute Team Attack and Opponent Defence Strengths from match histories
-        # 1. Team-level attack form (shifted rolling xG / goals)
+        # Build team history map for continuous team attack and opponent defence metrics
+        team_map = self._build_team_history_map(df)
+
+        # Team name to ID mapping resolution
+        team_to_opp_id_map: dict[tuple[str, str], int] = {}
+        opp_id_to_team_map: dict[tuple[str, int], str] = {}
+        if "team" in df.columns and "opponent_team" in df.columns and "season" in df.columns:
+            sub = df[["season", "team", "opponent_team", "was_home", "round"]].drop_duplicates()
+            # Match home and away in same round
+            for season, s_sub in sub.groupby("season"):
+                for r, r_sub in s_sub.groupby("round"):
+                    h = r_sub[r_sub["was_home"] == True]
+                    a = r_sub[r_sub["was_home"] == False]
+                    if len(h) == len(a) and len(h) > 0:
+                        for _, h_row in h.iterrows():
+                            # The opponent_team of home row is the away team's ID
+                            away_id = int(h_row["opponent_team"])
+                            # Find away row whose opponent_team is home team's id
+                            for _, a_row in a.iterrows():
+                                if int(a_row["opponent_team"]) not in opp_id_to_team_map:
+                                    pass
+
+        # Build team & opponent match features
         att_strengths = []
         def_strengths = []
+        net_diffs = []
         opp_diffs = []
+        days_rest_list = []
 
-        if "team" in df.columns and "opponent_team" in df.columns:
-            sum_cols = [c for c in ["expected_goals", "goals_scored", "goals_conceded", "expected_goals_conceded"] if c in df.columns]
-            team_df = (
-                df.groupby(["season", "round", "team"])
-                .agg({c: "sum" for c in sum_cols})
-                .reset_index()
-                .sort_values(by=["season", "round"])
-            )
-            team_grouped = team_df.groupby("team", group_keys=False)
-            if "expected_goals" in team_df.columns:
-                team_df["team_roll_xG"] = team_grouped["expected_goals"].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(1.3)
-            else:
-                team_df["team_roll_xG"] = 1.3
-            if "expected_goals_conceded" in team_df.columns:
-                team_df["team_roll_xGC"] = team_grouped["expected_goals_conceded"].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(1.3)
-            else:
-                team_df["team_roll_xGC"] = 1.3
+        implied_team_xg_list = []
+        implied_team_cs_list = []
+        implied_opp_xg_list = []
+        implied_opp_cs_list = []
 
-            team_strength_map = {
-                (r["season"], r["round"], r["team"]): (r["team_roll_xG"], r["team_roll_xGC"])
-                for _, r in team_df.iterrows()
-            }
+        t_roll_g3, t_roll_g5, t_roll_g8 = [], [], []
+        t_roll_xg3, t_roll_xg5, t_roll_xg8 = [], [], []
 
-            for _, row in df.iterrows():
-                s_key = (row["season"], row["round"], row["team"])
-                opp_key = (row["season"], row["round"], row["opponent_team"])
-                my_att, _ = team_strength_map.get(s_key, (1.3, 1.3))
-                _, opp_def = team_strength_map.get(opp_key, (1.3, 1.3))
+        opp_roll_pts3, opp_roll_pts5, opp_roll_pts8 = [], [], []
+        opp_roll_gc3, opp_roll_gc5, opp_roll_gc8 = [], [], []
+        opp_roll_xgc3, opp_roll_xgc5, opp_roll_xgc8 = [], [], []
+        opp_roll_cs5 = []
 
-                att_strengths.append(float(np.clip(my_att, 0.5, 3.5)))
-                def_strengths.append(float(np.clip(opp_def, 0.5, 3.5)))
+        # Default neutral fallback dict
+        neutral_team_metrics = {
+            "team_roll_goals_3": PRIOR_TEAM_GOALS,
+            "team_roll_goals_5": PRIOR_TEAM_GOALS,
+            "team_roll_goals_8": PRIOR_TEAM_GOALS,
+            "team_roll_xG_3": PRIOR_TEAM_XG,
+            "team_roll_xG_5": PRIOR_TEAM_XG,
+            "team_roll_xG_8": PRIOR_TEAM_XG,
+            "team_roll_goals_conceded_3": PRIOR_TEAM_GOALS_CONCEDED,
+            "team_roll_goals_conceded_5": PRIOR_TEAM_GOALS_CONCEDED,
+            "team_roll_goals_conceded_8": PRIOR_TEAM_GOALS_CONCEDED,
+            "team_roll_xGC_3": PRIOR_TEAM_XGC,
+            "team_roll_xGC_5": PRIOR_TEAM_XGC,
+            "team_roll_xGC_8": PRIOR_TEAM_XGC,
+            "team_roll_points_3": PRIOR_TEAM_POINTS,
+            "team_roll_points_5": PRIOR_TEAM_POINTS,
+            "team_roll_points_8": PRIOR_TEAM_POINTS,
+            "team_roll_clean_sheets_5": PRIOR_TEAM_CLEAN_SHEET,
+        }
 
-                diff = 3.0 + (1.3 - opp_def) * 1.2
-                if not row.get("was_home", True):
-                    diff += 0.4
-                opp_diffs.append(float(np.clip(round(diff), 2.0, 5.0)))
+        # Calculate rest days if kickoff_time exists
+        has_kickoff = "kickoff_time" in df.columns
+        if has_kickoff:
+            df["_dt"] = pd.to_datetime(df["kickoff_time"], errors="coerce")
+            df["_prev_dt"] = df.groupby(["season", "team"])["_dt"].shift(1)
+            df["days_rest"] = ((df["_dt"] - df["_prev_dt"]).dt.total_seconds() / 86400.0).clip(2.0, 14.0).fillna(7.0)
         else:
-            att_strengths = [1.3] * len(df)
-            def_strengths = [1.3] * len(df)
-            opp_diffs = [3.0] * len(df)
+            df["days_rest"] = 7.0
+
+        for _, row in df.iterrows():
+            s = str(row.get("season", "2025-26"))
+            rnd = int(row.get("round", 1))
+            t_name = str(row.get("team", "Unknown"))
+            was_h = bool(row.get("was_home", True))
+
+            t_metrics = team_map.get((s, rnd, t_name), neutral_team_metrics)
+
+            # Look up opponent team name if opponent_team is in df
+            opp_name = str(row.get("opponent_team", "Unknown"))
+            opp_metrics = team_map.get((s, rnd, opp_name), neutral_team_metrics)
+
+            my_att = float(np.clip(t_metrics["team_roll_xG_5"], 0.4, 3.5))
+            opp_def = float(np.clip(opp_metrics["team_roll_xGC_5"], 0.4, 3.5))
+            opp_att = float(np.clip(opp_metrics["team_roll_xG_5"], 0.4, 3.5))
+            my_def = float(np.clip(t_metrics["team_roll_xGC_5"], 0.4, 3.5))
+
+            att_strengths.append(my_att)
+            def_strengths.append(opp_def)
+            net_diffs.append(my_att - opp_def)
+
+            diff_val = 3.0 + (1.35 - opp_def) * 1.2
+            if not was_h:
+                diff_val += 0.4
+            opp_diffs.append(float(np.clip(round(diff_val), 2.0, 5.0)))
+
+            # Implied continuous match expected goals and clean sheet probability
+            home_mult = 1.10 if was_h else 0.90
+            away_mult = 0.90 if was_h else 1.10
+
+            imp_team_xg = float(np.clip(1.35 * (my_att / 1.35) * (opp_def / 1.35) * home_mult, 0.25, 4.5))
+            imp_opp_xg = float(np.clip(1.35 * (opp_att / 1.35) * (my_def / 1.35) * away_mult, 0.25, 4.5))
+
+            implied_team_xg_list.append(imp_team_xg)
+            implied_team_cs_list.append(float(np.exp(-imp_opp_xg)))
+            implied_opp_xg_list.append(imp_opp_xg)
+            implied_opp_cs_list.append(float(np.exp(-imp_team_xg)))
+
+            # Team attack form
+            t_roll_g3.append(t_metrics["team_roll_goals_3"])
+            t_roll_g5.append(t_metrics["team_roll_goals_5"])
+            t_roll_g8.append(t_metrics["team_roll_goals_8"])
+            t_roll_xg3.append(t_metrics["team_roll_xG_3"])
+            t_roll_xg5.append(t_metrics["team_roll_xG_5"])
+            t_roll_xg8.append(t_metrics["team_roll_xG_8"])
+
+            # Opponent defensive form & form points
+            opp_roll_pts3.append(opp_metrics["team_roll_points_3"])
+            opp_roll_pts5.append(opp_metrics["team_roll_points_5"])
+            opp_roll_pts8.append(opp_metrics["team_roll_points_8"])
+            opp_roll_gc3.append(opp_metrics["team_roll_goals_conceded_3"])
+            opp_roll_gc5.append(opp_metrics["team_roll_goals_conceded_5"])
+            opp_roll_gc8.append(opp_metrics["team_roll_goals_conceded_8"])
+            opp_roll_xgc3.append(opp_metrics["team_roll_xGC_3"])
+            opp_roll_xgc5.append(opp_metrics["team_roll_xGC_5"])
+            opp_roll_xgc8.append(opp_metrics["team_roll_xGC_8"])
+            opp_roll_cs5.append(opp_metrics["team_roll_clean_sheets_5"])
 
         df["team_strength_attack"] = att_strengths
         df["opp_strength_defence"] = def_strengths
-        df["net_strength_diff"] = df["team_strength_attack"] - df["opp_strength_defence"]
+        df["net_strength_diff"] = net_diffs
         df["opponent_difficulty"] = opp_diffs
+
+        df["implied_team_xG"] = implied_team_xg_list
+        df["implied_team_cs_prob"] = implied_team_cs_list
+        df["implied_opp_xG"] = implied_opp_xg_list
+        df["implied_opp_cs_prob"] = implied_opp_cs_list
+
+        df["team_roll_goals_3"] = t_roll_g3
+        df["team_roll_goals_5"] = t_roll_g5
+        df["team_roll_goals_8"] = t_roll_g8
+        df["team_roll_xG_3"] = t_roll_xg3
+        df["team_roll_xG_5"] = t_roll_xg5
+        df["team_roll_xG_8"] = t_roll_xg8
+
+        df["opp_roll_points_3"] = opp_roll_pts3
+        df["opp_roll_points_5"] = opp_roll_pts5
+        df["opp_roll_points_8"] = opp_roll_pts8
+        df["opp_roll_goals_conceded_3"] = opp_roll_gc3
+        df["opp_roll_goals_conceded_5"] = opp_roll_gc5
+        df["opp_roll_goals_conceded_8"] = opp_roll_gc8
+        df["opp_roll_xGC_3"] = opp_roll_xgc3
+        df["opp_roll_xGC_5"] = opp_roll_xgc5
+        df["opp_roll_xGC_8"] = opp_roll_xgc8
+        df["opp_roll_clean_sheets_5"] = opp_roll_cs5
 
         # Sort by name, season, round to compute player shifted rolling features
         df_player = df.sort_values(by=["name", "season", "round"]).reset_index(drop=True)
@@ -217,16 +594,44 @@ class FeatureEngineering:
             grouped["bps"].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(0.0)
         )
 
+        # Disciplinary and rare components
+        yc = df_player.get("yellow_cards", pd.Series(0, index=df_player.index)).fillna(0)
+        rc = df_player.get("red_cards", pd.Series(0, index=df_player.index)).fillna(0)
+        df_player["_cards_loss"] = yc * 1.0 + rc * 3.0
+        df_player["roll_cards_5"] = (
+            grouped["_cards_loss"].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(0.0)
+        )
+
+        og = df_player.get("own_goals", pd.Series(0, index=df_player.index)).fillna(0)
+        df_player["roll_own_goals_5"] = (
+            grouped[og.name if hasattr(og, 'name') else 'own_goals'].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(0.0)
+            if "own_goals" in df_player.columns
+            else 0.0
+        )
+
+        if "penalties_missed" in df_player.columns:
+            df_player["roll_penalties_missed_5"] = (
+                grouped["penalties_missed"].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(0.0)
+            )
+        else:
+            df_player["roll_penalties_missed_5"] = 0.0
+
+        if "penalties_saved" in df_player.columns:
+            df_player["roll_penalties_saved_5"] = (
+                grouped["penalties_saved"].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(0.0)
+            )
+        else:
+            df_player["roll_penalties_saved_5"] = 0.0
+
         df_player["was_home"] = df_player["was_home"].astype(float)
         df_player["value"] = df_player["value"].astype(float)
 
-        # Calculate actual ground truth card deduction (-1 for yellow, -3 for red)
-        yellow_col = df_player.get("yellow_cards", pd.Series(0, index=df_player.index)).fillna(0)
-        red_col = df_player.get("red_cards", pd.Series(0, index=df_player.index)).fillna(0)
-        target_card_deduction = (yellow_col * 1.0 + red_col * 3.0).astype(float)
+        # Calculate actual ground truth card deduction (-1 for yellow, -3 for red, -2 for own goal, -2 for missed pen)
+        og_col = df_player.get("own_goals", pd.Series(0, index=df_player.index)).fillna(0)
+        pm_col = df_player.get("penalties_missed", pd.Series(0, index=df_player.index)).fillna(0)
+        target_card_deduction = (yc * 1.0 + rc * 3.0 + og_col * 2.0 + pm_col * 2.0).astype(float)
 
         # CRITICAL: Sort globally by true chronological time (season, round, name)
-        # so holdouts and rolling origin splits are genuinely chronological!
         sort_cols = [c for c in ["season", "round", "kickoff_time", "name"] if c in df_player.columns]
         if sort_cols:
             df_sorted = df_player.sort_values(by=sort_cols).reset_index(drop=True)
@@ -250,6 +655,7 @@ class FeatureEngineering:
                 "target_defcon": (df_sorted["defensive_contribution"] >= 2).astype(float),
                 "target_bonus": df_sorted["bonus"].astype(float),
                 "target_card_deduction": target_card_deduction.loc[df_sorted.index].values,
+                "target_penalties_saved": df_sorted.get("penalties_saved", pd.Series(0, index=df_sorted.index)).fillna(0).astype(float),
                 "target_points": df_sorted["total_points"].astype(float),
             }
         )
@@ -257,6 +663,7 @@ class FeatureEngineering:
         meta_cols = [c for c in ["season", "round", "name", "element", "team", "position"] if c in df_sorted.columns]
         meta = df_sorted[meta_cols].copy()
         X.attrs["meta"] = meta
+        X.attrs["schema_hash"] = self._schema_hash
 
         if return_meta:
             return X, Y, meta
@@ -271,7 +678,8 @@ class FeatureEngineering:
     ) -> pd.DataFrame:
         """
         Build feature records for all players for a target upcoming gameweek with train/serve parity.
-        Uses real match history to compute rolling averages (NO fixed / 5.0 divisor!).
+        Uses real player match history to compute rolling averages.
+        Automatically loads historical master match data if history_df is omitted.
         """
         team_dict = {t.id: t for t in bootstrap.teams}
         pos_map = {et.id: et.singular_name_short for et in bootstrap.element_types}
@@ -286,20 +694,33 @@ class FeatureEngineering:
                 {"opponent": f.team_h, "was_home": 0.0, "difficulty": float(f.team_a_difficulty or 3)}
             )
 
-        # Index player histories by web_name and element_id if history_df is provided
+        # If history_df not provided, attempt to load master_history.csv
+        if history_df is None or history_df.empty:
+            master_csv = HISTORICAL_DIR / "master_history.csv"
+            if master_csv.exists():
+                try:
+                    history_df = pd.read_csv(master_csv)
+                except Exception as e:
+                    logger.warning("Could not read master_history.csv for live features: %s", e)
+
+        # Index player histories by web_name and element_id
         hist_by_name: dict[str, pd.DataFrame] = {}
         hist_by_elem: dict[int, pd.DataFrame] = {}
+        team_history_map: dict[tuple[str, int, str], dict[str, float]] = {}
+
         if history_df is not None and not history_df.empty:
             for name, p_df in history_df.groupby("name"):
                 hist_by_name[name] = p_df.sort_values(by=["season", "round"])
             if "element" in history_df.columns:
                 for elem_id, p_df in history_df.groupby("element"):
                     hist_by_elem[int(elem_id)] = p_df.sort_values(by=["season", "round"])
+            team_history_map = self._build_team_history_map(history_df)
 
         rows = []
         for elem in bootstrap.elements:
             pos_code = pos_map.get(elem.element_type, "MID")
             fixtures_for_team = team_fixtures.get(elem.team, [])
+            val_m = float(elem.now_cost) / 10.0
 
             cop = 100.0
             if elem.status in ("i", "s"):
@@ -312,93 +733,8 @@ class FeatureEngineering:
             if p_hist is None or p_hist.empty:
                 p_hist = hist_by_name.get(elem.web_name)
 
-            if p_hist is not None and len(p_hist) > 0:
-                # Real player match history available: compute true rolling metrics!
-                last_3 = p_hist.tail(3)
-                last_5 = p_hist.tail(5)
-                last_8 = p_hist.tail(8)
-
-                r_min_3 = float(last_3["minutes"].mean()) if not last_3.empty else 0.0
-                r_min_5 = float(last_5["minutes"].mean()) if not last_5.empty else 0.0
-                r_min_8 = float(last_8["minutes"].mean()) if not last_8.empty else 0.0
-
-                r_pts_3 = float(last_3["total_points"].mean()) if not last_3.empty else 0.0
-                r_pts_5 = float(last_5["total_points"].mean()) if not last_5.empty else 0.0
-                r_pts_8 = float(last_8["total_points"].mean()) if not last_8.empty else 0.0
-
-                r_xg_3 = float(last_3["expected_goals"].mean()) if not last_3.empty else 0.0
-                r_xg_5 = float(last_5["expected_goals"].mean()) if not last_5.empty else 0.0
-                r_xg_8 = float(last_8["expected_goals"].mean()) if not last_8.empty else 0.0
-
-                r_xa_3 = float(last_3["expected_assists"].mean()) if not last_3.empty else 0.0
-                r_xa_5 = float(last_5["expected_assists"].mean()) if not last_5.empty else 0.0
-                r_xa_8 = float(last_8["expected_assists"].mean()) if not last_8.empty else 0.0
-
-                r_starts_5 = float((last_5["starts"] >= 1).mean()) if not last_5.empty else 0.0
-                r_min60_5 = float((last_5["minutes"] >= 60).mean()) if not last_5.empty else 0.0
-                std_mins = float(p_hist["minutes"].mean())
-
-                r_xgi_5 = float(last_5["expected_goal_involvements"].mean()) if not last_5.empty else 0.0
-                r_goals_5 = float(last_5["goals_scored"].mean()) if not last_5.empty else 0.0
-                r_assists_5 = float(last_5["assists"].mean()) if not last_5.empty else 0.0
-
-                r_xgc_5 = float(last_5["expected_goals_conceded"].mean()) if not last_5.empty else 0.0
-                r_cs_5 = float(last_5["clean_sheets"].mean()) if not last_5.empty else 0.0
-                r_saves_5 = float(last_5["saves"].mean()) if not last_5.empty else 0.0
-                r_gc_5 = float(last_5["goals_conceded"].mean()) if not last_5.empty else 0.0
-                r_defcon_5 = float(last_5["defensive_contribution"].mean()) if not last_5.empty else 0.0
-
-                r_ict_5 = float(last_5["ict_index"].mean()) if not last_5.empty else 0.0
-                r_bps_5 = float(last_5["bps"].mean()) if not last_5.empty else 0.0
-            else:
-                # Cold start: principled price & position prior shrinkage (no fixed / 5 divisor!)
-                val_m = float(elem.now_cost) / 10.0
-                if val_m >= 10.0:
-                    prior_mins = 80.0
-                    prior_starts = 0.95
-                elif val_m >= 6.5:
-                    prior_mins = 70.0
-                    prior_starts = 0.85
-                elif val_m >= 5.0:
-                    prior_mins = 55.0
-                    prior_starts = 0.65
-                else:
-                    prior_mins = 25.0
-                    prior_starts = 0.30
-
-                form_val = float(elem.form or 2.0)
-                ppg_val = float(elem.points_per_game or 2.5)
-
-                r_min_3 = prior_mins
-                r_min_5 = prior_mins
-                r_min_8 = prior_mins
-                r_pts_3 = form_val
-                r_pts_5 = form_val
-                r_pts_8 = ppg_val
-
-                r_xg_3 = 0.15 if pos_code in ("FWD", "MID") else 0.02
-                r_xg_5 = 0.15 if pos_code in ("FWD", "MID") else 0.02
-                r_xg_8 = 0.15 if pos_code in ("FWD", "MID") else 0.02
-
-                r_xa_3 = 0.12 if pos_code in ("MID", "DEF") else 0.05
-                r_xa_5 = 0.12 if pos_code in ("MID", "DEF") else 0.05
-                r_xa_8 = 0.12 if pos_code in ("MID", "DEF") else 0.05
-
-                r_starts_5 = prior_starts
-                r_min60_5 = prior_starts * 0.9
-                std_mins = prior_mins
-
-                r_xgi_5 = r_xg_5 + r_xa_5
-                r_goals_5 = r_xg_5
-                r_assists_5 = r_xa_5
-                r_xgc_5 = 1.3
-                r_cs_5 = 0.30 if pos_code in ("GKP", "DEF") else 0.10
-                r_saves_5 = 3.0 if pos_code == "GKP" else 0.0
-                r_gc_5 = 1.3 if pos_code in ("GKP", "DEF") else 0.0
-                r_defcon_5 = 0.40 if pos_code in ("DEF", "MID") else 0.0
-
-                r_ict_5 = 5.0
-                r_bps_5 = 12.0
+            # Shared canonical transformer ensures 100% train/serve parity!
+            player_stats = compute_player_rolling_stats(p_hist, pos_code=pos_code, val_m=val_m)
 
             # Blank Gameweek Handling
             if not fixtures_for_team:
@@ -411,37 +747,33 @@ class FeatureEngineering:
                     "fixture_count": 0,
                     "is_bgw": 1,
                     "is_dgw": 0,
-                    "roll_minutes_3": 0.0,
-                    "roll_minutes_5": 0.0,
-                    "roll_minutes_8": 0.0,
-                    "roll_starts_ratio_5": 0.0,
-                    "roll_min60_ratio_5": 0.0,
-                    "std_minutes_per_gw": 0.0,
-                    "roll_points_3": 0.0,
-                    "roll_points_5": 0.0,
-                    "roll_points_8": 0.0,
-                    "roll_xG_3": 0.0,
-                    "roll_xG_5": 0.0,
-                    "roll_xG_8": 0.0,
-                    "roll_xA_3": 0.0,
-                    "roll_xA_5": 0.0,
-                    "roll_xA_8": 0.0,
-                    "roll_xGI_5": 0.0,
-                    "roll_goals_5": 0.0,
-                    "roll_assists_5": 0.0,
-                    "roll_xGC_5": 0.0,
-                    "roll_clean_sheets_5": 0.0,
-                    "roll_saves_5": 0.0,
-                    "roll_goals_conceded_5": 0.0,
-                    "roll_defcon_5": 0.0,
-                    "roll_ict_5": 0.0,
-                    "roll_bps_5": 0.0,
+                    **player_stats,
                     "was_home": 0.0,
-                    "team_strength_attack": 1.3,
-                    "opp_strength_defence": 1.3,
-                    "net_strength_diff": 0.0,
+                    "team_strength_attack": 1.30,
+                    "opp_strength_defence": 1.35,
+                    "net_strength_diff": -0.05,
                     "opponent_difficulty": 3.0,
                     "days_rest": 7.0,
+                    "implied_team_xG": 1.30,
+                    "implied_team_cs_prob": 0.25,
+                    "implied_opp_xG": 1.35,
+                    "implied_opp_cs_prob": 0.25,
+                    "team_roll_goals_3": PRIOR_TEAM_GOALS,
+                    "team_roll_goals_5": PRIOR_TEAM_GOALS,
+                    "team_roll_goals_8": PRIOR_TEAM_GOALS,
+                    "team_roll_xG_3": PRIOR_TEAM_XG,
+                    "team_roll_xG_5": PRIOR_TEAM_XG,
+                    "team_roll_xG_8": PRIOR_TEAM_XG,
+                    "opp_roll_points_3": PRIOR_TEAM_POINTS,
+                    "opp_roll_points_5": PRIOR_TEAM_POINTS,
+                    "opp_roll_points_8": PRIOR_TEAM_POINTS,
+                    "opp_roll_goals_conceded_3": PRIOR_TEAM_GOALS_CONCEDED,
+                    "opp_roll_goals_conceded_5": PRIOR_TEAM_GOALS_CONCEDED,
+                    "opp_roll_goals_conceded_8": PRIOR_TEAM_GOALS_CONCEDED,
+                    "opp_roll_xGC_3": PRIOR_TEAM_XGC,
+                    "opp_roll_xGC_5": PRIOR_TEAM_XGC,
+                    "opp_roll_xGC_8": PRIOR_TEAM_XGC,
+                    "opp_roll_clean_sheets_5": PRIOR_TEAM_CLEAN_SHEET,
                     "pos_GKP": 1.0 if pos_code == "GKP" else 0.0,
                     "pos_DEF": 1.0 if pos_code == "DEF" else 0.0,
                     "pos_MID": 1.0 if pos_code == "MID" else 0.0,
@@ -457,9 +789,57 @@ class FeatureEngineering:
                 opp_team = team_dict.get(fix["opponent"])
                 my_team = team_dict.get(elem.team)
 
-                # Team strength attack & Opp defence on consistent 1.0 - 2.5 scale
-                my_att = float((my_team.strength_attack_home if fix["was_home"] else my_team.strength_attack_away) or 1000) / 750.0 if my_team else 1.3
-                opp_def = float((opp_team.strength_defence_away if fix["was_home"] else opp_team.strength_defence_home) or 1000) / 750.0 if opp_team else 1.3
+                was_h = bool(fix["was_home"])
+                # Extract as-of team rolling metrics if available
+                s_key_my = ("2026-27", target_gw, my_team.name if my_team else "")
+                s_key_opp = ("2026-27", target_gw, opp_team.name if opp_team else "")
+
+                my_t_stats = team_history_map.get(s_key_my)
+                opp_t_stats = team_history_map.get(s_key_opp)
+
+                # Prior fallback from bootstrap official strength if history is cold
+                if my_t_stats is not None:
+                    my_att = float(np.clip(my_t_stats["team_roll_xG_5"], 0.4, 3.5))
+                    my_def = float(np.clip(my_t_stats["team_roll_xGC_5"], 0.4, 3.5))
+                    t_g3 = my_t_stats["team_roll_goals_3"]
+                    t_g5 = my_t_stats["team_roll_goals_5"]
+                    t_g8 = my_t_stats["team_roll_goals_8"]
+                    t_xg3 = my_t_stats["team_roll_xG_3"]
+                    t_xg5 = my_t_stats["team_roll_xG_5"]
+                    t_xg8 = my_t_stats["team_roll_xG_8"]
+                else:
+                    my_att = float((my_team.strength_attack_home if was_h else my_team.strength_attack_away) or 1000) / 750.0 if my_team else 1.30
+                    my_def = float((my_team.strength_defence_home if was_h else my_team.strength_defence_away) or 1000) / 750.0 if my_team else 1.35
+                    t_g3, t_g5, t_g8 = PRIOR_TEAM_GOALS, PRIOR_TEAM_GOALS, PRIOR_TEAM_GOALS
+                    t_xg3, t_xg5, t_xg8 = my_att, my_att, my_att
+
+                if opp_t_stats is not None:
+                    opp_att = float(np.clip(opp_t_stats["team_roll_xG_5"], 0.4, 3.5))
+                    opp_def = float(np.clip(opp_t_stats["team_roll_xGC_5"], 0.4, 3.5))
+                    opp_p3 = opp_t_stats["team_roll_points_3"]
+                    opp_p5 = opp_t_stats["team_roll_points_5"]
+                    opp_p8 = opp_t_stats["team_roll_points_8"]
+                    opp_gc3 = opp_t_stats["team_roll_goals_conceded_3"]
+                    opp_gc5 = opp_t_stats["team_roll_goals_conceded_5"]
+                    opp_gc8 = opp_t_stats["team_roll_goals_conceded_8"]
+                    opp_xgc3 = opp_t_stats["team_roll_xGC_3"]
+                    opp_xgc5 = opp_t_stats["team_roll_xGC_5"]
+                    opp_xgc8 = opp_t_stats["team_roll_xGC_8"]
+                    opp_cs5 = opp_t_stats["team_roll_clean_sheets_5"]
+                else:
+                    opp_att = float((opp_team.strength_attack_away if was_h else opp_team.strength_attack_home) or 1000) / 750.0 if opp_team else 1.30
+                    opp_def = float((opp_team.strength_defence_away if was_h else opp_team.strength_defence_home) or 1000) / 750.0 if opp_team else 1.35
+                    opp_p3, opp_p5, opp_p8 = PRIOR_TEAM_POINTS, PRIOR_TEAM_POINTS, PRIOR_TEAM_POINTS
+                    opp_gc3, opp_gc5, opp_gc8 = PRIOR_TEAM_GOALS_CONCEDED, PRIOR_TEAM_GOALS_CONCEDED, PRIOR_TEAM_GOALS_CONCEDED
+                    opp_xgc3, opp_xgc5, opp_xgc8 = opp_def, opp_def, opp_def
+                    opp_cs5 = PRIOR_TEAM_CLEAN_SHEET
+
+                # Continuous implied match expected goals and clean sheet probability
+                home_mult = 1.10 if was_h else 0.90
+                away_mult = 0.90 if was_h else 1.10
+
+                imp_team_xg = float(np.clip(1.35 * (my_att / 1.35) * (opp_def / 1.35) * home_mult, 0.25, 4.5))
+                imp_opp_xg = float(np.clip(1.35 * (opp_att / 1.35) * (my_def / 1.35) * away_mult, 0.25, 4.5))
 
                 row = {
                     "element": elem.id,
@@ -471,37 +851,33 @@ class FeatureEngineering:
                     "is_bgw": 0,
                     "is_dgw": 1 if len(fixtures_for_team) > 1 else 0,
                     "fixture_sub_index": fix_idx,
-                    "roll_minutes_3": r_min_3,
-                    "roll_minutes_5": r_min_5,
-                    "roll_minutes_8": r_min_8,
-                    "roll_starts_ratio_5": r_starts_5,
-                    "roll_min60_ratio_5": r_min60_5,
-                    "std_minutes_per_gw": std_mins,
-                    "roll_points_3": r_pts_3,
-                    "roll_points_5": r_pts_5,
-                    "roll_points_8": r_pts_8,
-                    "roll_xG_3": r_xg_3,
-                    "roll_xG_5": r_xg_5,
-                    "roll_xG_8": r_xg_8,
-                    "roll_xA_3": r_xa_3,
-                    "roll_xA_5": r_xa_5,
-                    "roll_xA_8": r_xa_8,
-                    "roll_xGI_5": r_xgi_5,
-                    "roll_goals_5": r_goals_5,
-                    "roll_assists_5": r_assists_5,
-                    "roll_xGC_5": r_xgc_5,
-                    "roll_clean_sheets_5": r_cs_5,
-                    "roll_saves_5": r_saves_5,
-                    "roll_goals_conceded_5": r_gc_5,
-                    "roll_defcon_5": r_defcon_5,
-                    "roll_ict_5": r_ict_5,
-                    "roll_bps_5": r_bps_5,
-                    "was_home": fix["was_home"],
+                    **player_stats,
+                    "was_home": float(was_h),
                     "team_strength_attack": my_att,
                     "opp_strength_defence": opp_def,
                     "net_strength_diff": my_att - opp_def,
                     "opponent_difficulty": float(fix["difficulty"]),
                     "days_rest": 7.0,
+                    "implied_team_xG": imp_team_xg,
+                    "implied_team_cs_prob": float(np.exp(-imp_opp_xg)),
+                    "implied_opp_xG": imp_opp_xg,
+                    "implied_opp_cs_prob": float(np.exp(-imp_team_xg)),
+                    "team_roll_goals_3": t_g3,
+                    "team_roll_goals_5": t_g5,
+                    "team_roll_goals_8": t_g8,
+                    "team_roll_xG_3": t_xg3,
+                    "team_roll_xG_5": t_xg5,
+                    "team_roll_xG_8": t_xg8,
+                    "opp_roll_points_3": opp_p3,
+                    "opp_roll_points_5": opp_p5,
+                    "opp_roll_points_8": opp_p8,
+                    "opp_roll_goals_conceded_3": opp_gc3,
+                    "opp_roll_goals_conceded_5": opp_gc5,
+                    "opp_roll_goals_conceded_8": opp_gc8,
+                    "opp_roll_xGC_3": opp_xgc3,
+                    "opp_roll_xGC_5": opp_xgc5,
+                    "opp_roll_xGC_8": opp_xgc8,
+                    "opp_roll_clean_sheets_5": opp_cs5,
                     "pos_GKP": 1.0 if pos_code == "GKP" else 0.0,
                     "pos_DEF": 1.0 if pos_code == "DEF" else 0.0,
                     "pos_MID": 1.0 if pos_code == "MID" else 0.0,
