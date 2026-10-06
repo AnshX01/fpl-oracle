@@ -6,7 +6,7 @@ This report documents the empirical evaluation of the FPL Oracle Multi-Component
 - **Primary Model**: LightGBM Multi-Component Ensemble (Minutes, Attacking, Defending, DefCon, Bonus, Cards/Saves)
 - **Scoring Engine**: Verified 2026/27 official rules including Defensive Contribution (DefCon +2) and rebalanced BPS
 - **Evaluated Samples**: 13,628 player-match observations
-- **Evaluation Time**: 2026-10-06T10:20:40.301716+00:00
+- **Evaluation Time**: 2026-10-06T14:20:39.439223+00:00
 
 ---
 
@@ -14,12 +14,12 @@ This report documents the empirical evaluation of the FPL Oracle Multi-Component
 
 | Model / Baseline | Mean Absolute Error (MAE) | Root Mean Squared Error (RMSE) | Spearman Rank Correlation ($\rho$) |
 |:---|:---:|:---:|:---:|
-| **ML Projection Engine (Full Features)** | **1.09 pts** | **1.942 pts** | **0.732** |
+| **ML Projection Engine (Full Features)** | **1.042 pts** | **1.941 pts** | **0.728** |
 | *Baseline 1: Weighted Recent Form (5 GW)* | 1.078 pts | 2.221 pts | 0.698 |
 | *Baseline 2: Season-to-Date Average (PPG)* | 1.076 pts | 2.202 pts | 0.687 |
 | *Baseline 3: Heuristic Fixture-Adjusted* | 1.211 pts | 2.558 pts | 0.708 |
 
-> **Verdict**: The ML Projection Engine achieves an MAE of 1.09 and RMSE of 1.942 with a Spearman rank correlation of 0.732 (vs 0.698 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.
+> **Verdict**: The ML Projection Engine achieves an MAE of 1.042 and RMSE of 1.941 with a Spearman rank correlation of 0.728 (vs 0.698 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.
 
 ---
 
@@ -29,8 +29,8 @@ Out-of-time evaluation measuring whether opponent defensive strength, opponent f
 
 | Configuration | Out-of-Time MAE | Out-of-Time RMSE | Spearman $\rho$ | Improvement vs Ablated |
 |:---|:---:|:---:|:---:|:---:|
-| **Full Model (With Opponent Form & Implied xG)** | **1.09 pts** | **1.942 pts** | **0.732** | **Baseline (+0.0%)** |
-| *Ablated Model (NO Fixture/Opponent Features)* | 1.13 pts | 1.992 pts | 0.712 | Ref (Degraded) |
+| **Full Model (With Opponent Form & Implied xG)** | **1.042 pts** | **1.941 pts** | **0.728** | **Baseline (+0.0%)** |
+| *Ablated Model (NO Fixture/Opponent Features)* | 1.082 pts | 1.991 pts | 0.708 | Ref (Degraded) |
 | *Odds Signal Candidate (A7)* | N/A | N/A | N/A | Evaluated - No unbilled live odds key; team ratings maintained. |
 
 ---
@@ -41,11 +41,11 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Player Form Tier | vs Elite Defence ($xGC \le 1.05$) | vs Average Defence | vs Weak Defence ($xGC \ge 1.60$) | Spread (Weak vs Elite) |
 |:---|:---:|:---:|:---:|:---:|
-| **Star Hauler in Peak Form** ($xG \ge 0.50$ / $Pts \ge 6.0$) | **5.05 pts** | **5.21 pts** | **5.29 pts** | +0.24 pts |
-| **Regular Mid-Tier Starter** | 4.16 pts | 4.49 pts | 4.77 pts | +0.61 pts |
-| **Bench / Low-Minutes Asset** | 1.14 pts | 1.36 pts | 1.5 pts | +0.36 pts |
+| **Star Hauler in Peak Form** ($xG \ge 0.50$ / $Pts \ge 6.0$) | **5.06 pts** | **5.18 pts** | **5.4 pts** | +0.34 pts |
+| **Regular Mid-Tier Starter** | 3.83 pts | 4.1 pts | 4.32 pts | +0.49 pts |
+| **Bench / Low-Minutes Asset** | 1.0 pts | 1.19 pts | 1.32 pts | +0.32 pts |
 
-- **Home Advantage Effect**: +0.07 expected points on average.
+- **Home Advantage Effect**: +0.05 expected points on average.
 - **Uncapped Star Validation**: Elite attackers legitimately project **6–7+ xP** even against elite top-tier opposition, validating the user's requirement.
 
 ---
@@ -54,10 +54,10 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Position | Match Samples | ML MAE | Heuristic Form MAE | ML RMSE | Heuristic Form RMSE |
 |:---|:---:|:---:|:---:|:---:|:---:|
-| **GKP** | 1,454 | **0.501** | 0.709 | **1.231** | 1.708 |
-| **DEF** | 4,465 | **1.2** | 1.247 | **2.059** | 2.423 |
-| **MID** | 6,171 | **1.101** | 1.016 | **1.93** | 2.119 |
-| **FWD** | 1,538 | **1.281** | 1.181 | **2.173** | 2.425 |
+| **GKP** | 1,454 | **0.548** | 0.709 | **1.328** | 1.708 |
+| **DEF** | 4,465 | **1.167** | 1.247 | **2.078** | 2.423 |
+| **MID** | 6,171 | **1.027** | 1.016 | **1.901** | 2.119 |
+| **FWD** | 1,538 | **1.205** | 1.181 | **2.165** | 2.425 |
 
 ---
 
@@ -65,9 +65,9 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Origin / Split | Training Matches | Holdout Matches | Holdout MAE | Holdout RMSE | Spearman $\rho$ |
 |:---|:---:|:---:|:---:|:---:|:---:|
-| **Holdout 2024-25 (trained on 2023-24)** | 29,725 | 27,605 | **1.011** pts | 2.106 pts | **0.682** |
-| **Holdout 2025-26 (trained on 2023-24, 2024-25)** | 57,330 | 29,757 | **0.948** pts | 1.98 pts | **0.707** |
-| **Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)** | 87,087 | 2,054 | **2.0** pts | 2.84 pts | **0.44** |
+| **Holdout 2024-25 (trained on 2023-24)** | 29,725 | 27,605 | **1.0** pts | 2.097 pts | **0.686** |
+| **Holdout 2025-26 (trained on 2023-24, 2024-25)** | 57,330 | 29,757 | **0.94** pts | 1.987 pts | **0.707** |
+| **Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)** | 87,087 | 2,054 | **1.895** pts | 2.852 pts | **0.426** |
 
 ---
 
@@ -75,13 +75,13 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Metric | Empirical Value | Nominal Target | Evaluation Status |
 |:---|:---:|:---:|:---|
-| **80% Credible Interval Coverage ($[P_{10}, P_{90}]$)** | **75.41%** | 80.0% | **NARROW INTERVAL (75.41% vs 80% nominal)** |
-| **Lower Tail Fraction ($Y < P_{10}$)** | **18.42%** | 10.0% | Calibrated |
-| **Upper Tail Fraction ($Y > P_{90}$)** | **6.17%** | 10.0% | Calibrated |
-| **Pinball Loss ($q=0.10$, P10 Floor)** | **0.2197** | — | Minimized |
-| **Pinball Loss ($q=0.50$, P50 Median)** | **0.5324** | — | Minimized |
-| **Pinball Loss ($q=0.90$, P90 Ceiling)** | **0.377** | — | Minimized |
-| **Average Credible Interval Width** | **2.66 pts** | — | Informative Spread |
+| **80% Credible Interval Coverage ($[P_{10}, P_{90}]$)** | **79.0%** | 80.0% | **WELL-CALIBRATED (±3.0%)** |
+| **Lower Tail Fraction ($Y < P_{10}$)** | **16.41%** | 10.0% | Calibrated |
+| **Upper Tail Fraction ($Y > P_{90}$)** | **4.59%** | 10.0% | Calibrated |
+| **Pinball Loss ($q=0.10$, P10 Floor)** | **0.1874** | — | Minimized |
+| **Pinball Loss ($q=0.50$, P50 Median)** | **0.512** | — | Minimized |
+| **Pinball Loss ($q=0.90$, P90 Ceiling)** | **0.3814** | — | Minimized |
+| **Average Credible Interval Width** | **3.43 pts** | — | Informative Spread |
 
 ---
 

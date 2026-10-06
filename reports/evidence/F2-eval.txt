@@ -1,0 +1,41 @@
+INFO:fpl_oracle.historical:Loading existing historical dataset from C:\Users\anshw\Documents\fpl-expert\data\historical\master_history.csv
+INFO:fpl_oracle.train:Evaluating rolling origin: Train ['2023-24'] (29725) -> Test ['2024-25'] (27605)...
+INFO:fpl_oracle.train:Evaluating rolling origin: Train ['2023-24', '2024-25'] (57330) -> Test ['2025-26'] (29757)...
+INFO:fpl_oracle.train:Evaluating rolling origin: Train ['2023-24', '2024-25', '2025-26'] (87087) -> Test ['2026-27'] (2054)...
+INFO:fpl_oracle.eval:Saved machine-readable metrics to C:\Users\anshw\Documents\fpl-expert\reports\model_eval.json
+INFO:fpl_oracle.eval:Saved evaluation markdown report to C:\Users\anshw\Documents\fpl-expert\reports\model_eval.md
+======================================================================
+F2 EVALUATION: MULTI-ORIGIN ROLLING CV AND 2026-27 ACCURACY
+======================================================================
+Total dataset: 89141 rows across seasons: ['2023-24', '2024-25', '2025-26', '2026-27']
+
+Computing authentic temporal rolling-origin cross-validation...
+
+--- ROLLING ORIGINS PERFORMANCE TABLE ---
+Origin                                        Train   Test    ML MAE   Base MAE   Gain vs Base
+Holdout 2024-25 (trained on 2023-24)          29725   27605   1.000    1.041            +0.041
+Holdout 2025-26 (trained on 2023-24, 2024-25) 57330   29757   0.940    0.990            +0.050
+Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26) 87087   2054    1.895    1.952            +0.057
+
+Validation Split: 75513 train rows, 13628 validation rows (Cutoff: 2025-26 GW25)
+
+--- OVERALL VALIDATION METRICS ---
+ML MAE:                  1.018 (RMSE: 2.049, Spearman: 0.705)
+Baseline (Recent Form):  1.078
+Baseline (Season Avg):   1.076
+Baseline (Fixture Adj):  1.211
+Improvement vs Baseline: +5.57%
+80% Credible Coverage:   83.57% (CONSERVATIVE INTERVAL (83.57% vs 80% nominal))
+
+--- PROMOTION GATE VERDICT ---
+Passed: True
+Reason: Candidate passed all promotion gate criteria.
+
+--- 2026-27 CURRENT SEASON HOLDOUT CHECK ---
+2026-27 ML MAE:       1.895
+2026-27 Best Base:    1.952
+2026-27 Gain:         +0.057
+
+======================================================================
+F2 EVALUATION COMPLETED SUCCESSFULLY — REPORTS GENERATED
+======================================================================

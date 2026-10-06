@@ -30,7 +30,23 @@ class DefendingModel(BaseComponent):
         self.reg_gc.fit(X, y_gc)
 
         prob_cs_raw = self.clf_cs.predict_proba(X)[:, 1]
-        self.calibrator_cs.fit(prob_cs_raw, y_cs)
+        if len(X) >= 6:
+            from sklearn.model_selection import KFold
+            kf = KFold(n_splits=3, shuffle=True, random_state=42)
+            prob_oof = np.zeros(len(X))
+            for train_idx, val_idx in kf.split(X):
+                clf_fold = lgb.LGBMClassifier(
+                    n_estimators=self.clf_cs.n_estimators,
+                    learning_rate=self.clf_cs.learning_rate,
+                    num_leaves=self.clf_cs.num_leaves,
+                    random_state=42,
+                    verbosity=-1,
+                )
+                clf_fold.fit(X.iloc[train_idx], y_cs[train_idx])
+                prob_oof[val_idx] = clf_fold.predict_proba(X.iloc[val_idx])[:, 1]
+            self.calibrator_cs.fit(prob_oof, y_cs)
+        else:
+            self.calibrator_cs.fit(prob_cs_raw, y_cs)
 
         self.is_fitted = True
 
