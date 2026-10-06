@@ -5,6 +5,7 @@ and ModelRegistry automated rollback verification.
 
 import pytest
 
+from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.data.store import data_store
 from fpl_oracle.ml.model_registry import ModelRegistry
 from fpl_oracle.server.jobs import (
@@ -20,10 +21,20 @@ from fpl_oracle.server.jobs import (
 
 @pytest.fixture(autouse=True)
 def clean_scheduler():
-    """Ensure scheduler is cleanly started/stopped for tests."""
+    """Ensure scheduler and client are cleanly terminated for tests."""
     yield
     if scheduler.running:
         scheduler.shutdown(wait=False)
+    try:
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(fpl_client.aclose())
+        else:
+            loop.run_until_complete(fpl_client.aclose())
+    except Exception:
+        pass
 
 
 @pytest.mark.anyio
@@ -33,14 +44,21 @@ async def test_scheduler_job_registration():
     assert scheduler.running is True
 
     registered_ids = [job.id for job in scheduler.get_jobs()]
-    expected_ids = ["cadence_refresh", "news_refresh", "price_snapshot", "retrain_trigger", "deadline_alert"]
+    expected_ids = [
+        "cadence_refresh",
+        "news_refresh",
+        "price_snapshot",
+        "retrain_trigger",
+        "deadline_alert",
+        "holdout_forward",
+    ]
     for j_id in expected_ids:
         assert j_id in registered_ids
 
     status = get_jobs_status()
     assert status["scheduler_running"] is True
-    assert status["total_jobs"] == 5
-    assert len(status["jobs"]) == 5
+    assert status["total_jobs"] == 6
+    assert len(status["jobs"]) == 6
     stop_scheduler()
 
 

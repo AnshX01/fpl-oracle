@@ -1,0 +1,41 @@
+command: .venv\Scripts\python.exe -m pytest tests/test_holdout_forward.py -v
+exit code: 0
+output:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 4 items
+
+tests/test_holdout_forward.py::test_ensure_holdout_log_initialized PASSED [ 25%]
+tests/test_holdout_forward.py::test_freeze_predictions_synthetic[asyncio] PASSED [ 50%]
+tests/test_holdout_forward.py::test_holdout_forward_scheduler_job_on_demand[asyncio] PASSED [ 75%]
+tests/test_holdout_forward.py::test_score_frozen_predictions_synthetic PASSED [100%]
+
+============================== 4 passed in 1.85s ==============================
+
+command: .venv\Scripts\python.exe scripts/holdout_forward.py --dry-run
+exit code: 0
+output:
+======================================================================
+FORWARD HOLDOUT LOGGING & HONEST EVALUATION (Requirement G6)
+======================================================================
+Current Forward Holdout Status: AWAITING_FORWARD_GAMEWEEKS
+Evaluated Gameweeks:            0
+Policy Note:                    No forward holdout result exists yet. GW1-5 data is contaminated by prior model inspection; honest forward scoring commences once GW6 concludes.
+
+Current Season Gameweek Phase:   BETWEEN_GWS
+Next Gameweek:                  GW6
+Seconds to Deadline:            312012.5s
+[STATUS] GW6 predictions already frozen at 2026-10-06T19:14:11.160639+00:00.
+         Model version: v2026.10.06.1713, Players: 667
+
+[REPORT] No forward holdout evaluations recorded yet.
+         GW1-5 is contaminated by prior inspection. Forward scoring will commence when GW6 concludes.
+
+======================================================================
+FORWARD HOLDOUT AUDIT COMPLETED
+======================================================================

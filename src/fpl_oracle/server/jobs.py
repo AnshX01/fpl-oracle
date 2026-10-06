@@ -79,6 +79,16 @@ class JobExecutionTracker:
                 "duration_seconds": 0.0,
                 "details": "Awaiting initial execution",
             },
+            "holdout_forward": {
+                "name": "Forward Holdout Pre-Deadline Freeze & Post-GW Scoring",
+                "schedule": "Every 15 minutes",
+                "status": "IDLE",
+                "last_run": None,
+                "next_run": None,
+                "run_count": 0,
+                "duration_seconds": 0.0,
+                "details": "Awaiting initial execution",
+            },
         }
         self.triggered_deadline_alerts: set[tuple[int, str]] = set()
         self.retrained_gameweeks: set[int] = set()
@@ -314,6 +324,51 @@ async def deadline_alert_job():
         logger.warning(f"[Scheduler] {job_name} failed: {e}")
 
 
+# ====================================================================
+# JOB 6: Forward Holdout Pre-Deadline Freeze & Post-GW Scoring (Requirement G6)
+# Checks every 15 minutes to freeze predictions or score finished GW
+# ====================================================================
+async def holdout_forward_job():
+    job_id = "holdout_forward"
+    job_name = tracker.jobs_state[job_id]["name"]
+    start_t = datetime.now(UTC)
+    run_id = data_store.record_job_start(job_id, job_name)
+    tracker.update_job_start(job_id)
+
+    try:
+        from fpl_oracle.ml.holdout import ensure_holdout_log_initialized, freeze_predictions, score_frozen_predictions
+
+        ensure_holdout_log_initialized()
+
+        game_state = await game_state_manager.get_game_state()
+        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        target_freeze_gw = next_gw or 6
+
+        details = ""
+        # 1. Pre-deadline freeze if within 24h
+        if game_state.seconds_to_deadline <= 86400:
+            payload = await freeze_predictions(target_gw=target_freeze_gw)
+            details = f"Froze GW{target_freeze_gw} predictions ({payload['player_count']} players)."
+        else:
+            details = f"Awaiting GW{target_freeze_gw} pre-deadline freeze window ({int(game_state.seconds_to_deadline // 3600)}h remaining)."
+
+        # 2. Check if previous gameweek finished and can be scored
+        if curr_gw and curr_gw >= 6:
+            scored = score_frozen_predictions(gw=curr_gw)
+            if scored:
+                details += f" Scored finished GW{curr_gw} holdout (MAE={scored['ml_mae']})."
+
+        dur = (datetime.now(UTC) - start_t).total_seconds()
+        data_store.record_job_finish(run_id, "SUCCESS", dur, details)
+        tracker.update_job_finish(job_id, True, dur, details)
+    except Exception as e:
+        dur = (datetime.now(UTC) - start_t).total_seconds()
+        err_msg = f"Holdout forward error: {str(e)}"
+        data_store.record_job_finish(run_id, "FAILED", dur, err_msg)
+        tracker.update_job_finish(job_id, False, dur, err_msg)
+        logger.warning(f"[Scheduler] {job_name} failed: {e}")
+
+
 def get_jobs_status() -> dict[str, Any]:
     """Return execution status of all scheduler background jobs."""
     jobs_summary = []
@@ -358,6 +413,7 @@ async def run_job_on_demand(job_id: str) -> dict[str, Any]:
         "price_snapshot": price_snapshot_job,
         "retrain_trigger": retrain_trigger_job,
         "deadline_alert": deadline_alert_job,
+        "holdout_forward": holdout_forward_job,
     }
 
     if job_id not in job_map:
@@ -393,9 +449,12 @@ def start_scheduler():
         # Job 5: Pre-deadline alert & briefing check every 5 minutes
         scheduler.add_job(deadline_alert_job, "interval", minutes=5, id="deadline_alert", replace_existing=True)
 
+        # Job 6: Forward Holdout freeze and scoring every 15 minutes
+        scheduler.add_job(holdout_forward_job, "interval", minutes=15, id="holdout_forward", replace_existing=True)
+
         try:
             scheduler.start()
-            logger.info("[Scheduler] All 5 automated background jobs registered and scheduler started.")
+            logger.info("[Scheduler] All 6 automated background jobs registered and scheduler started.")
         except RuntimeError:
             logger.warning(
                 "[Scheduler] No running asyncio event loop. Scheduler jobs registered; starting deferred until event loop starts."
