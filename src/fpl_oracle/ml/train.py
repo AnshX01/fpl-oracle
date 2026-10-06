@@ -372,12 +372,16 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     )
 
     # 7. Verify and promote or engage automated rollback
+    cal_dict = scoring_ensemble.get_calibration_dict()
     promote_res = model_registry.verify_and_promote(
         candidate_models=candidate_models,
         candidate_metrics=cand_metrics,
         active_metrics=active_metrics,
         tolerance=0.05,
         notes="Automated retrain pipeline with true rolling origins",
+        calibration_data=cal_dict,
+        rolling_origins=rolling_origins,
+        training_data_df=X,
     )
 
     if not promote_res.get("promoted", True):

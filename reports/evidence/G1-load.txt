@@ -1,0 +1,5 @@
+﻿COMMAND: python -c "from fpl_oracle.ml.predict import projection_engine; projection_engine.load_or_train(); print('SUCCESS: Model weights loaded with verified integrity lock; is_loaded =', projection_engine.is_loaded)"
+exit code: 0
+OUTPUT:
+SUCCESS: Model weights loaded with verified integrity lock; is_loaded = True
+

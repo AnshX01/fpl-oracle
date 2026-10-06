@@ -38,6 +38,14 @@ dependencies = [
     "ruff==0.16.10",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "ruff==0.16.10",
+    "mypy==2.4.0",
+    "pytest>=8.0.0",
+    "hypothesis>=6.100.0",
+]
+
 [project.scripts]
 fpl = "fpl_oracle.cli:app"
 

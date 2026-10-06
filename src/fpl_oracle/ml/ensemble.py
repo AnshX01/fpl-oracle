@@ -6,6 +6,7 @@ Computes calibrated point distributions: P10, P50 (median), P90, and variance wi
 
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -50,16 +51,23 @@ class ScoringEnsemble:
         except Exception:
             return False
 
-    def save_calibration(self, path: Path | None = None) -> Path:
-        """Persist calibration quantiles and blend weights to disk."""
-        target_path = path or (MODELS_DIR / "calibration.json")
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
+    def get_calibration_dict(self) -> dict[str, Any]:
+        """Get current calibration quantiles and blend weights as dictionary."""
+        return {
             "z10": round(self.calibrated_z10, 4),
             "z90": round(self.calibrated_z90, 4),
             "blend_weights": [round(w, 4) for w in self.blend_weights],
             "bucket_quantiles": self.bucket_quantiles,
         }
+
+    def save_calibration(self, path: Path | None = None) -> Path:
+        """Persist calibration quantiles and blend weights to disk. Does NOT default to production path."""
+        if path is None:
+            target_path = Path("scratch") / "calibration.json"
+        else:
+            target_path = path
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        data = self.get_calibration_dict()
         with open(target_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         return target_path
@@ -101,7 +109,7 @@ class ScoringEnsemble:
                         "n": int(combined_mask.sum()),
                     }
         self.bucket_quantiles = buckets
-        self.save_calibration()
+        # In-memory fitting only; disk persistence is handled exclusively by promotion routine
         return self.calibrated_z10, self.calibrated_z90
 
     def aggregate_components(self, components: dict[str, np.ndarray], X: pd.DataFrame) -> pd.DataFrame:

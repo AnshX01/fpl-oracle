@@ -53,8 +53,8 @@ class MinutesModel(BaseComponent):
             fold_clf_s.fit(X_tr, y_s_tr)
             fold_clf_m.fit(X_tr, y_m_tr)
 
-            oof_starts[val_idx] = fold_clf_s.predict_proba(X_val)[:, 1]
-            oof_min60[val_idx] = fold_clf_m.predict_proba(X_val)[:, 1]
+            oof_starts[val_idx] = np.asarray(fold_clf_s.predict_proba(X_val))[:, 1]
+            oof_min60[val_idx] = np.asarray(fold_clf_m.predict_proba(X_val))[:, 1]
 
         # Fit calibrators on truly out-of-fold predictions
         self.calibrator_starts.fit(oof_starts, y_starts)

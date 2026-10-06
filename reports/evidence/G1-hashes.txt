@@ -1,0 +1,22 @@
+﻿COMMAND: python scripts/verify_model_hashes.py
+exit code: 0
+OUTPUT:
+=== MODEL WEIGHTS & CALIBRATION HASH INTEGRITY VERIFIER ===
+Active Version:      v2026.10.06.1643
+Git Commit Lock:     4b6db3cc641e670c31ab8ac85446452acecdf7f7
+Recipe ID:           fpl_oracle_canonical_v1
+Training Data Hash:  8ee5d9b8cb5dae76697e75d510b786af8663255fe3b661285e4e35ece7a0517b
+Max Gameweek:        0
+Metric Applies To:   served_weights
+
+--- File Hashes Comparison ---
+  [MATCH]    minutes_model.pkl        SHA256: 6fcb69189755b730... verified
+  [MATCH]    attacking_model.pkl      SHA256: 611091e62a65c6b5... verified
+  [MATCH]    defending_model.pkl      SHA256: 7a07a777d0cc8c8b... verified
+  [MATCH]    defcon_model.pkl         SHA256: c0298907536f73e5... verified
+  [MATCH]    bonus_model.pkl          SHA256: abcb23681970ae37... verified
+  [MATCH]    cards_saves_model.pkl    SHA256: d96518e17d973417... verified
+  [MATCH]    calibration.json         SHA256: 4251387c9dad9ed8... verified
+
+All 7 component model and calibration SHA256 hashes strictly verified against manifest!
+

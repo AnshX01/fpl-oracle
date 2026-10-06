@@ -23,8 +23,8 @@ jobs:
       - name: Install Linting & Typecheck Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff==0.16.10 mypy
-          pip install -e .
+          pip install ruff==0.16.10 mypy==2.4.0
+          pip install -e ".[dev]"
 
       - name: Run Ruff Lint Checks
         run: |
@@ -55,8 +55,7 @@ jobs:
       - name: Install Application & Test Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-anyio hypothesis
-          pip install -e .
+          pip install -e ".[dev]" pytest-anyio
 
       - name: Verify Secret Audit
         run: |
@@ -64,4 +63,4 @@ jobs:
 
       - name: Run Pytest Suite with Offline Fixtures
         run: |
-          pytest tests -v -W ignore::DeprecationWarning
+          pytest

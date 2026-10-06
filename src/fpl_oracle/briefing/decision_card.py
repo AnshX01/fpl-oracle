@@ -39,8 +39,8 @@ class DecisionCardGenerator:
         boot, is_stale = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        effective_curr_gw = curr_gw or game_state.current_gameweek or 1
-        target_gw = next_gw or game_state.next_gameweek or (effective_curr_gw + 1 if effective_curr_gw < 38 else 38)
+        effective_curr_gw = curr_gw or game_state.current_gw or 1
+        target_gw = next_gw or game_state.next_gw or (effective_curr_gw + 1 if effective_curr_gw < 38 else 38)
 
         team_map = {t.id: t for t in boot.teams}
 
@@ -358,7 +358,7 @@ class DecisionCardGenerator:
             "Verify lineup locking prior to the official deadline window.",
         ]
         if chip_decision["set_1_deadline_warning"]:
-            caveats.append(chip_decision["set_1_deadline_warning"])
+            caveats.append(str(chip_decision["set_1_deadline_warning"]))
 
         # News summary note
         news_count = 0

@@ -1,0 +1,36 @@
+﻿COMMAND: pytest tests/test_provenance.py tests/test_calibration_persist.py tests/test_model_gap_closure.py -v -W ignore::DeprecationWarning
+exit code: 0
+OUTPUT:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 21 items
+
+tests/test_provenance.py::test_manifest_metric_applies_to_served_weights PASSED [  4%]
+tests/test_provenance.py::test_manifest_file_hashes_match_disk PASSED    [  9%]
+tests/test_provenance.py::test_model_integrity_verification_success PASSED [ 14%]
+tests/test_provenance.py::test_weight_tampering_fails_verification PASSED [ 19%]
+tests/test_provenance.py::test_missing_weight_file_fails_verification PASSED [ 23%]
+tests/test_provenance.py::test_no_post_promotion_refit_in_source PASSED  [ 28%]
+tests/test_provenance.py::test_calibration_tampering_fails_verification PASSED [ 33%]
+tests/test_provenance.py::test_evaluation_does_not_mutate_production_weights PASSED [ 38%]
+tests/test_calibration_persist.py::test_calibration_artifact_exists_and_valid PASSED [ 42%]
+tests/test_calibration_persist.py::test_scoring_ensemble_save_and_load PASSED [ 47%]
+tests/test_calibration_persist.py::test_bucketed_quantiles_ordering PASSED [ 52%]
+tests/test_calibration_persist.py::test_interval_coverage_on_synthetic_holdout PASSED [ 57%]
+tests/test_model_gap_closure.py::test_canonical_schema_hash_and_parity PASSED [ 61%]
+tests/test_model_gap_closure.py::test_identical_feature_computation_train_serve_parity PASSED [ 66%]
+tests/test_model_gap_closure.py::test_opponent_form_features_presence_and_bounds PASSED [ 71%]
+tests/test_model_gap_closure.py::test_no_hard_rules_or_caps_on_elite_projections PASSED [ 76%]
+tests/test_model_gap_closure.py::test_cards_and_rare_components_target_math PASSED [ 80%]
+tests/test_model_gap_closure.py::test_card_deduction_label_alignment_alpha_zulu PASSED [ 85%]
+tests/test_model_gap_closure.py::test_opponent_numeric_id_resolution_in_master_history PASSED [ 90%]
+tests/test_model_gap_closure.py::test_train_serve_parity_all_62_columns PASSED [ 95%]
+tests/test_model_gap_closure.py::test_card_deduction_label_alignment_randomized PASSED [100%]
+
+============================= 21 passed in 10.15s =============================
+

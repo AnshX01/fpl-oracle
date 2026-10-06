@@ -44,7 +44,7 @@ class DefendingModel(BaseComponent):
                     verbosity=-1,
                 )
                 clf_fold.fit(X.iloc[train_idx], y_cs[train_idx])
-                prob_oof[val_idx] = clf_fold.predict_proba(X.iloc[val_idx])[:, 1]
+                prob_oof[val_idx] = np.asarray(clf_fold.predict_proba(X.iloc[val_idx]))[:, 1]
             self.calibrator_cs.fit(prob_oof, y_cs)
         else:
             self.calibrator_cs.fit(prob_cs_raw, y_cs)

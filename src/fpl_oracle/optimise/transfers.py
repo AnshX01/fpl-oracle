@@ -248,7 +248,7 @@ class TransferOptimizer:
         excluded_teams: set[Any],
         max_per_pos: int = 3,
     ) -> list[dict[str, Any]]:
-        moves = []
+        moves: list[dict[str, Any]] = []
         sellable = [eid for eid in elements if eid not in locked_in]
         team_counts: dict[Any, int] = {}
         for eid in elements:
@@ -293,7 +293,7 @@ class TransferOptimizer:
                     }
                 )
 
-        moves.sort(key=lambda m: m["immediate_gain"], reverse=True)
+        moves.sort(key=lambda m: float(m.get("immediate_gain", 0.0)), reverse=True)
         return moves
 
     def _get_candidate_2_transfers(
@@ -309,7 +309,7 @@ class TransferOptimizer:
         cand_1_moves: list[dict[str, Any]],
         max_total: int = 5,
     ) -> list[dict[str, Any]]:
-        moves_2 = []
+        moves_2: list[dict[str, Any]] = []
         if not cand_1_moves:
             return moves_2
 
@@ -569,7 +569,7 @@ class TransferOptimizer:
             pool_df = horizon_projections[gw]
 
             xp_roll, _, _ = _fast_eval_squad_formation(curr_elems, pmap, risk_preference=risk_preference)
-            best_action = ("ROLL", None, xp_roll, 0, 0.0)
+            best_action: tuple[str, dict[str, Any] | None, float, int, float] = ("ROLL", None, xp_roll, 0, 0.0)
 
             cand_moves = self._get_candidate_1_transfers(
                 elements=curr_elems,
@@ -599,7 +599,7 @@ class TransferOptimizer:
             total_net += net_xp
             total_gross += net_xp + hit_c
 
-            if action_type == "ROLL":
+            if action_type == "ROLL" or m_obj is None:
                 curr_ft = min(5, curr_ft + 1)
             else:
                 s_in = m_obj["transfers_in"]
@@ -1470,7 +1470,11 @@ class TransferOptimizer:
                 strategic_focus = "Execute tactical restructuring."
 
             cap_id = step.get("captain")
-            cap_name = pmap.get(cap_id, {}).get("web_name", f"Captain #{cap_id}")
+            cap_name = (
+                pmap.get(int(cap_id), {}).get("web_name", f"Captain #{cap_id}")
+                if cap_id is not None
+                else "Captain Unknown"
+            )
 
             top_targets = (
                 pool_df.sort_values(by="expected_points", ascending=False).head(3)

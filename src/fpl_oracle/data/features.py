@@ -6,7 +6,7 @@ continuous implied match xG / CS probabilities, and rare component features.
 
 import hashlib
 import logging
-from typing import Any
+from typing import Any, Literal, overload
 
 import numpy as np
 import pandas as pd
@@ -506,6 +506,16 @@ class FeatureEngineering:
 
         return opp_id_to_name, name_to_opp_id
 
+    @overload
+    def build_historical_features(
+        self, df: pd.DataFrame, return_meta: Literal[False] = False
+    ) -> tuple[pd.DataFrame, pd.DataFrame]: ...
+
+    @overload
+    def build_historical_features(
+        self, df: pd.DataFrame, return_meta: Literal[True]
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: ...
+
     def build_historical_features(
         self, df: pd.DataFrame, return_meta: bool = False
     ) -> tuple[pd.DataFrame, pd.DataFrame] | tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -962,11 +972,11 @@ class FeatureEngineering:
                 short_to_tid = {t.short_name.lower(): t.id for t in bootstrap.teams}
                 for t_val, t_hist in history_df.groupby("team"):
                     t_str = str(t_val).lower()
-                    tid = name_to_tid.get(t_str) or short_to_tid.get(t_str)
-                    if tid is not None and tid not in last_team_kickoff:
+                    found_tid = name_to_tid.get(t_str) or short_to_tid.get(t_str)
+                    if found_tid is not None and found_tid not in last_team_kickoff:
                         max_ko = pd.to_datetime(t_hist["kickoff_time"], errors="coerce").max()
                         if pd.notnull(max_ko):
-                            last_team_kickoff[tid] = max_ko
+                            last_team_kickoff[found_tid] = max_ko
 
         rows = []
         for elem in bootstrap.elements:

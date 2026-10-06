@@ -18,7 +18,7 @@ from sqlalchemy import (
     create_engine,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from fpl_oracle.config import BASE_DIR, DB_PATH
 
@@ -47,15 +47,17 @@ class RawSnapshot(Base):
 
 class UserProfile(Base):
     __tablename__ = "user_profile"
-    id = Column(Integer, primary_key=True, default=1)
-    manager_id = Column(Integer, nullable=True)
-    target_league_id = Column(Integer, nullable=True)
-    risk_preference = Column(String(50), default="balanced")
-    llm_provider = Column(String(50), default="gemini")
-    bank = Column(Float, default=0.0)  # in millions, e.g. 1.5
-    free_transfers = Column(Integer, default=1)
-    manual_squad = Column(Text, nullable=True)  # JSON list of element IDs
-    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    manager_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_league_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    risk_preference: Mapped[str] = mapped_column(String(50), default="balanced")
+    llm_provider: Mapped[str] = mapped_column(String(50), default="gemini")
+    bank: Mapped[float] = mapped_column(Float, default=0.0)  # in millions, e.g. 1.5
+    free_transfers: Mapped[int] = mapped_column(Integer, default=1)
+    manual_squad: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of element IDs
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
 
 class DecisionRecord(Base):

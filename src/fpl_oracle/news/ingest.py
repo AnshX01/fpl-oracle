@@ -70,7 +70,7 @@ def is_safe_external_url(url: str, resolve_dns: bool = True) -> bool:
                     return False
                 for _family, _, _, _, sockaddr in addr_info:
                     ip_str = sockaddr[0]
-                    if not is_safe_ip(ip_str):
+                    if not is_safe_ip(str(ip_str)):
                         return False
             except socket.gaierror:
                 return False
@@ -209,9 +209,8 @@ class NewsIngestion:
                                 }
                             )
                     else:
-                        logger.warning(
-                            f"Dropping dead RSS feed {feed_name} ({feed_url}) - HTTP status {resp.status_code}"
-                        )
+                        status_str = str(resp.status_code) if resp is not None else "no response"
+                        logger.warning(f"Dropping dead RSS feed {feed_name} ({feed_url}) - HTTP status {status_str}")
                         self.dead_feeds.add(feed_id)
             except Exception as e:
                 logger.warning(f"Dropping unreachable RSS feed {feed_name} ({feed_url}): {e}")

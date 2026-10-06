@@ -239,9 +239,9 @@ class ManagerStateService:
             now_cost = getattr(elem, "now_cost", 50)
 
             # Case A: Element found in transfers in
-            t_list = transfers_by_elem.get(elem_id)
-            if t_list and len(t_list) > 0:
-                most_recent = t_list[0]
+            elem_transfers = transfers_by_elem.get(elem_id)
+            if elem_transfers and len(elem_transfers) > 0:
+                most_recent = elem_transfers[0]
                 cost = (
                     getattr(most_recent, "element_in_cost", None)
                     if not isinstance(most_recent, dict)

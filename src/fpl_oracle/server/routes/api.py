@@ -620,7 +620,11 @@ async def get_league_intel(league_id: int | None = None):
             if row.get("entry") == effective_state.manager_id:
                 user_mini_rank = row.get("rank")
                 break
-    user_rank = user_mini_rank or (1 if effective_state.overall_rank == 0 else effective_state.overall_rank)
+    user_rank: int = (
+        int(user_mini_rank)
+        if user_mini_rank is not None
+        else (int(effective_state.overall_rank) if effective_state.overall_rank else 1)
+    )
 
     # Monte Carlo simulation
     fixtures, _ = await fpl_client.get_fixtures()

@@ -1,0 +1,60 @@
+=== A1: Release Integrity & CI ===
+Manifest active version: v2026.10.06.1420
+Manifest git_commit: 36210ceaba4d5b902787fc9fa8e1a7e77d75a79d
+Manifest rolling_origins: []
+Expected calibration hash: 180cf122fd3c5614f02b15e8ca6853063046f5402f07f2406086dba078f67ba1
+Disk calibration hash:     180cf122fd3c5614f02b15e8ca6853063046f5402f07f2406086dba078f67ba1
+Current disk matches manifest: True
+ensemble.py calls self.save_calibration() inside calibrate(): True
+run_eval.py calls scoring_ensemble.calibrate() in evaluation: True
+Evaluation mutates production calibration.json directly: True
+check_secrets.py uses shell=True with argument list: True
+
+=== A2: UI Fabricated Facts & Deadline ===
+Literal '101.6' present in web/index.html: True
+Literal '100.1' present in web/index.html: True
+Literal '92%' present in web/index.html: True
+Literal '334' present in web/index.html: True
+Literal '68' present in web/index.html: True
+web/index.html uses '|| 68' (masking real 0): True
+web/index.html uses technical label 'Template Shield': True
+app.js returns 'Passed' for null/missing deadline: True
+
+=== A3: Player Identity & Data Freshness ===
+Number of element IDs mapping to >1 person across seasons: 841 (audited: 841)
+Element 1 mapping across seasons: {'2023-24': <StringArray>
+['Folarin Balogun']
+Length: 1, dtype: str, '2024-25': <StringArray>
+['Fábio Ferreira Vieira']
+Length: 1, dtype: str, '2025-26': <StringArray>
+['David Raya Martín']
+Length: 1, dtype: str, '2026-27': <StringArray>
+['David Raya Martín']
+Length: 1, dtype: str}
+features.py groups history by raw 'element' ID: True
+predict.py uses crude cache key (target_gw, len(elements), len(fixtures)): True
+
+=== A4: Evaluation & Promotion Honesty ===
+train.py fits stacking in-sample on 2025-26: True
+ensemble.py defines fixed default blend (0.72, 0.04, 0.24): True
+ensemble.py applies blend inside aggregate_components: True
+model_registry.py promotion gate expects mismatched keys (ml_mae/best_base_mae): True
+
+=== A5: Planning, Simulation & Backtest ===
+Callers of evaluate_joint_* in src/: ['src\\fpl_oracle\\chips\\planner.py', 'src\\fpl_oracle\\optimise\\transfers.py'] (none in API/pipeline/decision_card)
+montecarlo.py:126 clamps mu_base = max(0.0, xp - 4.0 * p_cs), inflating xp=0.1 to ~1.55 pts
+rivals.py expands 1st place user to 10 chasers: True
+standings.py has hard 50-page cap: True
+decision_card.py has 'curr_gw or 5' fallback: True
+
+=== A6: News Extraction Bug Reproduction ===
+Snippet: 'Saka is fit and available for Saturday.' -> extracted category: unknown
+Snippet: 'Saka is not ruled out for Saturday.' -> extracted category: ruled_out
+Snippet: 'Arteta: Saka will not miss the next match.' -> extracted category: ruled_out
+Snippet: 'Saka trained normally. Martinelli has been ruled out for three weeks.' -> extracted category: ruled_out
+analyse.py lacks fallback to rule extractor when Gemini is not configured: True
+
+=== A7: Evidence Tooling Limitations ===
+verify_ledger.py only accepts '**CLOSED**' (rejects honest PARTIAL/BLOCKED): True
+verify_ledger.py checks for exit code: 0 inside evidence files: False
+verify_ledger.py validates metric consistency against docs/README: False

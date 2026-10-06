@@ -1,0 +1,67 @@
+=== COMMAND: ruff check src tests scripts ===
+exit code: 0
+--- STDOUT ---
+All checks passed!
+--- STDERR ---
+(none)
+
+=== COMMAND: ruff format --check src tests scripts ===
+exit code: 0
+--- STDOUT ---
+109 files already formatted
+--- STDERR ---
+(none)
+
+=== COMMAND: mypy src/fpl_oracle ===
+exit code: 0
+--- STDOUT ---
+src\fpl_oracle\domain\rules_service.py:56: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\rules_checker.py:43: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\cache.py:18: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\ingest.py:86: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\ingest.py:87: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\ingest.py:88: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\ingest.py:89: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:55: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:56: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:59: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:62: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:63: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\analyse.py:25: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\analyse.py:26: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\game_state.py:50: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\game_state.py:51: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\ml\predict.py:38: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:33: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:34: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:35: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:36: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:37: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:38: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:39: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:40: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:41: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\jobs.py:31: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\jobs.py:83: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\jobs.py:84: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+Success: no issues found in 64 source files
+--- STDERR ---
+(none)
+
+=== COMMAND: python scripts/check_secrets.py ===
+exit code: 0
+--- STDOUT ---
+ðŸ”’ [FPL Oracle Security Audit] Scanning repository for secrets & sensitive data...
+âœ… SECURITY CHECK PASSED! No secrets or forbidden tracked files detected.
+--- STDERR ---
+(none)
+
+=== COMMAND: pytest -q ===
+exit code: 0
+--- STDOUT ---
+........................................................................ [ 48%]
+........................................................................ [ 97%]
+...                                                                      [100%]
+147 passed in 437.66s (0:07:17)
+--- STDERR ---
+(none)

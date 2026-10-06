@@ -1,10 +1,10 @@
 {
-  "evaluated_at": "2026-10-06T14:20:40.049929+00:00",
+  "evaluated_at": "2026-10-06T17:13:05.760490+00:00",
   "sample_count": 13628,
-  "ml_mae": 1.019,
-  "ml_rmse": 2.057,
+  "ml_mae": 1.016,
+  "ml_rmse": 2.054,
   "ml_spearman": 0.704,
-  "ml_pearson": 0.539,
+  "ml_pearson": 0.541,
   "base_mae": 1.078,
   "base_rmse": 2.221,
   "base_spearman": 0.698,
@@ -25,155 +25,137 @@
       "spearman": 0.708
     }
   },
-  "mae_improvement_pct": 5.47,
-  "rmse_improvement_pct": 7.38,
-  "verdict": "The ML Projection Engine achieves an MAE of 1.019 and RMSE of 2.057 with a Spearman rank correlation of 0.704 (vs 0.698 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
+  "mae_improvement_pct": 5.75,
+  "rmse_improvement_pct": 7.52,
+  "verdict": "The ML Projection Engine achieves an MAE of 1.016 and RMSE of 2.054 with a Spearman rank correlation of 0.704 (vs 0.698 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
   "positions": {
     "GKP": {
       "count": 1454,
-      "ml_mae": 0.692,
-      "ml_rmse": 1.611,
+      "ml_mae": 0.689,
+      "ml_rmse": 1.608,
       "base_mae": 0.709,
       "base_rmse": 1.708,
-      "improvement_mae_pct": 2.4
+      "improvement_mae_pct": 2.82
     },
     "DEF": {
       "count": 4465,
-      "ml_mae": 1.182,
-      "ml_rmse": 2.267,
+      "ml_mae": 1.175,
+      "ml_rmse": 2.261,
       "base_mae": 1.247,
       "base_rmse": 2.423,
-      "improvement_mae_pct": 5.21
+      "improvement_mae_pct": 5.77
     },
     "MID": {
       "count": 6171,
-      "ml_mae": 0.948,
-      "ml_rmse": 1.941,
+      "ml_mae": 0.947,
+      "ml_rmse": 1.94,
       "base_mae": 1.016,
       "base_rmse": 2.119,
-      "improvement_mae_pct": 6.69
+      "improvement_mae_pct": 6.79
     },
     "FWD": {
       "count": 1538,
-      "ml_mae": 1.14,
+      "ml_mae": 1.139,
       "ml_rmse": 2.233,
       "base_mae": 1.181,
       "base_rmse": 2.425,
-      "improvement_mae_pct": 3.47
+      "improvement_mae_pct": 3.56
     }
   },
   "calibration": {
-    "interval_80_coverage_pct": 83.78,
-    "below_p10_pct": 9.91,
-    "above_p90_pct": 6.32,
-    "pinball_loss_p10": 0.1543,
-    "pinball_loss_p50": 0.5045,
-    "pinball_loss_p90": 0.3967,
+    "interval_80_coverage_pct": 83.76,
+    "below_p10_pct": 9.98,
+    "above_p90_pct": 6.26,
+    "pinball_loss_p10": 0.1545,
+    "pinball_loss_p50": 0.5032,
+    "pinball_loss_p90": 0.3966,
     "avg_interval_width": 3.34,
-    "calibration_verdict": "CONSERVATIVE INTERVAL (83.78% vs 80% nominal)"
+    "calibration_verdict": "CONSERVATIVE INTERVAL (83.76% vs 80% nominal)"
   },
   "rolling_origins": [
     {
       "season": "Holdout 2024-25 (trained on 2023-24)",
       "train_size": 29725,
       "test_size": 27605,
-      "mae": 1.0,
-      "rmse": 2.097,
-      "spearman": 0.686,
+      "mae": 0.999,
+      "rmse": 2.098,
+      "spearman": 0.688,
       "base_recent_mae": 1.045,
       "base_season_mae": 1.041,
       "base_fixture_mae": 1.228,
       "best_baseline_mae": 1.041,
-      "gain_vs_baseline": 0.041
+      "gain_vs_baseline": 0.042
     },
     {
       "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
       "train_size": 57330,
       "test_size": 29757,
-      "mae": 0.94,
-      "rmse": 1.987,
-      "spearman": 0.707,
+      "mae": 0.939,
+      "rmse": 1.988,
+      "spearman": 0.706,
       "base_recent_mae": 0.995,
       "base_season_mae": 0.99,
       "base_fixture_mae": 1.093,
       "best_baseline_mae": 0.99,
-      "gain_vs_baseline": 0.05
+      "gain_vs_baseline": 0.051
     },
     {
       "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
       "train_size": 87087,
       "test_size": 2054,
-      "mae": 1.895,
+      "mae": 1.896,
       "rmse": 2.852,
-      "spearman": 0.426,
+      "spearman": 0.424,
       "base_recent_mae": 1.963,
       "base_season_mae": 1.952,
       "base_fixture_mae": 2.227,
       "best_baseline_mae": 1.952,
-      "gain_vs_baseline": 0.057
+      "gain_vs_baseline": 0.056
     }
   ],
   "ablation": {
-    "full_mae": 1.019,
-    "full_rmse": 2.057,
+    "full_mae": 1.016,
+    "full_rmse": 2.054,
     "full_spearman": 0.704,
-    "ablated_mae": 1.169,
-    "ablated_rmse": 2.084,
-    "ablated_spearman": 0.661,
-    "mae_gain_pct": 12.83,
+    "ablated_mae": 1.144,
+    "ablated_rmse": 2.073,
+    "ablated_spearman": 0.667,
+    "mae_gain_pct": 11.19,
     "odds_candidate_mae": "N/A (External odds omitted to preserve Rule 0.4 zero-cost API guarantee)",
     "odds_candidate_rmse": "N/A",
     "odds_candidate_spearman": "N/A",
     "odds_verdict": "Candidate evaluated: Implied continuous team ratings provide honest match strength without external betting odds; external odds API kept out of production to maintain zero-cost API guarantee."
   },
   "partial_dependence": {
-    "star_player_vs_tough_defence": 3.92,
+    "star_player_vs_tough_defence": 3.9,
     "star_player_vs_avg_defence": 4.14,
-    "star_player_vs_weak_defence": 4.42,
-    "mid_player_vs_tough_defence": 2.92,
-    "mid_player_vs_avg_defence": 3.22,
-    "mid_player_vs_weak_defence": 3.39,
-    "low_player_vs_tough_defence": 0.74,
+    "star_player_vs_weak_defence": 4.35,
+    "mid_player_vs_tough_defence": 2.91,
+    "mid_player_vs_avg_defence": 3.21,
+    "mid_player_vs_weak_defence": 3.37,
+    "low_player_vs_tough_defence": 0.72,
     "low_player_vs_avg_defence": 0.87,
     "low_player_vs_weak_defence": 0.99,
     "home_advantage_premium_pts": 0.04
   },
   "upcoming_projections": [
     {
-      "position": "DEF",
-      "name": "Nobel Mendy",
-      "team": "Hull City",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 7.57,
-      "drivers": "Form projection 7.57 xP, position role DEF"
-    },
-    {
-      "position": "DEF",
-      "name": "Semi Ajayi",
-      "team": "Hull City",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 7.25,
-      "drivers": "Form projection 7.25 xP, position role DEF"
-    },
-    {
       "position": "MID",
       "name": "Bruno Borges Fernandes",
       "team": "Man Utd",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 7.18,
-      "drivers": "Form projection 7.18 xP, position role MID"
+      "xp": 6.99,
+      "drivers": "Form projection 6.99 xP, position role MID"
     },
     {
-      "position": "MID",
-      "name": "Cole Palmer",
-      "team": "Chelsea",
+      "position": "DEF",
+      "name": "Nobel Mendy",
+      "team": "Hull City",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.44,
-      "drivers": "Form projection 6.44 xP, position role MID"
+      "xp": 6.53,
+      "drivers": "Form projection 6.53 xP, position role DEF"
     },
     {
       "position": "FWD",
@@ -181,35 +163,53 @@
       "team": "Chelsea",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.41,
-      "drivers": "Form projection 6.41 xP, position role FWD"
-    },
-    {
-      "position": "GKP",
-      "name": "Konstantinos Tzolakis",
-      "team": "Hull City",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.38,
-      "drivers": "Form projection 6.38 xP, position role GKP"
-    },
-    {
-      "position": "DEF",
-      "name": "Virgil van Dijk",
-      "team": "Liverpool",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.26,
-      "drivers": "Form projection 6.26 xP, position role DEF"
+      "xp": 6.27,
+      "drivers": "Form projection 6.27 xP, position role FWD"
     },
     {
       "position": "MID",
-      "name": "Enzo Fern\u00e1ndez",
+      "name": "Cole Palmer",
       "team": "Chelsea",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.25,
-      "drivers": "Form projection 6.25 xP, position role MID"
+      "xp": 6.27,
+      "drivers": "Form projection 6.27 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Mamadou Sangar\u00e9",
+      "team": "Brentford",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.14,
+      "drivers": "Form projection 6.14 xP, position role MID"
+    },
+    {
+      "position": "DEF",
+      "name": "Semi Ajayi",
+      "team": "Hull City",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.11,
+      "drivers": "Form projection 6.11 xP, position role DEF"
+    },
+    {
+      "position": "DEF",
+      "name": "Marc Gu\u00e9hi",
+      "team": "Man City",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.01,
+      "drivers": "Form projection 6.01 xP, position role DEF"
+    },
+    {
+      "position": "DEF",
+      "name": "Gabriel dos Santos Magalh\u00e3es",
+      "team": "Arsenal",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 5.92,
+      "drivers": "Form projection 5.92 xP, position role DEF"
     }
   ]
 }

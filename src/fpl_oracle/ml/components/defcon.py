@@ -41,7 +41,7 @@ class DefConModel(BaseComponent):
                 n_estimators=80, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1, n_jobs=4
             )
             fold_clf.fit(X_tr, y_tr, sample_weight=w_tr)
-            oof_probs[val_idx] = fold_clf.predict_proba(X_val)[:, 1]
+            oof_probs[val_idx] = np.asarray(fold_clf.predict_proba(X_val))[:, 1]
 
         # Fit calibrator on truly out-of-fold predictions
         self.calibrator.fit(oof_probs, y)

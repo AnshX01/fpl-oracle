@@ -59,7 +59,6 @@ def check_git_tracked_files() -> list[str]:
             capture_output=True,
             text=True,
             check=True,
-            shell=True,
         )
         tracked_files = res.stdout.strip().splitlines()
         for f in tracked_files:
@@ -68,7 +67,8 @@ def check_git_tracked_files() -> list[str]:
                 if re.search(pat, norm_f):
                     violations.append(f"Forbidden tracked file in git: {f}")
     except Exception as e:
-        print(f"[WARN] Could not run git ls-files: {e}")
+        print(f"[ERROR] Could not run git ls-files: {e}")
+        violations.append(f"Security audit aborted: git ls-files failed ({e})")
     return violations
 
 
@@ -104,7 +104,6 @@ def scan_working_tree() -> list[str]:
             capture_output=True,
             text=True,
             check=True,
-            shell=True,
         )
         files = res.stdout.strip().splitlines()
         for f in files:
@@ -115,7 +114,8 @@ def scan_working_tree() -> list[str]:
             for line_num, desc, snippet in results:
                 findings.append(f"Secret detected in {f}:{line_num} ({desc}) -> {snippet}")
     except Exception as e:
-        print(f"[WARN] Could not scan files: {e}")
+        print(f"[ERROR] Could not scan files: {e}")
+        findings.append(f"Security audit aborted: git ls-files scan failed ({e})")
     return findings
 
 

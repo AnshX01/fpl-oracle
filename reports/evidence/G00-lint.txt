@@ -1,0 +1,86 @@
+﻿=== RUFF CHECK ===
+Exit code: 0
+All checks passed!
+
+=== RUFF FORMAT --CHECK ===
+Exit code: 0
+104 files already formatted
+
+=== MYPY SRC/FPL_ORACLE ===
+Exit code: 1
+src\fpl_oracle\ml\components\minutes.py:56: error: No overload variant of "__getitem__" of "list" matches argument type "tuple[slice[None, None, None], int]"  [call-overload]
+src\fpl_oracle\ml\components\minutes.py:56: note: Possible overload variants:
+src\fpl_oracle\ml\components\minutes.py:56: note:     def __getitem__(self, SupportsIndex, /) -> Any
+src\fpl_oracle\ml\components\minutes.py:56: note:     def __getitem__(self, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None], /) -> list[Any]
+src\fpl_oracle\ml\components\minutes.py:57: error: No overload variant of "__getitem__" of "list" matches argument type "tuple[slice[None, None, None], int]"  [call-overload]
+src\fpl_oracle\ml\components\minutes.py:57: note: Possible overload variants:
+src\fpl_oracle\ml\components\minutes.py:57: note:     def __getitem__(self, SupportsIndex, /) -> Any
+src\fpl_oracle\ml\components\minutes.py:57: note:     def __getitem__(self, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None], /) -> list[Any]
+src\fpl_oracle\ml\components\defending.py:47: error: No overload variant of "__getitem__" of "list" matches argument type "tuple[slice[None, None, None], int]"  [call-overload]
+src\fpl_oracle\ml\components\defending.py:47: note: Possible overload variants:
+src\fpl_oracle\ml\components\defending.py:47: note:     def __getitem__(self, SupportsIndex, /) -> Any
+src\fpl_oracle\ml\components\defending.py:47: note:     def __getitem__(self, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None], /) -> list[Any]
+src\fpl_oracle\ml\components\defcon.py:44: error: No overload variant of "__getitem__" of "list" matches argument type "tuple[slice[None, None, None], int]"  [call-overload]
+src\fpl_oracle\ml\components\defcon.py:44: note: Possible overload variants:
+src\fpl_oracle\ml\components\defcon.py:44: note:     def __getitem__(self, SupportsIndex, /) -> Any
+src\fpl_oracle\ml\components\defcon.py:44: note:     def __getitem__(self, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None], /) -> list[Any]
+src\fpl_oracle\domain\rules_service.py:56: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\rules_checker.py:43: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\data\store.py:328: error: Incompatible types in assignment (expression has type "datetime", variable has type "Column[datetime]")  [assignment]
+src\fpl_oracle\data\store.py:361: error: Incompatible types in assignment (expression has type "int", variable has type "Column[int]")  [assignment]
+src\fpl_oracle\data\store.py:368: error: Incompatible types in assignment (expression has type "int", variable has type "Column[int]")  [assignment]
+src\fpl_oracle\data\store.py:371: error: Incompatible types in assignment (expression has type "datetime", variable has type "Column[datetime]")  [assignment]
+src\fpl_oracle\optimise\transfers.py:296: error: Argument "key" to "sort" of "list" has incompatible type "Callable[[dict[str, object]], object]"; expected "Callable[[dict[str, object]], SupportsDunderLT[Any] | SupportsDunderGT[Any]]"  [arg-type]
+src\fpl_oracle\optimise\transfers.py:296: error: Incompatible return value type (got "object", expected "SupportsDunderLT[Any] | SupportsDunderGT[Any]")  [return-value]
+src\fpl_oracle\optimise\transfers.py:312: error: Need type annotation for "moves_2" (hint: "moves_2: list[<type>] = ...")  [var-annotated]
+src\fpl_oracle\optimise\transfers.py:595: error: Incompatible types in assignment (expression has type "tuple[str, dict[str, Any], Any, int, Any]", variable has type "tuple[str, None, float, int, float]")  [assignment]
+src\fpl_oracle\optimise\transfers.py:605: error: Value of type "None" is not indexable  [index]
+src\fpl_oracle\optimise\transfers.py:606: error: Value of type "None" is not indexable  [index]
+src\fpl_oracle\optimise\transfers.py:608: error: Value of type "None" is not indexable  [index]
+src\fpl_oracle\optimise\transfers.py:612: error: Value of type "None" is not indexable  [index]
+src\fpl_oracle\optimise\transfers.py:1473: error: Argument 1 to "get" of "dict" has incompatible type "Any | None"; expected "int"  [arg-type]
+src\fpl_oracle\data\features.py:965: error: Incompatible types in assignment (expression has type "int | None", variable has type "int")  [assignment]
+src\fpl_oracle\news\ingest.py:73: error: Argument 1 to "is_safe_ip" has incompatible type "str | int"; expected "str"  [arg-type]
+src\fpl_oracle\news\ingest.py:86: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\ingest.py:87: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\ingest.py:88: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\ingest.py:89: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\ingest.py:213: error: Item "None" of "Response | None" has no attribute "status_code"  [union-attr]
+src\fpl_oracle\api\cache.py:18: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\analyse.py:25: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\news\analyse.py:26: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:55: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:56: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:59: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:62: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\fpl_client.py:63: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\ml\model_registry.py:347: error: Argument "rolling_origins" to "check_promotion_gate" has incompatible type "float | None"; expected "list[dict[str, Any]] | None"  [arg-type]
+src\fpl_oracle\domain\manager_state.py:242: error: Incompatible types in assignment (expression has type "list[Any] | None", variable has type "list[Any]")  [assignment]
+src\fpl_oracle\api\game_state.py:50: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\api\game_state.py:51: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\backtest.py:59: error: Too many values to unpack (2 expected, 3 provided)  [misc]
+src\fpl_oracle\ml\train.py:161: error: Need more than 2 values to unpack (3 expected)  [misc]
+src\fpl_oracle\ml\predict.py:38: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\briefing\decision_card.py:42: error: "GameState" has no attribute "current_gameweek"; maybe "current_gw"?  [attr-defined]
+src\fpl_oracle\briefing\decision_card.py:43: error: "GameState" has no attribute "next_gameweek"  [attr-defined]
+src\fpl_oracle\briefing\decision_card.py:361: error: Argument 1 to "append" of "list" has incompatible type "float | Literal[True] | Any | str"; expected "str"  [arg-type]
+src\fpl_oracle\server\pipeline.py:33: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:34: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:35: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:36: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:37: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:38: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:39: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:40: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\pipeline.py:41: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\jobs.py:31: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\jobs.py:83: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\jobs.py:84: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\fpl_oracle\server\routes\api.py:642: error: Argument "user_rank" to "evaluate_strategy" of "LeagueStrategyAdvisor" has incompatible type "Any | int | None"; expected "int"  [arg-type]
+Found 28 errors in 13 files (checked 64 source files)
+
+=== CHECK SECRETS ===
+Exit code: 0
+­ƒöÆ [FPL Oracle Security Audit] Scanning repository for secrets & sensitive data...
+Ô£à SECURITY CHECK PASSED! No secrets or forbidden tracked files detected.
+

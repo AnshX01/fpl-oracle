@@ -1,6 +1,6 @@
 {
-  "active_version": "v2026.10.06.1420",
-  "last_updated": "2026-10-06T14:20:40.205756+00:00",
+  "active_version": "v2026.10.06.1713",
+  "last_updated": "2026-10-06T17:13:06.071703+00:00",
   "versions": [
     {
       "version": "v1.0.0",
@@ -78,8 +78,138 @@
       "ml_spearman": 0.704,
       "base_mae": 1.078,
       "rolling_origins": [],
-      "status": "production",
+      "status": "archived",
       "notes": "Candidate model passed verification. MAE: 1.019 (improvement: +0.023). Promoted to production. | Automated retrain pipeline with true rolling origins"
+    },
+    {
+      "version": "v2026.10.06.1643",
+      "created_at": "2026-10-06T16:43:44.588395+00:00",
+      "git_commit": "4b6db3cc641e670c31ab8ac85446452acecdf7f7",
+      "recipe_id": "fpl_oracle_canonical_v1",
+      "training_data_hash": "8ee5d9b8cb5dae76697e75d510b786af8663255fe3b661285e4e35ece7a0517b",
+      "max_gw": 0,
+      "feature_list_hash": "ec91cae9cf9b75c88d81b133cb6b80907bf112a126ab3e90b9e6916792140e84",
+      "metric_applies_to": "served_weights",
+      "file_hashes": {
+        "minutes_model.pkl": "6fcb69189755b730618a983c3197c22c8ffbc1756af537f9dfa365ebe0ad3669",
+        "attacking_model.pkl": "611091e62a65c6b5e1765c71713f69e1b5a77f4694494d1f0a84cc929f24597d",
+        "defending_model.pkl": "7a07a777d0cc8c8bf144b5a1225430b5703ac8e4427da04b9b76b7bf8b303b8e",
+        "defcon_model.pkl": "c0298907536f73e5f743013c120d15775fe970c600ef52973d450cc9a79e87f8",
+        "bonus_model.pkl": "abcb23681970ae376b3188848ec5188abba7d2a4098bb4d3d43cc3fb7682e2a8",
+        "cards_saves_model.pkl": "d96518e17d97341729a99246cdb428ed459dda2f32f04d692c9c5a49ac979940",
+        "calibration.json": "4251387c9dad9ed85b5e6ab9edd8b5306c2059bfbc4dc7e730acb3a1c9806995"
+      },
+      "ml_mae": 1.016,
+      "ml_spearman": 0.704,
+      "base_mae": 1.078,
+      "rolling_origins": [
+        {
+          "season": "Holdout 2024-25 (trained on 2023-24)",
+          "train_size": 29725,
+          "test_size": 27605,
+          "mae": 0.999,
+          "rmse": 2.098,
+          "spearman": 0.688,
+          "base_recent_mae": 1.045,
+          "base_season_mae": 1.041,
+          "base_fixture_mae": 1.228,
+          "best_baseline_mae": 1.041,
+          "gain_vs_baseline": 0.042
+        },
+        {
+          "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
+          "train_size": 57330,
+          "test_size": 29757,
+          "mae": 0.939,
+          "rmse": 1.988,
+          "spearman": 0.706,
+          "base_recent_mae": 0.995,
+          "base_season_mae": 0.99,
+          "base_fixture_mae": 1.093,
+          "best_baseline_mae": 0.99,
+          "gain_vs_baseline": 0.051
+        },
+        {
+          "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
+          "train_size": 87087,
+          "test_size": 2054,
+          "mae": 1.896,
+          "rmse": 2.852,
+          "spearman": 0.424,
+          "base_recent_mae": 1.963,
+          "base_season_mae": 1.952,
+          "base_fixture_mae": 2.227,
+          "best_baseline_mae": 1.952,
+          "gain_vs_baseline": 0.056
+        }
+      ],
+      "status": "archived",
+      "notes": "Candidate model passed verification. MAE: 1.016 (improvement: +0.006). Promoted to production. | Automated retrain pipeline with true rolling origins"
+    },
+    {
+      "version": "v2026.10.06.1713",
+      "created_at": "2026-10-06T17:13:06.071703+00:00",
+      "git_commit": "4b6db3cc641e670c31ab8ac85446452acecdf7f7",
+      "recipe_id": "fpl_oracle_canonical_v1",
+      "training_data_hash": "8ee5d9b8cb5dae76697e75d510b786af8663255fe3b661285e4e35ece7a0517b",
+      "max_gw": 0,
+      "feature_list_hash": "ec91cae9cf9b75c88d81b133cb6b80907bf112a126ab3e90b9e6916792140e84",
+      "metric_applies_to": "served_weights",
+      "file_hashes": {
+        "minutes_model.pkl": "6fcb69189755b730618a983c3197c22c8ffbc1756af537f9dfa365ebe0ad3669",
+        "attacking_model.pkl": "611091e62a65c6b5e1765c71713f69e1b5a77f4694494d1f0a84cc929f24597d",
+        "defending_model.pkl": "7a07a777d0cc8c8bf144b5a1225430b5703ac8e4427da04b9b76b7bf8b303b8e",
+        "defcon_model.pkl": "c0298907536f73e5f743013c120d15775fe970c600ef52973d450cc9a79e87f8",
+        "bonus_model.pkl": "abcb23681970ae376b3188848ec5188abba7d2a4098bb4d3d43cc3fb7682e2a8",
+        "cards_saves_model.pkl": "d96518e17d97341729a99246cdb428ed459dda2f32f04d692c9c5a49ac979940",
+        "calibration.json": "4251387c9dad9ed85b5e6ab9edd8b5306c2059bfbc4dc7e730acb3a1c9806995"
+      },
+      "ml_mae": 1.016,
+      "ml_spearman": 0.704,
+      "base_mae": 1.078,
+      "rolling_origins": [
+        {
+          "season": "Holdout 2024-25 (trained on 2023-24)",
+          "train_size": 29725,
+          "test_size": 27605,
+          "mae": 0.999,
+          "rmse": 2.098,
+          "spearman": 0.688,
+          "base_recent_mae": 1.045,
+          "base_season_mae": 1.041,
+          "base_fixture_mae": 1.228,
+          "best_baseline_mae": 1.041,
+          "gain_vs_baseline": 0.042
+        },
+        {
+          "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
+          "train_size": 57330,
+          "test_size": 29757,
+          "mae": 0.939,
+          "rmse": 1.988,
+          "spearman": 0.706,
+          "base_recent_mae": 0.995,
+          "base_season_mae": 0.99,
+          "base_fixture_mae": 1.093,
+          "best_baseline_mae": 0.99,
+          "gain_vs_baseline": 0.051
+        },
+        {
+          "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
+          "train_size": 87087,
+          "test_size": 2054,
+          "mae": 1.896,
+          "rmse": 2.852,
+          "spearman": 0.424,
+          "base_recent_mae": 1.963,
+          "base_season_mae": 1.952,
+          "base_fixture_mae": 2.227,
+          "best_baseline_mae": 1.952,
+          "gain_vs_baseline": 0.056
+        }
+      ],
+      "status": "production",
+      "notes": "Candidate model passed verification. MAE: 1.016 (improvement: +0.000). Promoted to production. | Automated retrain pipeline with true rolling origins"
     }
   ]
 }
