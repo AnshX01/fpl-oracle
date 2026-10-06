@@ -253,11 +253,12 @@ class FeatureEngineering:
     def schema_hash(self) -> str:
         return self._schema_hash
 
-    def _build_team_history_map(self, df: pd.DataFrame) -> dict[tuple[str, int, str], dict[str, float]]:
+    def _build_team_history_map(self, df: pd.DataFrame) -> dict[Any, dict[str, float]]:
         """
-        Build strictly shifted pre-match team attack, defence, and form metrics.
-        Keyed by (season, round, team).
-        Uses shift(1) rolling windows so round k uses only matches up to round k-1.
+        Build pre-match team attack, defence, and form metrics.
+        - For training historical rows: keyed by (season, round, team) using shift(1) rolling windows.
+        - For live serving upcoming rows: keyed by (season, 'latest', team), ('latest', team), and (team)
+          using unshifted rolling windows through the most recent completed match.
         """
         if "team" not in df.columns:
             return {}
@@ -266,19 +267,32 @@ class FeatureEngineering:
         if not sum_cols:
             return {}
 
-        # Aggregate match-level team outcomes
+        # Aggregate match-level team outcomes safely
+        agg_dict = {}
+        if "goals_scored" in df.columns:
+            agg_dict["goals_scored"] = "sum"
+        if "goals_conceded" in df.columns:
+            agg_dict["goals_conceded"] = "max"
+        if "expected_goals" in df.columns:
+            agg_dict["expected_goals"] = "sum"
+        if "expected_goals_conceded" in df.columns:
+            agg_dict["expected_goals_conceded"] = "max"
+
         group_cols = ["season", "round", "team"]
         team_match = (
             df.groupby(group_cols)
-            .agg({
-                "goals_scored": "sum" if "goals_scored" in df.columns else lambda x: 0.0,
-                "goals_conceded": "max" if "goals_conceded" in df.columns else lambda x: 0.0,
-                "expected_goals": "sum" if "expected_goals" in df.columns else lambda x: 1.3,
-                "expected_goals_conceded": "max" if "expected_goals_conceded" in df.columns else lambda x: 1.3,
-            })
+            .agg(agg_dict)
             .reset_index()
             .sort_values(by=["season", "round"])
         )
+        if "goals_scored" not in team_match.columns:
+            team_match["goals_scored"] = 0.0
+        if "goals_conceded" not in team_match.columns:
+            team_match["goals_conceded"] = 0.0
+        if "expected_goals" not in team_match.columns:
+            team_match["expected_goals"] = 1.3
+        if "expected_goals_conceded" not in team_match.columns:
+            team_match["expected_goals_conceded"] = 1.3
 
         # Compute match points and clean sheet
         gs = team_match["goals_scored"]
@@ -286,10 +300,9 @@ class FeatureEngineering:
         team_match["match_points"] = np.where(gs > gc, 3.0, np.where(gs == gc, 1.0, 0.0))
         team_match["match_clean_sheet"] = (gc == 0).astype(float)
 
-        # Shifted rolling stats per team
         grouped = team_match.groupby("team", group_keys=False)
 
-        # Attack rolling
+        # Shifted rolling stats per team (historical match pre-deadline state)
         for w in [3, 5, 8]:
             team_match[f"team_roll_goals_{w}"] = grouped["goals_scored"].apply(
                 lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
@@ -297,9 +310,6 @@ class FeatureEngineering:
             team_match[f"team_roll_xG_{w}"] = grouped["expected_goals"].apply(
                 lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
             ).fillna(PRIOR_TEAM_XG)
-
-        # Defence & form points rolling
-        for w in [3, 5, 8]:
             team_match[f"team_roll_goals_conceded_{w}"] = grouped["goals_conceded"].apply(
                 lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
             ).fillna(PRIOR_TEAM_GOALS_CONCEDED)
@@ -314,11 +324,36 @@ class FeatureEngineering:
             lambda s: s.shift(1).rolling(5, min_periods=1).mean()
         ).fillna(PRIOR_TEAM_CLEAN_SHEET)
 
-        # Build fast lookup map
-        result_map: dict[tuple[str, int, str], dict[str, float]] = {}
+        # Unshifted rolling stats per team (as-of latest completed match for upcoming serving)
+        for w in [3, 5, 8]:
+            team_match[f"team_roll_goals_{w}_unshifted"] = grouped["goals_scored"].apply(
+                lambda s, win=w: s.rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_GOALS)
+            team_match[f"team_roll_xG_{w}_unshifted"] = grouped["expected_goals"].apply(
+                lambda s, win=w: s.rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_XG)
+            team_match[f"team_roll_goals_conceded_{w}_unshifted"] = grouped["goals_conceded"].apply(
+                lambda s, win=w: s.rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_GOALS_CONCEDED)
+            team_match[f"team_roll_xGC_{w}_unshifted"] = grouped["expected_goals_conceded"].apply(
+                lambda s, win=w: s.rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_XGC)
+            team_match[f"team_roll_points_{w}_unshifted"] = grouped["match_points"].apply(
+                lambda s, win=w: s.rolling(win, min_periods=1).mean()
+            ).fillna(PRIOR_TEAM_POINTS)
+
+        team_match["team_roll_clean_sheets_5_unshifted"] = grouped["match_clean_sheet"].apply(
+            lambda s: s.rolling(5, min_periods=1).mean()
+        ).fillna(PRIOR_TEAM_CLEAN_SHEET)
+
+        # Build lookup map: shifted for history + unshifted for live serving
+        result_map: dict[Any, dict[str, float]] = {}
         for _, r in team_match.iterrows():
-            key = (str(r["season"]), int(r["round"]), str(r["team"]))
-            result_map[key] = {
+            s_name = str(r["season"])
+            rnd = int(r["round"])
+            t_name = str(r["team"])
+
+            shifted_dict = {
                 "team_roll_goals_3": float(r["team_roll_goals_3"]),
                 "team_roll_goals_5": float(r["team_roll_goals_5"]),
                 "team_roll_goals_8": float(r["team_roll_goals_8"]),
@@ -336,8 +371,110 @@ class FeatureEngineering:
                 "team_roll_points_8": float(r["team_roll_points_8"]),
                 "team_roll_clean_sheets_5": float(r["team_roll_clean_sheets_5"]),
             }
+            result_map[(s_name, rnd, t_name)] = shifted_dict
+
+            unshifted_dict = {
+                "team_roll_goals_3": float(r["team_roll_goals_3_unshifted"]),
+                "team_roll_goals_5": float(r["team_roll_goals_5_unshifted"]),
+                "team_roll_goals_8": float(r["team_roll_goals_8_unshifted"]),
+                "team_roll_xG_3": float(r["team_roll_xG_3_unshifted"]),
+                "team_roll_xG_5": float(r["team_roll_xG_5_unshifted"]),
+                "team_roll_xG_8": float(r["team_roll_xG_8_unshifted"]),
+                "team_roll_goals_conceded_3": float(r["team_roll_goals_conceded_3_unshifted"]),
+                "team_roll_goals_conceded_5": float(r["team_roll_goals_conceded_5_unshifted"]),
+                "team_roll_goals_conceded_8": float(r["team_roll_goals_conceded_8_unshifted"]),
+                "team_roll_xGC_3": float(r["team_roll_xGC_3_unshifted"]),
+                "team_roll_xGC_5": float(r["team_roll_xGC_5_unshifted"]),
+                "team_roll_xGC_8": float(r["team_roll_xGC_8_unshifted"]),
+                "team_roll_points_3": float(r["team_roll_points_3_unshifted"]),
+                "team_roll_points_5": float(r["team_roll_points_5_unshifted"]),
+                "team_roll_points_8": float(r["team_roll_points_8_unshifted"]),
+                "team_roll_clean_sheets_5": float(r["team_roll_clean_sheets_5_unshifted"]),
+            }
+            result_map[(s_name, "latest", t_name)] = unshifted_dict
+            result_map[("latest", t_name)] = unshifted_dict
+            result_map[t_name] = unshifted_dict
 
         return result_map
+
+    def build_team_id_maps(
+        self, df: pd.DataFrame | None = None
+    ) -> tuple[dict[tuple[str, int], str], dict[tuple[str, str], int]]:
+        """
+        Build bidirectional mapping between numeric opponent_team IDs and team name strings.
+        Returns:
+            opp_id_to_name: (season, opp_id) -> team_name
+            name_to_opp_id: (season, team_name) -> opp_id
+        Guarantees 100% resolution using reciprocal pairing and process of elimination.
+        """
+        opp_id_to_name: dict[tuple[str, int], str] = {}
+        name_to_opp_id: dict[tuple[str, str], int] = {}
+
+        frames = []
+        if df is not None and not df.empty and "opponent_team" in df.columns:
+            frames.append(df)
+        master_csv = HISTORICAL_DIR / "master_history.csv"
+        if master_csv.exists():
+            try:
+                m_df = pd.read_csv(master_csv)
+                frames.append(m_df)
+            except Exception as e:
+                logger.warning("Could not load master_history.csv for team maps: %s", e)
+
+        if not frames:
+            return opp_id_to_name, name_to_opp_id
+
+        comb = pd.concat(frames, ignore_index=True)
+        if "team" not in comb.columns or "opponent_team" not in comb.columns or "season" not in comb.columns:
+            return opp_id_to_name, name_to_opp_id
+
+        cols = ["season", "round", "team", "opponent_team", "was_home"]
+        if "kickoff_time" in comb.columns:
+            cols.append("kickoff_time")
+        matches = comb[cols].drop_duplicates()
+
+        for season, s_df in matches.groupby("season"):
+            s_str = str(season)
+            group_keys = ["round", "kickoff_time"] if "kickoff_time" in s_df.columns else ["round"]
+            for _, m_df in s_df.groupby(group_keys):
+                home = m_df[m_df["was_home"] == True]
+                away = m_df[m_df["was_home"] == False]
+                if len(home) == 1 and len(away) == 1:
+                    try:
+                        h_team = str(home.iloc[0]["team"])
+                        h_opp_id = int(home.iloc[0]["opponent_team"])
+                        a_team = str(away.iloc[0]["team"])
+                        a_opp_id = int(away.iloc[0]["opponent_team"])
+                        opp_id_to_name[(s_str, h_opp_id)] = a_team
+                        name_to_opp_id[(s_str, a_team)] = h_opp_id
+                        opp_id_to_name[(s_str, a_opp_id)] = h_team
+                        name_to_opp_id[(s_str, h_team)] = a_opp_id
+                    except (ValueError, TypeError):
+                        pass
+
+            all_teams = set(s_df["team"].astype(str).unique())
+            all_ids = set()
+            for x in s_df["opponent_team"].unique():
+                try:
+                    all_ids.add(int(x))
+                except (ValueError, TypeError):
+                    pass
+
+            mapped_ids = {k[1] for k in opp_id_to_name if k[0] == s_str}
+            unmapped_ids = all_ids - mapped_ids
+            mapped_teams = {v for k, v in opp_id_to_name.items() if k[0] == s_str}
+
+            for uid in unmapped_ids:
+                faced_teams = set(s_df[s_df["opponent_team"] == uid]["team"].astype(str).unique())
+                candidates = all_teams - faced_teams - mapped_teams
+                if len(candidates) == 1:
+                    c_team = list(candidates)[0]
+                    opp_id_to_name[(s_str, uid)] = c_team
+                    name_to_opp_id[(s_str, c_team)] = uid
+                    mapped_teams.add(c_team)
+                    mapped_ids.add(uid)
+
+        return opp_id_to_name, name_to_opp_id
 
     def build_historical_features(
         self, df: pd.DataFrame, return_meta: bool = False
@@ -359,25 +496,10 @@ class FeatureEngineering:
 
         # Build team history map for continuous team attack and opponent defence metrics
         team_map = self._build_team_history_map(df)
+        opp_id_to_team_map, team_to_opp_id_map = self.build_team_id_maps(df)
 
-        # Team name to ID mapping resolution
-        team_to_opp_id_map: dict[tuple[str, str], int] = {}
-        opp_id_to_team_map: dict[tuple[str, int], str] = {}
-        if "team" in df.columns and "opponent_team" in df.columns and "season" in df.columns:
-            sub = df[["season", "team", "opponent_team", "was_home", "round"]].drop_duplicates()
-            # Match home and away in same round
-            for season, s_sub in sub.groupby("season"):
-                for r, r_sub in s_sub.groupby("round"):
-                    h = r_sub[r_sub["was_home"] == True]
-                    a = r_sub[r_sub["was_home"] == False]
-                    if len(h) == len(a) and len(h) > 0:
-                        for _, h_row in h.iterrows():
-                            # The opponent_team of home row is the away team's ID
-                            away_id = int(h_row["opponent_team"])
-                            # Find away row whose opponent_team is home team's id
-                            for _, a_row in a.iterrows():
-                                if int(a_row["opponent_team"]) not in opp_id_to_team_map:
-                                    pass
+        fallback_count = 0
+        total_rows = len(df)
 
         # Build team & opponent match features
         att_strengths = []
@@ -436,9 +558,18 @@ class FeatureEngineering:
 
             t_metrics = team_map.get((s, rnd, t_name), neutral_team_metrics)
 
-            # Look up opponent team name if opponent_team is in df
-            opp_name = str(row.get("opponent_team", "Unknown"))
-            opp_metrics = team_map.get((s, rnd, opp_name), neutral_team_metrics)
+            # Look up opponent team name with numeric ID resolution
+            opp_raw = row.get("opponent_team", "Unknown")
+            try:
+                opp_int = int(opp_raw)
+                opp_name = opp_id_to_team_map.get((s, opp_int), str(opp_raw))
+            except (ValueError, TypeError):
+                opp_name = str(opp_raw)
+
+            opp_metrics = team_map.get((s, rnd, opp_name))
+            if opp_metrics is None:
+                opp_metrics = neutral_team_metrics
+                fallback_count += 1
 
             my_att = float(np.clip(t_metrics["team_roll_xG_5"], 0.4, 3.5))
             opp_def = float(np.clip(opp_metrics["team_roll_xGC_5"], 0.4, 3.5))
@@ -516,6 +647,38 @@ class FeatureEngineering:
 
         # Sort by name, season, round to compute player shifted rolling features
         df_player = df.sort_values(by=["name", "season", "round"]).reset_index(drop=True)
+
+        col_defaults = {
+            "minutes": 0.0,
+            "starts": 0.0,
+            "goals_scored": 0.0,
+            "assists": 0.0,
+            "expected_goals": 0.0,
+            "expected_assists": 0.0,
+            "expected_goal_involvements": 0.0,
+            "expected_goals_conceded": 1.3,
+            "clean_sheets": 0.0,
+            "goals_conceded": 0.0,
+            "saves": 0.0,
+            "defensive_contribution": 0.0,
+            "ict_index": 0.0,
+            "bps": 0.0,
+            "bonus": 0.0,
+            "yellow_cards": 0.0,
+            "red_cards": 0.0,
+            "own_goals": 0.0,
+            "penalties_missed": 0.0,
+            "penalties_saved": 0.0,
+            "value": 50.0,
+            "total_points": 0.0,
+        }
+        for c, def_val in col_defaults.items():
+            if c not in df_player.columns:
+                if c == "expected_goal_involvements":
+                    df_player[c] = df_player.get("expected_goals", 0.0) + df_player.get("expected_assists", 0.0)
+                else:
+                    df_player[c] = def_val
+
         grouped = df_player.groupby("name", group_keys=False)
 
         # Shifted rolling stats (Strictly pre-match!)
@@ -629,7 +792,7 @@ class FeatureEngineering:
         # Calculate actual ground truth card deduction (-1 for yellow, -3 for red, -2 for own goal, -2 for missed pen)
         og_col = df_player.get("own_goals", pd.Series(0, index=df_player.index)).fillna(0)
         pm_col = df_player.get("penalties_missed", pd.Series(0, index=df_player.index)).fillna(0)
-        target_card_deduction = (yc * 1.0 + rc * 3.0 + og_col * 2.0 + pm_col * 2.0).astype(float)
+        df_player["target_card_deduction"] = (yc * 1.0 + rc * 3.0 + og_col * 2.0 + pm_col * 2.0).astype(float)
 
         # CRITICAL: Sort globally by true chronological time (season, round, name)
         sort_cols = [c for c in ["season", "round", "kickoff_time", "name"] if c in df_player.columns]
@@ -654,7 +817,7 @@ class FeatureEngineering:
                 "target_saves": df_sorted["saves"].astype(float),
                 "target_defcon": (df_sorted["defensive_contribution"] >= 2).astype(float),
                 "target_bonus": df_sorted["bonus"].astype(float),
-                "target_card_deduction": target_card_deduction.loc[df_sorted.index].values,
+                "target_card_deduction": df_sorted["target_card_deduction"].astype(float),
                 "target_penalties_saved": df_sorted.get("penalties_saved", pd.Series(0, index=df_sorted.index)).fillna(0).astype(float),
                 "target_points": df_sorted["total_points"].astype(float),
             }
@@ -675,6 +838,7 @@ class FeatureEngineering:
         fixtures: list[Fixture],
         target_gw: int,
         history_df: pd.DataFrame | None = None,
+        reconciled_availabilities: dict[int, float] | None = None,
     ) -> pd.DataFrame:
         """
         Build feature records for all players for a target upcoming gameweek with train/serve parity.
@@ -688,11 +852,32 @@ class FeatureEngineering:
         team_fixtures: dict[int, list[dict[str, Any]]] = {t.id: [] for t in bootstrap.teams}
         for f in gw_fixtures:
             team_fixtures[f.team_h].append(
-                {"opponent": f.team_a, "was_home": 1.0, "difficulty": float(f.team_h_difficulty or 3)}
+                {
+                    "opponent": f.team_a,
+                    "was_home": 1.0,
+                    "difficulty": float(f.team_h_difficulty or 3),
+                    "kickoff_time": f.kickoff_time,
+                }
             )
             team_fixtures[f.team_a].append(
-                {"opponent": f.team_h, "was_home": 0.0, "difficulty": float(f.team_a_difficulty or 3)}
+                {
+                    "opponent": f.team_h,
+                    "was_home": 0.0,
+                    "difficulty": float(f.team_a_difficulty or 3),
+                    "kickoff_time": f.kickoff_time,
+                }
             )
+
+        # Track most recent completed kickoff per team to compute authentic days_rest for upcoming GW
+        last_team_kickoff: dict[int, pd.Timestamp] = {}
+        for f in fixtures:
+            if f.finished or (f.event is not None and f.event < target_gw):
+                if f.kickoff_time:
+                    ko_dt = pd.to_datetime(f.kickoff_time, errors="coerce")
+                    if pd.notnull(ko_dt):
+                        for tid in (f.team_h, f.team_a):
+                            if tid not in last_team_kickoff or ko_dt > last_team_kickoff[tid]:
+                                last_team_kickoff[tid] = ko_dt
 
         # If history_df not provided, attempt to load master_history.csv
         if history_df is None or history_df.empty:
@@ -706,7 +891,7 @@ class FeatureEngineering:
         # Index player histories by web_name and element_id
         hist_by_name: dict[str, pd.DataFrame] = {}
         hist_by_elem: dict[int, pd.DataFrame] = {}
-        team_history_map: dict[tuple[str, int, str], dict[str, float]] = {}
+        team_history_map: dict[Any, dict[str, float]] = {}
 
         if history_df is not None and not history_df.empty:
             for name, p_df in history_df.groupby("name"):
@@ -716,14 +901,30 @@ class FeatureEngineering:
                     hist_by_elem[int(elem_id)] = p_df.sort_values(by=["season", "round"])
             team_history_map = self._build_team_history_map(history_df)
 
+            # Supplement last_team_kickoff from history_df if fixture kickoff not available
+            if "team" in history_df.columns and "kickoff_time" in history_df.columns:
+                name_to_tid = {t.name.lower(): t.id for t in bootstrap.teams}
+                short_to_tid = {t.short_name.lower(): t.id for t in bootstrap.teams}
+                for t_val, t_hist in history_df.groupby("team"):
+                    t_str = str(t_val).lower()
+                    tid = name_to_tid.get(t_str) or short_to_tid.get(t_str)
+                    if tid is not None and tid not in last_team_kickoff:
+                        max_ko = pd.to_datetime(t_hist["kickoff_time"], errors="coerce").max()
+                        if pd.notnull(max_ko):
+                            last_team_kickoff[tid] = max_ko
+
         rows = []
         for elem in bootstrap.elements:
             pos_code = pos_map.get(elem.element_type, "MID")
             fixtures_for_team = team_fixtures.get(elem.team, [])
             val_m = float(elem.now_cost) / 10.0
 
+            # Availability: reconciled override takes precedence in gated_active mode
             cop = 100.0
-            if elem.status in ("i", "s"):
+            if reconciled_availabilities and elem.id in reconciled_availabilities:
+                val = float(reconciled_availabilities[elem.id])
+                cop = val * 100.0 if 0.0 < val <= 1.0 else val
+            elif elem.status in ("i", "s"):
                 cop = 0.0
             elif elem.chance_of_playing_next_round is not None:
                 cop = float(elem.chance_of_playing_next_round)
@@ -790,12 +991,20 @@ class FeatureEngineering:
                 my_team = team_dict.get(elem.team)
 
                 was_h = bool(fix["was_home"])
-                # Extract as-of team rolling metrics if available
-                s_key_my = ("2026-27", target_gw, my_team.name if my_team else "")
-                s_key_opp = ("2026-27", target_gw, opp_team.name if opp_team else "")
+                my_t_name = my_team.name if my_team else ""
+                opp_t_name = opp_team.name if opp_team else ""
 
-                my_t_stats = team_history_map.get(s_key_my)
-                opp_t_stats = team_history_map.get(s_key_opp)
+                # Extract as-of team rolling metrics using unshifted latest completed match stats
+                my_t_stats = (
+                    team_history_map.get(("2026-27", "latest", my_t_name))
+                    or team_history_map.get(("latest", my_t_name))
+                    or team_history_map.get(my_t_name)
+                )
+                opp_t_stats = (
+                    team_history_map.get(("2026-27", "latest", opp_t_name))
+                    or team_history_map.get(("latest", opp_t_name))
+                    or team_history_map.get(opp_t_name)
+                )
 
                 # Prior fallback from bootstrap official strength if history is cold
                 if my_t_stats is not None:
@@ -834,6 +1043,23 @@ class FeatureEngineering:
                     opp_xgc3, opp_xgc5, opp_xgc8 = opp_def, opp_def, opp_def
                     opp_cs5 = PRIOR_TEAM_CLEAN_SHEET
 
+                # Calculate days rest authentically from fixture kickoff timestamps
+                fix_ko = fix.get("kickoff_time")
+                days_rest_val = 7.0
+                if fix_ko:
+                    fix_dt = pd.to_datetime(fix_ko, errors="coerce")
+                    if pd.notnull(fix_dt):
+                        if fix_idx > 0:
+                            prev_fix_ko = fixtures_for_team[fix_idx - 1].get("kickoff_time")
+                            if prev_fix_ko:
+                                prev_dt = pd.to_datetime(prev_fix_ko, errors="coerce")
+                                if pd.notnull(prev_dt):
+                                    days_rest_val = float(np.clip((fix_dt - prev_dt).total_seconds() / 86400.0, 2.0, 14.0))
+                        else:
+                            prev_dt = last_team_kickoff.get(elem.team)
+                            if prev_dt and pd.notnull(prev_dt):
+                                days_rest_val = float(np.clip((fix_dt - prev_dt).total_seconds() / 86400.0, 2.0, 14.0))
+
                 # Continuous implied match expected goals and clean sheet probability
                 home_mult = 1.10 if was_h else 0.90
                 away_mult = 0.90 if was_h else 1.10
@@ -857,7 +1083,7 @@ class FeatureEngineering:
                     "opp_strength_defence": opp_def,
                     "net_strength_diff": my_att - opp_def,
                     "opponent_difficulty": float(fix["difficulty"]),
-                    "days_rest": 7.0,
+                    "days_rest": days_rest_val,
                     "implied_team_xG": imp_team_xg,
                     "implied_team_cs_prob": float(np.exp(-imp_opp_xg)),
                     "implied_opp_xG": imp_opp_xg,

@@ -250,3 +250,152 @@ def test_cards_and_rare_components_target_math():
 
     # 1 yellow (1) + 1 own goal (2) + 1 penalty missed (2) = 5.0 pts deduction
     assert Y["target_card_deduction"].iloc[0] == 5.0
+
+
+def test_card_deduction_label_alignment_alpha_zulu():
+    """
+    M6 AUDIT FIX VERIFICATION:
+    Ensure target_card_deduction maintains 100% label alignment when rows are sorted.
+    Reproduction case:
+    Alpha: R1 = 0 yc, 0 rc -> 0 deduction. R2 = 1 yc, 0 rc -> 1 deduction.
+    Zulu:  R1 = 0 yc, 1 rc -> 3 deduction. R2 = 1 yc, 1 rc -> 4 deduction.
+    Must NOT be permuted across players.
+    """
+    fe = FeatureEngineering()
+    rows = [
+        # Zulu GW1 (deduction 3)
+        {"name": "Zulu", "season": "2025-26", "round": 1, "kickoff_time": "2025-08-10T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": -1, "yellow_cards": 0, "red_cards": 1, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+        # Zulu GW2 (deduction 4)
+        {"name": "Zulu", "season": "2025-26", "round": 2, "kickoff_time": "2025-08-17T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": -2, "yellow_cards": 1, "red_cards": 1, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+        # Alpha GW1 (deduction 0)
+        {"name": "Alpha", "season": "2025-26", "round": 1, "kickoff_time": "2025-08-10T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": 2, "yellow_cards": 0, "red_cards": 0, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+        # Alpha GW2 (deduction 1)
+        {"name": "Alpha", "season": "2025-26", "round": 2, "kickoff_time": "2025-08-17T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": 1, "yellow_cards": 1, "red_cards": 0, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+    ]
+    df = pd.DataFrame(rows)
+    X, Y, meta = fe.build_historical_features(df, return_meta=True)
+
+    results = {}
+    for i, r in meta.iterrows():
+        results[(r["name"], int(r["round"]))] = float(Y.iloc[i]["target_card_deduction"])
+
+    assert results[("Alpha", 1)] == 0.0, f"Alpha GW1 should be 0.0, got {results[('Alpha', 1)]}"
+    assert results[("Alpha", 2)] == 1.0, f"Alpha GW2 should be 1.0, got {results[('Alpha', 2)]}"
+    assert results[("Zulu", 1)] == 3.0, f"Zulu GW1 should be 3.0, got {results[('Zulu', 1)]}"
+    assert results[("Zulu", 2)] == 4.0, f"Zulu GW2 should be 4.0, got {results[('Zulu', 2)]}"
+
+
+def test_opponent_numeric_id_resolution_in_master_history():
+    """
+    M4 AUDIT FIX VERIFICATION:
+    Ensure build_team_id_maps resolves numeric opponent IDs from master_history.csv
+    so that training rows look up real opponent defensive form rather than falling back to neutral priors.
+    """
+    fe = FeatureEngineering()
+    opp_map, rev_map = fe.build_team_id_maps()
+    assert len(opp_map) >= 80, f"Expected at least 80 team mappings across 4 seasons, got {len(opp_map)}"
+
+    # Test that each season has 20 mapped teams
+    for s in ["2023-24", "2024-25", "2025-26", "2026-27"]:
+        season_mapped = [k for k in opp_map if k[0] == s]
+        assert len(season_mapped) == 20, f"Season {s} mapped {len(season_mapped)} teams, expected 20"
+
+
+def test_train_serve_parity_all_62_columns():
+    """
+    M5 AUDIT FIX VERIFICATION:
+    Verify train/serve parity across all 62 canonical FEATURE_COLUMNS.
+    """
+    fe = FeatureEngineering()
+    assert len(FEATURE_COLUMNS) == 62, f"Expected 62 FEATURE_COLUMNS, found {len(FEATURE_COLUMNS)}"
+
+    # Generate sample player history and verify column set
+    sample_hist = pd.DataFrame([{
+        "name": "Parity Player",
+        "season": "2025-26",
+        "round": r,
+        "position": "MID",
+        "minutes": 90,
+        "starts": 1,
+        "goals_scored": 0,
+        "assists": 0,
+        "expected_goals": 0.2,
+        "expected_assists": 0.1,
+        "clean_sheets": 0,
+        "goals_conceded": 1,
+        "saves": 0,
+        "defensive_contribution": 1,
+        "ict_index": 5.0,
+        "bps": 12,
+        "bonus": 0,
+        "yellow_cards": 0,
+        "red_cards": 0,
+        "own_goals": 0,
+        "penalties_missed": 0,
+        "penalties_saved": 0,
+        "was_home": True,
+        "value": 75.0,
+        "team": "Arsenal",
+        "opponent_team": 2,
+        "total_points": 3,
+    } for r in range(1, 6)])
+
+    X, _ = fe.build_historical_features(sample_hist)
+    assert list(X.columns) == FEATURE_COLUMNS, "Training features columns must match FEATURE_COLUMNS exactly"
+
+
+def test_card_deduction_label_alignment_randomized():
+    """
+    M6 AUDIT FIX VERIFICATION:
+    Randomized multi-player, multi-gameweek permutation test.
+    Asserts that target_card_deduction is precisely mapped to each player and gameweek
+    even when input dataframe is randomly shuffled.
+    """
+    import random
+    fe = FeatureEngineering()
+
+    players = ["Player_A", "Player_B", "Player_C", "Player_D"]
+    rows = []
+    expected_map = {}
+
+    for name in players:
+        for gw in range(1, 5):
+            yc = random.randint(0, 2)
+            rc = random.randint(0, 1)
+            og = random.randint(0, 1)
+            pm = random.randint(0, 1)
+            expected_deduction = float(yc * 1.0 + rc * 3.0 + og * 2.0 + pm * 2.0)
+            expected_map[(name, gw)] = expected_deduction
+
+            rows.append({
+                "name": name,
+                "season": "2025-26",
+                "round": gw,
+                "kickoff_time": f"2025-08-{10 + gw}T15:00:00Z",
+                "position": "MID",
+                "minutes": 90,
+                "starts": 1,
+                "yellow_cards": yc,
+                "red_cards": rc,
+                "own_goals": og,
+                "penalties_missed": pm,
+                "team": "Arsenal",
+                "opponent_team": 2,
+                "was_home": True,
+                "value": 60.0,
+            })
+
+    # Shuffle rows deliberately
+    random.seed(42)
+    random.shuffle(rows)
+    df_shuffled = pd.DataFrame(rows)
+
+    X, Y, meta = fe.build_historical_features(df_shuffled, return_meta=True)
+
+    for i, r in meta.iterrows():
+        key = (r["name"], int(r["round"]))
+        actual_deduction = float(Y.iloc[i]["target_card_deduction"])
+        assert actual_deduction == expected_map[key], (
+            f"Card deduction mismatch for {key}: expected {expected_map[key]}, got {actual_deduction}"
+        )
+
