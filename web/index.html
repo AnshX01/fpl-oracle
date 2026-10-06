@@ -200,8 +200,17 @@
     <!-- ========================================== -->
     <section v-if="activeTab === 'overview'" class="space-y-6">
       
-      <!-- 🎯 COUNCIL DECISION CARD: YOUR NEXT DECISION -->
+      <!-- 🎯 COUNCIL DECISION CARD: YOUR NEXT DECISION (D1, D2, D3) -->
       <div class="council-card p-6 border-l-4 border-l-emerald-500 space-y-4">
+        <!-- Chip Recommendation Banner if Active -->
+        <div v-if="nextDecision.card && nextDecision.card.chip && nextDecision.card.chip.recommend" class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="text-base">⭐</span>
+            <span><strong>CHIP RECOMMENDATION:</strong> Deploy <strong>{{ nextDecision.card.chip.chip_display_name }}</strong> this gameweek (+{{ nextDecision.card.chip.gain_vs_hold }} xP over hold baseline).</span>
+          </div>
+          <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 font-mono text-[10px]">Action Required</span>
+        </div>
+
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <span class="decision-badge" :class="nextDecision.badgeClass">
@@ -210,7 +219,15 @@
             </span>
             <span class="text-xs text-zinc-400 font-mono">Gameweek {{ gameState.next_gw || 6 }} Recommendation</span>
           </div>
-          <span class="text-xs font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">Council Consensus</span>
+          <div class="flex items-center gap-2">
+            <span v-if="nextDecision.card" class="text-xs font-mono px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-300 border border-zinc-700">
+              Model {{ nextDecision.card.model_version }}
+            </span>
+            <button @click="exportDecisionCard" class="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium transition flex items-center gap-1.5" title="Copy printable markdown decision card to clipboard">
+              <span>📋</span>
+              <span>Export Card</span>
+            </button>
+          </div>
         </div>
 
         <div>
@@ -220,10 +237,16 @@
             <span class="text-zinc-300 px-2 py-1 rounded bg-zinc-800">{{ nextDecision.hitText }}</span>
             <span class="text-amber-400 px-2 py-1 rounded bg-amber-500/10">{{ nextDecision.bankText }}</span>
             <span class="text-zinc-400 px-2 py-1 rounded bg-zinc-800">{{ nextDecision.ftText }}</span>
+            <span v-if="nextDecision.card && nextDecision.card.captain" class="text-emerald-300 px-2 py-1 rounded bg-emerald-950/40 border border-emerald-800/50">
+              Captain: (C) {{ nextDecision.card.captain.web_name }} ({{ nextDecision.card.captain.expected_points }} xP)
+            </span>
+            <span v-if="nextDecision.card && nextDecision.card.rivals && nextDecision.card.rivals.status === 'configured'" class="text-purple-300 px-2 py-1 rounded bg-purple-950/40 border border-purple-800/50">
+              Posture: {{ nextDecision.card.rivals.posture }} ({{ nextDecision.card.win_prob.p_first }}% Win)
+            </span>
           </div>
         </div>
 
-        <!-- 2 Supporting Reasons -->
+        <!-- Supporting Reasons -->
         <div class="space-y-1.5 pt-1">
           <div v-for="(reason, idx) in nextDecision.reasons" :key="idx" class="flex items-start gap-2 text-sm text-zinc-300">
             <span class="text-emerald-400 font-bold mt-0.5">•</span>
@@ -237,10 +260,13 @@
             <span>⚠️</span>
             <span>{{ nextDecision.caveat }}</span>
           </div>
-          <button @click="activeTab = 'transfers'" class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-black font-bold transition flex items-center gap-1.5">
-            <span>View Transfer Workbench</span>
-            <span>→</span>
-          </button>
+          <div class="flex items-center gap-3">
+            <span class="text-[11px] text-zinc-500 italic hidden sm:inline">Advice only — nothing is submitted to FPL.</span>
+            <button @click="activeTab = 'transfers'" class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-black font-bold transition flex items-center gap-1.5">
+              <span>View Transfer Workbench</span>
+              <span>→</span>
+            </button>
+          </div>
         </div>
       </div>
 

@@ -54,6 +54,10 @@ const app = createApp({
       contingencyMatrix: [],
       priceChanges: { rises: [], falls: [] },
 
+      // Unified Decision Card (D1, D2, D3)
+      decisionCard: null,
+      decisionCardLoading: false,
+
       // Chip Strategy & Roadmaps
       chipData: {},
 
@@ -112,6 +116,51 @@ const app = createApp({
     },
 
     nextDecision() {
+      if (this.decisionCard) {
+        const card = this.decisionCard;
+        const chip = card.chip || {};
+        const t = card.transfers || {};
+        const isRoll = t.is_roll;
+
+        let title = "";
+        let badge = "";
+        let badgeClass = "";
+
+        if (chip.recommend) {
+          title = `Deploy Chip: ${chip.chip_display_name || 'Active Chip'}`;
+          badge = "Chip Deployment";
+          badgeClass = "bg-amber-500/20 text-amber-400 border border-amber-500/40";
+        } else if (isRoll) {
+          title = `Roll Free Transfer (Bank to ${t.ft_remaining || 2} FTs)`;
+          badge = "Hold & Roll";
+          badgeClass = "bg-blue-500/20 text-blue-400 border border-blue-500/40";
+        } else {
+          const inNames = (t.in || []).map(p => p.web_name).join(', ') || 'Target';
+          const outNames = (t.out || []).map(p => p.web_name).join(', ') || 'Outgoing';
+          title = `Transfer ${outNames} → ${inNames}`;
+          badge = t.no_regret_flag ? "No-Regret Move" : "Recommended Move";
+          badgeClass = "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
+        }
+
+        const reasons = [
+          card.two_line_reasoning || "Optimized trajectory across 5-GW horizon based on empirical team and player form.",
+          chip.recommend ? chip.reason : `Starting XI led by captain ${card.captain?.web_name || 'Captain'} (${card.captain?.expected_points || 0.0} xP) in a ${card.formation || '3-5-2'} shape.`
+        ];
+
+        return {
+          title: title,
+          badge: badge,
+          badgeClass: badgeClass,
+          gainText: `+${(t.net_gain_vs_roll || 0.0).toFixed(1)} pts (5-GW)`,
+          hitText: `${t.hit_cost ? '-' + t.hit_cost : '0'} hit pts`,
+          bankText: `£${(t.bank_after !== undefined ? t.bank_after : (this.squadData.bank_millions || 0.0))}m in bank`,
+          ftText: `${t.ft_remaining || 1} FT left`,
+          reasons: reasons,
+          caveat: (card.caveats && card.caveats.length > 0) ? card.caveats[0] : "Check Friday press conference updates for confirmed starter status.",
+          card: card
+        };
+      }
+
       const plan = this.activePlan;
       if (!plan) {
         return {
@@ -423,6 +472,34 @@ const app = createApp({
       } catch (e) {}
     },
 
+    async loadDecisionCard() {
+      this.decisionCardLoading = true;
+      try {
+        const res = await fetch('/api/decision-card');
+        if (res.ok) this.decisionCard = await res.json();
+      } catch (e) {
+        console.warn('Failed to fetch decision card:', e);
+      } finally {
+        this.decisionCardLoading = false;
+      }
+    },
+
+    async exportDecisionCard() {
+      try {
+        const res = await fetch('/api/decision-card/export');
+        if (res.ok) {
+          const text = await res.text();
+          await navigator.clipboard.writeText(text);
+          this.triggerToast("Decision Card (Markdown) copied to clipboard!");
+        } else {
+          alert("Failed to export decision card.");
+        }
+      } catch (e) {
+        console.error("Export error:", e);
+        alert("Could not copy decision card to clipboard.");
+      }
+    },
+
     async loadBriefing() {
       try {
         const res = await fetch('/api/briefing');
@@ -532,6 +609,7 @@ const app = createApp({
         this.loadHealth(),
         this.loadGameState(),
         this.loadProfile(),
+        this.loadDecisionCard(),
         this.loadSquad(),
         this.loadContingencyPlans(),
         this.loadContingencyMatrix(),

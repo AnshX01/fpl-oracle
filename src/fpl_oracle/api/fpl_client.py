@@ -47,7 +47,9 @@ class FPLClient:
         }
         self.timeout = float(fpl_cfg.get("request_timeout_seconds", 15))
         self.max_concurrency = int(fpl_cfg.get("max_concurrency", 5))
-        self.semaphore = asyncio.Semaphore(self.max_concurrency)
+        self.semaphore = None
+        self._semaphore_loop = None
+        self._client_loop = None
         self.rate_delay = float(fpl_cfg.get("rate_limit_delay_seconds", 0.05))
         self.is_stale_mode = False
         self.last_sync_time: datetime | None = None
@@ -60,9 +62,28 @@ class FPLClient:
         self._custom_transport: httpx.AsyncBaseTransport | None = None
         self._client: httpx.AsyncClient | None = None
 
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if self.semaphore is None or self._semaphore_loop != loop:
+            self._semaphore_loop = loop
+            self.semaphore = asyncio.Semaphore(self.max_concurrency)
+        return self.semaphore
+
     def get_http_client(self) -> httpx.AsyncClient:
         """Get or initialize persistent AsyncClient with connection pooling."""
-        if self._client is None or self._client.is_closed:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if (
+            self._client is None
+            or self._client.is_closed
+            or self._client_loop != loop
+        ):
+            self._client_loop = loop
             limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
             self._client = httpx.AsyncClient(
                 headers=self.headers, timeout=self.timeout, limits=limits, transport=self._custom_transport
@@ -128,7 +149,7 @@ class FPLClient:
         backoff = 1.0
 
         for attempt in range(retries):
-            async with self.semaphore:
+            async with self._get_semaphore():
                 if self.rate_delay > 0:
                     await asyncio.sleep(self.rate_delay)
                 try:

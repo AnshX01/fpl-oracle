@@ -7,13 +7,14 @@ from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 from fpl_oracle.api.cache import cache_manager
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
 from fpl_oracle.api.rules_checker import rules_checker
+from fpl_oracle.briefing.decision_card import decision_card_generator, format_decision_card_markdown
 from fpl_oracle.briefing.review import post_gameweek_reviewer
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.chips.planner import chip_planner
@@ -647,7 +648,6 @@ async def get_league_intel(league_id: int | None = None):
 @router.get("/news")
 async def get_news_signals(
     gw: int | None = None,
-    fpl_client: FPLClient = Depends(get_fpl_client),
 ):
     """Return all reconciled news signals with verbatim quotes, source links, and mode badges (N7)."""
     boot, _ = await fpl_client.get_bootstrap_static()
@@ -658,6 +658,27 @@ async def get_news_signals(
         "count": len(signals),
         "signals": signals,
     })
+
+
+@router.get("/decision-card")
+async def get_decision_card_endpoint():
+    """
+    Returns the comprehensive per-gameweek unified decision card (D1).
+    Reads from shared game state, projection snapshots, beam search transfers,
+    chip calendar, and joint rival simulation.
+    """
+    card = await decision_card_generator.generate_decision_card()
+    return safe_json_serialize(card)
+
+
+@router.get("/decision-card/export", response_class=PlainTextResponse)
+async def export_decision_card_endpoint():
+    """
+    Returns a printable plain text / markdown gameweek decision card (D2).
+    """
+    card = await decision_card_generator.generate_decision_card()
+    markdown_text = format_decision_card_markdown(card)
+    return PlainTextResponse(content=markdown_text, media_type="text/plain; charset=utf-8")
 
 
 @router.get("/briefing")

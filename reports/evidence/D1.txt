@@ -1,0 +1,14 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 3 items
+
+tests/test_decision_card.py::test_decision_card_generator_contract PASSED [ 33%]
+tests/test_decision_card.py::test_decision_card_api_endpoints PASSED     [ 66%]
+tests/test_decision_card.py::test_format_decision_card_markdown PASSED   [100%]
+
+======================== 3 passed in 75.54s (0:01:15) =========================
