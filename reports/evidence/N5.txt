@@ -1,0 +1,3 @@
+INFO: News Benchmark: 20/20 PASSED (100.0%)
+INFO: Injection Breaches: 0
+INFO: Results saved to C:\Users\anshw\Documents\fpl-expert\reports\news_benchmark_results.json

@@ -1,0 +1,12 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 10 items / 9 deselected / 1 selected
+
+tests/test_league_strategy_mc.py::test_joint_player_draws_and_clean_sheet_correlations PASSED [100%]
+
+======================= 1 passed, 9 deselected in 0.72s =======================

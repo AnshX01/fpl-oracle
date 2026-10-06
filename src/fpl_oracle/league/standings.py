@@ -1,6 +1,7 @@
 """
 Mini-league standings fetcher and parser.
 Paginates through classic leagues and extracts competitor rankings.
+Supports full multi-page pagination (up to 10 pages / 500 managers).
 """
 
 import logging
@@ -16,9 +17,10 @@ class LeagueStandingsManager:
     def __init__(self):
         pass
 
-    async def get_league_standings(self, league_id: int, max_pages: int = 3) -> dict[str, Any]:
+    async def get_league_standings(self, league_id: int, max_pages: int = 10) -> dict[str, Any]:
         """
-        Fetch standings for a classic mini-league up to max_pages (up to 150 teams).
+        Fetch standings for a classic mini-league up to max_pages (up to 500 teams).
+        Paginates until standings.has_next is False or max_pages is reached.
         """
         all_results: list[ClassicStandingResult] = []
         league_info: dict[str, Any] = {}
