@@ -7,17 +7,13 @@ Tests for Domain Foundations:
 - DataStore profile seeding from environment and no-overwrite.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
 
 from fpl_oracle.domain.manager_state import (
-    EffectiveManagerState,
-    ManagerMode,
     ManagerStateService,
-    PlayerSquadState,
-    PriceProvenance,
 )
 from fpl_oracle.domain.rules_service import RulesService
 from fpl_oracle.domain.scoring import (

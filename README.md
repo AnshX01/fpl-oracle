@@ -2,10 +2,10 @@
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests: Passing](https://img.shields.io/badge/Tests-77%20Passing-brightgreen.svg)]()
+[![Tests: Passing](https://img.shields.io/badge/Tests-105%20Passing-brightgreen.svg)]()
 [![2026/27 Rules: Verified](https://img.shields.io/badge/FPL%20Rules-2026%2F27%20Verified-orange.svg)]()
 
-> **FPL Oracle** is an autonomous, machine-learning-driven Fantasy Premier League decision engine and conversational AI expert designed to help managers dominate their mini-leagues. Running 100% locally on your machine, it couples a decomposed ML projection engine with a mixed-integer linear programming (MILP) transfer optimizer and Monte Carlo mini-league game theory.
+> **FPL Oracle** is an autonomous, machine-learning-driven Fantasy Premier League decision engine and conversational AI expert designed to help managers dominate their mini-leagues. Running 100% locally on your machine, it couples a decomposed ML projection engine with a stateful multi-gameweek beam-search transfer optimizer, correlated clean-sheet Monte Carlo simulation, and an Atlas/Council decision dashboard.
 
 ---
 
@@ -20,21 +20,25 @@
    - **5 Banked Free Transfers**: Maximum 4 extra transfers can be banked (up to 5 total).
    - **Defensive Contribution (DefCon)**: Outfield players (DEF, MID, FWD) meeting the defensive action threshold earn +2 bonus points.
    - **50% Selling Price Rule**: Correctly retains 50% of price gains rounded down.
-3. **Mathematical Transfer Optimizer & What-If Mode**:
-   - Formulated with PuLP (CBC MILP solver).
-   - Optimizes multi-gameweek transfer trajectories (1–5 GW horizon) accounting for banked transfers, chip interactions, and -4 hit break-even analysis.
-   - Full What-If simulation mode: lock in must-keep players, exclude force-sell players, or exclude entire clubs.
+3. **Stateful Transfer Optimizer & What-If Mode**:
+   - Implements sequential 5-GW beam search optimizer.
+   - Accurately tracks squad changes, bank balances, exact 50% profit selling prices, free transfer rollover (1–5 banked FTs), and club quotas.
+   - Computes future-hit avoidance, free transfer option values, and robustness re-ranking (win rate $\ge 0.70$) across projection noise.
+   - Full What-If simulation mode: lock in must-keep players, exclude force-sell players, or test price change sensitivities.
 4. **Flexible Team Input (Multiple Paths)**:
    - Automated ingestion via FPL Manager ID.
    - Manual entry via plain-text, CSV, or JSON paste / file upload with accent-insensitive fuzzy matching and alternative candidate confirmation UI.
 5. **Dynamic Chip Strategy Planner**:
    - Live Blank and Double Gameweek detector across all 38 gameweeks.
-   - Dynamic programming scheduler enforcing Set 1 GW19 hard expiry with opportunity cost warning, Set 2 planning, and chip synergies (e.g., Wildcard before Bench Boost).
-6. **Mini-League Game Theory**:
-   - Effective Ownership (EO) calculation across rivals.
-   - 500-iteration Monte Carlo stochastic championship simulator computing $P(\text{1st})$ and final rank distributions.
-   - Dynamic risk advisor: "Defending Lead" (template coverage, floor maximization) vs. "Chasing Pack" (differential variance, ceiling maximization).
-7. **Multi-Turn Conversational Expert**:
+   - Evaluates multi-GW incremental benefit against a no-chip baseline, enforcing Set 1 GW19 hard expiry and uncertainty gating.
+6. **Mini-League Game Theory & Correlated Monte Carlo**:
+   - Paginates up to 10 pages (500 teams) with proximity-based rival selection (all teams ahead + within 30 points below).
+   - Monte Carlo stochastic simulator sampling shared players once per trial and sharing correlated clean-sheet Bernoulli draws (+4 pts) across club defenders.
+   - Dynamic risk advisor: "Defending Lead" vs. "Chasing Pack" bounded tie-breakers.
+7. **Per-Gameweek Unified Decision Card**:
+   - Unified battle plan served via `/api/decision-card` and exportable markdown `/api/decision-card/export`.
+   - Combines Starting XI, captain/vice-captain, transfer trajectory, chip recommendations, rival proximity context, win probabilities, and tactical caveats.
+8. **Multi-Turn Conversational Expert**:
    - Tool-calling agent capable of running projections, chip plans, transfer optimizations, and rival scouting on demand.
    - Provider-agnostic: Supports Google Gemini (default), OpenAI, Anthropic, or an offline rule-based expert engine.
 
@@ -274,7 +278,17 @@ ALL CHECKS PASSED: FPL ORACLE IS FULLY OPERATIONAL!
 
 ---
 
+## 🔍 Honest Limitations & Caveats
+
+In accordance with the project's evidence-gated engineering standards:
+1. **Unconstrained Model Learning**: Fixture difficulty, opponent defensive form, and team strength are provided strictly as continuous ML features. No hard constraints, arbitrary floors, or artificial point caps are placed on elite players.
+2. **Headless Environment Limitation**: When running in headless terminal environments without display servers or browser automation frameworks (Playwright/Selenium), real browser screenshot rasterization cannot be visually captured; all FastAPI REST endpoints, static assets, and Vue components are verified programmatically.
+3. **Free-Tier Boundaries**: Google Gemini integration operates under strict local daily request (150/day) and token budget limits (500k tokens/day). If unconfigured or exhausted, the system seamlessly falls back to deterministic official FPL API availability.
+
+---
+
 ## 📜 Documentation & Decisions
 
 - See [SETUP.md](file:///C:/Users/anshw/Documents/fpl-expert/SETUP.md) for full setup instructions, API key provisioning, and troubleshooting.
 - See [DECISIONS.md](file:///C:/Users/anshw/Documents/fpl-expert/DECISIONS.md) for detailed rationale on official rule constraints, mathematical formulations, and top limitations.
+- See [reports/repair_audit.md](file:///C:/Users/anshw/Documents/fpl-expert/reports/repair_audit.md) and [reports/gap_closure.md](file:///C:/Users/anshw/Documents/fpl-expert/reports/gap_closure.md) for complete verification audit trails.

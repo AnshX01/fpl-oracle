@@ -59,6 +59,7 @@ def check_git_tracked_files() -> list[str]:
             capture_output=True,
             text=True,
             check=True,
+            shell=True,
         )
         tracked_files = res.stdout.strip().splitlines()
         for f in tracked_files:
@@ -96,19 +97,25 @@ def check_file_contents(file_path: Path) -> list[tuple[int, str, str]]:
 def scan_working_tree() -> list[str]:
     """Scan all tracked and candidate files in repo."""
     findings = []
-    for p in REPO_ROOT.rglob("*"):
-        if p.is_dir():
-            continue
-        if any(ignored in p.parts for ignored in IGNORED_DIRS):
-            continue
-        # Skip binary files, data/historical CSVs, and model pickles
-        if p.suffix in {".pkl", ".csv", ".ico", ".png", ".jpg", ".pyc"}:
-            continue
-
-        results = check_file_contents(p)
-        for line_num, desc, snippet in results:
-            rel_path = p.relative_to(REPO_ROOT)
-            findings.append(f"Secret detected in {rel_path}:{line_num} ({desc}) -> {snippet}")
+    try:
+        res = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+            shell=True,
+        )
+        files = res.stdout.strip().splitlines()
+        for f in files:
+            p = REPO_ROOT / f
+            if p.suffix in {".pkl", ".csv", ".ico", ".png", ".jpg", ".pyc", ".db", ".sqlite"}:
+                continue
+            results = check_file_contents(p)
+            for line_num, desc, snippet in results:
+                findings.append(f"Secret detected in {f}:{line_num} ({desc}) -> {snippet}")
+    except Exception as e:
+        print(f"[WARN] Could not scan files: {e}")
     return findings
 
 

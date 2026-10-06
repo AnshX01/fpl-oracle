@@ -241,16 +241,30 @@ class ModelRegistry:
                 f"({base_mae:.3f} + {tolerance}). Automatic rollback engaged."
             )
             logger.warning(f"[ModelRollback] {reason}")
-            data_store.save_model_version(
-                version=rej_tag,
-                ml_mae=cand_mae,
-                ml_spearman=candidate_metrics["ml_spearman"],
-                base_mae=base_mae,
-                status="rejected_inferior_to_baseline",
-                is_active=False,
-                notes=reason,
+            manifest = self.load_manifest()
+            manifest.setdefault("versions", []).append(
+                {
+                    "version": rej_tag,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "ml_mae": cand_mae,
+                    "ml_spearman": candidate_metrics.get("ml_spearman", 0.0),
+                    "base_mae": base_mae,
+                    "status": "rejected_inferior_to_baseline",
+                    "notes": reason,
+                }
             )
-            return {"promoted": False, "reason": reason, "version": rej_tag}
+            self.save_manifest(manifest)
+
+            return {
+                "promoted": False,
+                "status": "rolled_back",
+                "reason": reason,
+                "version": rej_tag,
+                "active_version": active_ver_name,
+                "active_mae": active_mae,
+                "candidate_mae": cand_mae,
+                "rejected_version": rej_tag,
+            }
 
         # Rollback check vs active production model
         if active_mae is not None and cand_mae > (active_mae + tolerance):

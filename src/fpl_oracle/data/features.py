@@ -6,7 +6,6 @@ continuous implied match xG / CS probabilities, and rare component features.
 
 import hashlib
 import logging
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -437,8 +436,8 @@ class FeatureEngineering:
             s_str = str(season)
             group_keys = ["round", "kickoff_time"] if "kickoff_time" in s_df.columns else ["round"]
             for _, m_df in s_df.groupby(group_keys):
-                home = m_df[m_df["was_home"] == True]
-                away = m_df[m_df["was_home"] == False]
+                home = m_df[m_df["was_home"].astype(bool)]
+                away = m_df[~m_df["was_home"].astype(bool)]
                 if len(home) == 1 and len(away) == 1:
                     try:
                         h_team = str(home.iloc[0]["team"])
@@ -499,14 +498,12 @@ class FeatureEngineering:
         opp_id_to_team_map, team_to_opp_id_map = self.build_team_id_maps(df)
 
         fallback_count = 0
-        total_rows = len(df)
 
         # Build team & opponent match features
         att_strengths = []
         def_strengths = []
         net_diffs = []
         opp_diffs = []
-        days_rest_list = []
 
         implied_team_xg_list = []
         implied_team_cs_list = []

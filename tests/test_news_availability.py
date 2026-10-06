@@ -318,7 +318,6 @@ def test_controlled_mock_xp_shadow_vs_gated_active():
     1. Changes xP to 0.0 in gated_active mode (candidate evidence applied to production).
     2. Leaves xP completely unchanged in shadow mode (official baseline preserved).
     """
-    from fpl_oracle.data.features import feature_engineering
     from fpl_oracle.ml.ensemble import scoring_ensemble
 
     shadow_reconciler = AvailabilityReconciler(mode="shadow")

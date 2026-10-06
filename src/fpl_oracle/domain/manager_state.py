@@ -6,13 +6,12 @@ lineups, and manual overrides across all endpoints, tools, and optimizers.
 
 import json
 import logging
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
 import pandas as pd
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("fpl_oracle.domain.manager_state")
 
@@ -218,7 +217,7 @@ class ManagerStateService:
                 if el_in is not None:
                     transfers_by_elem.setdefault(el_in, []).append(t)
 
-        for el_in, t_list in transfers_by_elem.items():
+        for _el_in, t_list in transfers_by_elem.items():
             t_list.sort(
                 key=lambda item: (
                     getattr(item, "event", 0) if not isinstance(item, dict) else item.get("event", 0),
@@ -440,7 +439,6 @@ class ManagerStateService:
 
         # Chip sets calculation
         all_chips = ["wildcard", "freehit", "3xc", "bboost"]
-        used_chip_names = [c.get("name", "").lower() for c in chips_used_list]
         rem_set_1 = [c for c in all_chips if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) <= 19]]
         rem_set_2 = [c for c in all_chips if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) > 19]]
 

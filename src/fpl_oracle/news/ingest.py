@@ -68,7 +68,7 @@ def is_safe_external_url(url: str, resolve_dns: bool = True) -> bool:
                 addr_info = socket.getaddrinfo(hostname, None)
                 if not addr_info:
                     return False
-                for family, _, _, _, sockaddr in addr_info:
+                for _family, _, _, _, sockaddr in addr_info:
                     ip_str = sockaddr[0]
                     if not is_safe_ip(ip_str):
                         return False

@@ -7,8 +7,9 @@ Verifies:
 4. Unsupported/unknown queries return explicit uncertainty ('I don't know' / 'No reliable signals').
 """
 
-import pytest
 import time
+
+import pytest
 
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.llm.agent import expert_agent

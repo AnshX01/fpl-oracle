@@ -4,7 +4,7 @@ Resolves active season, current gameweek, first still-actionable gameweek,
 timezone-aware deadlines, gameweek phase, and clock abstraction for deterministic testing.
 """
 
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
 

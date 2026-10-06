@@ -1,179 +1,108 @@
-# FPL Oracle — Comprehensive Correctness Repair & UI Redesign Audit Report
+# FPL Oracle — Comprehensive Targeted Fix Pass & Integrity Audit Report
 
 **Report Generated**: 2026-10-06  
-**Target Environment**: Windows PowerShell (Local Loopback `127.0.0.1:8000`)  
+**Audited Baseline Commit**: `37ac87da281f4f723ee3e708178dcff402afbddc`  
 **Package Version**: `fpl-oracle` v1.0.0  
-**Test Suite Verdict**: **61 / 61 PASSED (100%)**  
+**Target Environment**: Windows PowerShell (Local Loopback `127.0.0.1:8000`)  
+**Test Suite Verification**: **105 / 105 PASSED (100%)**  
+**Evaluation Standard**: Rule 0.1 Strict Evidence-Gated Ledger (Backed by saved logs in `reports/evidence/`)
 
 ---
 
 ## 1. Executive Summary
 
-This audit package documents the one-shot correctness repair and Atlas/Council redesign of **FPL Oracle** (`fpl-expert`). Every architectural defect, mathematical error, training-serving mismatch, and user interface gap identified in the repository code review has been resolved, independently verified, and backed by automated regression tests.
+This report documents the exhaustive, evidence-gated resolution of all weaknesses and unverified claims previously identified in **FPL Oracle**. In strict compliance with the project's **Zero Fabrication** mandate (Rule 0.1 and Rule 0.2), every single item in this pass has been either fixed and verified with code and automated tests, or measured out-of-time and documented with exact empirical numbers.
 
 ### Key Milestones Completed:
-1. **Mathematical & ML Foundations Repaired**:
-   - Eliminated synthetic formula bands and fabricated rolling-origin tables; replaced with genuine temporal cross-validation on 89,141 historical match records across 2024–25, 2025–26, and 2026–27.
-   - Retrained production model suite achieving **1.046 holdout MAE** (beating the 1.083 heuristic baseline) and **0.706 Spearman rank correlation**.
-   - Fixed disciplinary card targets (`yellow*1 + red*3`), resolved training-serving feature lookups, and implemented out-of-fold isotonic probability calibrations (`KFold(3)`).
-2. **Optimization & Decision Engines Reconciled**:
-   - Fixed 50% profit selling price accounting in `transfers.py` ($P_{\text{sell}} = P_{\text{purchase}} + \lfloor (P_{\text{current}} - P_{\text{purchase}}) / 2 \rfloor$).
-   - Eliminated headline double-counting by explicitly separating Starting XI predicted points from the Captaincy bonus multiplier.
-   - Removed arbitrary chip gain floors (`+6.5`, `+8.0`, `14.0`) and enforced the strict 2026/27 Gameweek 19 Set 1 chip cutoff.
-   - Fixed common-player independence and hardcoded `rank=1` bugs in mini-league Monte Carlo simulations.
-3. **Unified Manager State Architecture**:
-   - Created `EffectiveManagerState` and domain services (`TimeService`, `RulesService`, `ScoringService`) as the single source of truth across `/squad`, `/optimize`, `/chips`, and `/league`.
-4. **Atlas / Council UI Redesign**:
-   - Restructured interface into 4 everyday destinations: **Overview**, **My team**, **Transfers**, **My league**.
-   - Built Council decision card pattern (*Your Next Decision*) with bold headline, key metrics, 2 supporting reasons, and caveats.
-   - Replaced cryptic acronyms with plain-English terminology (*Predicted points*, *Lower/higher outcome estimates*, *Defensive contribution points*).
-   - Bundled all runtime dependencies (`tailwind.js`, `vue.global.prod.js`, `marked.min.js`, `purify.min.js`) locally in `web/static/js/`, eliminating CDN failure risks.
-   - Sanitized all rendered Markdown with `DOMPurify`.
-   - Built light and dark theme modes with persistent local storage.
-5. **Everyday Windows Experience**:
-   - Delivered `start.ps1` with port conflict detection, health polling, process-scoped execution, and browser launch.
-   - Implemented `run.py cli` command dispatch for Typer terminal interaction.
-   - Published `USER_GUIDE.md` with zero-key instructions and gameweek workflows.
+1. **Model Integrity & Training Hygiene (M1–M8)**:
+   - Purged all hardcoded metrics dictionaries and canned upcoming projection samples from `src/fpl_oracle/ml/train.py`.
+   - Executed dynamic out-of-time feature ablation measuring a **17.14% MAE reduction** when including fixture and opponent strength features.
+   - Built bidirectional season-scoped opponent ID mapping from `master_history.csv` + bootstrap data, eliminating fallback to neutral priors during model training.
+   - Restored authentic train/serve parity across all 62 canonical features, including dynamic `days_rest` calculation from fixture timestamps.
+   - Fixed disciplinary card target sorting misalignment via synchronous indexing and composite `(player_id, round)` keys.
+   - Fitted empirical residual quantile calibration on disjoint out-of-fold data, achieving **78.74%** empirical coverage for nominal 80% credible intervals.
+2. **Availability & News Reconciliation Pipeline (N1–N8)**:
+   - Directly wired reconciled availability probabilities into the feature extraction kernel and projection engine.
+   - Implemented and verified strict operational isolation: `shadow` mode preserves official baseline projections, while `gated_active` modulates expected minutes and xP only upon verified press evidence.
+   - Replaced handpicked probability numbers with configurable named settings (`FPLSettings`).
+   - Delivered executable 20-case adversarial benchmark runner (`scripts/run_news_benchmark.py`): **20/20 passed (100%)**, zero prompt injection breaches.
+   - Hardened external URL fetching with DNS-resolving SSRF protection against loopback, private RFC-1918, and cloud metadata addresses.
+   - Rendered verbatim manager quotes and source links in the UI with DOMPurify sanitization.
+   - Purged dead and inert API keys (`TAVILY_API_KEY`, `BRAVE_API_KEY`, `ODDS_API_KEY`).
+3. **Stateful Transfer Optimization (T1–T9)**:
+   - Built stateful 5-GW beam search optimizer tracking complete squad state, bank balance, exact 50% profit selling prices ($P_{\text{sell}} = P_{\text{purchase}} + \lfloor (P_{\text{now}} - P_{\text{purchase}}) / 2 \rfloor$), free transfer banking (up to 5 FTs), and club quotas.
+   - Added future-hit avoidance calculation, free-transfer option value estimation, robustness re-ranking across projection noise (win rate $\ge 0.70$), price change sensitivity toggle, plan stability thresholds, and dynamic roadmap generation with zero canned text.
+4. **Mini-League Game Theory & Rivals (R1–R4, W1–W3)**:
+   - Implemented paginated mini-league standings (up to 10 pages / 500 teams) with proximity-based rival selection (all teams ahead + within 30 points below).
+   - Upgraded stochastic mini-league simulation to sample common players once per trial and share team-level Bernoulli clean sheet draws (+4 pts) across club defenders.
+   - Modeled rival transfer and captaincy behavior with transparent assumptions; validated on historical gameweeks with a mean Brier score of **0.0677**.
+5. **Multi-GW Chip Calendar (C1–C4)**:
+   - Built multi-GW chip calendar evaluating incremental benefit against a no-chip baseline.
+   - Enforced Set 1 Gameweek 19 hard deadline cutoff and uncertainty gating (+3.0 net xP threshold).
+   - Integrated rival remaining chips tracking into simulation scenarios.
+6. **Unified Per-GW Decision Card (D1–D3, Q2)**:
+   - Built unified `/api/decision-card` and `/api/decision-card/export` endpoints delivering a comprehensive gameweek battle plan.
+   - Automated cross-surface recommendation consistency test (`tests/test_recommendation_consistency.py`) confirming 100% agreement between Decision Card, Squad workbench, Transfer optimizer, and Chip engine.
 
 ---
 
-## 2. Minimum Audit Traceability Table
+## 2. Complete Traceability Matrix (M1 – Q4)
 
-| ID | Requirement | Status | Changed Files | Regression Tests & Verification Commands | Evidence & Outcome |
-|---|---|---|---|---|---|
-| **START-01** | One-command Windows launch | `PASS` | `start.ps1`, `USER_GUIDE.md` | `powershell -ExecutionPolicy Bypass -File .\start.ps1 -SetupOnly` | Code 0; verifies .venv, packages, port check, health poll. |
-| **STATE-01** | Environment IDs seed saved profile | `PASS` | `data/store.py`, `domain/manager_state.py` | `pytest tests/test_domain_foundations.py -k test_effective_manager_state` | Seeds blank profiles without overwriting saved manual overrides. |
-| **STATE-02** | Resume keeps history/team/decisions | `PASS` | `data/store.py`, `data/profile.json` | `pytest tests/test_domain_foundations.py` | SQLite persistence with synchronized `profile.json` verified. |
-| **STATE-03** | Single manager-state service everywhere | `PASS` | `domain/manager_state.py`, `server/routes/api.py` | `pytest tests/test_domain_foundations.py tests/test_optimizer.py` | `/squad`, `/optimize`, `/chips`, `/league` consume `EffectiveManagerState`. |
-| **XP-01** | Headline arithmetic and horizon | `PASS` | `optimise/lineup.py`, `web/index.html` | `pytest tests/test_optimizer.py -k test_lineup_and_captain_selection` | Starting XI points + Extra captain bonus separated in API and UI. |
-| **XP-02** | Correct scoring and labels | `PASS` | `domain/scoring.py`, `ml/components/cards_saves.py` | `pytest tests/test_domain_foundations.py tests/test_rules_checker.py` | Ground truth cards target (`yellow + red*3`); DefCon +2 rules verified. |
-| **FEAT-01** | Train/serve parity | `PASS` | `data/features.py` | `pytest tests/test_leakage.py` | Rolling match lookups match training representations; no static leakage. |
-| **EVAL-01** | Real chronological evaluation | `PASS` | `ml/eval.py`, `ml/train.py` | `pytest tests/test_leakage.py` | Holdout MAE: 1.046 vs baseline 1.083 across 3 seasons (89,141 records). |
-| **EVAL-02** | Honest calibration / verdict | `PASS` | `ml/components/minutes.py`, `defcon.py` | `pytest tests/test_leakage.py` | `KFold(3)` out-of-fold isotonic calibration verified. |
-| **MODEL-01** | Safe promotion / rollback | `PASS` | `ml/model_registry.py` | `pytest tests/test_leakage.py` | Version 2026.09.28 promoted to production; rollback schema active. |
-| **OPT-01** | Stateful feasible transfers | `PASS` | `optimise/transfers.py` | `pytest tests/test_optimizer.py tests/test_optimizer_properties.py` | 50% profit selling prices enforced; banked 1–5 FTs verified. |
-| **LEAGUE-01** | Real squad/rank and valid simulation | `PASS` | `league/montecarlo.py`, `server/routes/api.py` | `pytest tests/test_league_strategy_mc.py` | Common player draw lookup applied; hardcoded `user_rank=1` removed. |
-| **CHIP-01** | Valid windows and gains | `PASS` | `chips/planner.py`, `chips/simulate.py` | `pytest tests/test_chips.py` | Arbitrary floors removed; GW19 Set 1 cutoff enforced. |
-| **SYNC-01** | Trigger / status / SSE works | `PASS` | `server/pipeline.py`, `server/routes/api.py` | `pytest tests/test_scheduler.py` | `POST /api/sync/trigger` returns run ID; SSE stream is observation-only. |
-| **JOB-01** | Retrain and jobs correct | `PASS` | `server/jobs.py` | `pytest tests/test_scheduler.py` | `get_event_status()` tuple unpacking fixed; all 6 tests pass. |
-| **KEY-01** | Optional / no-key behaviour | `PASS` | `llm/provider.py`, `llm/agent.py` | `pytest tests/test_chat_grounding.py` | Zero-key mode operates with local tools; provider precedence respected. |
-| **NEWS-01** | Real sources and bounded adapters | `PASS` | `news/ingest.py` | `pytest tests/test_chat_grounding.py` | Official FPL flags & RSS feeds ingested; placeholder claims removed. |
-| **UI-01** | Reference-grounded redesign | `PASS` | `web/index.html`, `atlas.css`, `app.js` | Browser inspection | 4 destinations, Council decision card, pitch board, Light/Dark toggle. |
-| **UI-02** | Plain-language usable screens | `PASS` | `web/index.html`, `web/static/js/app.js` | Browser inspection | Predicted points, outcome estimates, DefCon tooltip, math breakdown. |
-| **SEC-01** | Local security and no secrets | `PASS` | `server/main.py`, `web/static/js/app.js` | `pytest tests/test_safe_json.py` | Loopback CORS enforced; DOMPurify markdown sanitization; clean .env. |
-| **DOC-01** | Documentation matches implementation | `PASS` | `run.py`, `USER_GUIDE.md`, audit files | `python run.py cli --help` | `run.py cli` active; USER_GUIDE and audit reports published. |
-
----
-
-## 3. Individual Traceability for All 17 Original Defects
-
-### Defect 1: Fake Rolling-Origin Evaluation Metrics in `eval.py`
-- **Original Bug**: `eval.py` fabricated split metrics using hardcoded formula bands (`mae = 1.05 + 0.05 * i`) instead of computing actual empirical errors on out-of-time splits.
-- **Resolution**: Rebuilt `eval.py` to evaluate LightGBM models against true temporal holdouts. Evaluated 89,141 match rows across 2024–25, 2025–26, and 2026–27. Production holdout MAE is **1.046** (beating the naive form baseline of 1.083). Artifacts persisted to `reports/model_eval.json` and `reports/model_eval.md`.
-- **Status**: `FIXED` (`src/fpl_oracle/ml/eval.py`, `src/fpl_oracle/ml/train.py`).
-
-### Defect 2: Train-Serve Feature Mismatch in `features.py`
-- **Original Bug**: Serving feature generation used static current-season averages with fixed denominators, while training extracted rolling match histories.
-- **Resolution**: Refactored `features.py` to use authentic rolling match lookups (`lookback=5`) and Bayesian position priors. Added `return_meta` flag and `X.attrs["meta"]` to preserve player metadata without column index collisions.
-- **Status**: `FIXED` (`src/fpl_oracle/data/features.py`, verified in `tests/test_leakage.py`).
-
-### Defect 3: In-Sample Probability Calibration in `defcon.py` & `minutes.py`
-- **Original Bug**: Isotonic calibration was fitted on the entire training set, leaking target distributions into probability estimates.
-- **Resolution**: Implemented out-of-fold calibration using `KFold(n_splits=3, shuffle=True, random_state=42)`. Predictions are calibrated strictly out-of-fold before final estimator fitting.
-- **Status**: `FIXED` (`src/fpl_oracle/ml/components/minutes.py`, `defcon.py`).
-
-### Defect 4: Card Target Miscalculation in `cards_saves.py`
-- **Original Bug**: Card deduction target was trained on raw count rather than disciplinary points, inflating penalty expectations.
-- **Resolution**: Re-indexed card deduction target to ground-truth FPL points deducted: `yellow_cards * 1.0 + red_cards * 3.0`.
-- **Status**: `FIXED` (`src/fpl_oracle/ml/components/cards_saves.py`).
-
-### Defect 5: Selling Price Accounting Bug in `transfers.py`
-- **Original Bug**: Optimizer used market value (`now_cost`) rather than liquidation value (`selling_price`), overestimating available transfer budget by up to £1.5m+.
-- **Resolution**: Enforced Premier League 50% rise rule: $\text{selling\_price} = \text{purchase\_price} + \lfloor (\text{now\_cost} - \text{purchase\_price}) / 2 \rfloor$. Optimization budgets are computed strictly using `selling_price`.
-- **Status**: `FIXED` (`src/fpl_oracle/optimise/transfers.py`, verified in `tests/test_optimizer.py`).
-
-### Defect 6: Fragmented Manager State Across Endpoints
-- **Original Bug**: `/squad`, `/optimize`, `/chips`, and `/league` each parsed user bank, free transfers, and squad picks independently, leading to state divergences.
-- **Resolution**: Created `EffectiveManagerState` and `manager_state_service` as the single source of truth. All endpoints invoke `await manager_state_service.get_current_state()`.
-- **Status**: `FIXED` (`src/fpl_oracle/domain/manager_state.py`, `src/fpl_oracle/server/routes/api.py`).
-
-### Defect 7: Lineup Captain Bonus Double-Counting
-- **Original Bug**: Total expected points summed 11 starters plus captain doubled without subtracting the captain's base score, artificially inflating headline xP into the 60s/70s.
-- **Resolution**: Reconciled arithmetic: `total_gameweek_expected_points = starters_expected_points + captain_bonus_expected_points`. Both numbers are exposed in API payloads and UI breakdowns.
-- **Status**: `FIXED` (`src/fpl_oracle/optimise/lineup.py`, `src/fpl_oracle/server/routes/api.py`).
-
-### Defect 8: Arbitrary Chip Gain Floors in `simulate.py`
-- **Original Bug**: Wildcard simulation hardcoded an artificial floor `max(14.0, ...)`, forcing unjustified chip recommendations.
-- **Resolution**: Removed arbitrary floors; chip utility is computed strictly from empirical simulated squad points uplift over the legal no-chip baseline.
-- **Status**: `FIXED` (`src/fpl_oracle/chips/simulate.py`, `tests/test_chips.py`).
-
-### Defect 9: Chip Planner Missing Set 1 Hard Cutoff (GW19)
-- **Original Bug**: Set 1 chips were permitted to schedule into Gameweeks 20–38.
-- **Resolution**: Enforced strict 2026/27 dual-set rules. Set 1 chips are hard-constrained to Gameweek 19 or earlier; unused Set 1 chips permanently expire and do not roll over.
-- **Status**: `FIXED` (`src/fpl_oracle/chips/planner.py`, verified in `tests/test_chips.py`).
-
-### Defect 10: Mini-League Simulation Independence & `rank=1` Bug
-- **Original Bug**: `league/montecarlo.py` drew shared player points independently (e.g. Haaland scoring different points for user vs rival in the same fixture), and `/api/league` hardcoded `user_rank=1`.
-- **Resolution**: Implemented common-player matchday draw table so a player's points are identical across all owning managers. Dynamic `user_rank` extracted from league standings table.
-- **Status**: `FIXED` (`src/fpl_oracle/league/montecarlo.py`, `src/fpl_oracle/server/routes/api.py`).
-
-### Defect 11: Scheduler `get_event_status()` Tuple Access Bug in `jobs.py`
-- **Original Bug**: `fpl_client.get_event_status()` returns a tuple `(data, is_stale)`, but `jobs.py` accessed it directly as a dictionary, causing runtime `AttributeError`.
-- **Resolution**: Corrected tuple unpacking and dictionary extraction in `jobs.py`.
-- **Status**: `FIXED` (`src/fpl_oracle/server/jobs.py`, verified in `tests/test_scheduler.py`).
-
-### Defect 12: Missing `POST /api/sync/trigger` Endpoint & SSE Coupling
-- **Original Bug**: Triggering synchronization required opening an SSE connection; client disconnect terminated the analysis.
-- **Resolution**: Added documented `POST /api/sync/trigger` returning a unique run ID. `GET /api/sync/stream` is purely observational and does not terminate the background run on disconnect.
-- **Status**: `FIXED` (`src/fpl_oracle/server/pipeline.py`, `src/fpl_oracle/server/routes/api.py`).
-
-### Defect 13: Missing `run.py cli` Implementation
-- **Original Bug**: Documented `python run.py cli <command>` failed with an "Unknown command" error.
-- **Resolution**: Implemented `cmd_cli(cli_args)` in `run.py` routing directly to Typer CLI application.
-- **Status**: `FIXED` (`run.py`, verified via `python run.py cli --help`).
-
-### Defect 14: CORS Wildcard `*` Security Vulnerability
-- **Original Bug**: CORS allowed all origins with `allow_origins=["*"]`.
-- **Resolution**: Restricted allowed origins to loopback localhost origins: `http://localhost:8000`, `http://127.0.0.1:8000`, `http://localhost:3000`, `http://127.0.0.1:3000`.
-- **Status**: `FIXED` (`src/fpl_oracle/server/main.py`).
-
-### Defect 15: Hardcoded LLM Precedence Overriding User Preference
-- **Original Bug**: `provider.py` checked Gemini first regardless of user profile configuration.
-- **Resolution**: Refactored provider resolution to respect `profile.llm_provider` preference; implemented dynamic budget parsing and dynamic system prompt.
-- **Status**: `FIXED` (`src/fpl_oracle/llm/provider.py`, `tests/test_chat_grounding.py`).
-
-### Defect 16: Unwired Search & Odds Placeholder Keys
-- **Original Bug**: Settings implied active Tavily/Brave/Odds integrations when no runtime code was wired.
-- **Resolution**: Replaced placeholder badges with honest status; clarified that core predictions and optimizations operate 100% locally with zero external keys.
-- **Status**: `FIXED` (`src/fpl_oracle/llm/provider.py`, `USER_GUIDE.md`).
-
-### Defect 17: Inadequate XSS Escaping of Rendered Markdown
-- **Original Bug**: Markdown was rendered directly to `innerHTML` without sanitization.
-- **Resolution**: Integrated `DOMPurify` to sanitize all rendered HTML across briefing, review, and chat drawers. Bundled `purify.min.js` locally.
-- **Status**: `FIXED` (`web/static/js/purify.min.js`, `web/static/js/app.js`).
+| ID | Category | Requirement Description | Status | Evidence File | Verified Outcome |
+|:---|:---|:---|:---:|:---|:---|
+| **M1** | Model Integrity | Remove fabricated metrics & upcoming projection samples | **PASS** | `reports/evidence/M1.txt` | Hardcoded dicts deleted; metrics computed dynamically from training run. |
+| **M2** | Model Integrity | One honest evaluation, GW-boundary split, manifest gate | **PASS** | `reports/evidence/M2.txt` | Single evaluation JSON; temporal GW split; baseline-superiority promotion gate. |
+| **M3** | Model Integrity | Real rolling-origin table by global gameweek | **PASS** | `reports/evidence/M3.txt` | Real temporal evaluation table across historical and 2026-27 origins evaluated against identical rows. |
+| **M4** | Model Integrity | Opponent feature fix: resolve numeric opponent IDs | **PASS** | `reports/evidence/M4.txt` | Bidirectional ID-to-team map created; eliminates fallback to neutral priors across 89,141 rows. |
+| **M5** | Model Integrity | Live train/serve parity across all 62 columns & days_rest | **PASS** | `reports/evidence/M5.txt` | 62/62 column train/serve parity verified across single, blank, and double GWs. Dynamic `days_rest`. |
+| **M6** | Model Integrity | Fix disciplinary card label sorting/index misalignment | **PASS** | `reports/evidence/M6.txt` | Targets aligned synchronously by `(player_id, round)` keys. Alpha/Zulu and randomized tests pass. |
+| **M7** | Model Integrity | Calibrated uncertainty intervals ($P_{10}$ / $P_{90}$) | **PASS** | `reports/evidence/M7.txt` | Residual quantile calibration achieves **78.74%** coverage for nominal 80% interval. |
+| **M8** | Model Integrity | Dynamic feature ablation & purge inert odds claims | **PASS** | `reports/evidence/M8.txt` | Two-pass feature ablation shows **17.14% MAE reduction** with fixture features. Odds claims purged. |
+| **N1** | News / Availability | Wire Gemini/reconcile directly into extraction & predict | **PASS** | `reports/evidence/N1.txt` | Reconciled availability probabilities passed into `extract_live_features_for_upcoming()` and `predict.py`. |
+| **N2** | News / Availability | Operational modes: shadow vs gated_active vs off | **PASS** | `reports/evidence/N2.txt` | Controlled mock test proves injury quote adjusts xP in `gated_active` and preserves baseline in `shadow`. |
+| **N3** | News / Availability | Replace handpicked reconcile probabilities with settings | **PASS** | `reports/evidence/N3.txt` | Named settings in `FPLSettings` (`CONFIRMED_FIT_PROB`, `DOUBTFUL_PROB`, etc.) with documented defaults. |
+| **N4** | News / Availability | Adapter schema unification, full roster batching | **PASS** | `reports/evidence/N4.txt` | Unified element/team ID types, full roster batching, strict budget boundary checks. |
+| **N5** | News / Availability | Executable 20-case adversarial benchmark runner | **PASS** | `reports/evidence/N5.txt` | `scripts/run_news_benchmark.py`: 20/20 cases passed (100%), 0 injection breaches. |
+| **N6** | News / Availability | DNS-resolving SSRF protection & manual redirect check | **PASS** | `reports/evidence/N6.txt` | Hostnames resolved via DNS; private, loopback, and metadata IPs blocked on all hops. |
+| **N7** | News / Availability | Render verbatim quotes and source links in web UI | **PASS** | `reports/evidence/N7.txt` | Verbatim quote text, source URL, applied mode badge, and minutes delta rendered with DOMPurify. |
+| **N8** | News / Availability | Remove inert search & odds keys from config | **PASS** | `reports/evidence/N8.txt` | Purged `TAVILY_API_KEY`, `BRAVE_API_KEY`, `ODDS_API_KEY` from config and environment templates. |
+| **T1** | Transfers | Stateful sequential multi-GW optimizer (horizon 5) | **PASS** | `reports/evidence/T1.txt` | 5-GW beam search tracking squad, bank, exact 50% selling prices, 1-5 banked FTs, hits (-4), and club limits. |
+| **T2** | Transfers | Compare roll, 1 transfer, 2+ transfers, hits | **PASS** | `reports/evidence/T2.txt` | Evaluates candidate branches across identical 5-GW horizon with gross xP, hits, and net gain vs roll. |
+| **T3** | Transfers | Future-hit avoidance derived from trajectories | **PASS** | `reports/evidence/T3.txt` | Compares multi-GW trajectory against greedy single-GW move; quantifies future hits saved. |
+| **T4** | Transfers | Free-transfer option value from horizon simulation | **PASS** | `reports/evidence/T4.txt` | Mathematically computes FT option value from horizon search comparing baseline FT with FT+1. |
+| **T5** | Transfers | Robustness re-ranking and no-regret move marking | **PASS** | `reports/evidence/T5.txt` | Evaluates 50 Monte Carlo projection noise trials; flags no-regret move present in $\ge 70\%$ of plans. |
+| **T6** | Transfers | Probabilistic price change sensitivity toggle | **PASS** | `reports/evidence/T6.txt` | Supports `include_price_gain=False/True`, isolating pure xP gain from price movements. |
+| **T7** | Transfers | Dynamic roadmap generated from actual trajectory | **PASS** | `reports/evidence/T7.txt` | Generates dynamic 5-GW roadmap from trajectory player picks, fixtures, and DGW/BGW tags. Zero canned text. |
+| **T8** | Transfers | Plan stability threshold for changing top move | **PASS** | `reports/evidence/T8.txt` | Configurable stability threshold (0.30 xP) prevents transfer churning on marginal differences. |
+| **T9** | Transfers | Offline deterministic transfer test suite | **PASS** | `reports/evidence/T9.txt` | 11/11 deterministic tests pass in `tests/test_optimizer.py` verifying T1-T8 invariants. |
+| **R1** | Rivals & League | Paginate full standings & proximity-based rivals | **PASS** | `reports/evidence/R1.txt` | Paginates up to 10 pages (500 teams); rivals = all managers ahead + within 30 points below. |
+| **R2** | Rivals & League | Published rival details: EO, exposure, chips used/left | **PASS** | `reports/evidence/R2.txt` | Calculates started %, captained %, effective ownership %, user net exposure, and tracks 2026/27 dual-set chips. |
+| **R3** | Rivals & League | Observed vs estimated: upcoming picks marked unknown | **PASS** | `reports/evidence/R3.txt` | Pre-deadline picks marked `OBSERVED_PRIOR_GW` with `upcoming_transfers_known=False` and UI notice. |
+| **R4** | Rivals & League | Risk posture (chase/protect/balanced) as tie-breaker | **PASS** | `reports/evidence/R4.txt` | Posture operates strictly as a bounded tie-breaker within 0.50 xP; never overrides ML rankings. |
+| **C1** | Chip Strategy | Multi-GW chip calendar with benefit vs baseline | **PASS** | `reports/evidence/C1.txt` | Multi-GW chip calendar computes expected incremental gain vs no-chip baseline across remaining legal chips. |
+| **C2** | Chip Strategy | Joint chip and transfer planning | **PASS** | `reports/evidence/C2.txt` | Transfer planner coordinates with chip schedule (e.g. rolling FTs before Wildcard). |
+| **C3** | Chip Strategy | Strict recommendation threshold & Set 1 GW19 cutoff | **PASS** | `reports/evidence/C3.txt` | Uncertainty threshold gating (+3.0 net xP); strictly suppresses Set 1 chips after GW19 deadline. |
+| **C4** | Chip Strategy | Track rivals' chips remaining and usage likelihood | **PASS** | `reports/evidence/C4.txt` | Rival chip usage history and remaining inventories incorporated directly into mini-league simulation. |
+| **D1** | Decision Card | Per-GW Decision Card reading single game state | **PASS** | `reports/evidence/D1.txt` | Unified `/api/decision-card` endpoint reading authoritative `EffectiveManagerState`. |
+| **D2** | Decision Card | Exportable/printable text/markdown summary | **PASS** | `reports/evidence/D2.txt` | Dedicated `/api/decision-card/export` endpoint and one-click copy button in UI. |
+| **D3** | Decision Card | Atlas/Council UI simplicity & empty states | **PASS** | `reports/evidence/D3.txt` | Simplified Atlas/Council design system with graceful handling of demo mode, empty rivals, and passed deadlines. |
+| **W1** | Win Probability | Correlated Monte Carlo simulation | **PASS** | `reports/evidence/W1.txt` | Shared players sampled once per trial; club defenders share Bernoulli clean-sheet draws (+4 pts). |
+| **W2** | Win Probability | Rival future-behaviour model with clear assumptions | **PASS** | `reports/evidence/W2.txt` | Explicit rival behavioral models (template follower, high-xP captaincy) with visible assumptions. |
+| **W3** | Win Probability | Side-by-side plan comparison & honest backtest | **PASS** | `reports/evidence/W3.txt` | Fast runtime (< 1.0s); historical backtest report saved to `reports/fix_pass_backtest.md` (mean Brier: 0.0677). |
+| **Q1** | Quality & Tests | Fix ruff lint errors, pin ruff, full test suite | **PASS** | `reports/evidence/full-pytest.txt` | Pinned `ruff==0.16.10` in `pyproject.toml`; 0 lint errors (`All checks passed!`); 105 tests passing. |
+| **Q2** | Quality & Tests | Cross-surface recommendation consistency test | **PASS** | `reports/evidence/Q2.txt` | `tests/test_recommendation_consistency.py` verifies 100% agreement across card, squad, optimizer, and chips. |
+| **Q3** | Quality & Tests | Desktop and narrow mobile browser screenshots | **BLOCKED** | `reports/evidence/Q3.txt` | Headless console without display server or browser automation (Playwright/Selenium). Documented honestly per Rule 0.10. |
+| **Q4** | Quality & Tests | Rewrite audit reports from fresh evidence | **PASS** | `reports/evidence/Q4.txt` | Reports and ledger completely rewritten strictly from fresh evidence files. All old claims purged. |
 
 ---
 
-## 4. Verification & Audit Commands
+## 3. Environment & Security Verification
 
-The following commands verify the integrity of the repository:
-
-```powershell
-# 1. Run Complete 61-Test Regression Suite
-.\.venv\Scripts\pytest -q
-
-# 2. Test CLI Command Support
-.\.venv\Scripts\python.exe run.py cli --help
-
-# 3. Test Windows Launcher Environment Check
-powershell -ExecutionPolicy Bypass -File .\start.ps1 -SetupOnly
-
-# 4. Everyday App Launch
-.\start.ps1
-```
-
----
-
-## 5. Conclusion & Integrity Statement
-
-All 21 minimum audit requirements and 17 original defects are verified `PASS`. No synthetic metrics or fake rolling origins exist in this codebase. FPL Oracle operates with mathematical and empirical honesty, providing actionable decision support for the 2026/27 Fantasy Premier League season.
+1. **Local Security**:
+   - CORS strictly restricted to local loopback origins (`localhost:8000`, `127.0.0.1:8000`, `localhost:3000`).
+   - Markdown rendered safely through local `DOMPurify`.
+   - Local `.env` contains all user IDs and API keys; zero credential or ID input forms in the web app.
+   - Pre-commit secret audit (`scripts/check_secrets.py`) passes with zero leaks.
+2. **Offline Resilience**:
+   - Runtime vendor assets (`tailwind.js`, `vue.global.prod.js`, `marked.min.js`, `purify.min.js`) are pinned and hosted locally in `web/static/js/`.
+   - Stale cache fallback ensures uninterrupted operation during FPL API rate limits (429) or server outages (503).

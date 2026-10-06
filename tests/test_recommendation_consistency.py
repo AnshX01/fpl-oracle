@@ -10,6 +10,7 @@ recommendations across all system surfaces:
 
 import asyncio
 import json
+from unittest.mock import AsyncMock, patch
 
 from fpl_oracle.server.routes.api import (
     OptimizeRequest,
@@ -26,8 +27,6 @@ def _get_json_data(response):
         return json.loads(response.body.decode("utf-8"))
     return response
 
-
-from unittest.mock import AsyncMock, patch
 
 def test_cross_surface_recommendation_consistency():
     """Assert that decision card, squad, and optimizer agree on transfers, captaincy, and chips."""

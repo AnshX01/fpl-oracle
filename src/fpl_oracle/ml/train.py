@@ -21,14 +21,12 @@ from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.defending import DefendingModel
 from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
+from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.model_registry import model_registry
 from fpl_oracle.ml.predict import projection_engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("fpl_oracle.train")
-
-
-from fpl_oracle.ml.eval import model_evaluator
 
 
 def compute_rolling_origin_cv(
