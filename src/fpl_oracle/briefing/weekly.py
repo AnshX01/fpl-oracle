@@ -105,13 +105,12 @@ class WeeklyBriefingGenerator:
         league_summary = None
         if league_id:
             try:
-                standings = await league_standings_manager.get_league_standings(league_id, max_pages=1)
+                standings = await league_standings_manager.get_league_standings(league_id)
                 rivals_res = await rival_analyzer.analyze_rivals(
                     standings=standings["standings"],
                     user_manager_id=m_id,
                     current_gw=curr_gw or 5,
                     bootstrap=boot,
-                    max_rivals_to_inspect=5,
                 )
                 user_total = 0
                 if m_id:

@@ -17,7 +17,7 @@ class LeagueStandingsManager:
     def __init__(self):
         pass
 
-    async def get_league_standings(self, league_id: int, max_pages: int = 10) -> dict[str, Any]:
+    async def get_league_standings(self, league_id: int, max_pages: int = 50) -> dict[str, Any]:
         """
         Fetch standings for a classic mini-league up to max_pages (up to 500 teams).
         Paginates until standings.has_next is False or max_pages is reached.

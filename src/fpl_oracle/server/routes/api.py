@@ -560,7 +560,7 @@ async def get_league_intel(league_id: int | None = None):
             }
         )
 
-    standings_data = await league_standings_manager.get_league_standings(l_id, max_pages=2)
+    standings_data = await league_standings_manager.get_league_standings(l_id)
     boot, is_stale = await fpl_client.get_bootstrap_static()
     curr_gw, _ = await fpl_client.get_current_and_next_gw()
 
@@ -591,7 +591,6 @@ async def get_league_intel(league_id: int | None = None):
         user_manager_id=effective_state.manager_id,
         current_gw=curr_gw or 5,
         bootstrap=boot,
-        max_rivals_to_inspect=8,
     )
 
     user_pts = effective_state.overall_points

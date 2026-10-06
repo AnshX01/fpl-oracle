@@ -236,24 +236,24 @@ class DecisionCardGenerator:
             "differential_players": [],
         }
 
-        win_prob_dict: dict[str, Any] = {
-            "p_first": 0.0,
-            "p_above_key_rivals": 0.0,
-            "expected_rank": 1.0,
-            "mc_se": 0.0,
+        win_prob_dict: dict[str, Any] | None = {
+            "status": "unconfigured",
+            "p_first": None,
+            "p_above_key_rivals": None,
+            "expected_rank": None,
+            "mc_se": None,
             "simulation_note": "No mini-league configured for Monte Carlo championship simulation.",
         }
 
         if league_id:
             try:
-                standings_data = await league_standings_manager.get_league_standings(league_id, max_pages=2)
+                standings_data = await league_standings_manager.get_league_standings(league_id)
                 if standings_data.get("standings"):
                     rivals_res = await rival_analyzer.analyze_rivals(
                         standings=standings_data["standings"],
                         user_manager_id=effective_state.manager_id,
                         current_gw=curr_gw or 5,
                         bootstrap=boot,
-                        max_rivals_to_inspect=8,
                     )
 
                     user_pts = effective_state.overall_points
@@ -296,14 +296,24 @@ class DecisionCardGenerator:
                     }
 
                     win_prob_dict = {
+                        "status": "simulated",
                         "p_first": round(float(mc_res.get("user_win_probability_pct", 0.0)), 1),
                         "p_above_key_rivals": round(float(mc_res.get("p_above_key_rivals", mc_res.get("user_win_probability_pct", 0.0))), 1),
                         "expected_rank": round(float(mc_res.get("expected_final_rank", 1.0)), 1),
                         "mc_se": round(float(mc_res.get("win_prob_se", 0.5)), 2),
                         "simulation_note": "Joint Bernoulli Monte Carlo simulation (correlated clean-sheets & shared player draws).",
                     }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"[DecisionCard] Error during rival/Monte Carlo simulation: {e}")
+                win_prob_dict = {
+                    "status": "error",
+                    "error_message": str(e),
+                    "p_first": None,
+                    "expected_rank": None,
+                    "p_above_key_rivals": None,
+                    "mc_se": None,
+                    "simulation_note": f"Simulation failed: {e}",
+                }
 
         # ----------------------------------------------------------------------
         # 6. Two-line Reasoning, Caveats & Freshness

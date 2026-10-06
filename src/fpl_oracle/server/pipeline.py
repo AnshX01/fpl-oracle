@@ -252,14 +252,13 @@ class SyncPipeline:
             t_league = profile.target_league_id or 314
             league_res = None
             try:
-                standings_data = await league_standings_manager.get_league_standings(t_league, max_pages=2)
+                standings_data = await league_standings_manager.get_league_standings(t_league)
                 if standings_data and standings_data.get("standings") and user_squad_df is not None:
                     rivals_res = await rival_analyzer.analyze_rivals(
                         standings=standings_data["standings"],
                         user_manager_id=profile.manager_id,
                         current_gw=curr_gw or 5,
                         bootstrap=boot,
-                        max_rivals_to_inspect=6,
                     )
                     user_pts = 0.0
                     if profile.manager_id:

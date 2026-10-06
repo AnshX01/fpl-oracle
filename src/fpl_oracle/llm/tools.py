@@ -337,7 +337,7 @@ class ToolExecutor:
         if not league_id:
             return {"message": "No target mini-league ID set in profile. Please enter your League ID."}
 
-        standings = await league_standings_manager.get_league_standings(league_id, max_pages=1)
+        standings = await league_standings_manager.get_league_standings(league_id)
         boot, _ = await fpl_client.get_bootstrap_static()
         curr_gw, _ = await fpl_client.get_current_and_next_gw()
 
@@ -346,7 +346,7 @@ class ToolExecutor:
             user_manager_id=profile.manager_id,
             current_gw=curr_gw or 5,
             bootstrap=boot,
-            max_rivals_to_inspect=6,
+            max_rivals_to_inspect=None,
         )
 
         return {

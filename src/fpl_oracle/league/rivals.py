@@ -21,8 +21,57 @@ from fpl_oracle.api.models import BootstrapStatic
 
 logger = logging.getLogger("fpl_oracle.league.rivals")
 
-RIVAL_POINTS_WINDOW = 30
-MAX_RIVALS_DEFAULT = 15
+RIVAL_POINTS_WINDOW = 20
+MAX_RIVALS_DEFAULT = 50
+
+
+def get_rival_set(
+    standings: list[dict[str, Any]],
+    user_manager_id: int | None,
+    points_window: int = RIVAL_POINTS_WINDOW,
+) -> tuple[list[dict[str, Any]], str, int | None]:
+    """
+    Unified single source of truth for proximity rival selection (Requirement F5):
+    - ALL managers ranked ABOVE user (no artificial cap).
+    - Managers within points_window (20 pts) BELOW user (no artificial cap).
+    - If user is 1st or points gap is large, selects top 10 chasers.
+    - If user not in standings, returns top standings without arbitrary truncation.
+    """
+    if not standings:
+        return [], "EMPTY_STANDINGS", None
+
+    # Find user entry
+    user_idx = None
+    if user_manager_id:
+        for idx, entry in enumerate(standings):
+            if entry.get("entry") == user_manager_id:
+                user_idx = idx
+                break
+
+    if user_idx is not None:
+        user_entry = standings[user_idx]
+        user_rank = user_entry.get("rank", user_idx + 1)
+        user_pts = float(user_entry.get("total", 0))
+
+        # All managers above user (no cap)
+        above = [s for s in standings[:user_idx] if s.get("entry") != user_manager_id]
+        # Managers below user within exact 20 points window (no cap)
+        below = [
+            s
+            for s in standings[user_idx + 1 :]
+            if s.get("entry") != user_manager_id and (user_pts - float(s.get("total", 0))) <= points_window
+        ]
+
+        # If user is in 1st place, ensure at least top 10 chasers are included
+        if user_rank == 1 and len(below) < 10:
+            below = [s for s in standings[1 : min(len(standings), 11)] if s.get("entry") != user_manager_id]
+
+        selected = above + below
+        return selected, "PROXIMITY_WINDOW", user_rank
+
+    # Fallback: all entries without user
+    selected = [s for s in standings if s.get("entry") != user_manager_id]
+    return selected, "TOP_STANDINGS", None
 
 
 class RivalAnalyzer:
@@ -34,59 +83,19 @@ class RivalAnalyzer:
         standings: list[dict[str, Any]],
         user_manager_id: int | None,
         points_window: int = RIVAL_POINTS_WINDOW,
-        max_rivals: int = MAX_RIVALS_DEFAULT,
+        max_rivals: int | None = None,
     ) -> tuple[list[dict[str, Any]], str, int | None]:
         """
-        Selects rivals using proximity window:
-        - All managers ranked ABOVE user.
-        - Managers within points_window BELOW user.
-        - If user is 1st or points gap is large, selects top chasers.
-        - If user not in standings, defaults to top entries.
+        Selects rivals using get_rival_set.
         """
-        if not standings:
-            return [], "EMPTY_STANDINGS", None
-
-        # Find user entry
-        user_idx = None
-        if user_manager_id:
-            for idx, entry in enumerate(standings):
-                if entry.get("entry") == user_manager_id:
-                    user_idx = idx
-                    break
-
-        if user_idx is not None:
-            user_entry = standings[user_idx]
-            user_rank = user_entry.get("rank", user_idx + 1)
-            user_pts = float(user_entry.get("total", 0))
-
-            # All managers above user
-            above = [s for s in standings[:user_idx] if s.get("entry") != user_manager_id]
-            # Managers below user within points window
-            below = [
-                s
-                for s in standings[user_idx + 1 :]
-                if s.get("entry") != user_manager_id and (user_pts - float(s.get("total", 0))) <= points_window
-            ]
-
-            # If user is in 1st place, ensure at least top 10 chasers are included
-            if user_rank == 1 and len(below) < 10:
-                below = [s for s in standings[1 : min(len(standings), 11)] if s.get("entry") != user_manager_id]
-
-            selected = above + below
-            # Bound if larger than max_rivals
-            if len(selected) > max_rivals:
-                # Keep all above if possible, plus nearest below
-                if len(above) >= max_rivals:
-                    selected = above[:max_rivals]
-                else:
-                    needed_below = max_rivals - len(above)
-                    selected = above + below[:needed_below]
-
-            return selected, "PROXIMITY_WINDOW", user_rank
-
-        # Fallback: top entries
-        selected = [s for s in standings[:max_rivals] if s.get("entry") != user_manager_id]
-        return selected, "TOP_STANDINGS", None
+        selected, mode, rank = get_rival_set(
+            standings=standings,
+            user_manager_id=user_manager_id,
+            points_window=points_window,
+        )
+        if max_rivals is not None and len(selected) > max_rivals:
+            selected = selected[:max_rivals]
+        return selected, mode, rank
 
     def calculate_chips_status(self, chips_used_list: list[dict[str, Any]], current_gw: int) -> dict[str, Any]:
         """
@@ -123,7 +132,7 @@ class RivalAnalyzer:
         user_manager_id: int | None,
         current_gw: int,
         bootstrap: BootstrapStatic,
-        max_rivals_to_inspect: int = MAX_RIVALS_DEFAULT,
+        max_rivals_to_inspect: int | None = None,
         user_squad_df: pd.DataFrame | None = None,
     ) -> dict[str, Any]:
         """
