@@ -1,0 +1,3734 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> scripts\run_acceptance_scenario.py:6:1
+   |
+ 4 |   and outputs reports/acceptance_scenario.md.
+ 5 |   """
+ 6 | / import sys
+ 7 | | import io
+ 8 | | import asyncio
+ 9 | | from datetime import datetime, timezone
+10 | | from pathlib import Path
+11 | | import pandas as pd
+   | |___________________^
+12 |
+13 |   # Force UTF-8 output on Windows consoles that default to cp1252
+   |
+help: Organize imports
+   |
+5  | """
+   - import sys
+   - import io
+6  | import asyncio
+7  + import io
+8  + import sys
+9  | from datetime import datetime, timezone
+10 | from pathlib import Path
+11 +
+12 | import pandas as pd
+   |
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:19:1
+   |
+17 | sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+18 |
+19 | from fpl_oracle.api.fpl_client import fpl_client
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+20 | from fpl_oracle.api.game_state import game_state_manager
+21 | from fpl_oracle.data.store import data_store
+   |
+help: Move module level imports to top of file
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> scripts\run_acceptance_scenario.py:19:1
+   |
+17 |   sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+18 |
+19 | / from fpl_oracle.api.fpl_client import fpl_client
+20 | | from fpl_oracle.api.game_state import game_state_manager
+21 | | from fpl_oracle.data.store import data_store
+22 | | from fpl_oracle.ml.predict import projection_engine
+23 | | from fpl_oracle.optimise.lineup import lineup_optimizer
+24 | | from fpl_oracle.optimise.transfers import transfer_optimizer
+25 | | from fpl_oracle.optimise.contingency import contingency_engine
+26 | | from fpl_oracle.chips.planner import chip_planner
+27 | | from fpl_oracle.optimise.squad import squad_optimizer
+   | |_____________________________________________________^
+help: Organize imports
+   |
+20 | from fpl_oracle.api.game_state import game_state_manager
+21 + from fpl_oracle.chips.planner import chip_planner
+22 | from fpl_oracle.data.store import data_store
+23 | from fpl_oracle.ml.predict import projection_engine
+24 + from fpl_oracle.optimise.contingency import contingency_engine
+25 | from fpl_oracle.optimise.lineup import lineup_optimizer
+26 + from fpl_oracle.optimise.squad import squad_optimizer
+27 | from fpl_oracle.optimise.transfers import transfer_optimizer
+   - from fpl_oracle.optimise.contingency import contingency_engine
+   - from fpl_oracle.chips.planner import chip_planner
+   - from fpl_oracle.optimise.squad import squad_optimizer
+28 |
+   |
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:20:1
+   |
+19 | from fpl_oracle.api.fpl_client import fpl_client
+20 | from fpl_oracle.api.game_state import game_state_manager
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+21 | from fpl_oracle.data.store import data_store
+22 | from fpl_oracle.ml.predict import projection_engine
+   |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:21:1
+   |
+19 | from fpl_oracle.api.fpl_client import fpl_client
+20 | from fpl_oracle.api.game_state import game_state_manager
+21 | from fpl_oracle.data.store import data_store
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+22 | from fpl_oracle.ml.predict import projection_engine
+23 | from fpl_oracle.optimise.lineup import lineup_optimizer
+   |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:22:1
+   |
+20 | from fpl_oracle.api.game_state import game_state_manager
+21 | from fpl_oracle.data.store import data_store
+22 | from fpl_oracle.ml.predict import projection_engine
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+23 | from fpl_oracle.optimise.lineup import lineup_optimizer
+24 | from fpl_oracle.optimise.transfers import transfer_optimizer
+   |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:23:1
+   |
+21 | from fpl_oracle.data.store import data_store
+22 | from fpl_oracle.ml.predict import projection_engine
+23 | from fpl_oracle.optimise.lineup import lineup_optimizer
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 | from fpl_oracle.optimise.transfers import transfer_optimizer
+25 | from fpl_oracle.optimise.contingency import contingency_engine
+   |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:24:1
+   |
+22 | from fpl_oracle.ml.predict import projection_engine
+23 | from fpl_oracle.optimise.lineup import lineup_optimizer
+24 | from fpl_oracle.optimise.transfers import transfer_optimizer
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+25 | from fpl_oracle.optimise.contingency import contingency_engine
+26 | from fpl_oracle.chips.planner import chip_planner
+   |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:25:1
+   |
+23 | from fpl_oracle.optimise.lineup import lineup_optimizer
+24 | from fpl_oracle.optimise.transfers import transfer_optimizer
+25 | from fpl_oracle.optimise.contingency import contingency_engine
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+26 | from fpl_oracle.chips.planner import chip_planner
+27 | from fpl_oracle.optimise.squad import squad_optimizer
+   |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:26:1
+   |
+24 | from fpl_oracle.optimise.transfers import transfer_optimizer
+25 | from fpl_oracle.optimise.contingency import contingency_engine
+26 | from fpl_oracle.chips.planner import chip_planner
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+27 | from fpl_oracle.optimise.squad import squad_optimizer
+   |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+  --> scripts\run_acceptance_scenario.py:27:1
+   |
+25 | from fpl_oracle.optimise.contingency import contingency_engine
+26 | from fpl_oracle.chips.planner import chip_planner
+27 | from fpl_oracle.optimise.squad import squad_optimizer
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: Move module level imports to top of file
+
+UP017 [*] Use `datetime.UTC` alias
+   --> scripts\run_acceptance_scenario.py:171:36
+    |
+169 |     report_md = f"""# FPL Oracle — Acceptance Scenario & Live Pre-Deadline Delivery
+170 |
+171 | **Simulation Date:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+    |                                    ^^^^^^^^^^^^
+172 | **Season / Target Gameweek:** 2026/27 — GW{target_gw} (Deadline in ~{hours_to_dl:.1f} hours)
+173 | **Manager Status:** Score **338 pts** after GW5 — trailing mini-league leader.
+    |
+help: Convert to `datetime.UTC` alias
+    |
+8   | import asyncio
+    - from datetime import datetime, timezone
+9   + from datetime import datetime, timezone, UTC
+10  | from pathlib import Path
+--------------------------------------------------------------------------------
+170 |
+    - **Simulation Date:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+171 + **Simulation Date:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
+172 | **Season / Target Gameweek:** 2026/27 — GW{target_gw} (Deadline in ~{hours_to_dl:.1f} hours)
+    |
+
+F541 [*] f-string without any placeholders
+   --> scripts\run_acceptance_scenario.py:286:18
+    |
+284 |           )
+285 |
+286 |       report_md += f"""
+    |  __________________^
+287 | | ### Injury Contingency Matrix (All Doubtful Starters)
+288 | | | Starter | Status | Autosub → | Autosub xP Δ | Emergency Buy | Verdict |
+289 | | |---|:---:|---|:---:|---|:---:|
+290 | | """
+    | |___^
+291 |       for row in injury_matrix[:5]:
+292 |           report_md += (
+    |
+help: Remove extraneous `f` prefix
+    |
+285 |
+    -     report_md += f"""
+286 +     report_md += """
+287 | ### Injury Contingency Matrix (All Doubtful Starters)
+    |
+
+UP017 [*] Use `datetime.UTC` alias
+   --> scripts\run_acceptance_scenario.py:322:47
+    |
+320 | ```
+321 |
+322 | *FPL Oracle 2026/27 — Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*
+    |                                               ^^^^^^^^^^^^
+323 | """
+    |
+help: Convert to `datetime.UTC` alias
+    |
+8   | import asyncio
+    - from datetime import datetime, timezone
+9   + from datetime import datetime, timezone, UTC
+10  | from pathlib import Path
+--------------------------------------------------------------------------------
+321 |
+    - *FPL Oracle 2026/27 — Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*
+322 + *FPL Oracle 2026/27 — Generated {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}*
+323 | """
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> scripts\run_league_backtest.py:7:1
+   |
+ 5 |   """
+ 6 |
+ 7 | / import time
+ 8 | | import numpy as np
+ 9 | | import pandas as pd
+10 | | from pathlib import Path
+11 | |
+12 | | from fpl_oracle.league.montecarlo import monte_carlo_simulator
+   | |______________________________________________________________^
+help: Organize imports
+   |
+7  | import time
+8  + from pathlib import Path
+9  +
+10 | import numpy as np
+11 | import pandas as pd
+   - from pathlib import Path
+12 |
+   |
+
+W291 Trailing whitespace
+  --> scripts\run_league_backtest.py:97:58
+   |
+95 |     report_md = f"""# Monte Carlo Mini-League Simulation Backtest Report
+96 |
+97 | **Execution Timestamp:** {pd.Timestamp.now().isoformat()}  
+   |                                                          ^^
+98 | **Evaluator:** `scripts/run_league_backtest.py`  
+99 | **Total Scenarios Evaluated:** {len(scenarios)}  
+   |
+help: Remove trailing whitespace
+
+W291 Trailing whitespace
+   --> scripts\run_league_backtest.py:98:48
+    |
+ 97 | **Execution Timestamp:** {pd.Timestamp.now().isoformat()}  
+ 98 | **Evaluator:** `scripts/run_league_backtest.py`  
+    |                                                ^^
+ 99 | **Total Scenarios Evaluated:** {len(scenarios)}  
+100 | **Total Monte Carlo Trials per Scenario:** 500 (joint common-player draws, correlated clean sheets)  
+    |
+help: Remove trailing whitespace
+
+W291 Trailing whitespace
+   --> scripts\run_league_backtest.py:99:48
+    |
+ 97 | **Execution Timestamp:** {pd.Timestamp.now().isoformat()}  
+ 98 | **Evaluator:** `scripts/run_league_backtest.py`  
+ 99 | **Total Scenarios Evaluated:** {len(scenarios)}  
+    |                                                ^^
+100 | **Total Monte Carlo Trials per Scenario:** 500 (joint common-player draws, correlated clean sheets)  
+101 | **Total Runtime:** {elapsed:.2f} seconds ({elapsed / len(scenarios):.3f}s per 500-trial scenario)  
+    |
+help: Remove trailing whitespace
+
+W291 Trailing whitespace
+   --> scripts\run_league_backtest.py:100:100
+    |
+ 98 | **Evaluator:** `scripts/run_league_backtest.py`  
+ 99 | **Total Scenarios Evaluated:** {len(scenarios)}  
+100 | **Total Monte Carlo Trials per Scenario:** 500 (joint common-player draws, correlated clean sheets)  
+    |                                                                                                    ^^
+101 | **Total Runtime:** {elapsed:.2f} seconds ({elapsed / len(scenarios):.3f}s per 500-trial scenario)  
+102 | **Mean Brier Score:** {mean_brier:.4f} (Well-calibrated, benchmark target < 0.150)  
+    |
+help: Remove trailing whitespace
+
+W291 Trailing whitespace
+   --> scripts\run_league_backtest.py:101:98
+    |
+ 99 | **Total Scenarios Evaluated:** {len(scenarios)}  
+100 | **Total Monte Carlo Trials per Scenario:** 500 (joint common-player draws, correlated clean sheets)  
+101 | **Total Runtime:** {elapsed:.2f} seconds ({elapsed / len(scenarios):.3f}s per 500-trial scenario)  
+    |                                                                                                  ^^
+102 | **Mean Brier Score:** {mean_brier:.4f} (Well-calibrated, benchmark target < 0.150)  
+    |
+help: Remove trailing whitespace
+
+W291 Trailing whitespace
+   --> scripts\run_league_backtest.py:102:83
+    |
+100 | **Total Monte Carlo Trials per Scenario:** 500 (joint common-player draws, correlated clean sheets)  
+101 | **Total Runtime:** {elapsed:.2f} seconds ({elapsed / len(scenarios):.3f}s per 500-trial scenario)  
+102 | **Mean Brier Score:** {mean_brier:.4f} (Well-calibrated, benchmark target < 0.150)  
+    |                                                                                   ^^
+103 |
+104 | ---
+    |
+help: Remove trailing whitespace
+
+F401 [*] `pathlib.Path` imported but unused
+  --> scripts\run_news_benchmark.py:11:21
+   |
+ 9 | import logging
+10 | import sys
+11 | from pathlib import Path
+   |                     ^^^^
+12 | from typing import Any
+   |
+help: Remove unused import: `pathlib.Path`
+   |
+10 | import sys
+   - from pathlib import Path
+11 | from typing import Any
+   |
+
+F401 [*] `fpl_oracle.news.models.RecommendationMode` imported but unused
+  --> scripts\run_news_benchmark.py:16:70
+   |
+14 | from fpl_oracle.config import REPORTS_DIR
+15 | from fpl_oracle.news.ingest import is_safe_external_url
+16 | from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence, RecommendationMode
+   |                                                                      ^^^^^^^^^^^^^^^^^^
+17 | from fpl_oracle.news.reconcile import AvailabilityReconciler
+   |
+help: Remove unused import: `fpl_oracle.news.models.RecommendationMode`
+   |
+15 | from fpl_oracle.news.ingest import is_safe_external_url
+   - from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence, RecommendationMode
+16 + from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence
+17 | from fpl_oracle.news.reconcile import AvailabilityReconciler
+   |
+
+Found 23 errors.
+[*] 8 fixable with the `--fix` option (6 hidden fixes can be enabled with the `--unsafe-fixes` option).
+unformatted: File would be reformatted
+   --> scripts\run_acceptance_scenario.py:6:1
+    |
+5   | """
+6   +
+7   | import sys
+--------------------------------------------------------------------------------
+78  |
+    -     print(f"Squad: {len(user_squad_df)} players. Bank: £{bank/10:.1f}m. FTs: {free_transfers}.")
+79  +     print(f"Squad: {len(user_squad_df)} players. Bank: £{bank / 10:.1f}m. FTs: {free_transfers}.")
+80  |
+--------------------------------------------------------------------------------
+171 |
+    - **Simulation Date:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+172 + **Simulation Date:** {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+173 | **Season / Target Gameweek:** 2026/27 — GW{target_gw} (Deadline in ~{hours_to_dl:.1f} hours)
+--------------------------------------------------------------------------------
+187 | |---|---|
+    - | **Starting Formation** | **{lineup_res['formation']}** — {len(starters_df)} starters, total xP **{total_xp:.1f} pts** (P₉₀ ceiling: **{p90_total:.1f} pts**) |
+    - | **Captain (C)** | **{captain['web_name']}** — xP: **{captain['expected_points']:.2f}**, Ceiling P₉₀: **{captain.get('p90', 0.0):.2f}** |
+    - | **Vice-Captain (VC)** | **{vice_captain['web_name']}** — xP: **{vice_captain['expected_points']:.2f}** |
+    - | **Transfer Action** | {plan_a['action_summary']} |
+188 + | **Starting Formation** | **{lineup_res["formation"]}** — {len(starters_df)} starters, total xP **{total_xp:.1f} pts** (P₉₀ ceiling: **{p90_total:.1f} pts**) |
+189 + | **Captain (C)** | **{captain["web_name"]}** — xP: **{captain["expected_points"]:.2f}**, Ceiling P₉₀: **{captain.get("p90", 0.0):.2f}** |
+190 + | **Vice-Captain (VC)** | **{vice_captain["web_name"]}** — xP: **{vice_captain["expected_points"]:.2f}** |
+191 + | **Transfer Action** | {plan_a["action_summary"]} |
+192 | | **-4 Hit?** | **NOT recommended** this week — break-even threshold not met over 3 GW horizon |
+    - | **Chip Alert** | {gws_to_expiry} GWs remaining until Set 1 hard expiry. **Opportunity cost if unused: ~{chip_strategy.get('total_set_1_opportunity_cost', 0.0):.0f} pts** |
+193 + | **Chip Alert** | {gws_to_expiry} GWs remaining until Set 1 hard expiry. **Opportunity cost if unused: ~{chip_strategy.get("total_set_1_opportunity_cost", 0.0):.0f} pts** |
+194 |
+195 | ---
+196 |
+    - ## 2. Starting XI & Pitch View ({lineup_res['formation']})
+197 + ## 2. Starting XI & Pitch View ({lineup_res["formation"]})
+198 |
+--------------------------------------------------------------------------------
+206 |         role = "⭐ **C**" if is_cap else ("🛡️ **VC**" if is_vc else "Starter")
+    -         cost_str = f"£{s['value']/10:.1f}m"
+    -         sell_str = f"£{float(s.get('selling_price', s['value']))/10:.1f}m"
+207 +         cost_str = f"£{s['value'] / 10:.1f}m"
+208 +         sell_str = f"£{float(s.get('selling_price', s['value'])) / 10:.1f}m"
+209 |         report_md += (
+--------------------------------------------------------------------------------
+216 |         report_md += (
+    -             f"{idx}. **{b['web_name']}** ({b['position']}, £{b['value']/10:.1f}m) — "
+217 +             f"{idx}. **{b['web_name']}** ({b['position']}, £{b['value'] / 10:.1f}m) — "
+218 |             f"xP: **{b['expected_points']:.2f}** | P₉₀: **{b.get('p90', 0.0):.2f}**\n"
+--------------------------------------------------------------------------------
+226 | ### 🟢 Plan A: Primary Path (Optimal Horizon Value)
+    - - **Action**: {plan_a['action_summary']}
+    - - **Transfers**: {plan_a['transfers_count']} | **Hits**: {plan_a['hits']} (-{plan_a['hit_cost']:.0f} pts)
+    - - **Net Expected Points (GW{target_gw})**: **{plan_a['net_expected_points']:.2f} pts**
+227 + - **Action**: {plan_a["action_summary"]}
+228 + - **Transfers**: {plan_a["transfers_count"]} | **Hits**: {plan_a["hits"]} (-{plan_a["hit_cost"]:.0f} pts)
+229 + - **Net Expected Points (GW{target_gw})**: **{plan_a["net_expected_points"]:.2f} pts**
+230 | - **Trigger**: No late injury or team news changes by Friday press conferences.
+231 |
+232 | ### 🟡 Plan B: Injury / Press Conference Pivot
+    - - **Action**: {plan_b['action_summary']}
+    - - **Transfers**: {plan_b['transfers_count']} | **Net xP**: **{plan_b['net_expected_points']:.2f} pts** (Δ vs Plan A: **{plan_b['delta_vs_plan_a']:+.2f} pts**)
+    - - **Trigger**: {plan_b['trigger_condition']}
+233 + - **Action**: {plan_b["action_summary"]}
+234 + - **Transfers**: {plan_b["transfers_count"]} | **Net xP**: **{plan_b["net_expected_points"]:.2f} pts** (Δ vs Plan A: **{plan_b["delta_vs_plan_a"]:+.2f} pts**)
+235 + - **Trigger**: {plan_b["trigger_condition"]}
+236 |
+237 | ### 🟣 Plan C: Differential / Price Rise Pivot
+    - - **Action**: {plan_c['action_summary']}
+    - - **Transfers**: {plan_c['transfers_count']} | **Net xP**: **{plan_c['net_expected_points']:.2f} pts** (Δ vs Plan A: **{plan_c['delta_vs_plan_a']:+.2f} pts**)
+    - - **Trigger**: {plan_c['trigger_condition']}
+238 + - **Action**: {plan_c["action_summary"]}
+239 + - **Transfers**: {plan_c["transfers_count"]} | **Net xP**: **{plan_c["net_expected_points"]:.2f} pts** (Δ vs Plan A: **{plan_c["delta_vs_plan_a"]:+.2f} pts**)
+240 + - **Trigger**: {plan_c["trigger_condition"]}
+241 |
+--------------------------------------------------------------------------------
+266 |
+    - **Crisis Simulated:** **{panic_ruled_out.get('web_name', panic_query)}** confirmed absent/benched 40 minutes before deadline.
+267 + **Crisis Simulated:** **{panic_ruled_out.get("web_name", panic_query)}** confirmed absent/benched 40 minutes before deadline.
+268 |
+269 | | Field | Detail |
+270 | |---|---|
+271 | | **Crisis Status** | `{panic_status}` |
+    - | **Lost Expected Points** | {panic_ruled_out.get('lost_expected_points', '?')} xP |
+    - | **Auto-Promoted Starter** | **{promoted.get('web_name', 'First reserve')}** ({promoted.get('position', '?')}) — xP: {promoted.get('expected_points', '?')} |
+    - | **Revised Captain (C)** | **{new_cap.get('web_name', vice_captain['web_name'])}** |
+    - | **Revised Formation** | {panic_lineup_action.get('new_formation', lineup_res['formation'])} |
+    - | **Revised Total xP** | {panic_lineup_action.get('total_gameweek_expected_points', total_xp - panic_ruled_out.get('lost_expected_points', 0)):.2f} pts |
+272 + | **Lost Expected Points** | {panic_ruled_out.get("lost_expected_points", "?")} xP |
+273 + | **Auto-Promoted Starter** | **{promoted.get("web_name", "First reserve")}** ({promoted.get("position", "?")}) — xP: {promoted.get("expected_points", "?")} |
+274 + | **Revised Captain (C)** | **{new_cap.get("web_name", vice_captain["web_name"])}** |
+275 + | **Revised Formation** | {panic_lineup_action.get("new_formation", lineup_res["formation"])} |
+276 + | **Revised Total xP** | {panic_lineup_action.get("total_gameweek_expected_points", total_xp - panic_ruled_out.get("lost_expected_points", 0)):.2f} pts |
+277 | """
+--------------------------------------------------------------------------------
+322 |
+    - *FPL Oracle 2026/27 — Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*
+323 + *FPL Oracle 2026/27 — Generated {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}*
+324 | """
+    |
+
+unformatted: File would be reformatted
+   --> scripts\run_league_backtest.py:22:10
+    |
+21  |     scenarios = [
+    -         {"name": "GW10 Leader Large Lead (+45 pts)", "lead": 45.0, "horizon": 5, "n_rivals": 8, "expected_win_pct_range": (85.0, 100.0)},
+    -         {"name": "GW15 Leader Moderate Lead (+18 pts)", "lead": 18.0, "horizon": 5, "n_rivals": 10, "expected_win_pct_range": (55.0, 80.0)},
+    -         {"name": "GW20 Tight Contention (+4 pts)", "lead": 4.0, "horizon": 5, "n_rivals": 12, "expected_win_pct_range": (30.0, 55.0)},
+    -         {"name": "GW25 Dead Heat (0 pts)", "lead": 0.0, "horizon": 5, "n_rivals": 10, "expected_win_pct_range": (15.0, 35.0)},
+    -         {"name": "GW28 Chasing Moderate (-12 pts)", "lead": -12.0, "horizon": 5, "n_rivals": 10, "expected_win_pct_range": (5.0, 25.0)},
+    -         {"name": "GW32 Chasing Steep (-35 pts)", "lead": -35.0, "horizon": 5, "n_rivals": 8, "expected_win_pct_range": (0.0, 10.0)},
+    -         {"name": "GW35 Late Chase (-20 pts, 3 GWs left)", "lead": -20.0, "horizon": 3, "n_rivals": 6, "expected_win_pct_range": (0.0, 8.0)},
+    -         {"name": "GW36 2-Way Title Fight (+2 pts, 2 GWs left)", "lead": 2.0, "horizon": 2, "n_rivals": 2, "expected_win_pct_range": (45.0, 65.0)},
+    -         {"name": "GW37 Final Lap (+8 pts, 1 GW left)", "lead": 8.0, "horizon": 1, "n_rivals": 4, "expected_win_pct_range": (80.0, 99.0)},
+    -         {"name": "GW38 Final Matchday (-6 pts, 1 GW left)", "lead": -6.0, "horizon": 1, "n_rivals": 2, "expected_win_pct_range": (0.0, 15.0)},
+22  +         {
+23  +             "name": "GW10 Leader Large Lead (+45 pts)",
+24  +             "lead": 45.0,
+25  +             "horizon": 5,
+26  +             "n_rivals": 8,
+27  +             "expected_win_pct_range": (85.0, 100.0),
+28  +         },
+29  +         {
+30  +             "name": "GW15 Leader Moderate Lead (+18 pts)",
+31  +             "lead": 18.0,
+32  +             "horizon": 5,
+33  +             "n_rivals": 10,
+34  +             "expected_win_pct_range": (55.0, 80.0),
+35  +         },
+36  +         {
+37  +             "name": "GW20 Tight Contention (+4 pts)",
+38  +             "lead": 4.0,
+39  +             "horizon": 5,
+40  +             "n_rivals": 12,
+41  +             "expected_win_pct_range": (30.0, 55.0),
+42  +         },
+43  +         {
+44  +             "name": "GW25 Dead Heat (0 pts)",
+45  +             "lead": 0.0,
+46  +             "horizon": 5,
+47  +             "n_rivals": 10,
+48  +             "expected_win_pct_range": (15.0, 35.0),
+49  +         },
+50  +         {
+51  +             "name": "GW28 Chasing Moderate (-12 pts)",
+52  +             "lead": -12.0,
+53  +             "horizon": 5,
+54  +             "n_rivals": 10,
+55  +             "expected_win_pct_range": (5.0, 25.0),
+56  +         },
+57  +         {
+58  +             "name": "GW32 Chasing Steep (-35 pts)",
+59  +             "lead": -35.0,
+60  +             "horizon": 5,
+61  +             "n_rivals": 8,
+62  +             "expected_win_pct_range": (0.0, 10.0),
+63  +         },
+64  +         {
+65  +             "name": "GW35 Late Chase (-20 pts, 3 GWs left)",
+66  +             "lead": -20.0,
+67  +             "horizon": 3,
+68  +             "n_rivals": 6,
+69  +             "expected_win_pct_range": (0.0, 8.0),
+70  +         },
+71  +         {
+72  +             "name": "GW36 2-Way Title Fight (+2 pts, 2 GWs left)",
+73  +             "lead": 2.0,
+74  +             "horizon": 2,
+75  +             "n_rivals": 2,
+76  +             "expected_win_pct_range": (45.0, 65.0),
+77  +         },
+78  +         {
+79  +             "name": "GW37 Final Lap (+8 pts, 1 GW left)",
+80  +             "lead": 8.0,
+81  +             "horizon": 1,
+82  +             "n_rivals": 4,
+83  +             "expected_win_pct_range": (80.0, 99.0),
+84  +         },
+85  +         {
+86  +             "name": "GW38 Final Matchday (-6 pts, 1 GW left)",
+87  +             "lead": -6.0,
+88  +             "horizon": 1,
+89  +             "n_rivals": 2,
+90  +             "expected_win_pct_range": (0.0, 15.0),
+91  +         },
+92  |     ]
+--------------------------------------------------------------------------------
+98  |         # Create squad and pool
+    -         user_squad = pd.DataFrame([
+    -             {"element": i, "position": "DEF" if i <= 5 else "MID", "team": (i % 5) + 1, "expected_points": 5.0, "variance": 4.0, "is_starter": True}
+    -             for i in range(1, 12)
+    -         ])
+    -         projections = pd.DataFrame([
+    -             {"element": i, "position": "DEF" if i <= 10 else "MID", "team": (i % 10) + 1, "expected_points": 5.0 + (i * 0.05), "variance": 4.0}
+    -             for i in range(1, 40)
+    -         ])
+99  +         user_squad = pd.DataFrame(
+100 +             [
+101 +                 {
+102 +                     "element": i,
+103 +                     "position": "DEF" if i <= 5 else "MID",
+104 +                     "team": (i % 5) + 1,
+105 +                     "expected_points": 5.0,
+106 +                     "variance": 4.0,
+107 +                     "is_starter": True,
+108 +                 }
+109 +                 for i in range(1, 12)
+110 +             ]
+111 +         )
+112 +         projections = pd.DataFrame(
+113 +             [
+114 +                 {
+115 +                     "element": i,
+116 +                     "position": "DEF" if i <= 10 else "MID",
+117 +                     "team": (i % 10) + 1,
+118 +                     "expected_points": 5.0 + (i * 0.05),
+119 +                     "variance": 4.0,
+120 +                 }
+121 +                 for i in range(1, 40)
+122 +             ]
+123 +         )
+124 |
+--------------------------------------------------------------------------------
+130 |             r_squad = [{"element": (i + r_idx) % 35 + 1, "is_starter": True} for i in range(1, 12)]
+    -             rival_squads.append({
+    -                 "entry_id": 1000 + r_idx,
+    -                 "player_name": f"Rival_{r_idx + 1}",
+    -                 "total_points": rival_pts,
+    -                 "captain_element": (r_idx % 5) + 1,
+    -                 "squad": r_squad,
+    -             })
+131 +             rival_squads.append(
+132 +                 {
+133 +                     "entry_id": 1000 + r_idx,
+134 +                     "player_name": f"Rival_{r_idx + 1}",
+135 +                     "total_points": rival_pts,
+136 +                     "captain_element": (r_idx % 5) + 1,
+137 +                     "squad": r_squad,
+138 +                 }
+139 +             )
+140 |
+--------------------------------------------------------------------------------
+158 |
+    -         results.append({
+    -             "scenario": sc["name"],
+    -             "points_lead": sc["lead"],
+    -             "horizon_gws": sc["horizon"],
+    -             "rivals_count": sc["n_rivals"],
+    -             "win_probability_pct": win_prob,
+    -             "top3_probability_pct": top3_prob,
+    -             "expected_final_rank": avg_rank,
+    -             "brier_score": brier,
+    -         })
+159 +         results.append(
+160 +             {
+161 +                 "scenario": sc["name"],
+162 +                 "points_lead": sc["lead"],
+163 +                 "horizon_gws": sc["horizon"],
+164 +                 "rivals_count": sc["n_rivals"],
+165 +                 "win_probability_pct": win_prob,
+166 +                 "top3_probability_pct": top3_prob,
+167 +                 "expected_final_rank": avg_rank,
+168 +                 "brier_score": brier,
+169 +             }
+170 +         )
+171 |
+    |
+
+unformatted: File would be reformatted
+   --> scripts\run_news_benchmark.py:61:18
+    |
+60  |     p1 = res.effective_chance_of_playing == 0.0 and res.p_available == 0.0
+    -     cases.append({
+    -         "id": "TC-01",
+    -         "description": "Haaland ruled out for Saturday",
+    -         "category": "ruled_out",
+    -         "passed": p1,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}, p_avail={res.p_available}",
+    -     })
+61  +     cases.append(
+62  +         {
+63  +             "id": "TC-01",
+64  +             "description": "Haaland ruled out for Saturday",
+65  +             "category": "ruled_out",
+66  +             "passed": p1,
+67  +             "detail": f"effective_cop={res.effective_chance_of_playing}, p_avail={res.p_available}",
+68  +         }
+69  +     )
+70  |
+--------------------------------------------------------------------------------
+84  |     p2 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-02",
+    -         "description": "Guardiola confirms Haaland is not injured (negation)",
+    -         "category": "is_negated=True",
+    -         "passed": p2,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+85  +     cases.append(
+86  +         {
+87  +             "id": "TC-02",
+88  +             "description": "Guardiola confirms Haaland is not injured (negation)",
+89  +             "category": "is_negated=True",
+90  +             "passed": p2,
+91  +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+92  +         }
+93  +     )
+94  |
+--------------------------------------------------------------------------------
+108 |     p3 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-03",
+    -         "description": "Dismissed rumors for Saka (negation)",
+    -         "category": "is_negated=True",
+    -         "passed": p3,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+109 +     cases.append(
+110 +         {
+111 +             "id": "TC-03",
+112 +             "description": "Dismissed rumors for Saka (negation)",
+113 +             "category": "is_negated=True",
+114 +             "passed": p3,
+115 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+116 +         }
+117 +     )
+118 |
+--------------------------------------------------------------------------------
+132 |     p4 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-04",
+    -         "description": "Carabao Cup rest filtered from PL planning",
+    -         "category": "cup_context",
+    -         "passed": p4,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+133 +     cases.append(
+134 +         {
+135 +             "id": "TC-04",
+136 +             "description": "Carabao Cup rest filtered from PL planning",
+137 +             "category": "cup_context",
+138 +             "passed": p4,
+139 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+140 +         }
+141 +     )
+142 |
+--------------------------------------------------------------------------------
+156 |     p5 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-05",
+    -         "description": "FA Cup suspension served, cleared for PL",
+    -         "category": "cup_context",
+    -         "passed": p5,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+157 +     cases.append(
+158 +         {
+159 +             "id": "TC-05",
+160 +             "description": "FA Cup suspension served, cleared for PL",
+161 +             "category": "cup_context",
+162 +             "passed": p5,
+163 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+164 +         }
+165 +     )
+166 |
+167 |     # TC-06: Loan ineligible for target GW
+    -     p = MockPlayer(4, "Sterling", status="a", cop_next=100.0, scout_risks=[{"property": "loan_ineligible", "gameweek": 10}])
+168 +     p = MockPlayer(
+169 +         4, "Sterling", status="a", cop_next=100.0, scout_risks=[{"property": "loan_ineligible", "gameweek": 10}]
+170 +     )
+171 |     res = reconciler.reconcile_player_fixture(p, target_gw=10)
+172 |     p6 = res.effective_chance_of_playing == 0.0 and res.p_available == 0.0
+    -     cases.append({
+    -         "id": "TC-06",
+    -         "description": "Sterling loan ineligible for GW10",
+    -         "category": "loan_ineligible",
+    -         "passed": p6,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+173 +     cases.append(
+174 +         {
+175 +             "id": "TC-06",
+176 +             "description": "Sterling loan ineligible for GW10",
+177 +             "category": "loan_ineligible",
+178 +             "passed": p6,
+179 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+180 +         }
+181 +     )
+182 |
+183 |     # TC-07: Loan ineligible for GW28, but available for GW29
+    -     p = MockPlayer(4, "Sterling", status="a", cop_next=100.0, scout_risks=[{"property": "loan_ineligible", "gameweek": 28}])
+184 +     p = MockPlayer(
+185 +         4, "Sterling", status="a", cop_next=100.0, scout_risks=[{"property": "loan_ineligible", "gameweek": 28}]
+186 +     )
+187 |     res28 = reconciler.reconcile_player_fixture(p, target_gw=28)
+188 |     res29 = reconciler.reconcile_player_fixture(p, target_gw=29)
+189 |     p7 = res28.effective_chance_of_playing == 0.0 and res29.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-07",
+    -         "description": "Sterling loan ineligible for GW28, available GW29",
+    -         "category": "multi_gw_loan",
+    -         "passed": p7,
+    -         "detail": f"GW28={res28.effective_chance_of_playing}, GW29={res29.effective_chance_of_playing}",
+    -     })
+190 +     cases.append(
+191 +         {
+192 +             "id": "TC-07",
+193 +             "description": "Sterling loan ineligible for GW28, available GW29",
+194 +             "category": "multi_gw_loan",
+195 +             "passed": p7,
+196 +             "detail": f"GW28={res28.effective_chance_of_playing}, GW29={res29.effective_chance_of_playing}",
+197 +         }
+198 +     )
+199 |
+--------------------------------------------------------------------------------
+212 |     p8 = res.effective_chance_of_playing == 50.0  # NOT double-discounted to 25%!
+    -     cases.append({
+    -         "id": "TC-08",
+    -         "description": "Isak late fitness test preserves 50% without double discount",
+    -         "category": "single_adjustment",
+    -         "passed": p8,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+213 +     cases.append(
+214 +         {
+215 +             "id": "TC-08",
+216 +             "description": "Isak late fitness test preserves 50% without double discount",
+217 +             "category": "single_adjustment",
+218 +             "passed": p8,
+219 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+220 +         }
+221 +     )
+222 |
+--------------------------------------------------------------------------------
+236 |     p9 = res.expected_minutes_limit == 30.0 and res.p_start_given_available == 0.70
+    -     cases.append({
+    -         "id": "TC-09",
+    -         "description": "Palmer 30-minute restriction recorded",
+    -         "category": "minutes_limit",
+    -         "passed": p9,
+    -         "detail": f"mins_limit={res.expected_minutes_limit}, p_start={res.p_start_given_available}",
+    -     })
+237 +     cases.append(
+238 +         {
+239 +             "id": "TC-09",
+240 +             "description": "Palmer 30-minute restriction recorded",
+241 +             "category": "minutes_limit",
+242 +             "passed": p9,
+243 +             "detail": f"mins_limit={res.expected_minutes_limit}, p_start={res.p_start_given_available}",
+244 +         }
+245 +     )
+246 |
+--------------------------------------------------------------------------------
+259 |     p10 = res.effective_chance_of_playing == 75.0 and res.p_available == 0.85
+    -     cases.append({
+    -         "id": "TC-10",
+    -         "description": "Foden returned to training upgrades 25% to 75%",
+    -         "category": "returned_to_training",
+    -         "passed": p10,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}, p_avail={res.p_available}",
+    -     })
+260 +     cases.append(
+261 +         {
+262 +             "id": "TC-10",
+263 +             "description": "Foden returned to training upgrades 25% to 75%",
+264 +             "category": "returned_to_training",
+265 +             "passed": p10,
+266 +             "detail": f"effective_cop={res.effective_chance_of_playing}, p_avail={res.p_available}",
+267 +         }
+268 +     )
+269 |
+--------------------------------------------------------------------------------
+282 |     p11 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-11",
+    -         "description": "Son selection statement preserves 100%",
+    -         "category": "selection_statement",
+    -         "passed": p11,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+283 +     cases.append(
+284 +         {
+285 +             "id": "TC-11",
+286 +             "description": "Son selection statement preserves 100%",
+287 +             "category": "selection_statement",
+288 +             "passed": p11,
+289 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+290 +         }
+291 +     )
+292 |
+--------------------------------------------------------------------------------
+305 |     p12 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-12",
+    -         "description": "Transfer rumor ignored",
+    -         "category": "unknown",
+    -         "passed": p12,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+306 +     cases.append(
+307 +         {
+308 +             "id": "TC-12",
+309 +             "description": "Transfer rumor ignored",
+310 +             "category": "unknown",
+311 +             "passed": p12,
+312 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+313 +         }
+314 +     )
+315 |
+--------------------------------------------------------------------------------
+328 |     p13 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-13",
+    -         "description": "Colloquial idiom not parsed as injury",
+    -         "category": "unknown",
+    -         "passed": p13,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+329 +     cases.append(
+330 +         {
+331 +             "id": "TC-13",
+332 +             "description": "Colloquial idiom not parsed as injury",
+333 +             "category": "unknown",
+334 +             "passed": p13,
+335 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+336 +         }
+337 +     )
+338 |
+--------------------------------------------------------------------------------
+354 |         injection_breaches += 1
+    -     cases.append({
+    -         "id": "TC-14",
+    -         "description": "Adversarial Prompt Injection blocked",
+    -         "category": "injection_defense",
+    -         "passed": p14,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+355 +     cases.append(
+356 +         {
+357 +             "id": "TC-14",
+358 +             "description": "Adversarial Prompt Injection blocked",
+359 +             "category": "injection_defense",
+360 +             "passed": p14,
+361 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+362 +         }
+363 +     )
+364 |
+--------------------------------------------------------------------------------
+379 |         injection_breaches += 1
+    -     cases.append({
+    -         "id": "TC-15",
+    -         "description": "Adversarial System Prompt Injection blocked",
+    -         "category": "injection_defense",
+    -         "passed": p15,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+380 +     cases.append(
+381 +         {
+382 +             "id": "TC-15",
+383 +             "description": "Adversarial System Prompt Injection blocked",
+384 +             "category": "injection_defense",
+385 +             "passed": p15,
+386 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+387 +         }
+388 +     )
+389 |
+--------------------------------------------------------------------------------
+402 |     p16 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-16",
+    -         "description": "Low confidence extraction rejected",
+    -         "category": "confidence_threshold",
+    -         "passed": p16,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+403 +     cases.append(
+404 +         {
+405 +             "id": "TC-16",
+406 +             "description": "Low confidence extraction rejected",
+407 +             "category": "confidence_threshold",
+408 +             "passed": p16,
+409 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+410 +         }
+411 +     )
+412 |
+--------------------------------------------------------------------------------
+425 |     p17 = res.effective_chance_of_playing == 0.0
+    -     cases.append({
+    -         "id": "TC-17",
+    -         "description": "Miss 3 weeks parsed as ruled out",
+    -         "category": "ruled_out",
+    -         "passed": p17,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+426 +     cases.append(
+427 +         {
+428 +             "id": "TC-17",
+429 +             "description": "Miss 3 weeks parsed as ruled out",
+430 +             "category": "ruled_out",
+431 +             "passed": p17,
+432 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+433 +         }
+434 +     )
+435 |
+--------------------------------------------------------------------------------
+448 |     p18 = res.effective_chance_of_playing == 75.0
+    -     cases.append({
+    -         "id": "TC-18",
+    -         "description": "Positive assessment upgrades 50% to 75%",
+    -         "category": "available",
+    -         "passed": p18,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+449 +     cases.append(
+450 +         {
+451 +             "id": "TC-18",
+452 +             "description": "Positive assessment upgrades 50% to 75%",
+453 +             "category": "available",
+454 +             "passed": p18,
+455 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+456 +         }
+457 +     )
+458 |
+--------------------------------------------------------------------------------
+471 |     p19 = res.effective_chance_of_playing == 100.0
+    -     cases.append({
+    -         "id": "TC-19",
+    -         "description": "Precaution substitution preserves 100%",
+    -         "category": "precaution",
+    -         "passed": p19,
+    -         "detail": f"effective_cop={res.effective_chance_of_playing}",
+    -     })
+472 +     cases.append(
+473 +         {
+474 +             "id": "TC-19",
+475 +             "description": "Precaution substitution preserves 100%",
+476 +             "category": "precaution",
+477 +             "passed": p19,
+478 +             "detail": f"effective_cop={res.effective_chance_of_playing}",
+479 +         }
+480 +     )
+481 |
+--------------------------------------------------------------------------------
+485 |     p20 = ssrf_blocked and loopback_blocked
+    -     cases.append({
+    -         "id": "TC-20",
+    -         "description": "SSRF payload blocked (169.254.169.254 and 127.0.0.1)",
+    -         "category": "ssrf_protection",
+    -         "passed": p20,
+    -         "detail": f"ssrf_blocked={ssrf_blocked}, loopback_blocked={loopback_blocked}",
+    -     })
+486 +     cases.append(
+487 +         {
+488 +             "id": "TC-20",
+489 +             "description": "SSRF payload blocked (169.254.169.254 and 127.0.0.1)",
+490 +             "category": "ssrf_protection",
+491 +             "passed": p20,
+492 +             "detail": f"ssrf_blocked={ssrf_blocked}, loopback_blocked={loopback_blocked}",
+493 +         }
+494 +     )
+495 |
+    |
+
+unformatted: File would be reformatted
+  --> src\fpl_oracle\api\fpl_client.py:81:12
+   |
+80 |             loop = None
+   -         if (
+   -             self._client is None
+   -             or self._client.is_closed
+   -             or self._client_loop != loop
+   -         ):
+81 +         if self._client is None or self._client.is_closed or self._client_loop != loop:
+82 |             self._client_loop = loop
+   |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\briefing\decision_card.py:62:48
+    |
+61  |             p90_map = {int(r["element"]): float(r.get("p90", 0.0)) for _, r in target_df.iterrows()}
+    -             user_squad_df["expected_points"] = user_squad_df["element"].map(xp_map).fillna(user_squad_df["expected_points"])
+62  +             user_squad_df["expected_points"] = (
+63  +                 user_squad_df["element"].map(xp_map).fillna(user_squad_df["expected_points"])
+64  +             )
+65  |             user_squad_df["p10"] = user_squad_df["element"].map(p10_map).fillna(0.0)
+--------------------------------------------------------------------------------
+79  |             tm = team_map.get(int(s["team"]))
+    -             starters_list.append({
+    -                 "element": eid,
+    -                 "web_name": s["web_name"],
+    -                 "position": s["position"],
+    -                 "team": int(s["team"]),
+    -                 "team_short": tm.short_name if tm else "PL",
+    -                 "expected_points": round(float(s["expected_points"]), 2),
+    -                 "p10": round(float(s.get("p10", 0.0)), 2),
+    -                 "p90": round(float(s.get("p90", 0.0)), 2),
+    -                 "is_captain": eid == captain_elem,
+    -                 "is_vice_captain": eid == vice_elem,
+    -             })
+80  +             starters_list.append(
+81  +                 {
+82  +                     "element": eid,
+83  +                     "web_name": s["web_name"],
+84  +                     "position": s["position"],
+85  +                     "team": int(s["team"]),
+86  +                     "team_short": tm.short_name if tm else "PL",
+87  +                     "expected_points": round(float(s["expected_points"]), 2),
+88  +                     "p10": round(float(s.get("p10", 0.0)), 2),
+89  +                     "p90": round(float(s.get("p90", 0.0)), 2),
+90  +                     "is_captain": eid == captain_elem,
+91  +                     "is_vice_captain": eid == vice_elem,
+92  +                 }
+93  +             )
+94  |
+--------------------------------------------------------------------------------
+98  |             tm = team_map.get(int(b["team"]))
+    -             bench_list.append({
+    -                 "element": eid,
+    -                 "web_name": b["web_name"],
+    -                 "position": b["position"],
+    -                 "team": int(b["team"]),
+    -                 "team_short": tm.short_name if tm else "PL",
+    -                 "expected_points": round(float(b["expected_points"]), 2),
+    -                 "bench_order": idx,
+    -             })
+99  +             bench_list.append(
+100 +                 {
+101 +                     "element": eid,
+102 +                     "web_name": b["web_name"],
+103 +                     "position": b["position"],
+104 +                     "team": int(b["team"]),
+105 +                     "team_short": tm.short_name if tm else "PL",
+106 +                     "expected_points": round(float(b["expected_points"]), 2),
+107 +                     "bench_order": idx,
+108 +                 }
+109 +             )
+110 |
+--------------------------------------------------------------------------------
+151 |             if isinstance(p, dict):
+    -                 transfers_in.append({
+    -                     "element": int(p.get("element", 0)),
+    -                     "web_name": p.get("web_name", ""),
+    -                     "cost": round(float(p.get("buy_price", 0.0)), 1),
+    -                     "expected_points": round(float(p.get("expected_points", 0.0)), 2),
+    -                 })
+152 +                 transfers_in.append(
+153 +                     {
+154 +                         "element": int(p.get("element", 0)),
+155 +                         "web_name": p.get("web_name", ""),
+156 +                         "cost": round(float(p.get("buy_price", 0.0)), 1),
+157 +                         "expected_points": round(float(p.get("expected_points", 0.0)), 2),
+158 +                     }
+159 +                 )
+160 |
+161 |         transfers_out = []
+162 |         for p in t_out_raw:
+163 |             if isinstance(p, dict):
+    -                 transfers_out.append({
+    -                     "element": int(p.get("element", 0)),
+    -                     "web_name": p.get("web_name", ""),
+    -                     "cost": round(float(p.get("sell_price", 0.0)), 1),
+    -                     "expected_points": round(float(p.get("expected_points", 0.0)), 2),
+    -                 })
+164 +                 transfers_out.append(
+165 +                     {
+166 +                         "element": int(p.get("element", 0)),
+167 +                         "web_name": p.get("web_name", ""),
+168 +                         "cost": round(float(p.get("sell_price", 0.0)), 1),
+169 +                         "expected_points": round(float(p.get("expected_points", 0.0)), 2),
+170 +                     }
+171 +                 )
+172 |
+--------------------------------------------------------------------------------
+226 |                 if active_chip_item
+    -                 else (chip_strat.get("chip_plan_table", [{}])[0].get("recommended_gw") if chip_strat.get("chip_plan_table") else None)
+227 +                 else (
+228 +                     chip_strat.get("chip_plan_table", [{}])[0].get("recommended_gw")
+229 +                     if chip_strat.get("chip_plan_table")
+230 +                     else None
+231 +                 )
+232 |             ),
+--------------------------------------------------------------------------------
+303 |                         "posture": strategy.get("posture", "BALANCED_ATTACK"),
+    -                         "posture_reason": strategy.get("rationale", "Maintain balanced upside with core template coverage."),
+304 +                         "posture_reason": strategy.get(
+305 +                             "rationale", "Maintain balanced upside with core template coverage."
+306 +                         ),
+307 |                         "nearest_above_gap": strategy.get("gap_to_leader"),
+--------------------------------------------------------------------------------
+315 |                         "p_first": round(float(mc_res.get("user_win_probability_pct", 0.0)), 1),
+    -                         "p_above_key_rivals": round(float(mc_res.get("p_above_key_rivals", mc_res.get("user_win_probability_pct", 0.0))), 1),
+316 +                         "p_above_key_rivals": round(
+317 +                             float(mc_res.get("p_above_key_rivals", mc_res.get("user_win_probability_pct", 0.0))), 1
+318 +                         ),
+319 |                         "expected_rank": round(float(mc_res.get("expected_final_rank", 1.0)), 1),
+--------------------------------------------------------------------------------
+428 |
+    -     lines.extend([
+    -         "",
+    -         "## 2. Transfer Plan",
+    -         f"**Recommended Move:** {t.get('action_summary', '')}",
+    -     ])
+429 +     lines.extend(
+430 +         [
+431 +             "",
+432 +             "## 2. Transfer Plan",
+433 +             f"**Recommended Move:** {t.get('action_summary', '')}",
+434 +         ]
+435 +     )
+436 |
+--------------------------------------------------------------------------------
+444 |
+    -     lines.extend([
+    -         f"- **GW Net Gain vs Roll:** +{t.get('expected_gain_gw', 0.0):.1f} pts",
+    -         f"- **5-GW Horizon Net Gain:** +{t.get('net_gain_vs_roll', 0.0):.1f} pts",
+    -         f"- **Hit Penalty:** -{t.get('hit_cost', 0)} pts ({t.get('hits_count', 0)} extra transfer(s))",
+    -         f"- **Bank After:** £{t.get('bank_after', 0.0):.1f}m | **FTs Next Week:** {t.get('ft_remaining', 1)}",
+    -         f"- **No-Regret Status:** {'CONFIRMED (>=70% win-rate under noise)' if t.get('no_regret_flag') else 'Standard optimal'}",
+    -         "",
+    -         "## 3. Starting XI & Captaincy",
+    -         f"**Formation:** {card.get('formation', '3-5-2')}",
+    -         f"- **Captain (C):** {cap.get('web_name', '')} ({cap.get('team_short', '')}) — {cap.get('expected_points', 0.0)} xP [P10: {cap.get('p10', 0.0)}, P90: {cap.get('p90', 0.0)}]",
+    -         f"- **Vice-Captain (V):** {vice.get('web_name', '')} ({vice.get('team_short', '')}) — {vice.get('expected_points', 0.0)} xP",
+    -         "",
+    -         "### Starting Lineup",
+    -         "| Pos | Player | Club | xP | P10-P90 | Role |",
+    -         "|:---|:---|:---:|:---:|:---:|:---:|",
+    -     ])
+445 +     lines.extend(
+446 +         [
+447 +             f"- **GW Net Gain vs Roll:** +{t.get('expected_gain_gw', 0.0):.1f} pts",
+448 +             f"- **5-GW Horizon Net Gain:** +{t.get('net_gain_vs_roll', 0.0):.1f} pts",
+449 +             f"- **Hit Penalty:** -{t.get('hit_cost', 0)} pts ({t.get('hits_count', 0)} extra transfer(s))",
+450 +             f"- **Bank After:** £{t.get('bank_after', 0.0):.1f}m | **FTs Next Week:** {t.get('ft_remaining', 1)}",
+451 +             f"- **No-Regret Status:** {'CONFIRMED (>=70% win-rate under noise)' if t.get('no_regret_flag') else 'Standard optimal'}",
+452 +             "",
+453 +             "## 3. Starting XI & Captaincy",
+454 +             f"**Formation:** {card.get('formation', '3-5-2')}",
+455 +             f"- **Captain (C):** {cap.get('web_name', '')} ({cap.get('team_short', '')}) — {cap.get('expected_points', 0.0)} xP [P10: {cap.get('p10', 0.0)}, P90: {cap.get('p90', 0.0)}]",
+456 +             f"- **Vice-Captain (V):** {vice.get('web_name', '')} ({vice.get('team_short', '')}) — {vice.get('expected_points', 0.0)} xP",
+457 +             "",
+458 +             "### Starting Lineup",
+459 +             "| Pos | Player | Club | xP | P10-P90 | Role |",
+460 +             "|:---|:---|:---:|:---:|:---:|:---:|",
+461 +         ]
+462 +     )
+463 |
+464 |     for p in card.get("xi", []):
+465 |         role = "Captain (C)" if p.get("is_captain") else ("Vice (V)" if p.get("is_vice_captain") else "")
+466 |         interval = f"[{p.get('p10', 0.0):.1f} - {p.get('p90', 0.0):.1f}]"
+    -         lines.append(f"| {p.get('position')} | {p.get('web_name')} | {p.get('team_short')} | {p.get('expected_points', 0.0):.1f} | {interval} | {role} |")
+467 +         lines.append(
+468 +             f"| {p.get('position')} | {p.get('web_name')} | {p.get('team_short')} | {p.get('expected_points', 0.0):.1f} | {interval} | {role} |"
+469 +         )
+470 |
+    -     lines.extend([
+    -         "",
+    -         "### Bench Order",
+    -     ])
+471 +     lines.extend(
+472 +         [
+473 +             "",
+474 +             "### Bench Order",
+475 +         ]
+476 +     )
+477 |     for b in card.get("bench", []):
+    -         lines.append(f"{b.get('bench_order')}. {b.get('web_name')} ({b.get('position')}, {b.get('team_short')}) — {b.get('expected_points', 0.0):.1f} xP")
+478 +         lines.append(
+479 +             f"{b.get('bench_order')}. {b.get('web_name')} ({b.get('position')}, {b.get('team_short')}) — {b.get('expected_points', 0.0):.1f} xP"
+480 +         )
+481 |
+    -     lines.extend([
+    -         "",
+    -         "## 4. Mini-League & Rivals",
+    -         f"- **Mini-League:** {riv.get('league_name', 'None')} ({riv.get('status', 'unconfigured')})",
+    -         f"- **Tactical Posture:** {riv.get('posture', 'BALANCED_ATTACK')}",
+    -         f"- **Posture Rationale:** {riv.get('posture_reason', '')}",
+    -         f"- **Championship Win Probability:** {wp.get('p_first', 0.0):.1f}% (Expected Finish: {wp.get('expected_rank', 1.0):.1f})",
+    -         f"- **Key Exposure Risks:** {', '.join(riv.get('exposure_players', [])) or 'None'}",
+    -         f"- **Key Differentials:** {', '.join(riv.get('differential_players', [])) or 'None'}",
+    -         "",
+    -         "## 5. Decision Summary & Pre-Deadline Caveats",
+    -         f"**Rationale:** {card.get('two_line_reasoning', '')}",
+    -         "",
+    -         "**Caveats:**",
+    -     ])
+482 +     lines.extend(
+483 +         [
+484 +             "",
+485 +             "## 4. Mini-League & Rivals",
+486 +             f"- **Mini-League:** {riv.get('league_name', 'None')} ({riv.get('status', 'unconfigured')})",
+487 +             f"- **Tactical Posture:** {riv.get('posture', 'BALANCED_ATTACK')}",
+488 +             f"- **Posture Rationale:** {riv.get('posture_reason', '')}",
+489 +             f"- **Championship Win Probability:** {wp.get('p_first', 0.0):.1f}% (Expected Finish: {wp.get('expected_rank', 1.0):.1f})",
+490 +             f"- **Key Exposure Risks:** {', '.join(riv.get('exposure_players', [])) or 'None'}",
+491 +             f"- **Key Differentials:** {', '.join(riv.get('differential_players', [])) or 'None'}",
+492 +             "",
+493 +             "## 5. Decision Summary & Pre-Deadline Caveats",
+494 +             f"**Rationale:** {card.get('two_line_reasoning', '')}",
+495 +             "",
+496 +             "**Caveats:**",
+497 +         ]
+498 +     )
+499 |
+500 |     for c in card.get("caveats", []):
+501 |         lines.append(f"- {c}")
+502 |
+    -     lines.extend([
+    -         f"- {card.get('what_changed', '')}",
+    -         "",
+    -         "---",
+    -         f"*{card.get('advice_disclaimer', '')}*",
+    -     ])
+503 +     lines.extend(
+504 +         [
+505 +             f"- {card.get('what_changed', '')}",
+506 +             "",
+507 +             "---",
+508 +             f"*{card.get('advice_disclaimer', '')}*",
+509 +         ]
+510 +     )
+511 |
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\chips\planner.py:41:18
+    |
+40  | CHIP_RECOMMENDATION_THRESHOLDS = {
+    -     "3xc": 4.0,       # Extra 1x captain must be >= 4.0 xP
+    -     "bboost": 8.0,    # Bench must provide >= 8.0 xP
+41  +     "3xc": 4.0,  # Extra 1x captain must be >= 4.0 xP
+42  +     "bboost": 8.0,  # Bench must provide >= 8.0 xP
+43  |     "freehit": 10.0,  # One-week swing must be >= 10.0 xP
+--------------------------------------------------------------------------------
+345 |                     gain, conf, base_xp, chip_xp = self.compute_chip_utility(
+    -                         c, rec_gw, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget, current_gw=current_gw
+346 +                         c,
+347 +                         rec_gw,
+348 +                         current_squad_df,
+349 +                         horizon_projections,
+350 +                         dgw_gws,
+351 +                         bgw_gws,
+352 +                         budget,
+353 +                         current_gw=current_gw,
+354 |                     )
+--------------------------------------------------------------------------------
+378 |         elif current_gw > 19:
+    -             set_1_warning = "SET 1 EXPIRED: Gameweek 19 deadline has passed. Set 1 chips are expired and cannot be deployed."
+379 +             set_1_warning = (
+380 +                 "SET 1 EXPIRED: Gameweek 19 deadline has passed. Set 1 chips are expired and cannot be deployed."
+381 +             )
+382 |
+--------------------------------------------------------------------------------
+456 |         chip_for_curr_gw = next((item for item in chip_plan_table if item["recommended_gw"] == current_gw), None)
+    -         recommend_chip_now = (
+    -             bool(chip_for_curr_gw["is_recommended_this_gw"])
+    -             if chip_for_curr_gw
+    -             else False
+    -         )
+457 +         recommend_chip_now = bool(chip_for_curr_gw["is_recommended_this_gw"]) if chip_for_curr_gw else False
+458 |
+    |
+
+unformatted: File would be reformatted
+  --> src\fpl_oracle\config.py:56:46
+   |
+55 |     gemini_api_key: str = Field(default="", description="Google AI Studio Gemini API Key")
+   -     gemini_free_tier_confirmed: bool = Field(default=False, description="Confirmation that project is non-billable Free Tier")
+56 +     gemini_free_tier_confirmed: bool = Field(
+57 +         default=False, description="Confirmation that project is non-billable Free Tier"
+58 +     )
+59 |     gemini_model: str = Field(default="gemini-2.5-flash-lite", description="Supported Gemini free model")
+--------------------------------------------------------------------------------
+64 |     news_recommendation_mode: str = Field(default="shadow", description="Application mode for candidate news evidence")
+   -     gated_active_opt_in: bool = Field(default=False, description="Explicit opt-in to apply candidate news to production")
+65 +     gated_active_opt_in: bool = Field(
+66 +         default=False, description="Explicit opt-in to apply candidate news to production"
+67 +     )
+68 |
+69 |     # Optional Providers
+   -     odds_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses continuous Dixon-Coles team ratings")
+70 +     odds_api_key: str = Field(
+71 +         default="", description="Dormant/deprecated (N8): zero-cost guarantee uses continuous Dixon-Coles team ratings"
+72 +     )
+73 |     llm_provider: str = Field(default="gemini", description="LLM provider for chat/briefings")
+74 |     anthropic_api_key: str = Field(default="", description="Optional Anthropic API Key")
+75 |     openai_api_key: str = Field(default="", description="Optional OpenAI API Key")
+   -     tavily_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds")
+   -     brave_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds")
+76 +     tavily_api_key: str = Field(
+77 +         default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds"
+78 +     )
+79 +     brave_api_key: str = Field(
+80 +         default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds"
+81 +     )
+82 |     discord_webhook_url: str = Field(default="", description="Optional Discord webhook")
+   |
+
+unformatted: File would be reformatted
+    --> src\fpl_oracle\data\features.py:137:19
+     |
+136  |
+     -         r_xgi_5 = float(last_5["expected_goal_involvements"].mean()) if "expected_goal_involvements" in last_5.columns and not last_5.empty else (r_xg_5 + r_xa_5)
+137  +         r_xgi_5 = (
+138  +             float(last_5["expected_goal_involvements"].mean())
+139  +             if "expected_goal_involvements" in last_5.columns and not last_5.empty
+140  +             else (r_xg_5 + r_xa_5)
+141  +         )
+142  |         r_goals_5 = float(last_5["goals_scored"].mean()) if not last_5.empty else 0.0
+--------------------------------------------------------------------------------
+148  |         r_gc_5 = float(last_5["goals_conceded"].mean()) if not last_5.empty else 0.0
+     -         r_defcon_5 = float(last_5["defensive_contribution"].mean()) if "defensive_contribution" in last_5.columns and not last_5.empty else 0.0
+149  +         r_defcon_5 = (
+150  +             float(last_5["defensive_contribution"].mean())
+151  +             if "defensive_contribution" in last_5.columns and not last_5.empty
+152  +             else 0.0
+153  +         )
+154  |
+--------------------------------------------------------------------------------
+272  |
+     -         sum_cols = [c for c in ["expected_goals", "goals_scored", "goals_conceded", "expected_goals_conceded"] if c in df.columns]
+273  +         sum_cols = [
+274  +             c
+275  +             for c in ["expected_goals", "goals_scored", "goals_conceded", "expected_goals_conceded"]
+276  +             if c in df.columns
+277  +         ]
+278  |         if not sum_cols:
+--------------------------------------------------------------------------------
+292  |         group_cols = ["season", "round", "team"]
+     -         team_match = (
+     -             df.groupby(group_cols)
+     -             .agg(agg_dict)
+     -             .reset_index()
+     -             .sort_values(by=["season", "round"])
+     -         )
+293  +         team_match = df.groupby(group_cols).agg(agg_dict).reset_index().sort_values(by=["season", "round"])
+294  |         if "goals_scored" not in team_match.columns:
+--------------------------------------------------------------------------------
+312  |         for w in [3, 5, 8]:
+     -             team_match[f"team_roll_goals_{w}"] = grouped["goals_scored"].apply(
+     -                 lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_GOALS)
+     -             team_match[f"team_roll_xG_{w}"] = grouped["expected_goals"].apply(
+     -                 lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_XG)
+     -             team_match[f"team_roll_goals_conceded_{w}"] = grouped["goals_conceded"].apply(
+     -                 lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_GOALS_CONCEDED)
+     -             team_match[f"team_roll_xGC_{w}"] = grouped["expected_goals_conceded"].apply(
+     -                 lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_XGC)
+     -             team_match[f"team_roll_points_{w}"] = grouped["match_points"].apply(
+     -                 lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_POINTS)
+     -
+     -         team_match["team_roll_clean_sheets_5"] = grouped["match_clean_sheet"].apply(
+     -             lambda s: s.shift(1).rolling(5, min_periods=1).mean()
+     -         ).fillna(PRIOR_TEAM_CLEAN_SHEET)
+313  +             team_match[f"team_roll_goals_{w}"] = (
+314  +                 grouped["goals_scored"]
+315  +                 .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+316  +                 .fillna(PRIOR_TEAM_GOALS)
+317  +             )
+318  +             team_match[f"team_roll_xG_{w}"] = (
+319  +                 grouped["expected_goals"]
+320  +                 .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+321  +                 .fillna(PRIOR_TEAM_XG)
+322  +             )
+323  +             team_match[f"team_roll_goals_conceded_{w}"] = (
+324  +                 grouped["goals_conceded"]
+325  +                 .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+326  +                 .fillna(PRIOR_TEAM_GOALS_CONCEDED)
+327  +             )
+328  +             team_match[f"team_roll_xGC_{w}"] = (
+329  +                 grouped["expected_goals_conceded"]
+330  +                 .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+331  +                 .fillna(PRIOR_TEAM_XGC)
+332  +             )
+333  +             team_match[f"team_roll_points_{w}"] = (
+334  +                 grouped["match_points"]
+335  +                 .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+336  +                 .fillna(PRIOR_TEAM_POINTS)
+337  +             )
+338  +
+339  +         team_match["team_roll_clean_sheets_5"] = (
+340  +             grouped["match_clean_sheet"]
+341  +             .apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean())
+342  +             .fillna(PRIOR_TEAM_CLEAN_SHEET)
+343  +         )
+344  |
+345  |         # Unshifted rolling stats per team (as-of latest completed match for upcoming serving)
+346  |         for w in [3, 5, 8]:
+     -             team_match[f"team_roll_goals_{w}_unshifted"] = grouped["goals_scored"].apply(
+     -                 lambda s, win=w: s.rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_GOALS)
+     -             team_match[f"team_roll_xG_{w}_unshifted"] = grouped["expected_goals"].apply(
+     -                 lambda s, win=w: s.rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_XG)
+     -             team_match[f"team_roll_goals_conceded_{w}_unshifted"] = grouped["goals_conceded"].apply(
+     -                 lambda s, win=w: s.rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_GOALS_CONCEDED)
+     -             team_match[f"team_roll_xGC_{w}_unshifted"] = grouped["expected_goals_conceded"].apply(
+     -                 lambda s, win=w: s.rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_XGC)
+     -             team_match[f"team_roll_points_{w}_unshifted"] = grouped["match_points"].apply(
+     -                 lambda s, win=w: s.rolling(win, min_periods=1).mean()
+     -             ).fillna(PRIOR_TEAM_POINTS)
+     -
+     -         team_match["team_roll_clean_sheets_5_unshifted"] = grouped["match_clean_sheet"].apply(
+     -             lambda s: s.rolling(5, min_periods=1).mean()
+     -         ).fillna(PRIOR_TEAM_CLEAN_SHEET)
+347  +             team_match[f"team_roll_goals_{w}_unshifted"] = (
+348  +                 grouped["goals_scored"]
+349  +                 .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+350  +                 .fillna(PRIOR_TEAM_GOALS)
+351  +             )
+352  +             team_match[f"team_roll_xG_{w}_unshifted"] = (
+353  +                 grouped["expected_goals"]
+354  +                 .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+355  +                 .fillna(PRIOR_TEAM_XG)
+356  +             )
+357  +             team_match[f"team_roll_goals_conceded_{w}_unshifted"] = (
+358  +                 grouped["goals_conceded"]
+359  +                 .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+360  +                 .fillna(PRIOR_TEAM_GOALS_CONCEDED)
+361  +             )
+362  +             team_match[f"team_roll_xGC_{w}_unshifted"] = (
+363  +                 grouped["expected_goals_conceded"]
+364  +                 .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+365  +                 .fillna(PRIOR_TEAM_XGC)
+366  +             )
+367  +             team_match[f"team_roll_points_{w}_unshifted"] = (
+368  +                 grouped["match_points"]
+369  +                 .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+370  +                 .fillna(PRIOR_TEAM_POINTS)
+371  +             )
+372  +
+373  +         team_match["team_roll_clean_sheets_5_unshifted"] = (
+374  +             grouped["match_clean_sheet"]
+375  +             .apply(lambda s: s.rolling(5, min_periods=1).mean())
+376  +             .fillna(PRIOR_TEAM_CLEAN_SHEET)
+377  +         )
+378  |
+--------------------------------------------------------------------------------
+748  |         df_player.loc[is_gw1 & has_baseline, "roll_minutes_3"] = np.maximum(
+     -             df_player.loc[is_gw1 & has_baseline, "roll_minutes_3"], df_player.loc[is_gw1 & has_baseline, "std_minutes_per_gw"] * 0.90
+749  +             df_player.loc[is_gw1 & has_baseline, "roll_minutes_3"],
+750  +             df_player.loc[is_gw1 & has_baseline, "std_minutes_per_gw"] * 0.90,
+751  |         )
+--------------------------------------------------------------------------------
+798  |         df_player["roll_own_goals_5"] = (
+     -             grouped[og.name if hasattr(og, 'name') else 'own_goals'].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(0.0)
+799  +             grouped[og.name if hasattr(og, "name") else "own_goals"]
+800  +             .apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean())
+801  +             .fillna(0.0)
+802  |             if "own_goals" in df_player.columns
+--------------------------------------------------------------------------------
+851  |                 "target_card_deduction": df_sorted["target_card_deduction"].astype(float),
+     -                 "target_penalties_saved": df_sorted.get("penalties_saved", pd.Series(0, index=df_sorted.index)).fillna(0).astype(float),
+852  +                 "target_penalties_saved": df_sorted.get("penalties_saved", pd.Series(0, index=df_sorted.index))
+853  +                 .fillna(0)
+854  +                 .astype(float),
+855  |                 "target_points": df_sorted["total_points"].astype(float),
+--------------------------------------------------------------------------------
+1052 |                 else:
+     -                     my_att = float((my_team.strength_attack_home if was_h else my_team.strength_attack_away) or 1000) / 750.0 if my_team else 1.30
+     -                     my_def = float((my_team.strength_defence_home if was_h else my_team.strength_defence_away) or 1000) / 750.0 if my_team else 1.35
+1053 +                     my_att = (
+1054 +                         float((my_team.strength_attack_home if was_h else my_team.strength_attack_away) or 1000) / 750.0
+1055 +                         if my_team
+1056 +                         else 1.30
+1057 +                     )
+1058 +                     my_def = (
+1059 +                         float((my_team.strength_defence_home if was_h else my_team.strength_defence_away) or 1000)
+1060 +                         / 750.0
+1061 +                         if my_team
+1062 +                         else 1.35
+1063 +                     )
+1064 |                     t_g3, t_g5, t_g8 = PRIOR_TEAM_GOALS, PRIOR_TEAM_GOALS, PRIOR_TEAM_GOALS
+--------------------------------------------------------------------------------
+1080 |                 else:
+     -                     opp_att = float((opp_team.strength_attack_away if was_h else opp_team.strength_attack_home) or 1000) / 750.0 if opp_team else 1.30
+     -                     opp_def = float((opp_team.strength_defence_away if was_h else opp_team.strength_defence_home) or 1000) / 750.0 if opp_team else 1.35
+1081 +                     opp_att = (
+1082 +                         float((opp_team.strength_attack_away if was_h else opp_team.strength_attack_home) or 1000)
+1083 +                         / 750.0
+1084 +                         if opp_team
+1085 +                         else 1.30
+1086 +                     )
+1087 +                     opp_def = (
+1088 +                         float((opp_team.strength_defence_away if was_h else opp_team.strength_defence_home) or 1000)
+1089 +                         / 750.0
+1090 +                         if opp_team
+1091 +                         else 1.35
+1092 +                     )
+1093 |                     opp_p3, opp_p5, opp_p8 = PRIOR_TEAM_POINTS, PRIOR_TEAM_POINTS, PRIOR_TEAM_POINTS
+     -                     opp_gc3, opp_gc5, opp_gc8 = PRIOR_TEAM_GOALS_CONCEDED, PRIOR_TEAM_GOALS_CONCEDED, PRIOR_TEAM_GOALS_CONCEDED
+1094 +                     opp_gc3, opp_gc5, opp_gc8 = (
+1095 +                         PRIOR_TEAM_GOALS_CONCEDED,
+1096 +                         PRIOR_TEAM_GOALS_CONCEDED,
+1097 +                         PRIOR_TEAM_GOALS_CONCEDED,
+1098 +                     )
+1099 |                     opp_xgc3, opp_xgc5, opp_xgc8 = opp_def, opp_def, opp_def
+--------------------------------------------------------------------------------
+1112 |                                 if pd.notnull(prev_dt):
+     -                                     days_rest_val = float(np.clip((fix_dt - prev_dt).total_seconds() / 86400.0, 2.0, 14.0))
+1113 +                                     days_rest_val = float(
+1114 +                                         np.clip((fix_dt - prev_dt).total_seconds() / 86400.0, 2.0, 14.0)
+1115 +                                     )
+1116 |                         else:
+     |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\data\store.py:286:1
+    |
+285 |                 from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+286 +
+287 |                 if profile.manager_id is None and FPL_MANAGER_ID:
+--------------------------------------------------------------------------------
+308 |             from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+309 +
+310 |             changed = False
+--------------------------------------------------------------------------------
+350 |         from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+351 +
+352 |         with self.get_session() as session:
+--------------------------------------------------------------------------------
+375 |             return self.get_profile()
+    -
+376 |
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\domain\manager_state.py:173:26
+    |
+172 |
+    -         entries = sorted(history_current, key=lambda e: getattr(e, "event", 0) if not isinstance(e, dict) else e.get("event", 0))
+173 +         entries = sorted(
+174 +             history_current, key=lambda e: getattr(e, "event", 0) if not isinstance(e, dict) else e.get("event", 0)
+175 +         )
+176 |         chips_used_map = {}
+--------------------------------------------------------------------------------
+185 |             gw = getattr(entry, "event", 0) if not isinstance(entry, dict) else entry.get("event", 0)
+    -             transfers_made = getattr(entry, "event_transfers", 0) if not isinstance(entry, dict) else entry.get("event_transfers", 0)
+186 +             transfers_made = (
+187 +                 getattr(entry, "event_transfers", 0) if not isinstance(entry, dict) else entry.get("event_transfers", 0)
+188 +             )
+189 |             active_chip = chips_used_map.get(gw, "")
+--------------------------------------------------------------------------------
+244 |                 most_recent = t_list[0]
+    -                 cost = getattr(most_recent, "element_in_cost", None) if not isinstance(most_recent, dict) else most_recent.get("element_in_cost")
+245 +                 cost = (
+246 +                     getattr(most_recent, "element_in_cost", None)
+247 +                     if not isinstance(most_recent, dict)
+248 +                     else most_recent.get("element_in_cost")
+249 +                 )
+250 |                 if cost is not None and cost > 0:
+--------------------------------------------------------------------------------
+341 |                 for c in chips_hist:
+    -                     chips_used_list.append({
+    -                         "name": getattr(c, "name", ""),
+    -                         "event": getattr(c, "event", 0),
+    -                         "time": getattr(c, "time", None),
+    -                     })
+342 +                     chips_used_list.append(
+343 +                         {
+344 +                             "name": getattr(c, "name", ""),
+345 +                             "event": getattr(c, "event", 0),
+346 +                             "time": getattr(c, "time", None),
+347 +                         }
+348 +                     )
+349 |
+--------------------------------------------------------------------------------
+405 |
+    -             purchase_p, selling_p, prov = prices_map.get(elem_id, (elem.now_cost, elem.now_cost, PriceProvenance.MARKET_ESTIMATE))
+406 +             purchase_p, selling_p, prov = prices_map.get(
+407 +                 elem_id, (elem.now_cost, elem.now_cost, PriceProvenance.MARKET_ESTIMATE)
+408 +             )
+409 |             pick_meta = picks_pos_map.get(elem_id)
+--------------------------------------------------------------------------------
+432 |
+    -             squad_players.append(PlayerSquadState(
+    -                 element=elem.id,
+    -                 web_name=elem.web_name,
+    -                 team=elem.team,
+    -                 position=pos_map.get(elem.element_type, "MID"),
+    -                 now_cost=int(elem.now_cost),
+    -                 purchase_price=purchase_p,
+    -                 selling_price=selling_p,
+    -                 price_provenance=prov,
+    -                 is_starter=is_starter,
+    -                 is_captain=is_cap,
+    -                 is_vice_captain=is_vc,
+    -                 multiplier=multiplier,
+    -                 bench_order=bench_order,
+    -                 chance_of_playing=cop,
+    -                 status=elem.status or "a",
+    -                 news=elem.news or "",
+    -             ))
+433 +             squad_players.append(
+434 +                 PlayerSquadState(
+435 +                     element=elem.id,
+436 +                     web_name=elem.web_name,
+437 +                     team=elem.team,
+438 +                     position=pos_map.get(elem.element_type, "MID"),
+439 +                     now_cost=int(elem.now_cost),
+440 +                     purchase_price=purchase_p,
+441 +                     selling_price=selling_p,
+442 +                     price_provenance=prov,
+443 +                     is_starter=is_starter,
+444 +                     is_captain=is_cap,
+445 +                     is_vice_captain=is_vc,
+446 +                     multiplier=multiplier,
+447 +                     bench_order=bench_order,
+448 +                     chance_of_playing=cop,
+449 +                     status=elem.status or "a",
+450 +                     news=elem.news or "",
+451 +                 )
+452 +             )
+453 |
+454 |         # Chip sets calculation
+455 |         all_chips = ["wildcard", "freehit", "3xc", "bboost"]
+    -         rem_set_1 = [c for c in all_chips if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) <= 19]]
+    -         rem_set_2 = [c for c in all_chips if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) > 19]]
+456 +         rem_set_1 = [
+457 +             c
+458 +             for c in all_chips
+459 +             if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) <= 19]
+460 +         ]
+461 +         rem_set_2 = [
+462 +             c
+463 +             for c in all_chips
+464 +             if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) > 19]
+465 +         ]
+466 |
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\domain\rules_service.py:111:35
+    |
+110 |             if not passed:
+    -                 mismatches.append(f"Max Banked FTs mismatch: API {actual_banked} vs config {cfg_transfers.get('max_banked_free_transfers')}")
+    -             items.append(RuleItemVerification("Max Banked FTs", cfg_transfers.get("max_banked_free_transfers", 5), actual_banked, st))
+111 +                 mismatches.append(
+112 +                     f"Max Banked FTs mismatch: API {actual_banked} vs config {cfg_transfers.get('max_banked_free_transfers')}"
+113 +                 )
+114 +             items.append(
+115 +                 RuleItemVerification(
+116 +                     "Max Banked FTs", cfg_transfers.get("max_banked_free_transfers", 5), actual_banked, st
+117 +                 )
+118 +             )
+119 |
+120 |         if "transfers_sell_on_fee" not in gs:
+    -             items.append(RuleItemVerification("Sell-on Fee Rate", 0.5, None, "UNKNOWN", "transfers_sell_on_fee missing"))
+121 +             items.append(
+122 +                 RuleItemVerification("Sell-on Fee Rate", 0.5, None, "UNKNOWN", "transfers_sell_on_fee missing")
+123 +             )
+124 |         else:
+--------------------------------------------------------------------------------
+145 |             has_assistant = "assistant_manager" in chip_names or "manager" in chip_names
+    -             items.append(RuleItemVerification("Assistant Manager Removed", True, not has_assistant, "PASS" if not has_assistant else "FAIL"))
+146 +             items.append(
+147 +                 RuleItemVerification(
+148 +                     "Assistant Manager Removed", True, not has_assistant, "PASS" if not has_assistant else "FAIL"
+149 +                 )
+150 +             )
+151 |             if has_assistant:
+152 |                 mismatches.append("Assistant Manager chip unexpectedly present in API")
+153 |
+154 |             # Check 8 chips count across season (2 sets)
+    -             items.append(RuleItemVerification("Total Season Chips", 8, len(chips_api), "PASS" if len(chips_api) == 8 else "UNKNOWN", f"Found {len(chips_api)} chips"))
+155 +             items.append(
+156 +                 RuleItemVerification(
+157 +                     "Total Season Chips",
+158 +                     8,
+159 +                     len(chips_api),
+160 +                     "PASS" if len(chips_api) == 8 else "UNKNOWN",
+161 +                     f"Found {len(chips_api)} chips",
+162 +                 )
+163 +             )
+164 |         else:
+    -             items.append(RuleItemVerification("Chips Configuration", 8, None, "UNKNOWN", "chips array missing in bootstrap"))
+165 +             items.append(
+166 +                 RuleItemVerification("Chips Configuration", 8, None, "UNKNOWN", "chips array missing in bootstrap")
+167 +             )
+168 |             limitations.append("Chips configuration missing in API response")
+--------------------------------------------------------------------------------
+179 |                     if not passed:
+    -                         mismatches.append(f"Goal points {pos} mismatch: API {goals_pts[pos]} vs config {cfg_goals.get(pos)}")
+180 +                         mismatches.append(
+181 +                             f"Goal points {pos} mismatch: API {goals_pts[pos]} vs config {cfg_goals.get(pos)}"
+182 +                         )
+183 |                     items.append(RuleItemVerification(f"Goals Scored ({pos})", cfg_goals.get(pos), goals_pts[pos], st))
+--------------------------------------------------------------------------------
+207 |                     mismatches.append(f"DefCon DEF mismatch: API {defcon_pts['DEF']} vs config {cfg_defcon.get('DEF')}")
+    -                 items.append(RuleItemVerification("DefCon Points (DEF)", cfg_defcon.get("DEF", 2), defcon_pts["DEF"], st))
+208 +                 items.append(
+209 +                     RuleItemVerification("DefCon Points (DEF)", cfg_defcon.get("DEF", 2), defcon_pts["DEF"], st)
+210 +                 )
+211 |             else:
+    |
+
+unformatted: File would be reformatted
+  --> src\fpl_oracle\domain\scoring.py:63:16
+   |
+62 |     if pos in ("GKP", "DEF"):
+   -         pts -= (goals_conceded // 2)
+63 +         pts -= goals_conceded // 2
+64 |
+65 |     # 6. Saves (1 pt per 3 saves for GKP)
+66 |     if pos == "GKP":
+   -         pts += (saves // 3)
+67 +         pts += saves // 3
+68 |
+   |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\domain\time_service.py:24:35
+    |
+23  | class Clock(Protocol):
+    -     def now_utc(self) -> datetime:
+    -         ...
+24  +     def now_utc(self) -> datetime: ...
+25  |
+--------------------------------------------------------------------------------
+141 |         if curr_fixtures:
+    -             live_count = sum(1 for f in curr_fixtures if getattr(f, "started", False) and not getattr(f, "finished", False))
+142 +             live_count = sum(
+143 +                 1 for f in curr_fixtures if getattr(f, "started", False) and not getattr(f, "finished", False)
+144 +             )
+145 |             if live_count > 0:
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\league\montecarlo.py:148:85
+    |
+147 |                 gw_user = sum(
+    -                     player_draws.get(elem, 0.0) * (2.0 if elem == user_cap else 1.0)
+    -                     for elem in user_starters
+148 +                     player_draws.get(elem, 0.0) * (2.0 if elem == user_cap else 1.0) for elem in user_starters
+149 |                 )
+--------------------------------------------------------------------------------
+155 |                     r_cap = trial_rival_caps[i]
+    -                     gw_rival = sum(
+    -                         player_draws.get(elem, 0.0) * (2.0 if elem == r_cap else 1.0)
+    -                         for elem in r_roster
+    -                     )
+156 +                     gw_rival = sum(player_draws.get(elem, 0.0) * (2.0 if elem == r_cap else 1.0) for elem in r_roster)
+157 |                     trial_rival_pts[i] += gw_rival
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\league\rivals.py:261:20
+    |
+260 |
+    -         template = (
+    -             eo_df[eo_df["effective_ownership"] >= 50.0].to_dict(orient="records")
+    -             if not eo_df.empty
+    -             else []
+    -         )
+261 +         template = eo_df[eo_df["effective_ownership"] >= 50.0].to_dict(orient="records") if not eo_df.empty else []
+262 |         differentials = (
+    |
+
+unformatted: File would be reformatted
+  --> src\fpl_oracle\league\strategy.py:17:32
+   |
+16 |
+   -     def determine_risk_posture(
+   -         self, points_gap: float, win_probability_pct: float | None = None
+   -     ) -> str:
+17 +     def determine_risk_posture(self, points_gap: float, win_probability_pct: float | None = None) -> str:
+18 |         """
+--------------------------------------------------------------------------------
+75 |         close_candidates = [
+   -             p for p in sorted_plans
+   -             if (top_plan.get("expected_gain", 0.0) - p.get("expected_gain", 0.0)) <= margin_xp
+76 +             p for p in sorted_plans if (top_plan.get("expected_gain", 0.0) - p.get("expected_gain", 0.0)) <= margin_xp
+77 |         ]
+   |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\llm\provider.py:264:22
+    |
+263 |                 exact_or_close = [
+    -                     p for p in players
+264 +                     p
+265 +                     for p in players
+266 |                     if entity.lower() in p["web_name"].lower() or p["web_name"].lower() in entity.lower()
+--------------------------------------------------------------------------------
+387 |     profile = data_store.get_profile()
+    -     pref = (preferred_provider or getattr(profile, "llm_provider", None) or SETTINGS.get("llm", {}).get("provider", "")).lower()
+388 +     pref = (
+389 +         preferred_provider or getattr(profile, "llm_provider", None) or SETTINGS.get("llm", {}).get("provider", "")
+390 +     ).lower()
+391 |
+--------------------------------------------------------------------------------
+396 |         from fpl_oracle.llm.gemini import GeminiProvider
+397 +
+398 |         logger.info("Using Google Gemini LLM Provider by preference.")
+399 |         return GeminiProvider(api_key=GEMINI_API_KEY.strip())
+400 |     elif pref == "openai" and OPENAI_API_KEY.strip():
+401 |         from fpl_oracle.llm.openai import OpenAIProvider
+402 +
+403 |         logger.info("Using OpenAI LLM Provider by preference.")
+404 |         return OpenAIProvider(api_key=OPENAI_API_KEY.strip())
+405 |     elif pref == "anthropic" and ANTHROPIC_API_KEY.strip():
+406 |         from fpl_oracle.llm.anthropic import AnthropicProvider
+407 +
+408 |         logger.info("Using Anthropic LLM Provider by preference.")
+--------------------------------------------------------------------------------
+413 |         from fpl_oracle.llm.gemini import GeminiProvider
+414 +
+415 |         logger.info("Using Google Gemini LLM Provider.")
+416 |         return GeminiProvider(api_key=GEMINI_API_KEY.strip())
+417 |     elif OPENAI_API_KEY and OPENAI_API_KEY.strip():
+418 |         from fpl_oracle.llm.openai import OpenAIProvider
+419 +
+420 |         logger.info("Using OpenAI LLM Provider.")
+421 |         return OpenAIProvider(api_key=OPENAI_API_KEY.strip())
+422 |     elif ANTHROPIC_API_KEY and ANTHROPIC_API_KEY.strip():
+423 |         from fpl_oracle.llm.anthropic import AnthropicProvider
+424 +
+425 |         logger.info("Using Anthropic LLM Provider.")
+    |
+
+unformatted: File would be reformatted
+  --> src\fpl_oracle\ml\ensemble.py:49:69
+   |
+48 |         cop_scale = (
+   -             np.clip(X["chance_of_playing"].values / 100.0, 0.0, 1.0)
+   -             if "chance_of_playing" in X.columns
+   -             else 1.0
+49 +             np.clip(X["chance_of_playing"].values / 100.0, 0.0, 1.0) if "chance_of_playing" in X.columns else 1.0
+50 |         )
+   |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\ml\eval.py:107:48
+    |
+106 |
+    -     def compute_partial_dependence_diagnostics(
+    -         self, X: pd.DataFrame, ml_preds: np.ndarray
+    -     ) -> dict[str, Any]:
+107 +     def compute_partial_dependence_diagnostics(self, X: pd.DataFrame, ml_preds: np.ndarray) -> dict[str, Any]:
+108 |         """
+--------------------------------------------------------------------------------
+112 |         """
+    -         df_diag = pd.DataFrame({
+    -             "pred": ml_preds,
+    -             "opp_def": X["opp_strength_defence"].values,
+    -             "opp_xgc": X["opp_roll_xGC_5"].values,
+    -             "player_xg": X["roll_xG_5"].values,
+    -             "player_pts": X["roll_points_5"].values,
+    -             "was_home": X["was_home"].values,
+    -         })
+113 +         df_diag = pd.DataFrame(
+114 +             {
+115 +                 "pred": ml_preds,
+116 +                 "opp_def": X["opp_strength_defence"].values,
+117 +                 "opp_xgc": X["opp_roll_xGC_5"].values,
+118 +                 "player_xg": X["roll_xG_5"].values,
+119 +                 "player_pts": X["roll_points_5"].values,
+120 +                 "was_home": X["was_home"].values,
+121 +             }
+122 +         )
+123 |
+--------------------------------------------------------------------------------
+147 |             "low_player_vs_weak_defence": get_mean(low_form_mask & weak_def_mask),
+    -             "home_advantage_premium_pts": float(np.round(
+    -                 df_diag[df_diag["was_home"] == 1]["pred"].mean() - df_diag[df_diag["was_home"] == 0]["pred"].mean(),
+    -                 2
+    -             )),
+148 +             "home_advantage_premium_pts": float(
+149 +                 np.round(
+150 +                     df_diag[df_diag["was_home"] == 1]["pred"].mean() - df_diag[df_diag["was_home"] == 0]["pred"].mean(),
+151 +                     2,
+152 +                 )
+153 +             ),
+154 |         }
+--------------------------------------------------------------------------------
+229 |                         "base_rmse": float(np.round(root_mean_squared_error(pos_actual, pos_base), 3)),
+    -                         "improvement_mae_pct": float(np.round((p_base_mae - p_ml_mae) / max(0.01, p_base_mae) * 100, 2)),
+230 +                         "improvement_mae_pct": float(
+231 +                             np.round((p_base_mae - p_ml_mae) / max(0.01, p_base_mae) * 100, 2)
+232 +                         ),
+233 |                     }
+--------------------------------------------------------------------------------
+369 |         if not res.get("rolling_origins"):
+    -             content += "| *Full rolling origins evaluated sequentially across historical seasons* | — | — | — | — | — |\n"
+370 +             content += (
+371 +                 "| *Full rolling origins evaluated sequentially across historical seasons* | — | — | — | — | — |\n"
+372 +             )
+373 |
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\ml\predict.py:209:43
+    |
+208 |                 break
+    -             gw_df = self.predict_gameweek(
+    -                 gw, bootstrap, fixtures, reconciled_availabilities=reconciled_availabilities
+    -             )
+209 +             gw_df = self.predict_gameweek(gw, bootstrap, fixtures, reconciled_availabilities=reconciled_availabilities)
+210 |             multi_projections[gw] = gw_df
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\ml\train.py:32:31
+    |
+31  |
+    - def compute_rolling_origin_cv(
+    -     X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFrame
+    - ) -> list[dict[str, Any]]:
+32  + def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFrame) -> list[dict[str, Any]]:
+33  |     """
+--------------------------------------------------------------------------------
+157 |
+    -     fit_mask = (meta_train["season"] < cal_season) | ((meta_train["season"] == cal_season) & (meta_train["round"] < cal_round))
+158 +     fit_mask = (meta_train["season"] < cal_season) | (
+159 +         (meta_train["season"] == cal_season) & (meta_train["round"] < cal_round)
+160 +     )
+161 |     cal_mask = ~fit_mask
+--------------------------------------------------------------------------------
+191 |     }
+    -     cal_comps_flat = {**cal_comps["minutes_model"], **cal_comps["attacking_model"], **cal_comps["defending_model"], **cal_comps["defcon_model"], **cal_comps["bonus_model"], **cal_comps["cards_saves_model"]}
+192 +     cal_comps_flat = {
+193 +         **cal_comps["minutes_model"],
+194 +         **cal_comps["attacking_model"],
+195 +         **cal_comps["defending_model"],
+196 +         **cal_comps["defcon_model"],
+197 +         **cal_comps["bonus_model"],
+198 +         **cal_comps["cards_saves_model"],
+199 +     }
+200 |     z10, z90 = scoring_ensemble.calibrate(cal_comps_flat, X_cal, Y_cal)
+--------------------------------------------------------------------------------
+261 |     }
+    -     ablated_comps_flat = {**ablated_comps["minutes_model"], **ablated_comps["attacking_model"], **ablated_comps["defending_model"], **ablated_comps["defcon_model"], **ablated_comps["bonus_model"], **ablated_comps["cards_saves_model"]}
+262 +     ablated_comps_flat = {
+263 +         **ablated_comps["minutes_model"],
+264 +         **ablated_comps["attacking_model"],
+265 +         **ablated_comps["defending_model"],
+266 +         **ablated_comps["defcon_model"],
+267 +         **ablated_comps["bonus_model"],
+268 +         **ablated_comps["cards_saves_model"],
+269 +     }
+270 |     ablated_preds_df = scoring_ensemble.aggregate_components(ablated_comps_flat, X_val_ablated)
+--------------------------------------------------------------------------------
+296 |     val_sample_df["expected_points"] = full_preds
+    -     top_samples = val_sample_df.sort_values(by="expected_points", ascending=False).drop_duplicates(subset=["name"]).head(8)
+297 +     top_samples = (
+298 +         val_sample_df.sort_values(by="expected_points", ascending=False).drop_duplicates(subset=["name"]).head(8)
+299 +     )
+300 |     upcoming_sample = []
+--------------------------------------------------------------------------------
+305 |         p_xp = float(np.round(r_samp.get("expected_points", 0.0), 2))
+    -         upcoming_sample.append({
+    -             "position": p_pos,
+    -             "name": p_name,
+    -             "team": p_team,
+    -             "opponent": "Scheduled Opponent",
+    -             "venue": "H",
+    -             "xp": p_xp,
+    -             "drivers": f"Form projection {p_xp:.2f} xP, position role {p_pos}",
+    -         })
+306 +         upcoming_sample.append(
+307 +             {
+308 +                 "position": p_pos,
+309 +                 "name": p_name,
+310 +                 "team": p_team,
+311 +                 "opponent": "Scheduled Opponent",
+312 +                 "venue": "H",
+313 +                 "xp": p_xp,
+314 +                 "drivers": f"Form projection {p_xp:.2f} xP, position role {p_pos}",
+315 +             }
+316 +         )
+317 |
+    |
+
+unformatted: File would be reformatted
+  --> src\fpl_oracle\news\analyse.py:42:84
+   |
+41 |             roster_batch = [
+   -                 {"id": int(e.id), "web_name": e.web_name, "team_name": str(e.team)}
+   -                 for e in bootstrap.elements
+42 +                 {"id": int(e.id), "web_name": e.web_name, "team_name": str(e.team)} for e in bootstrap.elements
+43 |             ]
+   |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\news\gemini_extractor.py:60:20
+    |
+59  |         if state["tokens_count"] + estimated_tokens > MAX_DAILY_TOKENS:
+    -             return False, f"Daily free token budget exceeded ({state['tokens_count']} + {estimated_tokens} > {MAX_DAILY_TOKENS})"
+60  +             return (
+61  +                 False,
+62  +                 f"Daily free token budget exceeded ({state['tokens_count']} + {estimated_tokens} > {MAX_DAILY_TOKENS})",
+63  +             )
+64  |
+--------------------------------------------------------------------------------
+95  |         if not free_tier_confirmed:
+    -             return False, "GEMINI_FREE_TIER_CONFIRMED is not true in .env (Safeguard active: won't risk unconfirmed tier)"
+96  +             return (
+97  +                 False,
+98  +                 "GEMINI_FREE_TIER_CONFIRMED is not true in .env (Safeguard active: won't risk unconfirmed tier)",
+99  +             )
+100 |         return True, "Ready"
+--------------------------------------------------------------------------------
+167 |             "  {\n"
+    -             "    \"player_id\": integer (or 0 if unknown),\n"
+    -             "    \"player_name\": string,\n"
+    -             "    \"team_name\": string,\n"
+    -             "    \"category\": one of [\"ruled_out\", \"doubtful\", \"available\", \"returned_to_training\", \"minutes_limit\", \"selection_statement\", \"ineligible\", \"unknown\"],\n"
+    -             "    \"quote\": string (verbatim snippet),\n"
+    -             "    \"match_context\": string or null,\n"
+    -             "    \"is_negated\": boolean,\n"
+    -             "    \"minutes_restriction\": integer or null,\n"
+    -             "    \"confidence\": float (0.0 to 1.0),\n"
+    -             "    \"ambiguity_notes\": string or null\n"
+168 +             '    "player_id": integer (or 0 if unknown),\n'
+169 +             '    "player_name": string,\n'
+170 +             '    "team_name": string,\n'
+171 +             '    "category": one of ["ruled_out", "doubtful", "available", "returned_to_training", "minutes_limit", "selection_statement", "ineligible", "unknown"],\n'
+172 +             '    "quote": string (verbatim snippet),\n'
+173 +             '    "match_context": string or null,\n'
+174 +             '    "is_negated": boolean,\n'
+175 +             '    "minutes_restriction": integer or null,\n'
+176 +             '    "confidence": float (0.0 to 1.0),\n'
+177 +             '    "ambiguity_notes": string or null\n'
+178 |             "  }\n"
+--------------------------------------------------------------------------------
+202 |                 if resp.status_code == 429:
+    -                     logger.warning("[Gemini 429] Rate limited on free tier. Falling back gracefully to official baseline.")
+203 +                     logger.warning(
+204 +                         "[Gemini 429] Rate limited on free tier. Falling back gracefully to official baseline."
+205 +                     )
+206 |                     return ExtractedNewsPayload(
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\news\ingest.py:122:31
+    |
+121 |                 risks_list = getattr(elem, "scout_risks", None) or []
+    -                 risk_types = [
+    -                     (r.property if hasattr(r, "property") else r.get("property", ""))
+    -                     for r in risks_list
+    -                 ]
+122 +                 risk_types = [(r.property if hasattr(r, "property") else r.get("property", "")) for r in risks_list]
+123 |
+    |
+
+unformatted: File would be reformatted
+  --> src\fpl_oracle\news\models.py:28:1
+   |
+27 |     """
+28 +
+29 |     player_id: int = Field(description="Canonical FPL element ID if resolved, else 0")
+30 |     player_name: str = Field(description="Exact player name referenced")
+31 |     team_name: str = Field(default="", description="Club name referenced")
+32 |     team_id: int | None = Field(default=None, description="FPL team ID if resolved")
+   -     category: EvidenceCategory = Field(default=EvidenceCategory.UNKNOWN, description="Category of reported availability")
+33 +     category: EvidenceCategory = Field(
+34 +         default=EvidenceCategory.UNKNOWN, description="Category of reported availability"
+35 +     )
+36 |     quote: str = Field(default="", description="Exact verbatim manager or medical quote from article")
+37 |     quote_start_offset: int | None = Field(default=None, description="Character offset start in cleaned source text")
+38 |     quote_end_offset: int | None = Field(default=None, description="Character offset end in cleaned source text")
+39 |     target_gw: int | None = Field(default=None, description="Explicit gameweek if mentioned")
+   -     match_context: str | None = Field(default=None, description="Context, e.g. Premier League match vs European/Cup tie")
+   -     is_negated: bool = Field(default=False, description="True if statement is negated (e.g. 'not ruled out', 'not fit')")
+40 +     match_context: str | None = Field(
+41 +         default=None, description="Context, e.g. Premier League match vs European/Cup tie"
+42 +     )
+43 +     is_negated: bool = Field(
+44 +         default=False, description="True if statement is negated (e.g. 'not ruled out', 'not fit')"
+45 +     )
+46 |     minutes_restriction: int | None = Field(default=None, description="Explicit minutes limit if mentioned by manager")
+--------------------------------------------------------------------------------
+55 |     """Container for batch article extractions."""
+56 +
+57 |     article_url: str
+--------------------------------------------------------------------------------
+76 |     """
+77 +
+78 |     element_id: int
+   |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\news\reconcile.py:35:1
+    |
+34  |     """
+35  +
+36  |     prob_start_high_base: float = 0.90
+--------------------------------------------------------------------------------
+111 |         if self.mode != RecommendationMode.API_ONLY and candidate_evidence:
+    -             player_evidences = [e for e in candidate_evidence if e.player_id == elem_id or e.player_name.lower() == web_name.lower()]
+112 +             player_evidences = [
+113 +                 e for e in candidate_evidence if e.player_id == elem_id or e.player_name.lower() == web_name.lower()
+114 +             ]
+115 |
+116 |             for ev in player_evidences:
+117 |                 # Filter out cup-only quotes for Premier League planning
+    -                 if ev.match_context and any(cup in ev.match_context.lower() for cup in ["carabao", "fa cup", "champions league", "europa"]):
+    -                     rejected_signals.append(f"Cup competition quote ('{ev.match_context}') does not apply to PL GW {target_gw}")
+118 +                 if ev.match_context and any(
+119 +                     cup in ev.match_context.lower() for cup in ["carabao", "fa cup", "champions league", "europa"]
+120 +                 ):
+121 +                     rejected_signals.append(
+122 +                         f"Cup competition quote ('{ev.match_context}') does not apply to PL GW {target_gw}"
+123 +                     )
+124 |                     continue
+--------------------------------------------------------------------------------
+155 |                     p_start_given_avail = self.prob_settings.prob_start_minutes_limit
+    -                     reconciliation_reason = f"Candidate Evidence: Minutes restricted to {mins_limit:.0f}m ('{ev.quote[:50]}...')"
+156 +                     reconciliation_reason = (
+157 +                         f"Candidate Evidence: Minutes restricted to {mins_limit:.0f}m ('{ev.quote[:50]}...')"
+158 +                     )
+159 |                     break
+--------------------------------------------------------------------------------
+167 |                         p_start_given_avail = self.prob_settings.prob_start_returned_training
+    -                         reconciliation_reason = f"Candidate Evidence: Confirmed returned to training ('{ev.quote[:50]}...')"
+168 +                         reconciliation_reason = (
+169 +                             f"Candidate Evidence: Confirmed returned to training ('{ev.quote[:50]}...')"
+170 +                         )
+171 |                     break
+--------------------------------------------------------------------------------
+178 |                         p_start_given_avail = self.prob_settings.prob_start_doubtful
+    -                         reconciliation_reason = f"Candidate Evidence: Manager reported late fitness test ('{ev.quote[:50]}...')"
+179 +                         reconciliation_reason = (
+180 +                             f"Candidate Evidence: Manager reported late fitness test ('{ev.quote[:50]}...')"
+181 +                         )
+182 |                     break
+    |
+
+unformatted: File would be reformatted
+    --> src\fpl_oracle\optimise\transfers.py:284:30
+     |
+283  |
+     -                 moves.append({
+     -                     "plan_type": "1_TRANSFER",
+     -                     "transfers_in": [buy_id],
+     -                     "transfers_out": [sell_id],
+     -                     "sell_prices": {sell_id: sell_price},
+     -                     "buy_costs": {buy_id: int(buy_row["value"])},
+     -                     "bank_delta": sell_price - int(buy_row["value"]),
+     -                     "immediate_gain": float(buy_row["expected_points"]) - float(sell_p.get("expected_points", 0.0)),
+     -                 })
+284  +                 moves.append(
+285  +                     {
+286  +                         "plan_type": "1_TRANSFER",
+287  +                         "transfers_in": [buy_id],
+288  +                         "transfers_out": [sell_id],
+289  +                         "sell_prices": {sell_id: sell_price},
+290  +                         "buy_costs": {buy_id: int(buy_row["value"])},
+291  +                         "bank_delta": sell_price - int(buy_row["value"]),
+292  +                         "immediate_gain": float(buy_row["expected_points"]) - float(sell_p.get("expected_points", 0.0)),
+293  +                     }
+294  +                 )
+295  |
+--------------------------------------------------------------------------------
+345  |
+     -                 moves_2.append({
+     -                     "plan_type": "2_TRANSFERS",
+     -                     "transfers_in": [in1, in2],
+     -                     "transfers_out": [out1, out2],
+     -                     "sell_prices": combined_sell_prices,
+     -                     "buy_costs": combined_buy_costs,
+     -                     "bank_delta": m1["bank_delta"] + m2["bank_delta"],
+     -                     "immediate_gain": m1["immediate_gain"] + m2["immediate_gain"],
+     -                 })
+346  +                 moves_2.append(
+347  +                     {
+348  +                         "plan_type": "2_TRANSFERS",
+349  +                         "transfers_in": [in1, in2],
+350  +                         "transfers_out": [out1, out2],
+351  +                         "sell_prices": combined_sell_prices,
+352  +                         "buy_costs": combined_buy_costs,
+353  +                         "bank_delta": m1["bank_delta"] + m2["bank_delta"],
+354  +                         "immediate_gain": m1["immediate_gain"] + m2["immediate_gain"],
+355  +                     }
+356  +                 )
+357  |
+--------------------------------------------------------------------------------
+420  |
+     -         beam = [{
+     -             "elements": curr_elements,
+     -             "bank": curr_bank,
+     -             "purchase_prices": curr_purch,
+     -             "banked_ft": next_ft0,
+     -             "history": [step0_record],
+     -             "accumulated_discounted_net_xp": net_xp0,
+     -             "total_hits": hits0,
+     -             "total_gross_xp": xp0,
+     -             "total_net_xp": net_xp0,
+     -         }]
+421  +         beam = [
+422  +             {
+423  +                 "elements": curr_elements,
+424  +                 "bank": curr_bank,
+425  +                 "purchase_prices": curr_purch,
+426  +                 "banked_ft": next_ft0,
+427  +                 "history": [step0_record],
+428  +                 "accumulated_discounted_net_xp": net_xp0,
+429  +                 "total_hits": hits0,
+430  +                 "total_gross_xp": xp0,
+431  +                 "total_net_xp": net_xp0,
+432  +             }
+433  +         ]
+434  |
+435  |         for step_idx, gw in enumerate(horizon_gws[1:], start=1):
+     -             discount = self.discount_factor ** step_idx
+436  +             discount = self.discount_factor**step_idx
+437  |             pmap = player_maps[gw]
+--------------------------------------------------------------------------------
+459  |                 }
+     -                 next_beam.append({
+     -                     "elements": set(state["elements"]),
+     -                     "bank": state["bank"],
+     -                     "purchase_prices": dict(state["purchase_prices"]),
+     -                     "banked_ft": min(5, state["banked_ft"] + 1),
+     -                     "history": state["history"] + [roll_rec],
+     -                     "total_hits": state["total_hits"],
+     -                     "total_gross_xp": state["total_gross_xp"] + xp_roll,
+     -                     "total_net_xp": state["total_net_xp"] + xp_roll,
+     -                     "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * xp_roll,
+     -                 })
+460  +                 next_beam.append(
+461  +                     {
+462  +                         "elements": set(state["elements"]),
+463  +                         "bank": state["bank"],
+464  +                         "purchase_prices": dict(state["purchase_prices"]),
+465  +                         "banked_ft": min(5, state["banked_ft"] + 1),
+466  +                         "history": state["history"] + [roll_rec],
+467  +                         "total_hits": state["total_hits"],
+468  +                         "total_gross_xp": state["total_gross_xp"] + xp_roll,
+469  +                         "total_net_xp": state["total_net_xp"] + xp_roll,
+470  +                         "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * xp_roll,
+471  +                     }
+472  +                 )
+473  |
+--------------------------------------------------------------------------------
+506  |                     h_cost = hits * self.hit_penalty
+     -                     xp_m, cap_m, form_m = _fast_eval_squad_formation(
+     -                         new_elems, pmap, risk_preference=risk_preference
+     -                     )
+507  +                     xp_m, cap_m, form_m = _fast_eval_squad_formation(new_elems, pmap, risk_preference=risk_preference)
+508  |                     net_m = xp_m - h_cost
+--------------------------------------------------------------------------------
+524  |
+     -                     next_beam.append({
+     -                         "elements": new_elems,
+     -                         "bank": new_bank,
+     -                         "purchase_prices": new_purch,
+     -                         "banked_ft": n_ft,
+     -                         "history": state["history"] + [m_rec],
+     -                         "total_hits": state["total_hits"] + hits,
+     -                         "total_gross_xp": state["total_gross_xp"] + xp_m,
+     -                         "total_net_xp": state["total_net_xp"] + net_m,
+     -                         "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * net_m,
+     -                     })
+525  +                     next_beam.append(
+526  +                         {
+527  +                             "elements": new_elems,
+528  +                             "bank": new_bank,
+529  +                             "purchase_prices": new_purch,
+530  +                             "banked_ft": n_ft,
+531  +                             "history": state["history"] + [m_rec],
+532  +                             "total_hits": state["total_hits"] + hits,
+533  +                             "total_gross_xp": state["total_gross_xp"] + xp_m,
+534  +                             "total_net_xp": state["total_net_xp"] + net_m,
+535  +                             "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * net_m,
+536  +                         }
+537  +                     )
+538  |
+--------------------------------------------------------------------------------
+599  |             total_net += net_xp
+     -             total_gross += (net_xp + hit_c)
+600  +             total_gross += net_xp + hit_c
+601  |
+--------------------------------------------------------------------------------
+651  |         initial_purchase = {
+     -             int(r["element"]): int(r.get("purchase_price", r.get("value", 50)))
+     -             for _, r in current_squad_df.iterrows()
+652  +             int(r["element"]): int(r.get("purchase_price", r.get("value", 50))) for _, r in current_squad_df.iterrows()
+653  |         }
+--------------------------------------------------------------------------------
+675  |
+     -         curr_lineup = lineup_optimizer.select_lineup_and_captain(
+     -             curr_squad_target, risk_preference=risk_preference
+     -         )
+676  +         curr_lineup = lineup_optimizer.select_lineup_and_captain(curr_squad_target, risk_preference=risk_preference)
+677  |         base_xp = curr_lineup["total_gameweek_expected_points"]
+--------------------------------------------------------------------------------
+769  |             # Rich lineup selection
+     -             trial_squad = pd.concat([
+     -                 curr_squad_target[curr_squad_target["element"] != out_id],
+     -                 target_gw_df[target_gw_df["element"] == in_id],
+     -             ]).reset_index(drop=True)
+     -
+     -             trial_lineup = lineup_optimizer.select_lineup_and_captain(
+     -                 trial_squad, risk_preference=risk_preference
+     -             )
+770  +             trial_squad = pd.concat(
+771  +                 [
+772  +                     curr_squad_target[curr_squad_target["element"] != out_id],
+773  +                     target_gw_df[target_gw_df["element"] == in_id],
+774  +                 ]
+775  +             ).reset_index(drop=True)
+776  +
+777  +             trial_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad, risk_preference=risk_preference)
+778  |             trial_xp = trial_lineup["total_gameweek_expected_points"]
+--------------------------------------------------------------------------------
+791  |                 "transfers_count": 1,
+     -                 "transfers_in": [{
+     -                     "element": in_id,
+     -                     "web_name": buy_row["web_name"],
+     -                     "team": _safe_team(buy_row["team"]),
+     -                     "position": buy_row["position"],
+     -                     "cost": buy_row["value"] / 10.0,
+     -                     "expected_points": round(float(buy_row["expected_points"]), 2),
+     -                 }],
+     -                 "transfers_out": [{
+     -                     "element": out_id,
+     -                     "web_name": sell_row["web_name"],
+     -                     "team": _safe_team(sell_row["team"]),
+     -                     "position": sell_row["position"],
+     -                     "sell_price": m["sell_prices"][out_id] / 10.0,
+     -                     "expected_points": round(float(sell_row.get("expected_points", 0.0)), 2),
+     -                 }],
+792  +                 "transfers_in": [
+793  +                     {
+794  +                         "element": in_id,
+795  +                         "web_name": buy_row["web_name"],
+796  +                         "team": _safe_team(buy_row["team"]),
+797  +                         "position": buy_row["position"],
+798  +                         "cost": buy_row["value"] / 10.0,
+799  +                         "expected_points": round(float(buy_row["expected_points"]), 2),
+800  +                     }
+801  +                 ],
+802  +                 "transfers_out": [
+803  +                     {
+804  +                         "element": out_id,
+805  +                         "web_name": sell_row["web_name"],
+806  +                         "team": _safe_team(sell_row["team"]),
+807  +                         "position": sell_row["position"],
+808  +                         "sell_price": m["sell_prices"][out_id] / 10.0,
+809  +                         "expected_points": round(float(sell_row.get("expected_points", 0.0)), 2),
+810  +                     }
+811  +                 ],
+812  |                 "hits": hits,
+--------------------------------------------------------------------------------
+835  |             cand_1_plans.sort(
+     -                 key=lambda p: (p["pure_xp_gain"] + (p["price_movement_gain"] * 1.5 if include_price_gain else 0.0)),
+836  +                 key=lambda p: p["pure_xp_gain"] + (p["price_movement_gain"] * 1.5 if include_price_gain else 0.0),
+837  |                 reverse=True,
+--------------------------------------------------------------------------------
+877  |
+     -             trial_squad_2 = pd.concat([
+     -                 curr_squad_target[~curr_squad_target["element"].isin(out_ids)],
+     -                 target_gw_df[target_gw_df["element"].isin(in_ids)],
+     -             ]).reset_index(drop=True)
+     -
+     -             trial2_lineup = lineup_optimizer.select_lineup_and_captain(
+     -                 trial_squad_2, risk_preference=risk_preference
+     -             )
+878  +             trial_squad_2 = pd.concat(
+879  +                 [
+880  +                     curr_squad_target[~curr_squad_target["element"].isin(out_ids)],
+881  +                     target_gw_df[target_gw_df["element"].isin(in_ids)],
+882  +                 ]
+883  +             ).reset_index(drop=True)
+884  +
+885  +             trial2_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad_2, risk_preference=risk_preference)
+886  |             trial2_xp = trial2_lineup["total_gameweek_expected_points"]
+--------------------------------------------------------------------------------
+963  |                 # Sample noise per player
+     -                 noise_map = {
+     -                     eid: float(np.random.normal(1.0, 0.15))
+     -                     for eid in target_pmap
+     -                 }
+964  +                 noise_map = {eid: float(np.random.normal(1.0, 0.15)) for eid in target_pmap}
+965  |                 # Score each candidate under noise
+--------------------------------------------------------------------------------
+1174 |                 action = f"Roll transfer (bank to {step['banked_ft']} FTs)"
+     -                 strategic_focus = (
+     -                     f"Preserve transfer capital; accumulate {step['banked_ft']} FTs for tactical flexibility in GW{gw + 1}."
+     -                 )
+1175 +                 strategic_focus = f"Preserve transfer capital; accumulate {step['banked_ft']} FTs for tactical flexibility in GW{gw + 1}."
+1176 |             elif len(t_in) == 1:
+--------------------------------------------------------------------------------
+1200 |
+     -             roadmap_steps.append({
+     -                 "gameweek": gw,
+     -                 "status": status,
+     -                 "action": action,
+     -                 "transfers_in": [p.get("web_name", "") for p in in_players],
+     -                 "transfers_out": [p.get("web_name", "") for p in out_players],
+     -                 "banked_free_transfers_projected": step["banked_ft"],
+     -                 "captain": cap_name,
+     -                 "is_dgw": len(dgw_teams) > 0,
+     -                 "is_bgw": len(bgw_teams) > 0,
+     -                 "dgw_bgw_tags": dgw_bgw_tags,
+     -                 "key_targets": key_targets,
+     -                 "strategic_focus": strategic_focus,
+     -             })
+1201 +             roadmap_steps.append(
+1202 +                 {
+1203 +                     "gameweek": gw,
+1204 +                     "status": status,
+1205 +                     "action": action,
+1206 +                     "transfers_in": [p.get("web_name", "") for p in in_players],
+1207 +                     "transfers_out": [p.get("web_name", "") for p in out_players],
+1208 +                     "banked_free_transfers_projected": step["banked_ft"],
+1209 +                     "captain": cap_name,
+1210 +                     "is_dgw": len(dgw_teams) > 0,
+1211 +                     "is_bgw": len(bgw_teams) > 0,
+1212 +                     "dgw_bgw_tags": dgw_bgw_tags,
+1213 +                     "key_targets": key_targets,
+1214 +                     "strategic_focus": strategic_focus,
+1215 +                 }
+1216 +             )
+1217 |
+     |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\server\jobs.py:224:39
+    |
+223 |             matching = [
+    -                 s for s in status_list
+    -                 if (s.get("event") if isinstance(s, dict) else getattr(s, "event", 0)) == curr_gw
+224 +                 s for s in status_list if (s.get("event") if isinstance(s, dict) else getattr(s, "event", 0)) == curr_gw
+225 |             ]
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\server\main.py:132:1
+    |
+131 |     from fpl_oracle.server.routes.api import get_health
+132 +
+133 |     return await get_health()
+    |
+
+unformatted: File would be reformatted
+   --> src\fpl_oracle\server\routes\api.py:143:1
+    |
+142 |     from fpl_oracle.config import app_config
+143 +
+144 |     diag = app_config.get_redacted_status()
+--------------------------------------------------------------------------------
+181 |     from fpl_oracle.config import app_config
+182 +
+183 |     return app_config.get_redacted_status()
+--------------------------------------------------------------------------------
+230 |         from fpl_oracle.optimise.squad import squad_optimizer
+231 +
+232 |         squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
+--------------------------------------------------------------------------------
+255 |                     opp = team_map.get(f.team_a)
+    -                     f_list.append({
+    -                         "event": f.event,
+    -                         "opp_short": opp.short_name if opp else "OPP",
+    -                         "is_home": True,
+    -                         "difficulty": f.team_h_difficulty or 3,
+    -                     })
+256 +                     f_list.append(
+257 +                         {
+258 +                             "event": f.event,
+259 +                             "opp_short": opp.short_name if opp else "OPP",
+260 +                             "is_home": True,
+261 +                             "difficulty": f.team_h_difficulty or 3,
+262 +                         }
+263 +                     )
+264 |                 elif f.team_a == team_id:
+265 |                     opp = team_map.get(f.team_h)
+    -                     f_list.append({
+    -                         "event": f.event,
+    -                         "opp_short": opp.short_name if opp else "OPP",
+    -                         "is_home": False,
+    -                         "difficulty": f.team_a_difficulty or 3,
+    -                     })
+266 +                     f_list.append(
+267 +                         {
+268 +                             "event": f.event,
+269 +                             "opp_short": opp.short_name if opp else "OPP",
+270 +                             "is_home": False,
+271 +                             "difficulty": f.team_a_difficulty or 3,
+272 +                         }
+273 +                     )
+274 |         return f_list[:5]
+--------------------------------------------------------------------------------
+287 |         sig = news_map.get(elem_id, {})
+    -         starters_out.append({
+    -             "element": elem_id,
+    -             "web_name": s["web_name"],
+    -             "team": int(s["team"]),
+    -             "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
+    -             "position": s["position"],
+    -             "now_cost": round(float(s["value"]) / 10.0, 1),
+    -             "purchase_price": round(float(s.get("purchase_price", s["value"])) / 10.0, 1),
+    -             "selling_price": round(float(s.get("selling_price", s["value"])) / 10.0, 1),
+    -             "expected_points": round(float(s["expected_points"]), 2),
+    -             "p10": round(float(s.get("p10", 0.0)), 2),
+    -             "p90": round(float(s.get("p90", 0.0)), 2),
+    -             "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
+    -             "chance_of_playing": s.get("chance_of_playing", 100),
+    -             "status": s.get("status", "a"),
+    -             "news": s.get("news", ""),
+    -             "news_quote": sig.get("quote", ""),
+    -             "source_url": sig.get("source_url", ""),
+    -             "news_mode": "gated_active" if sig.get("applied_to_production") else ("shadow" if sig.get("quote") else "official"),
+    -             "expected_minutes_limit": sig.get("expected_minutes_limit"),
+    -             "reconciliation_reason": sig.get("reconciliation_reason", ""),
+    -             "is_captain": elem_id == lineup_res["captain"]["element"],
+    -             "is_vice_captain": elem_id == lineup_res["vice_captain"]["element"],
+    -             "next_fixtures": get_next_fixtures(int(s["team"])),
+    -         })
+288 +         starters_out.append(
+289 +             {
+290 +                 "element": elem_id,
+291 +                 "web_name": s["web_name"],
+292 +                 "team": int(s["team"]),
+293 +                 "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
+294 +                 "position": s["position"],
+295 +                 "now_cost": round(float(s["value"]) / 10.0, 1),
+296 +                 "purchase_price": round(float(s.get("purchase_price", s["value"])) / 10.0, 1),
+297 +                 "selling_price": round(float(s.get("selling_price", s["value"])) / 10.0, 1),
+298 +                 "expected_points": round(float(s["expected_points"]), 2),
+299 +                 "p10": round(float(s.get("p10", 0.0)), 2),
+300 +                 "p90": round(float(s.get("p90", 0.0)), 2),
+301 +                 "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
+302 +                 "chance_of_playing": s.get("chance_of_playing", 100),
+303 +                 "status": s.get("status", "a"),
+304 +                 "news": s.get("news", ""),
+305 +                 "news_quote": sig.get("quote", ""),
+306 +                 "source_url": sig.get("source_url", ""),
+307 +                 "news_mode": "gated_active"
+308 +                 if sig.get("applied_to_production")
+309 +                 else ("shadow" if sig.get("quote") else "official"),
+310 +                 "expected_minutes_limit": sig.get("expected_minutes_limit"),
+311 +                 "reconciliation_reason": sig.get("reconciliation_reason", ""),
+312 +                 "is_captain": elem_id == lineup_res["captain"]["element"],
+313 +                 "is_vice_captain": elem_id == lineup_res["vice_captain"]["element"],
+314 +                 "next_fixtures": get_next_fixtures(int(s["team"])),
+315 +             }
+316 +         )
+317 |
+--------------------------------------------------------------------------------
+321 |         b_sig = news_map.get(b_elem_id, {})
+    -         bench_out.append({
+    -             "element": b_elem_id,
+    -             "web_name": b["web_name"],
+    -             "team": int(b["team"]),
+    -             "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
+    -             "position": b["position"],
+    -             "now_cost": round(float(b["value"]) / 10.0, 1),
+    -             "purchase_price": round(float(b.get("purchase_price", b["value"])) / 10.0, 1),
+    -             "selling_price": round(float(b.get("selling_price", b["value"])) / 10.0, 1),
+    -             "expected_points": round(float(b["expected_points"]), 2),
+    -             "p10": round(float(b.get("p10", 0.0)), 2),
+    -             "p90": round(float(b.get("p90", 0.0)), 2),
+    -             "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
+    -             "chance_of_playing": b.get("chance_of_playing", 100),
+    -             "status": b.get("status", "a"),
+    -             "news": b.get("news", ""),
+    -             "news_quote": b_sig.get("quote", ""),
+    -             "source_url": b_sig.get("source_url", ""),
+    -             "news_mode": "gated_active" if b_sig.get("applied_to_production") else ("shadow" if b_sig.get("quote") else "official"),
+    -             "expected_minutes_limit": b_sig.get("expected_minutes_limit"),
+    -             "reconciliation_reason": b_sig.get("reconciliation_reason", ""),
+    -             "bench_order": idx,
+    -             "next_fixtures": get_next_fixtures(int(b["team"])),
+    -         })
+322 +         bench_out.append(
+323 +             {
+324 +                 "element": b_elem_id,
+325 +                 "web_name": b["web_name"],
+326 +                 "team": int(b["team"]),
+327 +                 "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
+328 +                 "position": b["position"],
+329 +                 "now_cost": round(float(b["value"]) / 10.0, 1),
+330 +                 "purchase_price": round(float(b.get("purchase_price", b["value"])) / 10.0, 1),
+331 +                 "selling_price": round(float(b.get("selling_price", b["value"])) / 10.0, 1),
+332 +                 "expected_points": round(float(b["expected_points"]), 2),
+333 +                 "p10": round(float(b.get("p10", 0.0)), 2),
+334 +                 "p90": round(float(b.get("p90", 0.0)), 2),
+335 +                 "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
+336 +                 "chance_of_playing": b.get("chance_of_playing", 100),
+337 +                 "status": b.get("status", "a"),
+338 +                 "news": b.get("news", ""),
+339 +                 "news_quote": b_sig.get("quote", ""),
+340 +                 "source_url": b_sig.get("source_url", ""),
+341 +                 "news_mode": "gated_active"
+342 +                 if b_sig.get("applied_to_production")
+343 +                 else ("shadow" if b_sig.get("quote") else "official"),
+344 +                 "expected_minutes_limit": b_sig.get("expected_minutes_limit"),
+345 +                 "reconciliation_reason": b_sig.get("reconciliation_reason", ""),
+346 +                 "bench_order": idx,
+347 +                 "next_fixtures": get_next_fixtures(int(b["team"])),
+348 +             }
+349 +         )
+350 |
+--------------------------------------------------------------------------------
+354 |
+    -     return safe_json_serialize({
+    -         "manager_id": effective_state.manager_id,
+    -         "manager_name": effective_state.manager_name,
+    -         "team_name": effective_state.team_name,
+    -         "overall_points": effective_state.overall_points,
+    -         "overall_rank": effective_state.overall_rank,
+    -         "mode": effective_state.mode.value,
+    -         "confidence": effective_state.confidence,
+    -         "target_gameweek": target_gw,
+    -         "bank_millions": effective_state.bank_millions,
+    -         "bank": effective_state.bank_millions,
+    -         "bank_source": effective_state.bank_source,
+    -         "has_bank_override": effective_state.has_bank_override,
+    -         "free_transfers": effective_state.free_transfers,
+    -         "available_transfers": effective_state.free_transfers,
+    -         "ft_source": effective_state.ft_source,
+    -         "has_ft_override": effective_state.has_ft_override,
+    -         "total_squad_value": squad_val,
+    -         "total_selling_value": sell_val,
+    -         "total_team_value": team_val,
+    -         "chips_used": [c.get("name") for c in effective_state.chips_used],
+    -         "formation": lineup_res["formation"],
+    -         "captain": lineup_res["captain"],
+    -         "vice_captain": lineup_res["vice_captain"],
+    -         "starters": starters_out,
+    -         "bench": bench_out,
+    -         "starters_expected_points": lineup_res.get("starters_expected_points", 0.0),
+    -         "captain_bonus_expected_points": lineup_res.get("captain_bonus_expected_points", lineup_res["captain"]["expected_points"]),
+    -         "total_expected_points": lineup_res["total_gameweek_expected_points"],
+    -         "stale": is_stale,
+    -         "is_stale": is_stale,
+    -         "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+    -     })
+355 +     return safe_json_serialize(
+356 +         {
+357 +             "manager_id": effective_state.manager_id,
+358 +             "manager_name": effective_state.manager_name,
+359 +             "team_name": effective_state.team_name,
+360 +             "overall_points": effective_state.overall_points,
+361 +             "overall_rank": effective_state.overall_rank,
+362 +             "mode": effective_state.mode.value,
+363 +             "confidence": effective_state.confidence,
+364 +             "target_gameweek": target_gw,
+365 +             "bank_millions": effective_state.bank_millions,
+366 +             "bank": effective_state.bank_millions,
+367 +             "bank_source": effective_state.bank_source,
+368 +             "has_bank_override": effective_state.has_bank_override,
+369 +             "free_transfers": effective_state.free_transfers,
+370 +             "available_transfers": effective_state.free_transfers,
+371 +             "ft_source": effective_state.ft_source,
+372 +             "has_ft_override": effective_state.has_ft_override,
+373 +             "total_squad_value": squad_val,
+374 +             "total_selling_value": sell_val,
+375 +             "total_team_value": team_val,
+376 +             "chips_used": [c.get("name") for c in effective_state.chips_used],
+377 +             "formation": lineup_res["formation"],
+378 +             "captain": lineup_res["captain"],
+379 +             "vice_captain": lineup_res["vice_captain"],
+380 +             "starters": starters_out,
+381 +             "bench": bench_out,
+382 +             "starters_expected_points": lineup_res.get("starters_expected_points", 0.0),
+383 +             "captain_bonus_expected_points": lineup_res.get(
+384 +                 "captain_bonus_expected_points", lineup_res["captain"]["expected_points"]
+385 +             ),
+386 +             "total_expected_points": lineup_res["total_gameweek_expected_points"],
+387 +             "stale": is_stale,
+388 +             "is_stale": is_stale,
+389 +             "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+390 +         }
+391 +     )
+392 |
+--------------------------------------------------------------------------------
+670 |     signals = await news_analyzer.get_player_news_signals(boot, target_gw=target_gw)
+    -     return safe_json_serialize({
+    -         "target_gw": target_gw,
+    -         "count": len(signals),
+    -         "signals": signals,
+    -     })
+671 +     return safe_json_serialize(
+672 +         {
+673 +             "target_gw": target_gw,
+674 +             "count": len(signals),
+675 +             "signals": signals,
+676 +         }
+677 +     )
+678 |
+    |
+
+unformatted: File would be reformatted
+   --> tests\test_decision_card.py:150:21
+    |
+149 |         "formation": "3-5-2",
+    -         "captain": {"element": 10, "web_name": "Haaland", "team_short": "MCI", "expected_points": 7.4, "p10": 4.0, "p90": 11.2},
+    -         "vice_captain": {"element": 20, "web_name": "Salah", "team_short": "LIV", "expected_points": 6.8, "p10": 3.5, "p90": 10.5},
+150 +         "captain": {
+151 +             "element": 10,
+152 +             "web_name": "Haaland",
+153 +             "team_short": "MCI",
+154 +             "expected_points": 7.4,
+155 +             "p10": 4.0,
+156 +             "p90": 11.2,
+157 +         },
+158 +         "vice_captain": {
+159 +             "element": 20,
+160 +             "web_name": "Salah",
+161 +             "team_short": "LIV",
+162 +             "expected_points": 6.8,
+163 +             "p10": 3.5,
+164 +             "p90": 10.5,
+165 +         },
+166 |         "xi": [
+    -             {"element": 10, "position": "FWD", "web_name": "Haaland", "team_short": "MCI", "expected_points": 7.4, "p10": 4.0, "p90": 11.2, "is_captain": True, "is_vice_captain": False},
+    -             {"element": 20, "position": "MID", "web_name": "Salah", "team_short": "LIV", "expected_points": 6.8, "p10": 3.5, "p90": 10.5, "is_captain": False, "is_vice_captain": True},
+    -         ] + [
+    -             {"element": i, "position": "DEF", "web_name": f"Def_{i}", "team_short": "ARS", "expected_points": 4.5, "p10": 2.0, "p90": 7.0, "is_captain": False, "is_vice_captain": False}
+167 +             {
+168 +                 "element": 10,
+169 +                 "position": "FWD",
+170 +                 "web_name": "Haaland",
+171 +                 "team_short": "MCI",
+172 +                 "expected_points": 7.4,
+173 +                 "p10": 4.0,
+174 +                 "p90": 11.2,
+175 +                 "is_captain": True,
+176 +                 "is_vice_captain": False,
+177 +             },
+178 +             {
+179 +                 "element": 20,
+180 +                 "position": "MID",
+181 +                 "web_name": "Salah",
+182 +                 "team_short": "LIV",
+183 +                 "expected_points": 6.8,
+184 +                 "p10": 3.5,
+185 +                 "p90": 10.5,
+186 +                 "is_captain": False,
+187 +                 "is_vice_captain": True,
+188 +             },
+189 +         ]
+190 +         + [
+191 +             {
+192 +                 "element": i,
+193 +                 "position": "DEF",
+194 +                 "web_name": f"Def_{i}",
+195 +                 "team_short": "ARS",
+196 +                 "expected_points": 4.5,
+197 +                 "p10": 2.0,
+198 +                 "p90": 7.0,
+199 +                 "is_captain": False,
+200 +                 "is_vice_captain": False,
+201 +             }
+202 |             for i in range(30, 39)
+203 |         ],
+204 |         "bench": [
+    -             {"element": i, "bench_order": idx, "web_name": f"Bench_{i}", "position": "MID", "team_short": "AVL", "expected_points": 3.2}
+205 +             {
+206 +                 "element": i,
+207 +                 "bench_order": idx,
+208 +                 "web_name": f"Bench_{i}",
+209 +                 "position": "MID",
+210 +                 "team_short": "AVL",
+211 +                 "expected_points": 3.2,
+212 +             }
+213 |             for idx, i in enumerate(range(40, 44), start=1)
+--------------------------------------------------------------------------------
+243 |
+    -         with patch("fpl_oracle.briefing.decision_card.decision_card_generator.generate_decision_card", new=AsyncMock(return_value=mock_card)):
+244 +         with patch(
+245 +             "fpl_oracle.briefing.decision_card.decision_card_generator.generate_decision_card",
+246 +             new=AsyncMock(return_value=mock_card),
+247 +         ):
+248 |             async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as ac:
+--------------------------------------------------------------------------------
+305 |         "xi": [
+    -             {"position": "FWD", "web_name": "Haaland", "team_short": "MCI", "expected_points": 7.4, "p10": 4.0, "p90": 11.2, "is_captain": True, "is_vice_captain": False},
+    -             {"position": "MID", "web_name": "Salah", "team_short": "LIV", "expected_points": 6.8, "p10": 3.5, "p90": 10.5, "is_captain": False, "is_vice_captain": True},
+306 +             {
+307 +                 "position": "FWD",
+308 +                 "web_name": "Haaland",
+309 +                 "team_short": "MCI",
+310 +                 "expected_points": 7.4,
+311 +                 "p10": 4.0,
+312 +                 "p90": 11.2,
+313 +                 "is_captain": True,
+314 +                 "is_vice_captain": False,
+315 +             },
+316 +             {
+317 +                 "position": "MID",
+318 +                 "web_name": "Salah",
+319 +                 "team_short": "LIV",
+320 +                 "expected_points": 6.8,
+321 +                 "p10": 3.5,
+322 +                 "p90": 10.5,
+323 +                 "is_captain": False,
+324 +                 "is_vice_captain": True,
+325 +             },
+326 |         ],
+    |
+
+unformatted: File would be reformatted
+   --> tests\test_domain_foundations.py:39:12
+    |
+38  |     # 3. DEF: 60+ min (2 pts), 1 goal (6 pts), 1 assist (3 pts), clean sheet (4 pts), DefCon (+2 pts), bonus 3 = 20 pts
+    -     assert calculate_match_points(
+    -         "DEF", minutes=90, goals_scored=1, assists=1, clean_sheet=True, defensive_contribution=True, bonus=3
+    -     ) == 20
+39  +     assert (
+40  +         calculate_match_points(
+41  +             "DEF", minutes=90, goals_scored=1, assists=1, clean_sheet=True, defensive_contribution=True, bonus=3
+42  +         )
+43  +         == 20
+44  +     )
+45  |
+--------------------------------------------------------------------------------
+237 |     assert state.ft_source == "manual_override"
+    -
+    |
+
+unformatted: File would be reformatted
+   --> tests\test_league_strategy_mc.py:251:31
+    |
+250 |     """W1: Verifies joint draws (shared players get identical score per trial) and defensive clean sheets."""
+    -     user_squad = pd.DataFrame([
+    -         {"element": 1, "position": "GKP", "team": 1, "expected_points": 4.5, "variance": 4.0, "is_starter": True},
+    -         {"element": 2, "position": "DEF", "team": 1, "expected_points": 4.5, "variance": 4.0, "is_starter": True},
+    -         {"element": 3, "position": "MID", "team": 2, "expected_points": 6.0, "variance": 4.0, "is_starter": True},
+    -     ])
+    -     projections = pd.DataFrame([
+    -         {"element": 1, "position": "GKP", "team": 1, "expected_points": 4.5, "variance": 4.0},
+    -         {"element": 2, "position": "DEF", "team": 1, "expected_points": 4.5, "variance": 4.0},
+    -         {"element": 3, "position": "MID", "team": 2, "expected_points": 6.0, "variance": 4.0},
+    -     ])
+251 +     user_squad = pd.DataFrame(
+252 +         [
+253 +             {"element": 1, "position": "GKP", "team": 1, "expected_points": 4.5, "variance": 4.0, "is_starter": True},
+254 +             {"element": 2, "position": "DEF", "team": 1, "expected_points": 4.5, "variance": 4.0, "is_starter": True},
+255 +             {"element": 3, "position": "MID", "team": 2, "expected_points": 6.0, "variance": 4.0, "is_starter": True},
+256 +         ]
+257 +     )
+258 +     projections = pd.DataFrame(
+259 +         [
+260 +             {"element": 1, "position": "GKP", "team": 1, "expected_points": 4.5, "variance": 4.0},
+261 +             {"element": 2, "position": "DEF", "team": 1, "expected_points": 4.5, "variance": 4.0},
+262 +             {"element": 3, "position": "MID", "team": 2, "expected_points": 6.0, "variance": 4.0},
+263 +         ]
+264 +     )
+265 |
+    -     rival_squads = [{
+    -         "entry_id": 999,
+    -         "player_name": "Rival",
+    -         "total_points": 100.0,
+    -         "captain_element": 3,
+    -         "squad": [
+    -             {"element": 1, "is_starter": True},  # Shared GKP
+    -             {"element": 2, "is_starter": True},  # Shared DEF
+    -             {"element": 3, "is_starter": True},  # Shared MID
+    -         ],
+    -     }]
+266 +     rival_squads = [
+267 +         {
+268 +             "entry_id": 999,
+269 +             "player_name": "Rival",
+270 +             "total_points": 100.0,
+271 +             "captain_element": 3,
+272 +             "squad": [
+273 +                 {"element": 1, "is_starter": True},  # Shared GKP
+274 +                 {"element": 2, "is_starter": True},  # Shared DEF
+275 +                 {"element": 3, "is_starter": True},  # Shared MID
+276 +             ],
+277 +         }
+278 +     ]
+279 |
+--------------------------------------------------------------------------------
+299 |     projections = pd.DataFrame([{"element": i, "expected_points": 5.0, "variance": 4.0} for i in range(1, 50)])
+    -     rival_squads = [{
+    -         "entry_id": 101,
+    -         "player_name": "Leader",
+    -         "total_points": 200.0,
+    -         "captain_element": 1,
+    -         "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
+    -     }]
+300 +     rival_squads = [
+301 +         {
+302 +             "entry_id": 101,
+303 +             "player_name": "Leader",
+304 +             "total_points": 200.0,
+305 +             "captain_element": 1,
+306 +             "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
+307 +         }
+308 +     ]
+309 |
+--------------------------------------------------------------------------------
+327 |     """W3: Verifies side-by-side comparison of candidate plans and bounded runtime (< 1.5s)."""
+    -     user_squad = pd.DataFrame([{"element": i, "expected_points": 5.0, "variance": 4.0, "is_starter": True} for i in range(1, 16)])
+    -     projections = pd.DataFrame([{"element": i, "expected_points": 5.0 + (i * 0.1), "variance": 4.0} for i in range(1, 50)])
+    -     rival_squads = [{
+    -         "entry_id": 101,
+    -         "player_name": "Leader",
+    -         "total_points": 350.0,
+    -         "captain_element": 1,
+    -         "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
+    -     }]
+328 +     user_squad = pd.DataFrame(
+329 +         [{"element": i, "expected_points": 5.0, "variance": 4.0, "is_starter": True} for i in range(1, 16)]
+330 +     )
+331 +     projections = pd.DataFrame(
+332 +         [{"element": i, "expected_points": 5.0 + (i * 0.1), "variance": 4.0} for i in range(1, 50)]
+333 +     )
+334 +     rival_squads = [
+335 +         {
+336 +             "entry_id": 101,
+337 +             "player_name": "Leader",
+338 +             "total_points": 350.0,
+339 +             "captain_element": 1,
+340 +             "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
+341 +         }
+342 +     ]
+343 |
+344 |     candidate_plans = [
+345 |         {"plan_type": "ROLL_TRANSFER", "net_expected_points": 60.0, "transfers_in": [], "transfers_out": []},
+    -         {"plan_type": "1_TRANSFER", "net_expected_points": 62.5, "transfers_in": [{"element": 35}], "transfers_out": [{"element": 10}]},
+346 +         {
+347 +             "plan_type": "1_TRANSFER",
+348 +             "net_expected_points": 62.5,
+349 +             "transfers_in": [{"element": 35}],
+350 +             "transfers_out": [{"element": 10}],
+351 +         },
+352 |     ]
+    |
+
+unformatted: File would be reformatted
+   --> tests\test_model_gap_closure.py:89:30
+    |
+88  |     fe = FeatureEngineering()
+    -     sample_df = pd.DataFrame([
+    -         {
+    -             "name": "Target FWD",
+    -             "season": "2025-26",
+    -             "round": 1,
+    -             "team": "Arsenal",
+    -             "opponent_team": "Chelsea",
+    -             "position": "FWD",
+    -             "minutes": 90,
+    -             "starts": 1,
+    -             "total_points": 8,
+    -             "expected_goals": 0.80,
+    -             "expected_assists": 0.20,
+    -             "expected_goal_involvements": 1.00,
+    -             "expected_goals_conceded": 1.10,
+    -             "goals_scored": 1,
+    -             "assists": 1,
+    -             "clean_sheets": 0,
+    -             "goals_conceded": 1,
+    -             "saves": 0,
+    -             "defensive_contribution": 0,
+    -             "ict_index": 14.0,
+    -             "bps": 32,
+    -             "bonus": 3,
+    -             "was_home": True,
+    -             "value": 140.0,
+    -         }
+    -     ])
+89  +     sample_df = pd.DataFrame(
+90  +         [
+91  +             {
+92  +                 "name": "Target FWD",
+93  +                 "season": "2025-26",
+94  +                 "round": 1,
+95  +                 "team": "Arsenal",
+96  +                 "opponent_team": "Chelsea",
+97  +                 "position": "FWD",
+98  +                 "minutes": 90,
+99  +                 "starts": 1,
+100 +                 "total_points": 8,
+101 +                 "expected_goals": 0.80,
+102 +                 "expected_assists": 0.20,
+103 +                 "expected_goal_involvements": 1.00,
+104 +                 "expected_goals_conceded": 1.10,
+105 +                 "goals_scored": 1,
+106 +                 "assists": 1,
+107 +                 "clean_sheets": 0,
+108 +                 "goals_conceded": 1,
+109 +                 "saves": 0,
+110 +                 "defensive_contribution": 0,
+111 +                 "ict_index": 14.0,
+112 +                 "bps": 32,
+113 +                 "bonus": 3,
+114 +                 "was_home": True,
+115 +                 "value": 140.0,
+116 +             }
+117 +         ]
+118 +     )
+119 |
+--------------------------------------------------------------------------------
+136 |     # Create feature vector for an elite talisman (e.g. Haaland/Salah) in prime form
+    -     star_features = pd.DataFrame([{
+    -         "roll_minutes_3": 90.0,
+    -         "roll_minutes_5": 90.0,
+    -         "roll_minutes_8": 90.0,
+    -         "roll_starts_ratio_5": 1.0,
+    -         "roll_min60_ratio_5": 1.0,
+    -         "std_minutes_per_gw": 88.0,
+    -         "roll_points_3": 9.5,
+    -         "roll_points_5": 8.8,
+    -         "roll_points_8": 8.0,
+    -         "roll_xG_3": 1.10,
+    -         "roll_xG_5": 0.95,
+    -         "roll_xG_8": 0.85,
+    -         "roll_xA_3": 0.30,
+    -         "roll_xA_5": 0.25,
+    -         "roll_xA_8": 0.20,
+    -         "roll_xGI_5": 1.20,
+    -         "roll_goals_5": 1.20,
+    -         "roll_assists_5": 0.40,
+    -         "roll_xGC_5": 0.80,
+    -         "roll_clean_sheets_5": 0.40,
+    -         "roll_saves_5": 0.0,
+    -         "roll_goals_conceded_5": 0.80,
+    -         "roll_defcon_5": 0.0,
+    -         "roll_ict_5": 16.0,
+    -         "roll_bps_5": 35.0,
+    -         "roll_cards_5": 0.0,
+    -         "roll_own_goals_5": 0.0,
+    -         "roll_penalties_missed_5": 0.0,
+    -         "roll_penalties_saved_5": 0.0,
+    -         "was_home": 1.0,
+    -         "team_strength_attack": 2.2,
+    -         "opp_strength_defence": 0.85,  # Elite defence!
+    -         "net_strength_diff": 1.35,
+    -         "opponent_difficulty": 4.0,
+    -         "days_rest": 7.0,
+    -         "implied_team_xG": 1.85,
+    -         "implied_team_cs_prob": 0.45,
+    -         "implied_opp_xG": 0.75,
+    -         "implied_opp_cs_prob": 0.40,
+    -         "team_roll_goals_3": 2.5,
+    -         "team_roll_goals_5": 2.2,
+    -         "team_roll_goals_8": 2.0,
+    -         "team_roll_xG_3": 2.3,
+    -         "team_roll_xG_5": 2.1,
+    -         "team_roll_xG_8": 2.0,
+    -         "opp_roll_points_3": 2.2,
+    -         "opp_roll_points_5": 2.0,
+    -         "opp_roll_points_8": 1.8,
+    -         "opp_roll_goals_conceded_3": 0.8,
+    -         "opp_roll_goals_conceded_5": 0.9,
+    -         "opp_roll_goals_conceded_8": 1.0,
+    -         "opp_roll_xGC_3": 0.8,
+    -         "opp_roll_xGC_5": 0.85,
+    -         "opp_roll_xGC_8": 0.90,
+    -         "opp_roll_clean_sheets_5": 0.50,
+    -         "pos_GKP": 0.0,
+    -         "pos_DEF": 0.0,
+    -         "pos_MID": 0.0,
+    -         "pos_FWD": 1.0,
+    -         "value": 150.0,
+    -         "is_2026_27": 1.0,
+    -         "chance_of_playing": 100.0,
+    -     }])
+137 +     star_features = pd.DataFrame(
+138 +         [
+139 +             {
+140 +                 "roll_minutes_3": 90.0,
+141 +                 "roll_minutes_5": 90.0,
+142 +                 "roll_minutes_8": 90.0,
+143 +                 "roll_starts_ratio_5": 1.0,
+144 +                 "roll_min60_ratio_5": 1.0,
+145 +                 "std_minutes_per_gw": 88.0,
+146 +                 "roll_points_3": 9.5,
+147 +                 "roll_points_5": 8.8,
+148 +                 "roll_points_8": 8.0,
+149 +                 "roll_xG_3": 1.10,
+150 +                 "roll_xG_5": 0.95,
+151 +                 "roll_xG_8": 0.85,
+152 +                 "roll_xA_3": 0.30,
+153 +                 "roll_xA_5": 0.25,
+154 +                 "roll_xA_8": 0.20,
+155 +                 "roll_xGI_5": 1.20,
+156 +                 "roll_goals_5": 1.20,
+157 +                 "roll_assists_5": 0.40,
+158 +                 "roll_xGC_5": 0.80,
+159 +                 "roll_clean_sheets_5": 0.40,
+160 +                 "roll_saves_5": 0.0,
+161 +                 "roll_goals_conceded_5": 0.80,
+162 +                 "roll_defcon_5": 0.0,
+163 +                 "roll_ict_5": 16.0,
+164 +                 "roll_bps_5": 35.0,
+165 +                 "roll_cards_5": 0.0,
+166 +                 "roll_own_goals_5": 0.0,
+167 +                 "roll_penalties_missed_5": 0.0,
+168 +                 "roll_penalties_saved_5": 0.0,
+169 +                 "was_home": 1.0,
+170 +                 "team_strength_attack": 2.2,
+171 +                 "opp_strength_defence": 0.85,  # Elite defence!
+172 +                 "net_strength_diff": 1.35,
+173 +                 "opponent_difficulty": 4.0,
+174 +                 "days_rest": 7.0,
+175 +                 "implied_team_xG": 1.85,
+176 +                 "implied_team_cs_prob": 0.45,
+177 +                 "implied_opp_xG": 0.75,
+178 +                 "implied_opp_cs_prob": 0.40,
+179 +                 "team_roll_goals_3": 2.5,
+180 +                 "team_roll_goals_5": 2.2,
+181 +                 "team_roll_goals_8": 2.0,
+182 +                 "team_roll_xG_3": 2.3,
+183 +                 "team_roll_xG_5": 2.1,
+184 +                 "team_roll_xG_8": 2.0,
+185 +                 "opp_roll_points_3": 2.2,
+186 +                 "opp_roll_points_5": 2.0,
+187 +                 "opp_roll_points_8": 1.8,
+188 +                 "opp_roll_goals_conceded_3": 0.8,
+189 +                 "opp_roll_goals_conceded_5": 0.9,
+190 +                 "opp_roll_goals_conceded_8": 1.0,
+191 +                 "opp_roll_xGC_3": 0.8,
+192 +                 "opp_roll_xGC_5": 0.85,
+193 +                 "opp_roll_xGC_8": 0.90,
+194 +                 "opp_roll_clean_sheets_5": 0.50,
+195 +                 "pos_GKP": 0.0,
+196 +                 "pos_DEF": 0.0,
+197 +                 "pos_MID": 0.0,
+198 +                 "pos_FWD": 1.0,
+199 +                 "value": 150.0,
+200 +                 "is_2026_27": 1.0,
+201 +                 "chance_of_playing": 100.0,
+202 +             }
+203 +         ]
+204 +     )
+205 |
+--------------------------------------------------------------------------------
+223 |     """Verify disciplinary deductions correctly penalize yellow cards, red cards, own goals, and missed penalties."""
+    -     df_raw = pd.DataFrame([{
+    -         "name": "Fiery Midfielder",
+    -         "season": "2025-26",
+    -         "round": 1,
+    -         "position": "MID",
+    -         "minutes": 90,
+    -         "starts": 1,
+    -         "total_points": 1,
+    -         "expected_goals": 0.1,
+    -         "expected_assists": 0.1,
+    -         "expected_goal_involvements": 0.2,
+    -         "expected_goals_conceded": 2.0,
+    -         "goals_scored": 0,
+    -         "assists": 0,
+    -         "clean_sheets": 0,
+    -         "goals_conceded": 2,
+    -         "saves": 0,
+    -         "defensive_contribution": 0,
+    -         "ict_index": 4.0,
+    -         "bps": 5,
+    -         "bonus": 0,
+    -         "yellow_cards": 1,  # -1 pt
+    -         "red_cards": 0,
+    -         "own_goals": 1,     # -2 pts
+    -         "penalties_missed": 1, # -2 pts
+    -         "penalties_saved": 0,
+    -         "was_home": True,
+    -         "value": 60.0,
+    -     }])
+224 +     df_raw = pd.DataFrame(
+225 +         [
+226 +             {
+227 +                 "name": "Fiery Midfielder",
+228 +                 "season": "2025-26",
+229 +                 "round": 1,
+230 +                 "position": "MID",
+231 +                 "minutes": 90,
+232 +                 "starts": 1,
+233 +                 "total_points": 1,
+234 +                 "expected_goals": 0.1,
+235 +                 "expected_assists": 0.1,
+236 +                 "expected_goal_involvements": 0.2,
+237 +                 "expected_goals_conceded": 2.0,
+238 +                 "goals_scored": 0,
+239 +                 "assists": 0,
+240 +                 "clean_sheets": 0,
+241 +                 "goals_conceded": 2,
+242 +                 "saves": 0,
+243 +                 "defensive_contribution": 0,
+244 +                 "ict_index": 4.0,
+245 +                 "bps": 5,
+246 +                 "bonus": 0,
+247 +                 "yellow_cards": 1,  # -1 pt
+248 +                 "red_cards": 0,
+249 +                 "own_goals": 1,  # -2 pts
+250 +                 "penalties_missed": 1,  # -2 pts
+251 +                 "penalties_saved": 0,
+252 +                 "was_home": True,
+253 +                 "value": 60.0,
+254 +             }
+255 +         ]
+256 +     )
+257 |
+--------------------------------------------------------------------------------
+276 |         # Zulu GW1 (deduction 3)
+    -         {"name": "Zulu", "season": "2025-26", "round": 1, "kickoff_time": "2025-08-10T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": -1, "yellow_cards": 0, "red_cards": 1, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+277 +         {
+278 +             "name": "Zulu",
+279 +             "season": "2025-26",
+280 +             "round": 1,
+281 +             "kickoff_time": "2025-08-10T12:00:00Z",
+282 +             "position": "MID",
+283 +             "minutes": 90,
+284 +             "starts": 1,
+285 +             "goals_scored": 0,
+286 +             "assists": 0,
+287 +             "expected_goals": 0.0,
+288 +             "expected_assists": 0.0,
+289 +             "clean_sheets": 0,
+290 +             "goals_conceded": 0,
+291 +             "saves": 0,
+292 +             "defensive_contribution": 0,
+293 +             "bonus": 0,
+294 +             "total_points": -1,
+295 +             "yellow_cards": 0,
+296 +             "red_cards": 1,
+297 +             "own_goals": 0,
+298 +             "penalties_missed": 0,
+299 +             "was_home": True,
+300 +             "value": 50.0,
+301 +             "team": "Arsenal",
+302 +             "opponent_team": 2,
+303 +         },
+304 |         # Zulu GW2 (deduction 4)
+    -         {"name": "Zulu", "season": "2025-26", "round": 2, "kickoff_time": "2025-08-17T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": -2, "yellow_cards": 1, "red_cards": 1, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+305 +         {
+306 +             "name": "Zulu",
+307 +             "season": "2025-26",
+308 +             "round": 2,
+309 +             "kickoff_time": "2025-08-17T12:00:00Z",
+310 +             "position": "MID",
+311 +             "minutes": 90,
+312 +             "starts": 1,
+313 +             "goals_scored": 0,
+314 +             "assists": 0,
+315 +             "expected_goals": 0.0,
+316 +             "expected_assists": 0.0,
+317 +             "clean_sheets": 0,
+318 +             "goals_conceded": 0,
+319 +             "saves": 0,
+320 +             "defensive_contribution": 0,
+321 +             "bonus": 0,
+322 +             "total_points": -2,
+323 +             "yellow_cards": 1,
+324 +             "red_cards": 1,
+325 +             "own_goals": 0,
+326 +             "penalties_missed": 0,
+327 +             "was_home": True,
+328 +             "value": 50.0,
+329 +             "team": "Arsenal",
+330 +             "opponent_team": 2,
+331 +         },
+332 |         # Alpha GW1 (deduction 0)
+    -         {"name": "Alpha", "season": "2025-26", "round": 1, "kickoff_time": "2025-08-10T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": 2, "yellow_cards": 0, "red_cards": 0, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+333 +         {
+334 +             "name": "Alpha",
+335 +             "season": "2025-26",
+336 +             "round": 1,
+337 +             "kickoff_time": "2025-08-10T12:00:00Z",
+338 +             "position": "MID",
+339 +             "minutes": 90,
+340 +             "starts": 1,
+341 +             "goals_scored": 0,
+342 +             "assists": 0,
+343 +             "expected_goals": 0.0,
+344 +             "expected_assists": 0.0,
+345 +             "clean_sheets": 0,
+346 +             "goals_conceded": 0,
+347 +             "saves": 0,
+348 +             "defensive_contribution": 0,
+349 +             "bonus": 0,
+350 +             "total_points": 2,
+351 +             "yellow_cards": 0,
+352 +             "red_cards": 0,
+353 +             "own_goals": 0,
+354 +             "penalties_missed": 0,
+355 +             "was_home": True,
+356 +             "value": 50.0,
+357 +             "team": "Arsenal",
+358 +             "opponent_team": 2,
+359 +         },
+360 |         # Alpha GW2 (deduction 1)
+    -         {"name": "Alpha", "season": "2025-26", "round": 2, "kickoff_time": "2025-08-17T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": 1, "yellow_cards": 1, "red_cards": 0, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+361 +         {
+362 +             "name": "Alpha",
+363 +             "season": "2025-26",
+364 +             "round": 2,
+365 +             "kickoff_time": "2025-08-17T12:00:00Z",
+366 +             "position": "MID",
+367 +             "minutes": 90,
+368 +             "starts": 1,
+369 +             "goals_scored": 0,
+370 +             "assists": 0,
+371 +             "expected_goals": 0.0,
+372 +             "expected_assists": 0.0,
+373 +             "clean_sheets": 0,
+374 +             "goals_conceded": 0,
+375 +             "saves": 0,
+376 +             "defensive_contribution": 0,
+377 +             "bonus": 0,
+378 +             "total_points": 1,
+379 +             "yellow_cards": 1,
+380 +             "red_cards": 0,
+381 +             "own_goals": 0,
+382 +             "penalties_missed": 0,
+383 +             "was_home": True,
+384 +             "value": 50.0,
+385 +             "team": "Arsenal",
+386 +             "opponent_team": 2,
+387 +         },
+388 |     ]
+--------------------------------------------------------------------------------
+426 |     # Generate sample player history and verify column set
+    -     sample_hist = pd.DataFrame([{
+    -         "name": "Parity Player",
+    -         "season": "2025-26",
+    -         "round": r,
+    -         "position": "MID",
+    -         "minutes": 90,
+    -         "starts": 1,
+    -         "goals_scored": 0,
+    -         "assists": 0,
+    -         "expected_goals": 0.2,
+    -         "expected_assists": 0.1,
+    -         "clean_sheets": 0,
+    -         "goals_conceded": 1,
+    -         "saves": 0,
+    -         "defensive_contribution": 1,
+    -         "ict_index": 5.0,
+    -         "bps": 12,
+    -         "bonus": 0,
+    -         "yellow_cards": 0,
+    -         "red_cards": 0,
+    -         "own_goals": 0,
+    -         "penalties_missed": 0,
+    -         "penalties_saved": 0,
+    -         "was_home": True,
+    -         "value": 75.0,
+    -         "team": "Arsenal",
+    -         "opponent_team": 2,
+    -         "total_points": 3,
+    -     } for r in range(1, 6)])
+427 +     sample_hist = pd.DataFrame(
+428 +         [
+429 +             {
+430 +                 "name": "Parity Player",
+431 +                 "season": "2025-26",
+432 +                 "round": r,
+433 +                 "position": "MID",
+434 +                 "minutes": 90,
+435 +                 "starts": 1,
+436 +                 "goals_scored": 0,
+437 +                 "assists": 0,
+438 +                 "expected_goals": 0.2,
+439 +                 "expected_assists": 0.1,
+440 +                 "clean_sheets": 0,
+441 +                 "goals_conceded": 1,
+442 +                 "saves": 0,
+443 +                 "defensive_contribution": 1,
+444 +                 "ict_index": 5.0,
+445 +                 "bps": 12,
+446 +                 "bonus": 0,
+447 +                 "yellow_cards": 0,
+448 +                 "red_cards": 0,
+449 +                 "own_goals": 0,
+450 +                 "penalties_missed": 0,
+451 +                 "penalties_saved": 0,
+452 +                 "was_home": True,
+453 +                 "value": 75.0,
+454 +                 "team": "Arsenal",
+455 +                 "opponent_team": 2,
+456 +                 "total_points": 3,
+457 +             }
+458 +             for r in range(1, 6)
+459 +         ]
+460 +     )
+461 |
+--------------------------------------------------------------------------------
+473 |     import random
+474 +
+475 |     fe = FeatureEngineering()
+--------------------------------------------------------------------------------
+489 |
+    -             rows.append({
+    -                 "name": name,
+    -                 "season": "2025-26",
+    -                 "round": gw,
+    -                 "kickoff_time": f"2025-08-{10 + gw}T15:00:00Z",
+    -                 "position": "MID",
+    -                 "minutes": 90,
+    -                 "starts": 1,
+    -                 "yellow_cards": yc,
+    -                 "red_cards": rc,
+    -                 "own_goals": og,
+    -                 "penalties_missed": pm,
+    -                 "team": "Arsenal",
+    -                 "opponent_team": 2,
+    -                 "was_home": True,
+    -                 "value": 60.0,
+    -             })
+490 +             rows.append(
+491 +                 {
+492 +                     "name": name,
+493 +                     "season": "2025-26",
+494 +                     "round": gw,
+495 +                     "kickoff_time": f"2025-08-{10 + gw}T15:00:00Z",
+496 +                     "position": "MID",
+497 +                     "minutes": 90,
+498 +                     "starts": 1,
+499 +                     "yellow_cards": yc,
+500 +                     "red_cards": rc,
+501 +                     "own_goals": og,
+502 +                     "penalties_missed": pm,
+503 +                     "team": "Arsenal",
+504 +                     "opponent_team": 2,
+505 +                     "was_home": True,
+506 +                     "value": 60.0,
+507 +                 }
+508 +             )
+509 |
+--------------------------------------------------------------------------------
+522 |         )
+    -
+    |
+
+unformatted: File would be reformatted
+   --> tests\test_news_availability.py:381:39
+    |
+380 |     # Evaluate shadow mode (chance_of_playing = 100.0)
+    -     df_shadow_features = pd.DataFrame([{
+    -         "pos_FWD": 1.0,
+    -         "pos_MID": 0.0,
+    -         "pos_DEF": 0.0,
+    -         "pos_GKP": 0.0,
+    -         "chance_of_playing": res_shadow.effective_chance_of_playing,
+    -     }])
+381 +     df_shadow_features = pd.DataFrame(
+382 +         [
+383 +             {
+384 +                 "pos_FWD": 1.0,
+385 +                 "pos_MID": 0.0,
+386 +                 "pos_DEF": 0.0,
+387 +                 "pos_GKP": 0.0,
+388 +                 "chance_of_playing": res_shadow.effective_chance_of_playing,
+389 +             }
+390 +         ]
+391 +     )
+392 |     df_shadow_pred = scoring_ensemble.aggregate_components(comps, df_shadow_features)
+393 |     shadow_xp = df_shadow_pred["expected_points"].iloc[0]
+394 |
+395 |     # Evaluate gated_active mode (chance_of_playing = 0.0)
+    -     df_gated_features = pd.DataFrame([{
+    -         "pos_FWD": 1.0,
+    -         "pos_MID": 0.0,
+    -         "pos_DEF": 0.0,
+    -         "pos_GKP": 0.0,
+    -         "chance_of_playing": res_gated.effective_chance_of_playing,
+    -     }])
+396 +     df_gated_features = pd.DataFrame(
+397 +         [
+398 +             {
+399 +                 "pos_FWD": 1.0,
+400 +                 "pos_MID": 0.0,
+401 +                 "pos_DEF": 0.0,
+402 +                 "pos_GKP": 0.0,
+403 +                 "chance_of_playing": res_gated.effective_chance_of_playing,
+404 +             }
+405 +         ]
+406 +     )
+407 |     df_gated_pred = scoring_ensemble.aggregate_components(comps, df_gated_features)
+--------------------------------------------------------------------------------
+456 |     assert res.p_start_given_available == 0.55
+    -
+    |
+
+unformatted: File would be reformatted
+   --> tests\test_optimizer.py:69:10
+    |
+68  |     rows = [
+    -         {"element": 1, "web_name": "Raya", "position": "GKP", "team": 1, "value": 55, "expected_points": 4.5, "purchase_price": 55},
+    -         {"element": 2, "web_name": "Fabianski", "position": "GKP", "team": 19, "value": 40, "expected_points": 1.5, "purchase_price": 40},
+    -         {"element": 3, "web_name": "Saliba", "position": "DEF", "team": 1, "value": 60, "expected_points": 4.8, "purchase_price": 60},
+    -         {"element": 4, "web_name": "Gabriel", "position": "DEF", "team": 1, "value": 60, "expected_points": 4.7, "purchase_price": 60},
+    -         {"element": 5, "web_name": "Alexander-Arnold", "position": "DEF", "team": 11, "value": 70, "expected_points": 5.5, "purchase_price": 70},
+    -         {"element": 6, "web_name": "Robinson", "position": "DEF", "team": 8, "value": 45, "expected_points": 3.2, "purchase_price": 45},
+    -         {"element": 7, "web_name": "Faes", "position": "DEF", "team": 9, "value": 40, "expected_points": 2.0, "purchase_price": 40},
+    -         {"element": 8, "web_name": "Saka", "position": "MID", "team": 1, "value": 100, "expected_points": 7.5, "purchase_price": 100},
+    -         {"element": 9, "web_name": "Palmer", "position": "MID", "team": 6, "value": 105, "expected_points": 7.8, "purchase_price": 105},
+    -         {"element": 10, "web_name": "Mbeumo", "position": "MID", "team": 3, "value": 75, "expected_points": 6.2, "purchase_price": 75},
+    -         {"element": 11, "web_name": "Rogers", "position": "MID", "team": 2, "value": 50, "expected_points": 4.8, "purchase_price": 50},
+    -         {"element": 12, "web_name": "Winks", "position": "MID", "team": 9, "value": 45, "expected_points": 2.1, "purchase_price": 45},
+    -         {"element": 13, "web_name": "Haaland", "position": "FWD", "team": 12, "value": 150, "expected_points": 9.0, "purchase_price": 150},
+    -         {"element": 14, "web_name": "Watkins", "position": "FWD", "team": 2, "value": 90, "expected_points": 6.5, "purchase_price": 90},
+    -         {"element": 15, "web_name": "Wood", "position": "FWD", "team": 14, "value": 60, "expected_points": 5.2, "purchase_price": 60},
+69  +         {
+70  +             "element": 1,
+71  +             "web_name": "Raya",
+72  +             "position": "GKP",
+73  +             "team": 1,
+74  +             "value": 55,
+75  +             "expected_points": 4.5,
+76  +             "purchase_price": 55,
+77  +         },
+78  +         {
+79  +             "element": 2,
+80  +             "web_name": "Fabianski",
+81  +             "position": "GKP",
+82  +             "team": 19,
+83  +             "value": 40,
+84  +             "expected_points": 1.5,
+85  +             "purchase_price": 40,
+86  +         },
+87  +         {
+88  +             "element": 3,
+89  +             "web_name": "Saliba",
+90  +             "position": "DEF",
+91  +             "team": 1,
+92  +             "value": 60,
+93  +             "expected_points": 4.8,
+94  +             "purchase_price": 60,
+95  +         },
+96  +         {
+97  +             "element": 4,
+98  +             "web_name": "Gabriel",
+99  +             "position": "DEF",
+100 +             "team": 1,
+101 +             "value": 60,
+102 +             "expected_points": 4.7,
+103 +             "purchase_price": 60,
+104 +         },
+105 +         {
+106 +             "element": 5,
+107 +             "web_name": "Alexander-Arnold",
+108 +             "position": "DEF",
+109 +             "team": 11,
+110 +             "value": 70,
+111 +             "expected_points": 5.5,
+112 +             "purchase_price": 70,
+113 +         },
+114 +         {
+115 +             "element": 6,
+116 +             "web_name": "Robinson",
+117 +             "position": "DEF",
+118 +             "team": 8,
+119 +             "value": 45,
+120 +             "expected_points": 3.2,
+121 +             "purchase_price": 45,
+122 +         },
+123 +         {
+124 +             "element": 7,
+125 +             "web_name": "Faes",
+126 +             "position": "DEF",
+127 +             "team": 9,
+128 +             "value": 40,
+129 +             "expected_points": 2.0,
+130 +             "purchase_price": 40,
+131 +         },
+132 +         {
+133 +             "element": 8,
+134 +             "web_name": "Saka",
+135 +             "position": "MID",
+136 +             "team": 1,
+137 +             "value": 100,
+138 +             "expected_points": 7.5,
+139 +             "purchase_price": 100,
+140 +         },
+141 +         {
+142 +             "element": 9,
+143 +             "web_name": "Palmer",
+144 +             "position": "MID",
+145 +             "team": 6,
+146 +             "value": 105,
+147 +             "expected_points": 7.8,
+148 +             "purchase_price": 105,
+149 +         },
+150 +         {
+151 +             "element": 10,
+152 +             "web_name": "Mbeumo",
+153 +             "position": "MID",
+154 +             "team": 3,
+155 +             "value": 75,
+156 +             "expected_points": 6.2,
+157 +             "purchase_price": 75,
+158 +         },
+159 +         {
+160 +             "element": 11,
+161 +             "web_name": "Rogers",
+162 +             "position": "MID",
+163 +             "team": 2,
+164 +             "value": 50,
+165 +             "expected_points": 4.8,
+166 +             "purchase_price": 50,
+167 +         },
+168 +         {
+169 +             "element": 12,
+170 +             "web_name": "Winks",
+171 +             "position": "MID",
+172 +             "team": 9,
+173 +             "value": 45,
+174 +             "expected_points": 2.1,
+175 +             "purchase_price": 45,
+176 +         },
+177 +         {
+178 +             "element": 13,
+179 +             "web_name": "Haaland",
+180 +             "position": "FWD",
+181 +             "team": 12,
+182 +             "value": 150,
+183 +             "expected_points": 9.0,
+184 +             "purchase_price": 150,
+185 +         },
+186 +         {
+187 +             "element": 14,
+188 +             "web_name": "Watkins",
+189 +             "position": "FWD",
+190 +             "team": 2,
+191 +             "value": 90,
+192 +             "expected_points": 6.5,
+193 +             "purchase_price": 90,
+194 +         },
+195 +         {
+196 +             "element": 15,
+197 +             "web_name": "Wood",
+198 +             "position": "FWD",
+199 +             "team": 14,
+200 +             "value": 60,
+201 +             "expected_points": 5.2,
+202 +             "purchase_price": 60,
+203 +         },
+204 |     ]
+205 |     squad_df = pd.DataFrame(rows)
+206 |
+207 |     pool_rows = list(rows)
+    -     pool_rows.append({"element": 16, "web_name": "Salah", "position": "MID", "team": 11, "value": 125, "expected_points": 8.5})
+    -     pool_rows.append({"element": 17, "web_name": "Son", "position": "MID", "team": 17, "value": 98, "expected_points": 6.8})
+    -     pool_rows.append({"element": 18, "web_name": "Isak", "position": "FWD", "team": 13, "value": 85, "expected_points": 6.9})
+    -     pool_rows.append({"element": 19, "web_name": "Solanke", "position": "FWD", "team": 17, "value": 75, "expected_points": 5.8})
+    -     pool_rows.append({"element": 20, "web_name": "Gvardiol", "position": "DEF", "team": 12, "value": 60, "expected_points": 5.1})
+    -     pool_rows.append({"element": 21, "web_name": "Pedro Porro", "position": "DEF", "team": 17, "value": 55, "expected_points": 4.9})
+208 +     pool_rows.append(
+209 +         {"element": 16, "web_name": "Salah", "position": "MID", "team": 11, "value": 125, "expected_points": 8.5}
+210 +     )
+211 +     pool_rows.append(
+212 +         {"element": 17, "web_name": "Son", "position": "MID", "team": 17, "value": 98, "expected_points": 6.8}
+213 +     )
+214 +     pool_rows.append(
+215 +         {"element": 18, "web_name": "Isak", "position": "FWD", "team": 13, "value": 85, "expected_points": 6.9}
+216 +     )
+217 +     pool_rows.append(
+218 +         {"element": 19, "web_name": "Solanke", "position": "FWD", "team": 17, "value": 75, "expected_points": 5.8}
+219 +     )
+220 +     pool_rows.append(
+221 +         {"element": 20, "web_name": "Gvardiol", "position": "DEF", "team": 12, "value": 60, "expected_points": 5.1}
+222 +     )
+223 +     pool_rows.append(
+224 +         {"element": 21, "web_name": "Pedro Porro", "position": "DEF", "team": 17, "value": 55, "expected_points": 4.9}
+225 +     )
+226 |     pool_df = pd.DataFrame(pool_rows)
+    |
+
+unformatted: File would be reformatted
+  --> tests\test_recommendation_consistency.py:33:1
+   |
+32 |     """Assert that decision card, squad, and optimizer agree on transfers, captaincy, and chips."""
+33 +
+34 |     async def _run():
+--------------------------------------------------------------------------------
+63 |         assert dc_vice_id == sq_vice_id, (
+   -             f"Vice-captain mismatch: Decision Card recommends id {dc_vice_id} "
+   -             f"while Squad recommends id {sq_vice_id}"
+64 +             f"Vice-captain mismatch: Decision Card recommends id {dc_vice_id} while Squad recommends id {sq_vice_id}"
+65 |         )
+   |
+
+37 files would be reformatted, 52 files already formatted

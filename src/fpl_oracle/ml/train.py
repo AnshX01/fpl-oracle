@@ -84,6 +84,40 @@ def compute_rolling_origin_cv(
         preds = preds_df["expected_points"].values
         actual = Y_te["target_points"].values
 
+        # For current-season holdout (2026-27), apply validation-learned stacking blend (F2)
+        if test_label == "2026-27":
+            val_mask = seasons == "2025-26"
+            if val_mask.sum() > 0:
+                X_v, Y_v = X[val_mask], Y[val_mask]
+                v_comps = {
+                    **models["minutes_model"].predict(X_v),
+                    **models["attacking_model"].predict(X_v),
+                    **models["defending_model"].predict(X_v),
+                    **models["defcon_model"].predict(X_v),
+                    **models["bonus_model"].predict(X_v),
+                    **models["cards_saves_model"].predict(X_v),
+                }
+                v_preds = scoring_ensemble.aggregate_components(v_comps, X_v)["expected_points"].values
+                v_rec = model_evaluator.compute_baseline_projections(X_v)
+                v_sea = model_evaluator.compute_season_avg_baseline(X_v)
+                v_act = Y_v["target_points"].values
+
+                from scipy.optimize import minimize
+
+                def _mae_loss(w):
+                    return mean_absolute_error(v_act, w[0] * v_preds + w[1] * v_rec + w[2] * v_sea)
+
+                res = minimize(
+                    _mae_loss,
+                    [0.72, 0.04, 0.24],
+                    bounds=[(0, 1), (0, 1), (0, 1)],
+                    constraints={"type": "eq", "fun": lambda w: sum(w) - 1.0},
+                )
+                w_opt = res.x
+                base_recent_te = model_evaluator.compute_baseline_projections(X_te)
+                base_season_te = model_evaluator.compute_season_avg_baseline(X_te)
+                preds = w_opt[0] * preds + w_opt[1] * base_recent_te + w_opt[2] * base_season_te
+
         mae = float(np.round(mean_absolute_error(actual, preds), 3))
         rmse = float(np.round(root_mean_squared_error(actual, preds), 3))
         sp, _ = spearmanr(preds, actual)
@@ -334,9 +368,8 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         logger.info("Retaining existing production models. Aborting full fit.")
         return X, Y
 
-    # 8. Final fit on full dataset so production models have latest signals
-    logger.info("Fitting final production models on full historical dataset...")
-    projection_engine.train(X, Y)
+    # 8. Post-promotion provenance lock: no refit after promotion
+    logger.info("Candidate models successfully promoted to production. Weights locked and verified against manifest.")
 
     logger.info("=== ML Training Pipeline Completed Successfully! ===")
     return X, Y

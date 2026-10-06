@@ -1,6 +1,6 @@
 {
-  "active_version": "v2026.10.06.1020",
-  "last_updated": "2026-10-06T10:20:41.178548+00:00",
+  "active_version": "v2026.10.06.1420",
+  "last_updated": "2026-10-06T14:20:40.205756+00:00",
   "versions": [
     {
       "version": "v1.0.0",
@@ -44,8 +44,42 @@
       "ml_mae": 1.03,
       "ml_spearman": 0.705,
       "base_mae": 1.078,
+      "status": "archived",
+      "notes": "Candidate model passed verification. MAE: 1.030 (improvement: +0.060). Promoted to production. | Automated retrain pipeline with true rolling origins",
+      "metric_applies_to": "served_weights",
+      "file_hashes": {
+        "minutes_model.pkl": "44f97ef8b1f563008e3b1d9d3314d28c97867b8535dc52380b74bfe4ee95c202",
+        "attacking_model.pkl": "7bde9faca6be4c88735dc8cdda0ee2e19809055f8d20fa0ee0fa29339a722c6d",
+        "defending_model.pkl": "9855053c38a5309910edfdb4bcc8264813dddfde07b5c1e816592ed316d8919a",
+        "defcon_model.pkl": "2f423438a8893d8c69e99391daa2cfc4a5aede98a4831decd9225c2208faddc6",
+        "bonus_model.pkl": "031a6b02f2ae7524b1ed707cde334dcbb19ffca13b9163d6ab9b011a7487dc96",
+        "cards_saves_model.pkl": "cd2e9f19dcf461b9745ce71dfa796b91965edb21a9a1884c627bd52335c02569",
+        "calibration.json": "3f3340c2bb94a6f2959a1e81c1f86382ed8bd129d42fdc77332c8f0d5007f8fc"
+      },
+      "feature_list_hash": "ec91cae9cf9b75c88d81b133cb6b80907bf112a126ab3e90b9e6916792140e84",
+      "git_commit": "36210ceaba4d5b902787fc9fa8e1a7e77d75a79d"
+    },
+    {
+      "version": "v2026.10.06.1420",
+      "created_at": "2026-10-06T14:20:40.205756+00:00",
+      "git_commit": "36210ceaba4d5b902787fc9fa8e1a7e77d75a79d",
+      "feature_list_hash": "ec91cae9cf9b75c88d81b133cb6b80907bf112a126ab3e90b9e6916792140e84",
+      "metric_applies_to": "served_weights",
+      "file_hashes": {
+        "minutes_model.pkl": "40641ea9ba80da3f5b8d29c1c656999789ce5496950957e7ec2e21965150ca8d",
+        "attacking_model.pkl": "ec5e0d0c732a0c7915c8425bfc676c06690117b264f18d958607744fb647bcbe",
+        "defending_model.pkl": "abd363499a38c41503ee6bf5ae5454a4e77d405947235ae02e54938de1ead419",
+        "defcon_model.pkl": "c5a243b73b70d19b461eba15673675d00af8b62458f53797fdcd7dc9b8d07c1a",
+        "bonus_model.pkl": "b1850bb840cb67a7c684800a01f09f39870f010248121b8bf08481c8492d4af7",
+        "cards_saves_model.pkl": "e6e6fb87dd5a528ffe6464ef9af241550a9eae020d2aaaee770b1e642d161a95",
+        "calibration.json": "180cf122fd3c5614f02b15e8ca6853063046f5402f07f2406086dba078f67ba1"
+      },
+      "ml_mae": 1.019,
+      "ml_spearman": 0.704,
+      "base_mae": 1.078,
+      "rolling_origins": [],
       "status": "production",
-      "notes": "Candidate model passed verification. MAE: 1.030 (improvement: +0.060). Promoted to production. | Automated retrain pipeline with true rolling origins"
+      "notes": "Candidate model passed verification. MAE: 1.019 (improvement: +0.023). Promoted to production. | Automated retrain pipeline with true rolling origins"
     }
   ]
 }

@@ -20,6 +20,7 @@ from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.defending import DefendingModel
 from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
+from fpl_oracle.ml.model_registry import model_registry
 
 logger = logging.getLogger("fpl_oracle.predict")
 
@@ -51,11 +52,15 @@ class ProjectionEngine:
         if all_exist:
             logger.info("Loading pre-trained component models from disk...")
             try:
+                model_registry.verify_weight_integrity(self.models_dir)
                 for model, path in weights:
                     loaded = model.load(path)
                     model.__dict__.update(loaded.__dict__)
                 self.is_loaded = True
                 return
+            except ValueError as ve:
+                logger.error(f"[ModelIntegrity] Weight verification failed: {ve}")
+                raise
             except Exception as e:
                 logger.warning(f"Error loading models from disk: {e}. Retraining...")
 

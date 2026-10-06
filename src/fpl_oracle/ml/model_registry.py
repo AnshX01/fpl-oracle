@@ -4,12 +4,16 @@ Manages model checkpoints, metric history, candidate model verification, and
 safeguards against performance degradation by automatically rolling back if validation MAE worsens.
 """
 
+import hashlib
 import json
 import logging
 import shutil
+import subprocess
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from fpl_oracle.config import MODELS_DIR, REPORTS_DIR
@@ -37,6 +41,66 @@ COMPONENT_WEIGHTS = [
     ("bonus_model", "bonus_model.pkl", BonusModel),
     ("cards_saves_model", "cards_saves_model.pkl", CardsSavesModel),
 ]
+
+
+def check_promotion_gate(
+    candidate_metrics: dict[str, Any],
+    active_metrics: dict[str, Any] | None = None,
+    rolling_origins: list[dict[str, Any]] | None = None,
+    tolerance: float = 0.05,
+) -> tuple[bool, str]:
+    """
+    Tested promotion gate:
+    1. Overall candidate MAE must beat baseline within tolerance.
+    2. Overall candidate MAE must not degrade vs active production by more than tolerance.
+    3. If rolling origins are evaluated:
+       - Mean gain vs baseline across rolling origins must be strictly > 0.
+       - Latest rolling origin gain (e.g. 2026-27 current season holdout) must be strictly > 0.
+    """
+    cand_mae = candidate_metrics.get("ml_mae")
+    base_mae = candidate_metrics.get("base_mae")
+
+    # 1. Baseline superiority check
+    if cand_mae is not None and base_mae is not None and cand_mae > (base_mae + tolerance):
+        return (
+            False,
+            f"Candidate MAE ({cand_mae:.3f}) failed baseline gate vs baseline ({base_mae:.3f} + {tolerance:.2f}).",
+        )
+
+    # 2. Active production degradation check
+    if active_metrics and cand_mae is not None:
+        active_mae = active_metrics.get("ml_mae")
+        if active_mae is not None and cand_mae > (active_mae + tolerance):
+            return (
+                False,
+                f"Candidate MAE ({cand_mae:.3f}) degraded vs active production MAE ({active_mae:.3f}) by > {tolerance:.2f}.",
+            )
+
+    # 3. Rolling origins checks
+    origins = rolling_origins if rolling_origins is not None else candidate_metrics.get("rolling_origins")
+    if origins:
+        gains = []
+        for o in origins:
+            ml_o = o.get("ml_mae")
+            base_o = o.get("best_base_mae", o.get("base_mae"))
+            if ml_o is not None and base_o is not None:
+                gains.append(base_o - ml_o)
+
+        if gains:
+            mean_gain = float(np.mean(gains))
+            if mean_gain <= 0.0:
+                return (
+                    False,
+                    f"Candidate failed rolling origin gate: mean gain vs baseline ({mean_gain:+.4f}) is <= 0.",
+                )
+            latest_gain = gains[-1]
+            if latest_gain <= 0.0:
+                return (
+                    False,
+                    f"Candidate failed rolling origin gate: latest origin gain ({latest_gain:+.4f}) is <= 0.",
+                )
+
+    return True, "Candidate passed all promotion gate criteria."
 
 
 class ModelRegistry:
@@ -92,6 +156,54 @@ class ModelRegistry:
                 json.dump(manifest, f, indent=2)
         except Exception as e:
             logger.warning(f"Error writing manifest: {e}")
+
+    @staticmethod
+    def calculate_file_hash(file_path: Path) -> str:
+        """Calculate SHA256 hex digest for a file."""
+        sha = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            while chunk := f.read(65536):
+                sha.update(chunk)
+        return sha.hexdigest()
+
+    def calculate_weight_hashes(self, dir_path: Path | None = None) -> dict[str, str]:
+        """Compute SHA256 hashes of all component weight files in directory."""
+        target_dir = dir_path or self.models_dir
+        hashes = {}
+        for _, filename, _ in COMPONENT_WEIGHTS:
+            fpath = target_dir / filename
+            if fpath.exists():
+                hashes[filename] = self.calculate_file_hash(fpath)
+        cal_path = target_dir / "calibration.json"
+        if cal_path.exists():
+            hashes["calibration.json"] = self.calculate_file_hash(cal_path)
+        return hashes
+
+    def verify_weight_integrity(self, weights_dir: Path | None = None) -> tuple[bool, str]:
+        """
+        Verify that weight files in directory match the SHA256 hashes in manifest.
+        Raises ValueError if tampering or missing files detected.
+        """
+        target_dir = weights_dir or self.models_dir
+        active = self.get_active_version()
+        expected_hashes = active.get("file_hashes")
+        if not expected_hashes:
+            return True, "No file hashes recorded in manifest for active version."
+
+        for filename, expected_hash in expected_hashes.items():
+            fpath = target_dir / filename
+            if not fpath.exists():
+                msg = f"Weight file missing during integrity verification: {filename}"
+                logger.error(f"[ModelIntegrity] {msg}")
+                raise ValueError(msg)
+            actual_hash = self.calculate_file_hash(fpath)
+            if actual_hash != expected_hash:
+                msg = f"SHA256 mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+                logger.error(f"[ModelIntegrity] {msg}")
+                raise ValueError(msg)
+
+        logger.info("[ModelIntegrity] All active component model weights successfully verified.")
+        return True, "All component model weights successfully verified."
 
     def get_active_version(self) -> dict[str, Any]:
         manifest = self.load_manifest()
@@ -227,20 +339,23 @@ class ModelRegistry:
         active_mae = active_metrics["ml_mae"] if active_metrics else active.get("ml_mae", 1.48)
         active_ver_name = active.get("version", "v1.0.0")
 
-        # Baseline-superiority gate: candidate must beat transparent heuristic baseline within tolerance
+        # Baseline and rolling origin promotion gate checks
         base_mae = candidate_metrics.get("base_mae")
-        if base_mae is not None and cand_mae > (base_mae + tolerance):
+        gate_passed, gate_reason = check_promotion_gate(
+            candidate_metrics=candidate_metrics,
+            active_metrics=active_metrics,
+            rolling_origins=candidate_metrics.get("rolling_origins"),
+            tolerance=tolerance,
+        )
+
+        if not gate_passed:
             rej_tag = f"rej_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
             rej_dir = self.rejected_dir / rej_tag
             rej_dir.mkdir(parents=True, exist_ok=True)
             for name, filename, _ in COMPONENT_WEIGHTS:
                 if name in candidate_models:
                     candidate_models[name].save(rej_dir / filename)
-            reason = (
-                f"Candidate MAE ({cand_mae:.3f}) failed baseline superiority gate vs baseline "
-                f"({base_mae:.3f} + {tolerance}). Automatic rollback engaged."
-            )
-            logger.warning(f"[ModelRollback] {reason}")
+            logger.warning(f"[ModelRollback] {gate_reason}")
             manifest = self.load_manifest()
             manifest.setdefault("versions", []).append(
                 {
@@ -249,71 +364,26 @@ class ModelRegistry:
                     "ml_mae": cand_mae,
                     "ml_spearman": candidate_metrics.get("ml_spearman", 0.0),
                     "base_mae": base_mae,
-                    "status": "rejected_inferior_to_baseline",
-                    "notes": reason,
+                    "status": "rejected_gate_failed",
+                    "notes": gate_reason,
                 }
             )
             self.save_manifest(manifest)
-
-            return {
-                "promoted": False,
-                "status": "rolled_back",
-                "reason": reason,
-                "version": rej_tag,
-                "active_version": active_ver_name,
-                "active_mae": active_mae,
-                "candidate_mae": cand_mae,
-                "rejected_version": rej_tag,
-            }
-
-        # Rollback check vs active production model
-        if active_mae is not None and cand_mae > (active_mae + tolerance):
-            degradation = cand_mae - active_mae
-            rej_tag = f"rej_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
-            rej_dir = self.rejected_dir / rej_tag
-            rej_dir.mkdir(parents=True, exist_ok=True)
-
-            # Persist candidate to rejected folder for forensic analysis
-            for name, filename, _ in COMPONENT_WEIGHTS:
-                if name in candidate_models:
-                    candidate_models[name].save(rej_dir / filename)
-
-            # Record rejection in DB & manifest
-            reason = (
-                f"Candidate MAE ({cand_mae:.3f}) degraded vs active production MAE "
-                f"({active_mae:.3f}) by {degradation:+.3f} (tolerance: +{tolerance}). "
-                f"Automatic rollback engaged. Production {active_ver_name} preserved."
-            )
-            logger.warning(f"[ModelRollback] {reason}")
-
             data_store.save_model_version(
                 version=rej_tag,
                 ml_mae=cand_mae,
-                ml_spearman=candidate_metrics["ml_spearman"],
-                base_mae=candidate_metrics["base_mae"],
-                status="rejected_rollback",
+                ml_spearman=candidate_metrics.get("ml_spearman", 0.0),
+                base_mae=candidate_metrics.get("base_mae", 0.0),
+                status="rejected_gate_failed",
                 is_active=False,
-                notes=reason,
+                notes=gate_reason,
             )
-
-            manifest = self.load_manifest()
-            manifest.setdefault("versions", []).append(
-                {
-                    "version": rej_tag,
-                    "created_at": datetime.now(UTC).isoformat(),
-                    "ml_mae": cand_mae,
-                    "ml_spearman": candidate_metrics["ml_spearman"],
-                    "base_mae": candidate_metrics["base_mae"],
-                    "status": "rejected_rollback",
-                    "notes": reason,
-                }
-            )
-            self.save_manifest(manifest)
 
             return {
                 "promoted": False,
                 "status": "rolled_back",
-                "reason": reason,
+                "reason": f"Automatic rollback engaged: {gate_reason}",
+                "version": rej_tag,
                 "active_version": active_ver_name,
                 "active_mae": active_mae,
                 "candidate_mae": cand_mae,
@@ -350,6 +420,19 @@ class ModelRegistry:
         if cand_md.exists():
             shutil.copy2(cand_md, REPORTS_DIR / "model_eval.md")
 
+        # 4. Compute file hashes for complete provenance
+        file_hashes = self.calculate_weight_hashes(self.models_dir)
+
+        # Git commit
+        try:
+            git_commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except Exception:
+            git_commit = "unknown"
+
+        from fpl_oracle.data.features import FEATURE_SCHEMA_HASH
+
         improvement = (active_mae - cand_mae) if active_mae else 0.0
         success_note = (
             f"Candidate model passed verification. MAE: {cand_mae:.3f} "
@@ -381,9 +464,14 @@ class ModelRegistry:
             {
                 "version": ver_tag,
                 "created_at": datetime.now(UTC).isoformat(),
+                "git_commit": git_commit,
+                "feature_list_hash": FEATURE_SCHEMA_HASH,
+                "metric_applies_to": "served_weights",
+                "file_hashes": file_hashes,
                 "ml_mae": cand_mae,
                 "ml_spearman": candidate_metrics["ml_spearman"],
                 "base_mae": candidate_metrics["base_mae"],
+                "rolling_origins": candidate_metrics.get("rolling_origins", []),
                 "status": "production",
                 "notes": success_note,
             }
