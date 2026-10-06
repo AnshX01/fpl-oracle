@@ -19,6 +19,56 @@ class MonteCarloSimulator:
     def __init__(self, n_simulations: int = 500):
         self.n_simulations = n_simulations
 
+    def compute_team_clean_sheet_probabilities(
+        self,
+        projections_df: pd.DataFrame,
+        fixture_cs_prob_map: dict[Any, float] | None = None,
+    ) -> dict[Any, float]:
+        """
+        Computes fixture-calibrated team clean-sheet probabilities (Requirement F7).
+        Priority:
+        1. Explicit fixture_cs_prob_map if provided.
+        2. Mean/median p_clean_sheet or exp_cs_pts / 4 from model projections for DEF/GKP of that team.
+        3. Fixture difficulty context: opponent_difficulty / fdr and home/away advantage.
+        4. Prior default: 0.30.
+        """
+        team_p_cs: dict[Any, float] = {}
+        if fixture_cs_prob_map:
+            team_p_cs.update(fixture_cs_prob_map)
+
+        # Check model projection columns
+        team_model_probs: dict[Any, list[float]] = {}
+        for _, row in projections_df.iterrows():
+            tm = row.get("team")
+            pos = str(row.get("position", "MID"))
+            p_val = None
+            if "p_clean_sheet" in row and pd.notna(row["p_clean_sheet"]):
+                p_val = float(row["p_clean_sheet"])
+            elif "clean_sheet_probability" in row and pd.notna(row["clean_sheet_probability"]):
+                p_val = float(row["clean_sheet_probability"])
+            elif pos in ["GKP", "DEF"] and "exp_cs_pts" in row and pd.notna(row["exp_cs_pts"]):
+                p_val = float(row["exp_cs_pts"]) / 4.0
+
+            if p_val is not None and 0.0 < p_val < 1.0 and pos in ["GKP", "DEF"]:
+                team_model_probs.setdefault(tm, []).append(p_val)
+
+        for tm, probs in team_model_probs.items():
+            if tm not in team_p_cs and probs:
+                team_p_cs[tm] = float(np.clip(np.median(probs), 0.05, 0.75))
+
+        # Fixture difficulty context for remaining teams
+        for _, row in projections_df.iterrows():
+            tm = row.get("team")
+            if tm not in team_p_cs:
+                fdr = float(row.get("opponent_difficulty", row.get("fixture_difficulty", 3)))
+                is_home = bool(row.get("was_home", row.get("is_home", True)))
+                home_factor = 1.15 if is_home else 0.85
+                diff_factor = max(0.4, min(1.8, (6.0 - fdr) / 3.0))
+                prob = float(np.clip(0.30 * home_factor * diff_factor, 0.08, 0.65))
+                team_p_cs[tm] = round(prob, 3)
+
+        return team_p_cs
+
     def simulate_league(
         self,
         user_points: float,
@@ -28,10 +78,11 @@ class MonteCarloSimulator:
         horizon_gws: int = 5,
         seed: int | None = None,
         rival_behavior_model: str = "consensus_template",
+        fixture_cs_prob_map: dict[Any, float] | None = None,
     ) -> dict[str, Any]:
         """
         Run Monte Carlo simulations across user and rivals over the horizon.
-        Uses joint player draws and team clean-sheet correlations.
+        Uses joint player draws, fixture-calibrated team clean sheets, and un-double-counted expected points.
         """
         rng = np.random.default_rng(seed)
 
@@ -51,8 +102,15 @@ class MonteCarloSimulator:
                 "message": "No mini-league rivals loaded. Enter a valid target league ID or sync league standings to simulate.",
             }
 
-        # Build player lookup: (mean, sigma, team, position)
-        proj_map: dict[int, tuple[float, float, Any, str]] = {}
+        # Calculate fixture-calibrated team clean sheet probabilities (Requirement F7)
+        team_p_cs = self.compute_team_clean_sheet_probabilities(
+            projections_df=projections_df,
+            fixture_cs_prob_map=fixture_cs_prob_map,
+        )
+
+        # Build player lookup: (mu, sigma, team, position, mu_base, sigma_base, p_cs)
+        # Requirement F6: Deduct clean sheet expectation from GKP/DEF to eliminate double counting!
+        proj_map: dict[int, tuple[float, float, Any, str, float, float, float]] = {}
         for _, row in projections_df.iterrows():
             elem_id = int(row["element"])
             xp = float(row.get("expected_points", 3.0))
@@ -60,7 +118,19 @@ class MonteCarloSimulator:
             sigma = max(0.5, float(np.sqrt(var)))
             team = row.get("team", 1)
             pos = str(row.get("position", "MID"))
-            proj_map[elem_id] = (xp, sigma, team, pos)
+            p_cs = team_p_cs.get(team, 0.30)
+
+            if pos in ["GKP", "DEF"]:
+                # Clean sheet expectation is 4.0 * p_cs.
+                # Subtract from xp so that E[mu_base + 4.0 * CS] == xp (NO DOUBLE COUNTING!)
+                mu_base = max(0.0, xp - 4.0 * p_cs)
+                var_base = max(0.09, var - 16.0 * p_cs * (1.0 - p_cs))
+                sigma_base = max(0.3, float(np.sqrt(var_base)))
+            else:
+                mu_base = xp
+                sigma_base = sigma
+
+            proj_map[elem_id] = (xp, sigma, team, pos, mu_base, sigma_base, p_cs)
 
         # Collect user starters and captain
         if "is_starter" in user_squad_df.columns:
@@ -129,19 +199,23 @@ class MonteCarloSimulator:
             trial_rival_caps = [r["captain"] for r in rival_entries]
 
             for gw_step in range(horizon_gws):
-                # 1. Team-level clean sheet draws (W1)
-                # Clean sheet probability ~ 30% per matchday
-                team_cs = {t: bool(rng.random() < 0.32) for t in all_unique_teams}
+                # 1. Team-level clean sheet draws (Requirement F7: fixture-calibrated per team)
+                team_cs = {t: bool(rng.random() < team_p_cs.get(t, 0.30)) for t in all_unique_teams}
 
-                # 2. Joint player point draws (drawn ONCE per trial) (W1)
+                # 2. Joint player point draws (Requirement F6: no clean sheet double counting on mu)
                 player_draws: dict[int, float] = {}
                 for elem in all_unique_elements:
-                    mu, sig, tm, pos = proj_map.get(elem, (3.5, 2.0, 1, "MID"))
-                    # Individual score
-                    indiv = max(0.0, float(rng.normal(mu, sig)))
-                    # Defensive clean sheet bonus
-                    cs_pts = 4.0 if (pos in ["GKP", "DEF"] and team_cs.get(tm, False)) else 0.0
-                    player_draws[elem] = indiv + cs_pts
+                    if elem in proj_map:
+                        xp, sigma, tm, pos, mu_base, sigma_base, p_cs = proj_map[elem]
+                    else:
+                        xp, sigma, tm, pos, mu_base, sigma_base, p_cs = (3.5, 2.0, 1, "MID", 3.5, 2.0, 0.30)
+
+                    if pos in ["GKP", "DEF"]:
+                        cs_pts = 4.0 if team_cs.get(tm, False) else 0.0
+                        base = max(-1.0, float(rng.normal(mu_base, sigma_base)))
+                        player_draws[elem] = max(0.0, base + cs_pts)
+                    else:
+                        player_draws[elem] = max(0.0, float(rng.normal(xp, sigma)))
 
                 # User points this GW
                 gw_user = sum(
