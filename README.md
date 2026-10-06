@@ -223,7 +223,7 @@ FPL Oracle is thoroughly validated against expanding-window out-of-sample data. 
   - **Rank Correlation ($\\rho$)**: **0.704** (Production Ensemble)
   - **Mean Absolute Error (MAE)**: **1.019** (ML Ensemble) vs 1.078 (Weighted Form) and 1.076 (Season Average)
   - **Current 2026-27 Holdout**: **1.895 MAE** vs 1.952 baseline (+0.057 gain)
-  - **True Retraining Feature Ablation**: +0.93% MAE improvement without Fixture Difficulty And Context
+  - **True Retraining Feature Ablation** (`reports/ablation.json`): **+1.17% MAE improvement** (+0.0111 pts, 95% grouped-by-GW CI: [+0.0064, +0.0155]) from Fixture Difficulty & Context; **+1.74%** (+0.0166 pts, 95% CI: [+0.0127, +0.0205]) from Minutes & Starts
   - **Uncertainty Interval Coverage**: **83.78%** empirical coverage for nominal 80% credible interval ($P_{10}$–$P_{90}$)
 - [Gap Closure Audit Matrix](reports/final_fix_ledger.md): Full audit matrix confirming resolution of all milestones F1–F14.
 - [News & Single Availability Evaluation](reports/news_benchmark.json): 20/20 adversarial benchmark verification, zero double-discounting invariant, and shadow mode gating policy.

@@ -252,7 +252,8 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     full_rmse = float(np.round(root_mean_squared_error(actual_val, full_preds), 3))
     full_sp, _ = spearmanr(full_preds, actual_val)
 
-    # Real feature-group ablation: replace fixture/opponent form features with neutral documented priors
+    # Inference-time sensitivity probe: evaluate model responsiveness to neutral documented priors (G7)
+    # Note: True retrain ablation with grouped-by-gameweek bootstrap is executed via scripts/run_ablation.py
     X_val_ablated = X_val.copy()
     neutral_replacements = {
         "opp_strength_defence": 1.35,
@@ -312,6 +313,8 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     mae_gain_pct = float(np.round((mae_delta / ablated_mae) * 100.0, 2)) if ablated_mae > 0 else 0.0
 
     ablation_metrics = {
+        "probe_type": "inference_neutral_prior_replacement_sensitivity_probe",
+        "description": "Inference-time sensitivity probe measuring model responsiveness to neutral priors without retraining. True ablation is in reports/ablation.json.",
         "full_mae": full_mae,
         "full_rmse": full_rmse,
         "full_spearman": float(np.round(full_sp, 3)),

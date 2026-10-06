@@ -1,13 +1,15 @@
 {
   "evaluation_type": "true_retraining_ablation",
   "description": "Models retrained from scratch without each feature group on identical temporal split",
-  "timestamp": "2026-10-06T14:22:52.834553+00:00",
+  "timestamp": "2026-10-06T19:25:11.377342+00:00",
   "train_size": 57330,
   "test_size": 29757,
+  "test_gameweeks_count": 38,
+  "bootstrap_method": "grouped_by_gameweek",
   "full_model": {
-    "mae": 0.9401,
-    "rmse": 1.9867,
-    "spearman": 0.7067,
+    "mae": 0.9399,
+    "rmse": 1.9873,
+    "spearman": 0.7059,
     "feature_count": 62
   },
   "groups": [
@@ -21,17 +23,50 @@
         "opponent_difficulty",
         "days_rest",
         "implied_team_xG",
-        "implied_team_cs_prob"
+        "implied_team_cs_prob",
+        "implied_opp_xG",
+        "implied_opp_cs_prob"
       ],
-      "feature_count_removed": 8,
-      "ablated_mae": 0.9489,
-      "ablated_rmse": 1.9782,
-      "ablated_spearman": 0.7066,
-      "mae_delta_vs_full": 0.0088,
-      "mae_gain_pct": 0.93,
+      "feature_count_removed": 10,
+      "ablated_mae": 0.951,
+      "ablated_rmse": 1.9875,
+      "ablated_spearman": 0.7053,
+      "mae_delta_vs_full": 0.0111,
+      "mae_gain_pct": 1.17,
       "ci_95": [
-        0.0058,
-        0.0119
+        0.0064,
+        0.0155
+      ]
+    },
+    {
+      "group_name": "team_form_attack_defense",
+      "features_removed": [
+        "team_roll_goals_3",
+        "team_roll_goals_5",
+        "team_roll_goals_8",
+        "team_roll_xG_3",
+        "team_roll_xG_5",
+        "team_roll_xG_8",
+        "opp_roll_points_3",
+        "opp_roll_points_5",
+        "opp_roll_points_8",
+        "opp_roll_goals_conceded_3",
+        "opp_roll_goals_conceded_5",
+        "opp_roll_goals_conceded_8",
+        "opp_roll_xGC_3",
+        "opp_roll_xGC_5",
+        "opp_roll_xGC_8",
+        "opp_roll_clean_sheets_5"
+      ],
+      "feature_count_removed": 16,
+      "ablated_mae": 0.9424,
+      "ablated_rmse": 1.9842,
+      "ablated_spearman": 0.7056,
+      "mae_delta_vs_full": 0.0025,
+      "mae_gain_pct": 0.27,
+      "ci_95": [
+        -0.0012,
+        0.0063
       ]
     },
     {
@@ -47,13 +82,13 @@
         "roll_xGC_5"
       ],
       "feature_count_removed": 8,
-      "ablated_mae": 0.9418,
-      "ablated_rmse": 1.9872,
-      "ablated_spearman": 0.7071,
-      "mae_delta_vs_full": 0.0017,
-      "mae_gain_pct": 0.18,
+      "ablated_mae": 0.9408,
+      "ablated_rmse": 1.9876,
+      "ablated_spearman": 0.707,
+      "mae_delta_vs_full": 0.0009,
+      "mae_gain_pct": 0.1,
       "ci_95": [
-        0.0002,
+        -0.0011,
         0.003
       ]
     },
@@ -68,14 +103,14 @@
         "std_minutes_per_gw"
       ],
       "feature_count_removed": 6,
-      "ablated_mae": 0.96,
-      "ablated_rmse": 1.9865,
-      "ablated_spearman": 0.7003,
-      "mae_delta_vs_full": 0.0199,
-      "mae_gain_pct": 2.07,
+      "ablated_mae": 0.9565,
+      "ablated_rmse": 1.985,
+      "ablated_spearman": 0.7005,
+      "mae_delta_vs_full": 0.0166,
+      "mae_gain_pct": 1.74,
       "ci_95": [
-        0.0166,
-        0.0231
+        0.0127,
+        0.0205
       ]
     },
     {
@@ -87,14 +122,14 @@
         "roll_penalties_saved_5"
       ],
       "feature_count_removed": 4,
-      "ablated_mae": 0.9405,
-      "ablated_rmse": 1.9866,
-      "ablated_spearman": 0.7064,
-      "mae_delta_vs_full": 0.0004,
-      "mae_gain_pct": 0.04,
+      "ablated_mae": 0.9404,
+      "ablated_rmse": 1.9887,
+      "ablated_spearman": 0.7061,
+      "mae_delta_vs_full": 0.0005,
+      "mae_gain_pct": 0.05,
       "ci_95": [
         -0.0003,
-        0.0009
+        0.0013
       ]
     }
   ]

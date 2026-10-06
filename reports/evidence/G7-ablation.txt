@@ -1,0 +1,20 @@
+Command: .venv\Scripts\python.exe -m pytest tests/test_ablation.py -v
+Exit Code: 0
+
+Output:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 5 items
+
+tests/test_ablation.py::test_feature_groups_valid_and_non_empty PASSED   [ 20%]
+tests/test_ablation.py::test_validate_feature_groups_fails_on_missing_column PASSED [ 40%]
+tests/test_ablation.py::test_validate_feature_groups_fails_on_zero_columns PASSED [ 60%]
+tests/test_ablation.py::test_grouped_bootstrap_ci_computation PASSED     [ 80%]
+tests/test_ablation.py::test_ablation_artifact_schema PASSED             [100%]
+
+============================== 5 passed in 1.57s ==============================
