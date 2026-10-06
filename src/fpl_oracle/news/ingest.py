@@ -1,10 +1,14 @@
 """
 News and injury ingestion engine.
 Fetches official FPL injury and status data, and pulls live RSS feeds from
-verified football news outlets (BBC, Sky Sports, The Guardian).
+verified football news outlets with SSRF protection, SHA256 deduplication,
+and bounded rate limits.
 """
 
+import hashlib
+import ipaddress
 import logging
+import urllib.parse
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,6 +20,28 @@ from fpl_oracle.config import NEWS_SOURCES
 
 logger = logging.getLogger("fpl_oracle.news.ingest")
 
+SAFE_ALLOWED_SCHEMES = {"http", "https"}
+
+
+def is_safe_external_url(url: str) -> bool:
+    """SSRF Protection: Block private network, loopback, and disallowed schemes."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in SAFE_ALLOWED_SCHEMES:
+            return False
+        hostname = (parsed.hostname or "").lower()
+        if not hostname or hostname in ("localhost", "127.0.0.1", "0.0.0.0"):
+            return False
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+                return False
+        except ValueError:
+            pass  # Valid domain name
+        return True
+    except Exception:
+        return False
+
 
 class NewsIngestion:
     def __init__(self):
@@ -23,6 +49,7 @@ class NewsIngestion:
         self.dead_feeds: set[str] = set()
         self.last_fetch_time: datetime | None = None
         self.last_articles_count: int = 0
+        self._seen_article_hashes: set[str] = set()
 
     def get_news_status(self) -> dict[str, Any]:
         """Return diagnostic metrics for news pipeline."""
@@ -40,18 +67,26 @@ class NewsIngestion:
     def fetch_official_fpl_signals(self, bootstrap: BootstrapStatic) -> list[dict[str, Any]]:
         """
         Extract authoritative injury, suspension, and availability updates from FPL bootstrap.
+        Distinguishes source publication time from local fetch time.
         """
         updates = []
         team_map = {t.id: t.name for t in bootstrap.teams}
+        now_iso = datetime.now(UTC).isoformat()
 
         for elem in bootstrap.elements:
-            # If player has news, injury, or non-100% chance of playing
             has_news = bool(elem.news and elem.news.strip())
             not_fully_available = elem.status != "a" or (
                 elem.chance_of_playing_next_round is not None and elem.chance_of_playing_next_round < 100
             )
 
             if has_news or not_fully_available:
+                # Check for scout risks like loan ineligibility
+                risks_list = getattr(elem, "scout_risks", None) or []
+                risk_types = [
+                    (r.property if hasattr(r, "property") else r.get("property", ""))
+                    for r in risks_list
+                ]
+
                 updates.append(
                     {
                         "element_id": elem.id,
@@ -63,9 +98,11 @@ class NewsIngestion:
                         "news_added": elem.news_added,
                         "chance_of_playing_next_round": elem.chance_of_playing_next_round,
                         "chance_of_playing_this_round": elem.chance_of_playing_this_round,
+                        "scout_risks": risk_types,
                         "source": "Official FPL API",
                         "confidence": 1.0,
-                        "timestamp": datetime.now(UTC).isoformat(),
+                        "fetched_at": now_iso,
+                        "published_at": elem.news_added or now_iso,
                     }
                 )
 
@@ -73,9 +110,12 @@ class NewsIngestion:
 
     async def fetch_rss_articles(self) -> list[dict[str, Any]]:
         """
-        Fetch articles from configured RSS feeds with graceful error handling and automatic dead feed dropping.
+        Fetch articles from configured RSS feeds with SSRF safety, bounded timeouts,
+        and content deduplication.
         """
         articles = []
+        now_iso = datetime.now(UTC).isoformat()
+
         for feed in self.sources_cfg:
             feed_id = feed.get("id")
             if not feed.get("enabled", True) or feed_id in self.dead_feeds:
@@ -84,17 +124,27 @@ class NewsIngestion:
             feed_name = feed.get("name")
             feed_weight = float(feed.get("weight", 0.8))
 
+            if not is_safe_external_url(feed_url):
+                logger.warning(f"Rejecting unsafe RSS feed URL: {feed_url}")
+                continue
+
             try:
-                # Use httpx with short timeout to prevent hanging
                 async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                     resp = await client.get(feed_url, headers={"User-Agent": "Mozilla/5.0 FPLOracle/1.0"})
                     if resp.status_code == 200:
                         parsed = feedparser.parse(resp.text)
-                        for entry in parsed.entries[:10]:
-                            title = getattr(entry, "title", "")
-                            summary = getattr(entry, "summary", "")
-                            link = getattr(entry, "link", "")
-                            published = getattr(entry, "published", datetime.now(UTC).isoformat())
+                        for entry in parsed.entries[:15]:
+                            title = getattr(entry, "title", "").strip()
+                            summary = getattr(entry, "summary", "").strip()
+                            link = getattr(entry, "link", "").strip()
+                            published = getattr(entry, "published", None)
+
+                            # Deduplication by content hash
+                            content_str = f"{link}|{title}|{summary}"
+                            c_hash = hashlib.sha256(content_str.encode("utf-8")).hexdigest()
+                            if c_hash in self._seen_article_hashes:
+                                continue
+                            self._seen_article_hashes.add(c_hash)
 
                             articles.append(
                                 {
@@ -104,7 +154,9 @@ class NewsIngestion:
                                     "title": title,
                                     "summary": summary,
                                     "link": link,
-                                    "published": published,
+                                    "content_hash": c_hash,
+                                    "published_at": published,
+                                    "fetched_at": now_iso,
                                 }
                             )
                     else:

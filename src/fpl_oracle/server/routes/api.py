@@ -137,14 +137,21 @@ async def get_game_state_endpoint():
 @router.get("/profile")
 def get_profile():
     p = data_store.get_profile()
+    from fpl_oracle.config import app_config
+    diag = app_config.get_redacted_status()
     return {
         "manager_id": p.manager_id,
+        "manager_id_configured": diag["manager_id_configured"],
+        "manager_id_redacted": diag["manager_id_redacted"],
         "target_league_id": p.target_league_id,
+        "league_id_configured": diag["league_id_configured"],
+        "league_id_redacted": diag["league_id_redacted"],
         "risk_preference": p.risk_preference,
         "llm_provider": p.llm_provider,
         "bank": p.bank,
         "free_transfers": p.free_transfers,
         "manual_squad": json.loads(p.manual_squad) if p.manual_squad else None,
+        "status_diagnostic": diag,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
     }
 
@@ -152,14 +159,8 @@ def get_profile():
 @router.post("/profile")
 def update_profile(req: ProfileUpdateRequest):
     kwargs: dict[str, Any] = {}
-    if req.manager_id is not None:
-        kwargs["manager_id"] = req.manager_id
-    if req.target_league_id is not None:
-        kwargs["target_league_id"] = req.target_league_id
     if req.risk_preference is not None:
         kwargs["risk_preference"] = req.risk_preference
-    if req.llm_provider is not None:
-        kwargs["llm_provider"] = req.llm_provider
     if req.bank is not None:
         kwargs["bank"] = req.bank
     if req.free_transfers is not None:
@@ -169,6 +170,13 @@ def update_profile(req: ProfileUpdateRequest):
 
     data_store.update_profile(**kwargs)
     return {"status": "success", "profile": get_profile()}
+
+
+@router.get("/config/status")
+def get_config_status():
+    """Diagnostic status endpoint returning configured variables without exposing secrets."""
+    from fpl_oracle.config import app_config
+    return app_config.get_redacted_status()
 
 
 @router.post("/sync/trigger")

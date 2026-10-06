@@ -122,20 +122,32 @@ class SyncPipeline:
             rules_ver = rules_checker.verify(boot)
             game_state = await game_state_manager.get_game_state()
 
-            # ------------------------------------------------------------------
-            # Stage 3: Feature Engineering
-            # ------------------------------------------------------------------
             target_gw = next_gw or (curr_gw + 1 if curr_gw else 6)
-            await self._broadcast("features", 35, f"Engineering pre-deadline features for Gameweek {target_gw}...")
-            # Projection engine ensures feature extraction
+
+            # ------------------------------------------------------------------
+            # Stage 3: News Evidence Ingestion & Single Reconciliation
+            # ------------------------------------------------------------------
+            await self._broadcast(
+                "news", 30, "Ingesting official risks and extracting factual availability evidence..."
+            )
+            try:
+                analyzed_news = await news_analyzer.get_player_news_signals(boot, target_gw=target_gw)
+            except Exception as e:
+                logger.warning("News ingestion warning: %s", e)
+                analyzed_news = []
+
+            # ------------------------------------------------------------------
+            # Stage 4: Feature Engineering
+            # ------------------------------------------------------------------
+            await self._broadcast("features", 45, f"Engineering pre-deadline features for Gameweek {target_gw}...")
             horizon = 5
 
             # ------------------------------------------------------------------
-            # Stage 4: Component ML Inference
+            # Stage 5: Component ML Inference
             # ------------------------------------------------------------------
             await self._broadcast(
                 "ml_inference",
-                50,
+                55,
                 f"Generating calibrated xP, P10 floor & P90 ceiling across GW {target_gw}-{target_gw + horizon - 1}...",
             )
             projections = projection_engine.predict_multi_gameweeks(
@@ -260,19 +272,7 @@ class SyncPipeline:
                 logger.warning("Monte Carlo simulation warning: %s", e)
 
             # ------------------------------------------------------------------
-            # Stage 8: News Ingestion & Sentiment Extraction
-            # ------------------------------------------------------------------
-            await self._broadcast(
-                "news", 95, "Ingesting latest verified football news feeds and extracting injury sentiment..."
-            )
-            try:
-                analyzed_news = await news_analyzer.get_player_news_signals(boot)
-            except Exception as e:
-                logger.warning("News ingestion warning: %s", e)
-                analyzed_news = []
-
-            # ------------------------------------------------------------------
-            # Stage 9: Weekly Briefing Generation
+            # Stage 8: Weekly Briefing Generation
             # ------------------------------------------------------------------
             await self._broadcast(
                 "briefing", 98, f"Synthesizing Gameweek {target_gw} executive intelligence briefing..."

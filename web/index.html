@@ -390,7 +390,7 @@
             Paste / Custom Squad
           </button>
           <button @click="showSettingsModal = true" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium transition">
-            Adjust Bank / FTs
+            🔒 Server Config
           </button>
         </div>
       </div>
@@ -831,59 +831,60 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- MODAL: ⚙️ SETTINGS & PROFILE OVERRIDES     -->
+  <!-- MODAL: 🔒 SERVER CONFIGURATION & STATUS     -->
   <!-- ========================================== -->
   <div v-if="showSettingsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="council-card max-w-md w-full p-6 space-y-4 shadow-2xl">
       <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
-        <h3 class="font-bold text-base text-white">Manager Settings & Overrides</h3>
+        <h3 class="font-bold text-base text-white flex items-center gap-2">
+          <span>🔒</span>
+          <span>Server Configuration Status</span>
+        </h3>
         <button @click="showSettingsModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
       </div>
 
       <div class="space-y-3 text-xs">
-        <div>
-          <label class="block text-zinc-400 font-semibold mb-1">FPL Manager ID</label>
-          <input v-model.number="profile.manager_id" type="number" placeholder="e.g. 123456" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white">
+        <div class="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-1">
+          <div class="text-zinc-400 font-semibold flex justify-between">
+            <span>FPL Manager Account:</span>
+            <span class="text-emerald-400 font-mono">{{ profile.manager_id_redacted || 'Loaded from .env' }}</span>
+          </div>
+          <p class="text-[10px] text-zinc-500">Configured via <code>FPL_MANAGER_ID</code> in local <code>.env</code> file.</p>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-1">
+          <div class="text-zinc-400 font-semibold flex justify-between">
+            <span>Target Mini-League:</span>
+            <span class="text-emerald-400 font-mono">{{ profile.league_id_redacted || 'Loaded from .env' }}</span>
+          </div>
+          <p class="text-[10px] text-zinc-500">Configured via <code>FPL_TARGET_LEAGUE_ID</code> in local <code>.env</code> file.</p>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-1">
+          <div class="text-zinc-400 font-semibold flex justify-between">
+            <span>News & Availability Extractor:</span>
+            <span class="text-amber-400 font-semibold">{{ profile.status_diagnostic?.recommendation_mode === 'gated_active' ? 'Active' : 'Shadow Mode' }}</span>
+          </div>
+          <p class="text-[11px] text-zinc-300">{{ profile.status_diagnostic?.llm_extractor_status || 'Official API baseline running (No key required)' }}</p>
         </div>
 
         <div>
-          <label class="block text-zinc-400 font-semibold mb-1">Target Mini-League ID</label>
-          <input v-model.number="profile.target_league_id" type="number" placeholder="e.g. 314" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white">
-        </div>
-
-        <div>
-          <label class="block text-zinc-400 font-semibold mb-1">Available Bank (£m Override)</label>
-          <input v-model.number="profile.bank" type="number" step="0.1" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white">
-        </div>
-
-        <div>
-          <label class="block text-zinc-400 font-semibold mb-1">Banked Free Transfers (1-5 Override)</label>
-          <input v-model.number="profile.free_transfers" type="number" min="1" max="5" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white">
-        </div>
-
-        <div>
-          <label class="block text-zinc-400 font-semibold mb-1">Risk Preference</label>
+          <label class="block text-zinc-400 font-semibold mb-1">Tactical Risk Preference</label>
           <select v-model="profile.risk_preference" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white">
-            <option value="balanced">Balanced Contender (Standard)</option>
-            <option value="aggressive">Chasing Leader (High Differential)</option>
+            <option value="balanced">Balanced Contender (Standard Optimization)</option>
+            <option value="aggressive">Chasing Leader (High Differential Upside)</option>
             <option value="conservative">Defending Lead (Template Protection)</option>
           </select>
         </div>
 
-        <div>
-          <label class="block text-zinc-400 font-semibold mb-1">LLM Explanations Provider</label>
-          <select v-model="profile.llm_provider" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white">
-            <option value="no-key">No API Key (Local Rules & Decision Tree)</option>
-            <option value="gemini">Google Gemini (Requires GEMINI_API_KEY in .env)</option>
-            <option value="openai">OpenAI (Requires OPENAI_API_KEY in .env)</option>
-            <option value="anthropic">Anthropic Claude (Requires ANTHROPIC_API_KEY in .env)</option>
-          </select>
+        <div class="p-2 text-[10px] text-zinc-500 bg-zinc-900/50 rounded border border-zinc-800">
+          🛡️ <strong>Privacy Notice</strong>: Personal IDs and API keys are stored solely in project-local <code>.env</code> and loaded server-side. No secret entry forms exist in the web client.
         </div>
       </div>
 
       <div class="pt-2 flex justify-end gap-2">
-        <button @click="showSettingsModal = false" class="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white text-xs">Cancel</button>
-        <button @click="saveProfile" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs">Save & Refresh</button>
+        <button @click="showSettingsModal = false" class="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white text-xs">Close</button>
+        <button @click="saveProfile" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs">Save Preference</button>
       </div>
     </div>
   </div>
