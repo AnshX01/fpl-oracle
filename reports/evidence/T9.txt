@@ -1,0 +1,22 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 11 items
+
+tests/test_optimizer.py::test_squad_optimizer_constraints PASSED         [  9%]
+tests/test_optimizer.py::test_selling_price_math PASSED                  [ 18%]
+tests/test_optimizer.py::test_lineup_and_captain_formation PASSED        [ 27%]
+tests/test_optimizer.py::test_compute_squad_selling_prices_and_free_transfers PASSED [ 36%]
+tests/test_optimizer.py::test_identical_horizon_branch_comparison PASSED [ 45%]
+tests/test_optimizer.py::test_greedy_vs_multi_gw_hit_avoidance PASSED    [ 54%]
+tests/test_optimizer.py::test_free_transfer_option_value PASSED          [ 63%]
+tests/test_optimizer.py::test_robustness_reranking_and_no_regret PASSED  [ 72%]
+tests/test_optimizer.py::test_price_change_sensitivity_toggle PASSED     [ 81%]
+tests/test_optimizer.py::test_plan_stability_threshold PASSED            [ 90%]
+tests/test_optimizer.py::test_dynamic_roadmap_generation PASSED          [100%]
+
+============================= 11 passed in 29.33s =============================

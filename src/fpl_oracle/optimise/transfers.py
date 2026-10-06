@@ -1,16 +1,22 @@
 """
-Mathematical Transfer Optimizer and Multi-Gameweek Transfer Roadmap Engine.
+Stateful Mathematical Transfer Optimizer and Multi-Gameweek Trajectory Engine.
+
 Features:
 - Exact selling price calculations (50% profit retained rounded down)
 - 2026/27 Banking of up to 5 free transfers (cost -4 per extra)
-- Multi-gameweek discounted horizon optimization (PuLP MILP + beam search)
-- Explicit "Hit worth it?" break-even horizon evaluation
-- What-if scenario constraints (locked in, locked out, budget caps)
-- Actionable Transfer Roadmap output
+- Multi-gameweek discounted horizon beam search (5-GW stateful trajectory)
+- Explicit identical-horizon candidate comparison (Roll vs 1-Transfer vs 2-Transfers vs Hits)
+- Future-hit avoidance derived from multi-GW vs greedy trajectories (T3)
+- Free-transfer option value quantification (T4)
+- Robustness re-ranking and no-regret move marking across projection noise (T5)
+- Probabilistic price change sensitivity toggle (pure xP vs price movement) (T6)
+- Dynamic roadmap generated from actual trajectory player picks, fixtures & DGW/BGW tags (T7)
+- Plan stability threshold (STABILITY_THRESHOLD_XP = 0.3) to prevent churn (T8)
 """
 
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from fpl_oracle.config import SETTINGS
@@ -22,6 +28,82 @@ def _safe_team(val: Any) -> Any:
         return int(val)
     except (ValueError, TypeError):
         return str(val)
+
+
+VALID_FORMATIONS = [
+    (3, 5, 2),
+    (3, 4, 3),
+    (4, 4, 2),
+    (4, 3, 3),
+    (4, 5, 1),
+    (5, 3, 2),
+    (5, 4, 1),
+    (5, 2, 3),
+]
+
+
+def _fast_eval_squad_formation(
+    elements: set[int],
+    player_map: dict[int, dict[str, Any]],
+    risk_preference: str = "balanced",
+) -> tuple[float, int, tuple[int, int, int]]:
+    """
+    Evaluates 15-player squad formation and captaincy in < 0.05ms.
+    Returns (total_xp, captain_element_id, formation_tuple).
+    """
+    gks: list[tuple[float, int]] = []
+    defs: list[tuple[float, int]] = []
+    mids: list[tuple[float, int]] = []
+    fwds: list[tuple[float, int]] = []
+
+    for eid in elements:
+        p = player_map.get(eid)
+        if not p:
+            continue
+        pos = p.get("position", "MID")
+        xp = float(p.get("expected_points", 0.0))
+        item = (xp, eid)
+        if pos == "GKP":
+            gks.append(item)
+        elif pos == "DEF":
+            defs.append(item)
+        elif pos == "MID":
+            mids.append(item)
+        elif pos == "FWD":
+            fwds.append(item)
+
+    gks.sort(key=lambda x: x[0], reverse=True)
+    defs.sort(key=lambda x: x[0], reverse=True)
+    mids.sort(key=lambda x: x[0], reverse=True)
+    fwds.sort(key=lambda x: x[0], reverse=True)
+
+    starter_gk_xp = gks[0][0] if gks else 0.0
+    def_prefix = [0.0] + list(np.cumsum([x[0] for x in defs]))
+    mid_prefix = [0.0] + list(np.cumsum([x[0] for x in mids]))
+    fwd_prefix = [0.0] + list(np.cumsum([x[0] for x in fwds]))
+
+    best_outfield_xp = -1e9
+    best_form = (3, 4, 3)
+
+    for n_def, n_mid, n_fwd in VALID_FORMATIONS:
+        if n_def <= len(defs) and n_mid <= len(mids) and n_fwd <= len(fwds):
+            outfield_xp = def_prefix[n_def] + mid_prefix[n_mid] + fwd_prefix[n_fwd]
+            if outfield_xp > best_outfield_xp:
+                best_outfield_xp = outfield_xp
+                best_form = (n_def, n_mid, n_fwd)
+
+    n_def, n_mid, n_fwd = best_form
+    starters = ([gks[0]] if gks else []) + defs[:n_def] + mids[:n_mid] + fwds[:n_fwd]
+    if starters:
+        captain = max(starters, key=lambda x: x[0])
+        cap_bonus = captain[0]
+        cap_id = captain[1]
+    else:
+        cap_bonus = 0.0
+        cap_id = 0
+
+    total_xp = starter_gk_xp + (best_outfield_xp if best_outfield_xp > -1e8 else 0.0) + cap_bonus
+    return total_xp, cap_id, best_form
 
 
 class TransferOptimizer:
@@ -57,7 +139,6 @@ class TransferOptimizer:
             active_chip = chips_used.get(gw, "")
 
             if active_chip in ("wildcard", "freehit"):
-                # In 2026/27, Wildcard/Freehit preserve banked FTs and add 1 FT for next GW
                 banked = min(5, banked + 1)
             else:
                 if transfers_made <= banked:
@@ -155,6 +236,380 @@ class TransferOptimizer:
 
         return max(1, min(5, banked))
 
+    def _get_candidate_1_transfers(
+        self,
+        elements: set[int],
+        bank: int,
+        purchase_prices: dict[int, int],
+        pool_df: pd.DataFrame,
+        player_map: dict[int, dict[str, Any]],
+        locked_in: set[int],
+        locked_out: set[int],
+        excluded_teams: set[Any],
+        max_per_pos: int = 3,
+    ) -> list[dict[str, Any]]:
+        moves = []
+        sellable = [eid for eid in elements if eid not in locked_in]
+        team_counts: dict[Any, int] = {}
+        for eid in elements:
+            tm = player_map[eid]["team"]
+            team_counts[tm] = team_counts.get(tm, 0) + 1
+
+        for sell_id in sellable:
+            sell_p = player_map.get(sell_id)
+            if not sell_p:
+                continue
+            sell_pos = sell_p["position"]
+            now_cost = int(sell_p.get("value", 50))
+            purch_cost = purchase_prices.get(sell_id, now_cost)
+            sell_price = self.calculate_selling_price(purch_cost, now_cost)
+            avail_budget = bank + sell_price
+            sell_team = sell_p["team"]
+
+            cands = pool_df[
+                (pool_df["position"] == sell_pos)
+                & (~pool_df["element"].isin(elements))
+                & (~pool_df["element"].isin(locked_out))
+                & (~pool_df["team"].isin(excluded_teams))
+                & (pool_df["value"] <= avail_budget)
+            ].sort_values(by="expected_points", ascending=False)
+
+            for _, buy_row in cands.head(max_per_pos).iterrows():
+                buy_id = int(buy_row["element"])
+                buy_team = buy_row["team"]
+                cnt = team_counts.get(buy_team, 0)
+                if buy_team != sell_team and cnt >= 3:
+                    continue
+
+                moves.append({
+                    "plan_type": "1_TRANSFER",
+                    "transfers_in": [buy_id],
+                    "transfers_out": [sell_id],
+                    "sell_prices": {sell_id: sell_price},
+                    "buy_costs": {buy_id: int(buy_row["value"])},
+                    "bank_delta": sell_price - int(buy_row["value"]),
+                    "immediate_gain": float(buy_row["expected_points"]) - float(sell_p.get("expected_points", 0.0)),
+                })
+
+        moves.sort(key=lambda m: m["immediate_gain"], reverse=True)
+        return moves
+
+    def _get_candidate_2_transfers(
+        self,
+        elements: set[int],
+        bank: int,
+        purchase_prices: dict[int, int],
+        pool_df: pd.DataFrame,
+        player_map: dict[int, dict[str, Any]],
+        locked_in: set[int],
+        locked_out: set[int],
+        excluded_teams: set[Any],
+        cand_1_moves: list[dict[str, Any]],
+        max_total: int = 5,
+    ) -> list[dict[str, Any]]:
+        moves_2 = []
+        if not cand_1_moves:
+            return moves_2
+
+        top_1 = cand_1_moves[:4]
+        for m1 in top_1:
+            out1 = m1["transfers_out"][0]
+            in1 = m1["transfers_in"][0]
+            mid_bank = bank + m1["bank_delta"]
+            mid_elements = (elements - {out1}) | {in1}
+            mid_purch = dict(purchase_prices)
+            mid_purch.pop(out1, None)
+            mid_purch[in1] = m1["buy_costs"][in1]
+
+            cand_second = self._get_candidate_1_transfers(
+                elements=mid_elements,
+                bank=mid_bank,
+                purchase_prices=mid_purch,
+                pool_df=pool_df,
+                player_map=player_map,
+                locked_in=locked_in | {in1},
+                locked_out=locked_out | {out1},
+                excluded_teams=excluded_teams,
+                max_per_pos=2,
+            )
+
+            for m2 in cand_second[:2]:
+                out2 = m2["transfers_out"][0]
+                in2 = m2["transfers_in"][0]
+                combined_sell_prices = dict(m1["sell_prices"])
+                combined_sell_prices.update(m2["sell_prices"])
+                combined_buy_costs = dict(m1["buy_costs"])
+                combined_buy_costs.update(m2["buy_costs"])
+
+                moves_2.append({
+                    "plan_type": "2_TRANSFERS",
+                    "transfers_in": [in1, in2],
+                    "transfers_out": [out1, out2],
+                    "sell_prices": combined_sell_prices,
+                    "buy_costs": combined_buy_costs,
+                    "bank_delta": m1["bank_delta"] + m2["bank_delta"],
+                    "immediate_gain": m1["immediate_gain"] + m2["immediate_gain"],
+                })
+
+        moves_2.sort(key=lambda m: m["immediate_gain"], reverse=True)
+        return moves_2[:max_total]
+
+    def _run_beam_search_trajectory(
+        self,
+        initial_action: dict[str, Any],
+        initial_elements: set[int],
+        initial_bank: int,
+        initial_purchase_prices: dict[int, int],
+        initial_ft: int,
+        horizon_gws: list[int],
+        horizon_projections: dict[int, pd.DataFrame],
+        player_maps: dict[int, dict[int, dict[str, Any]]],
+        locked_in: set[int],
+        locked_out: set[int],
+        excluded_teams: set[Any],
+        risk_preference: str = "balanced",
+        beam_width: int = 4,
+    ) -> dict[str, Any]:
+        """
+        Executes stateful multi-GW beam search from initial_action across horizon_gws.
+        Returns complete trajectory dictionary.
+        """
+        gw0 = horizon_gws[0]
+        pmap0 = player_maps[gw0]
+
+        t_in = initial_action.get("transfers_in", [])
+        t_out = initial_action.get("transfers_out", [])
+        curr_elements = (set(initial_elements) - set(t_out)) | set(t_in)
+        curr_bank = initial_bank + initial_action.get("bank_delta", 0)
+        curr_purch = dict(initial_purchase_prices)
+        for out_id in t_out:
+            curr_purch.pop(out_id, None)
+        for in_id in t_in:
+            curr_purch[in_id] = initial_action["buy_costs"][in_id]
+
+        transfers_count = len(t_in)
+        if transfers_count <= initial_ft:
+            hits0 = 0
+            next_ft0 = min(5, (initial_ft - transfers_count) + 1)
+        else:
+            hits0 = transfers_count - initial_ft
+            next_ft0 = 1
+
+        hit_cost0 = hits0 * self.hit_penalty
+        xp0, cap0, form0 = _fast_eval_squad_formation(curr_elements, pmap0, risk_preference=risk_preference)
+        net_xp0 = xp0 - hit_cost0
+
+        step0_record = {
+            "gameweek": gw0,
+            "transfers_in": t_in,
+            "transfers_out": t_out,
+            "transfers_count": transfers_count,
+            "hits": hits0,
+            "hit_cost": hit_cost0,
+            "gross_xp": xp0,
+            "net_xp": net_xp0,
+            "captain": cap0,
+            "formation": form0,
+            "bank": curr_bank,
+            "banked_ft": next_ft0,
+        }
+
+        beam = [{
+            "elements": curr_elements,
+            "bank": curr_bank,
+            "purchase_prices": curr_purch,
+            "banked_ft": next_ft0,
+            "history": [step0_record],
+            "accumulated_discounted_net_xp": net_xp0,
+            "total_hits": hits0,
+            "total_gross_xp": xp0,
+            "total_net_xp": net_xp0,
+        }]
+
+        for step_idx, gw in enumerate(horizon_gws[1:], start=1):
+            discount = self.discount_factor ** step_idx
+            pmap = player_maps[gw]
+            pool_df = horizon_projections[gw]
+            next_beam = []
+
+            for state in beam:
+                # 1. Roll action
+                xp_roll, cap_roll, form_roll = _fast_eval_squad_formation(
+                    state["elements"], pmap, risk_preference=risk_preference
+                )
+                roll_rec = {
+                    "gameweek": gw,
+                    "transfers_in": [],
+                    "transfers_out": [],
+                    "transfers_count": 0,
+                    "hits": 0,
+                    "hit_cost": 0.0,
+                    "gross_xp": xp_roll,
+                    "net_xp": xp_roll,
+                    "captain": cap_roll,
+                    "formation": form_roll,
+                    "bank": state["bank"],
+                    "banked_ft": min(5, state["banked_ft"] + 1),
+                }
+                next_beam.append({
+                    "elements": set(state["elements"]),
+                    "bank": state["bank"],
+                    "purchase_prices": dict(state["purchase_prices"]),
+                    "banked_ft": min(5, state["banked_ft"] + 1),
+                    "history": state["history"] + [roll_rec],
+                    "total_hits": state["total_hits"],
+                    "total_gross_xp": state["total_gross_xp"] + xp_roll,
+                    "total_net_xp": state["total_net_xp"] + xp_roll,
+                    "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * xp_roll,
+                })
+
+                # 2. 1-Transfer candidate actions
+                c_moves = self._get_candidate_1_transfers(
+                    elements=state["elements"],
+                    bank=state["bank"],
+                    purchase_prices=state["purchase_prices"],
+                    pool_df=pool_df,
+                    player_map=pmap,
+                    locked_in=locked_in,
+                    locked_out=locked_out,
+                    excluded_teams=excluded_teams,
+                    max_per_pos=2,
+                )
+
+                for m in c_moves[:2]:
+                    s_in = m["transfers_in"]
+                    s_out = m["transfers_out"]
+                    new_elems = (set(state["elements"]) - set(s_out)) | set(s_in)
+                    new_bank = state["bank"] + m["bank_delta"]
+                    new_purch = dict(state["purchase_prices"])
+                    for out_id in s_out:
+                        new_purch.pop(out_id, None)
+                    for in_id in s_in:
+                        new_purch[in_id] = m["buy_costs"][in_id]
+
+                    curr_ft = state["banked_ft"]
+                    if curr_ft >= 1:
+                        hits = 0
+                        n_ft = min(5, (curr_ft - 1) + 1)
+                    else:
+                        hits = 1
+                        n_ft = 1
+
+                    h_cost = hits * self.hit_penalty
+                    xp_m, cap_m, form_m = _fast_eval_squad_formation(
+                        new_elems, pmap, risk_preference=risk_preference
+                    )
+                    net_m = xp_m - h_cost
+
+                    m_rec = {
+                        "gameweek": gw,
+                        "transfers_in": s_in,
+                        "transfers_out": s_out,
+                        "transfers_count": 1,
+                        "hits": hits,
+                        "hit_cost": h_cost,
+                        "gross_xp": xp_m,
+                        "net_xp": net_m,
+                        "captain": cap_m,
+                        "formation": form_m,
+                        "bank": new_bank,
+                        "banked_ft": n_ft,
+                    }
+
+                    next_beam.append({
+                        "elements": new_elems,
+                        "bank": new_bank,
+                        "purchase_prices": new_purch,
+                        "banked_ft": n_ft,
+                        "history": state["history"] + [m_rec],
+                        "total_hits": state["total_hits"] + hits,
+                        "total_gross_xp": state["total_gross_xp"] + xp_m,
+                        "total_net_xp": state["total_net_xp"] + net_m,
+                        "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * net_m,
+                    })
+
+            next_beam.sort(key=lambda s: s["accumulated_discounted_net_xp"], reverse=True)
+            beam = next_beam[:beam_width]
+
+        return beam[0]
+
+    def _run_greedy_trajectory(
+        self,
+        initial_elements: set[int],
+        initial_bank: int,
+        initial_purchase_prices: dict[int, int],
+        initial_ft: int,
+        horizon_gws: list[int],
+        horizon_projections: dict[int, pd.DataFrame],
+        player_maps: dict[int, dict[int, dict[str, Any]]],
+        locked_in: set[int],
+        locked_out: set[int],
+        excluded_teams: set[Any],
+        risk_preference: str = "balanced",
+    ) -> dict[str, Any]:
+        """Simulates greedy single-GW optimization at each step."""
+        curr_elems = set(initial_elements)
+        curr_bank = initial_bank
+        curr_purch = dict(initial_purchase_prices)
+        curr_ft = initial_ft
+        total_hits = 0
+        total_gross = 0.0
+        total_net = 0.0
+
+        for gw in horizon_gws:
+            pmap = player_maps[gw]
+            pool_df = horizon_projections[gw]
+
+            xp_roll, _, _ = _fast_eval_squad_formation(curr_elems, pmap, risk_preference=risk_preference)
+            best_action = ("ROLL", None, xp_roll, 0, 0.0)
+
+            cand_moves = self._get_candidate_1_transfers(
+                elements=curr_elems,
+                bank=curr_bank,
+                purchase_prices=curr_purch,
+                pool_df=pool_df,
+                player_map=pmap,
+                locked_in=locked_in,
+                locked_out=locked_out,
+                excluded_teams=excluded_teams,
+                max_per_pos=2,
+            )
+
+            for m in cand_moves[:3]:
+                t_in = m["transfers_in"]
+                t_out = m["transfers_out"]
+                trial_elems = (curr_elems - set(t_out)) | set(t_in)
+                hits = 0 if curr_ft >= 1 else 1
+                hit_c = hits * self.hit_penalty
+                xp_m, _, _ = _fast_eval_squad_formation(trial_elems, pmap, risk_preference=risk_preference)
+                net_m = xp_m - hit_c
+                if net_m > best_action[2]:
+                    best_action = ("1_TRANSFER", m, net_m, hits, hit_c)
+
+            action_type, m_obj, net_xp, hits, hit_c = best_action
+            total_hits += hits
+            total_net += net_xp
+            total_gross += (net_xp + hit_c)
+
+            if action_type == "ROLL":
+                curr_ft = min(5, curr_ft + 1)
+            else:
+                s_in = m_obj["transfers_in"]
+                s_out = m_obj["transfers_out"]
+                curr_elems = (curr_elems - set(s_out)) | set(s_in)
+                curr_bank += m_obj["bank_delta"]
+                for out_id in s_out:
+                    curr_purch.pop(out_id, None)
+                for in_id in s_in:
+                    curr_purch[in_id] = m_obj["buy_costs"][in_id]
+                curr_ft = min(5, (curr_ft - 1) + 1) if curr_ft >= 1 else 1
+
+        return {
+            "total_hits": total_hits,
+            "total_gross_xp": round(total_gross, 2),
+            "total_net_xp": round(total_net, 2),
+        }
+
     def evaluate_transfer_options(
         self,
         current_squad_df: pd.DataFrame,
@@ -168,31 +623,79 @@ class TransferOptimizer:
         locked_out_ids: list[int] | None = None,
         excluded_team_ids: list[int] | None = None,
         risk_preference: str = "balanced",
+        include_price_gain: bool = False,
+        stability_threshold: float = 0.3,
+        num_mc_scenarios: int = 50,
     ) -> dict[str, Any]:
         """
-        Evaluates candidate plans for target_gw:
-        - Plan 0: Roll the transfer (bank +1 FT)
-        - Plan 1: Best 1 Free Transfer
-        - Plan 2: Best 2 Transfers (free or -4 hit)
-        - Roadmap: Multi-GW roadmap across horizon
+        Stateful Multi-GW Transfer Optimizer evaluating candidate branches across a 5-GW horizon.
         """
         locked_in = set(locked_in_ids or [])
         locked_out = set(locked_out_ids or [])
         excluded_teams = set(excluded_team_ids or [])
 
-        # Step 1: Base Plan (Roll Transfer, 0 transfers made)
-        # Compute baseline lineup for target_gw with current squad
-        current_elements = set(current_squad_df["element"].tolist())
-        target_gw_df = horizon_projections.get(target_gw, player_pool_df)
+        # Ensure current_squad_df has selling_price and purchase_price
+        if "selling_price" not in current_squad_df.columns:
+            current_squad_df = self.compute_squad_selling_prices(current_squad_df)
 
-        # Merge target_gw expected points onto current squad
-        curr_squad_gw = target_gw_df[target_gw_df["element"].isin(current_elements)].copy()
-        if len(curr_squad_gw) < 15:
-            # Fallback to current_squad_df if any missing
-            curr_squad_gw = current_squad_df.copy()
+        initial_elements = set(current_squad_df["element"].tolist())
+        initial_bank = int(bank)
+        initial_purchase = {
+            int(r["element"]): int(r.get("purchase_price", r.get("value", 50)))
+            for _, r in current_squad_df.iterrows()
+        }
 
-        curr_lineup = lineup_optimizer.select_lineup_and_captain(curr_squad_gw, risk_preference=risk_preference)
+        # Horizon gameweeks (up to 5 GWs)
+        horizon_gws = [target_gw + offset for offset in range(5) if target_gw + offset <= 38]
+        if not horizon_gws:
+            horizon_gws = [target_gw]
+
+        # Prepare per-GW pool and lookup
+        clean_projections = {}
+        player_maps = {}
+        for gw in horizon_gws:
+            df_gw = horizon_projections.get(gw, player_pool_df).copy()
+            clean_projections[gw] = df_gw
+            player_maps[gw] = {int(r["element"]): dict(r) for _, r in df_gw.iterrows()}
+
+        target_gw_df = clean_projections[target_gw]
+        target_pmap = player_maps[target_gw]
+
+        # Build Lineup Optimizer representation for current squad (GW target_gw)
+        curr_squad_target = target_gw_df[target_gw_df["element"].isin(initial_elements)].copy()
+        if len(curr_squad_target) < 15:
+            curr_squad_target = current_squad_df.copy()
+
+        curr_lineup = lineup_optimizer.select_lineup_and_captain(
+            curr_squad_target, risk_preference=risk_preference
+        )
         base_xp = curr_lineup["total_gameweek_expected_points"]
+
+        # ----------------------------------------------------------------------
+        # Branch 0: Roll Action
+        # ----------------------------------------------------------------------
+        roll_action = {
+            "plan_type": "ROLL_TRANSFER",
+            "transfers_in": [],
+            "transfers_out": [],
+            "bank_delta": 0,
+            "buy_costs": {},
+            "sell_prices": {},
+        }
+        roll_traj = self._run_beam_search_trajectory(
+            initial_action=roll_action,
+            initial_elements=initial_elements,
+            initial_bank=initial_bank,
+            initial_purchase_prices=initial_purchase,
+            initial_ft=free_transfers,
+            horizon_gws=horizon_gws,
+            horizon_projections=clean_projections,
+            player_maps=player_maps,
+            locked_in=locked_in,
+            locked_out=locked_out,
+            excluded_teams=excluded_teams,
+            risk_preference=risk_preference,
+        )
 
         roll_plan = {
             "plan_type": "ROLL_TRANSFER",
@@ -204,288 +707,508 @@ class TransferOptimizer:
             "gross_expected_points": round(base_xp, 2),
             "net_expected_points": round(base_xp, 2),
             "expected_gain": 0.0,
-            "lineup": curr_lineup,
+            "remaining_bank": round(initial_bank / 10.0, 2),
             "next_banked_ft": min(5, free_transfers + 1),
+            "lineup": curr_lineup,
+            "horizon_gross_xp": round(roll_traj["total_gross_xp"], 2),
+            "horizon_hits": roll_traj["total_hits"],
+            "horizon_hit_cost": round(roll_traj["total_hits"] * self.hit_penalty, 2),
+            "horizon_net_xp": round(roll_traj["total_net_xp"], 2),
+            "horizon_gain_vs_roll": 0.0,
+            "pure_xp_gain": 0.0,
+            "price_movement_gain": 0.0,
+            "robustness_score": 1.0,
+            "is_no_regret": True,
             "recommendation_summary": f"Roll transfer. Bank {min(5, free_transfers + 1)} free transfers for next gameweek.",
+            "trajectory": roll_traj["history"],
         }
 
-        # Step 2: Best 1 Transfer
-        best_1_transfer = None
-        best_1_gain = -999.0
-
-        # Candidates to sell (outfield or GK not locked in)
-        sellable = [row for _, row in current_squad_df.iterrows() if int(row["element"]) not in locked_in]
-
-        # Candidates to buy (players not in squad, not locked out, not in excluded teams)
-        for sell_row in sellable:
-            sell_id = int(sell_row["element"])
-            sell_pos = sell_row["position"]
-            # Correct selling price accounting: use selling_price if present (never market value)
-            sell_val = int(sell_row.get("selling_price", sell_row["value"]))
-            # Available cash to replace this player
-            available_funds = sell_val + bank
-
-            # Filter potential replacements of same position
-            pos_pool = (
-                target_gw_df[
-                    (target_gw_df["position"] == sell_pos)
-                    & (~target_gw_df["element"].isin(current_elements))
-                    & (~target_gw_df["element"].isin(locked_out))
-                    & (~target_gw_df["team"].isin(excluded_teams))
-                    & (target_gw_df["value"] <= available_funds)
-                ]
-                .sort_values(by="expected_points", ascending=False)
-                .head(5)
-            )
-
-            for _, buy_row in pos_pool.iterrows():
-                buy_id = int(buy_row["element"])
-                # Check 3-per-team constraint
-                new_team = buy_row["team"]
-                team_count = sum(
-                    1 for _, r in current_squad_df.iterrows() if int(r["element"]) != sell_id and r["team"] == new_team
-                )
-                if team_count >= 3:
-                    continue
-
-                # Construct trial squad
-                trial_squad = pd.concat(
-                    [
-                        curr_squad_gw[curr_squad_gw["element"] != sell_id],
-                        target_gw_df[target_gw_df["element"] == buy_id],
-                    ]
-                ).reset_index(drop=True)
-
-                if len(trial_squad) == 15:
-                    trial_lineup = lineup_optimizer.select_lineup_and_captain(
-                        trial_squad, risk_preference=risk_preference
-                    )
-                    trial_xp = trial_lineup["total_gameweek_expected_points"]
-                    gain = trial_xp - base_xp
-
-                    if gain > best_1_gain:
-                        best_1_gain = gain
-                        best_1_transfer = {
-                            "plan_type": "1_TRANSFER",
-                            "transfers_count": 1,
-                            "transfers_in": [
-                                {
-                                    "element": buy_id,
-                                    "web_name": buy_row["web_name"],
-                                    "team": _safe_team(buy_row["team"]),
-                                    "position": buy_row["position"],
-                                    "cost": buy_row["value"] / 10.0,
-                                    "expected_points": round(float(buy_row["expected_points"]), 2),
-                                }
-                            ],
-                            "transfers_out": [
-                                {
-                                    "element": sell_id,
-                                    "web_name": sell_row["web_name"],
-                                    "team": _safe_team(sell_row["team"]),
-                                    "position": sell_row["position"],
-                                    "sell_price": sell_val / 10.0,
-                                    "expected_points": round(float(sell_row.get("expected_points", 0.0)), 2),
-                                }
-                            ],
-                            "hits": 0,
-                            "hit_cost": 0.0,
-                            "gross_expected_points": round(trial_xp, 2),
-                            "net_expected_points": round(trial_xp, 2),
-                            "expected_gain": round(gain, 2),
-                            "remaining_bank": round((available_funds - buy_row["value"]) / 10.0, 2),
-                            "next_banked_ft": 1,
-                            "lineup": trial_lineup,
-                            "recommendation_summary": f"Transfer out {sell_row['web_name']} -> {buy_row['web_name']} (+{round(gain, 2)} xP)",
-                        }
-
-        # Step 3: Best 2 Transfers
-        # Can be done with 0 hits if free_transfers >= 2, else costs 1 hit (-4 pts)
-        best_2_transfer = None
-        best_2_net_gain = -999.0
-        hit_cost_2 = 0.0 if free_transfers >= 2 else self.hit_penalty
-
-        if best_1_transfer is not None and len(sellable) >= 2:
-            first_out_id = best_1_transfer["transfers_out"][0]["element"]
-            first_in_id = best_1_transfer["transfers_in"][0]["element"]
-            rem_bank = int(best_1_transfer["remaining_bank"] * 10)
-
-            second_sellable = [r for r in sellable if int(r["element"]) != first_out_id]
-            for sell2_row in second_sellable[:4]:
-                sell2_id = int(sell2_row["element"])
-                sell2_pos = sell2_row["position"]
-                sell2_val = int(sell2_row.get("selling_price", sell2_row["value"]))
-                avail2 = sell2_val + rem_bank
-
-                pos2_pool = (
-                    target_gw_df[
-                        (target_gw_df["position"] == sell2_pos)
-                        & (~target_gw_df["element"].isin(current_elements))
-                        & (target_gw_df["element"] != first_in_id)
-                        & (~target_gw_df["element"].isin(locked_out))
-                        & (target_gw_df["value"] <= avail2)
-                    ]
-                    .sort_values(by="expected_points", ascending=False)
-                    .head(4)
-                )
-
-                for _, buy2_row in pos2_pool.iterrows():
-                    buy2_id = int(buy2_row["element"])
-                    # Construct 2-transfer trial squad
-                    trial_squad_2 = pd.concat(
-                        [
-                            curr_squad_gw[
-                                (curr_squad_gw["element"] != first_out_id) & (curr_squad_gw["element"] != sell2_id)
-                            ],
-                            target_gw_df[
-                                (target_gw_df["element"] == first_in_id) | (target_gw_df["element"] == buy2_id)
-                            ],
-                        ]
-                    ).reset_index(drop=True)
-
-                    if len(trial_squad_2) == 15:
-                        trial2_lineup = lineup_optimizer.select_lineup_and_captain(
-                            trial_squad_2, risk_preference=risk_preference
-                        )
-                        trial2_xp = trial2_lineup["total_gameweek_expected_points"]
-                        gross_gain = trial2_xp - base_xp
-                        net_gain = gross_gain - hit_cost_2
-
-                        if net_gain > best_2_net_gain:
-                            best_2_net_gain = net_gain
-                            best_2_transfer = {
-                                "plan_type": "2_TRANSFERS",
-                                "transfers_count": 2,
-                                "transfers_in": [
-                                    best_1_transfer["transfers_in"][0],
-                                    {
-                                        "element": buy2_id,
-                                        "web_name": buy2_row["web_name"],
-                                        "team": _safe_team(buy2_row["team"]),
-                                        "position": buy2_row["position"],
-                                        "cost": buy2_row["value"] / 10.0,
-                                        "expected_points": round(float(buy2_row["expected_points"]), 2),
-                                    },
-                                ],
-                                "transfers_out": [
-                                    best_1_transfer["transfers_out"][0],
-                                    {
-                                        "element": sell2_id,
-                                        "web_name": sell2_row["web_name"],
-                                        "team": _safe_team(sell2_row["team"]),
-                                        "position": sell2_row["position"],
-                                        "sell_price": sell2_val / 10.0,
-                                        "expected_points": round(float(sell2_row.get("expected_points", 0.0)), 2),
-                                    },
-                                ],
-                                "hits": 0 if free_transfers >= 2 else 1,
-                                "hit_cost": hit_cost_2,
-                                "gross_expected_points": round(trial2_xp, 2),
-                                "net_expected_points": round(trial2_xp - hit_cost_2, 2),
-                                "expected_gain": round(net_gain, 2),
-                                "remaining_bank": round((avail2 - buy2_row["value"]) / 10.0, 2),
-                                "next_banked_ft": 1,
-                                "lineup": trial2_lineup,
-                                "recommendation_summary": (
-                                    f"Take 2 transfers (Net +{round(net_gain, 2)} xP after {int(hit_cost_2)} pt hit)"
-                                    if hit_cost_2 > 0
-                                    else f"Take 2 free transfers (Net +{round(net_gain, 2)} xP)"
-                                ),
-                            }
-
-        # Step 4: Multi-Gameweek Transfer Roadmap (Next 4-5 GWs)
-        roadmap = self._generate_roadmap(
-            current_squad_df=current_squad_df,
-            horizon_projections=horizon_projections,
-            start_gw=target_gw,
-            horizon_length=5,
-            starting_banked_ft=free_transfers,
+        # ----------------------------------------------------------------------
+        # Candidate 1-Transfer Moves at Target GW
+        # ----------------------------------------------------------------------
+        cand_1_moves = self._get_candidate_1_transfers(
+            elements=initial_elements,
+            bank=initial_bank,
+            purchase_prices=initial_purchase,
+            pool_df=target_gw_df,
+            player_map=target_pmap,
+            locked_in=locked_in,
+            locked_out=locked_out,
+            excluded_teams=excluded_teams,
+            max_per_pos=4,
         )
 
-        # Step 5: Final Decision & Hit Verdict
-        # Compare Plan 0, Plan 1, Plan 2
-        candidates = [roll_plan]
-        if best_1_transfer:
-            candidates.append(best_1_transfer)
-        if best_2_transfer:
-            candidates.append(best_2_transfer)
+        best_1_plan = None
+        cand_1_plans = []
+        for m in cand_1_moves[:6]:
+            traj = self._run_beam_search_trajectory(
+                initial_action=m,
+                initial_elements=initial_elements,
+                initial_bank=initial_bank,
+                initial_purchase_prices=initial_purchase,
+                initial_ft=free_transfers,
+                horizon_gws=horizon_gws,
+                horizon_projections=clean_projections,
+                player_maps=player_maps,
+                locked_in=locked_in,
+                locked_out=locked_out,
+                excluded_teams=excluded_teams,
+                risk_preference=risk_preference,
+            )
 
-        # Sort candidate plans by net expected gain
-        candidates.sort(key=lambda p: p["expected_gain"], reverse=True)
-        recommended_plan = candidates[0]
+            in_id = m["transfers_in"][0]
+            out_id = m["transfers_out"][0]
+            buy_row = target_pmap[in_id]
+            sell_row = target_pmap[out_id]
 
-        # Explicit Hit Verdict
+            # Rich lineup selection
+            trial_squad = pd.concat([
+                curr_squad_target[curr_squad_target["element"] != out_id],
+                target_gw_df[target_gw_df["element"] == in_id],
+            ]).reset_index(drop=True)
+
+            trial_lineup = lineup_optimizer.select_lineup_and_captain(
+                trial_squad, risk_preference=risk_preference
+            )
+            trial_xp = trial_lineup["total_gameweek_expected_points"]
+            hits = 0 if free_transfers >= 1 else 1
+            hit_cost = hits * self.hit_penalty
+            net_trial_xp = trial_xp - hit_cost
+            gw_gain = round(net_trial_xp - base_xp, 2)
+            horizon_gain = round(traj["total_net_xp"] - roll_plan["horizon_net_xp"], 2)
+
+            # Price movement estimation
+            in_momentum = buy_row.get("transfers_in_event", 0) - buy_row.get("transfers_out_event", 0)
+            price_delta = 0.1 if in_momentum > 50000 else 0.0
+
+            plan_dict = {
+                "plan_type": "1_TRANSFER",
+                "transfers_count": 1,
+                "transfers_in": [{
+                    "element": in_id,
+                    "web_name": buy_row["web_name"],
+                    "team": _safe_team(buy_row["team"]),
+                    "position": buy_row["position"],
+                    "cost": buy_row["value"] / 10.0,
+                    "expected_points": round(float(buy_row["expected_points"]), 2),
+                }],
+                "transfers_out": [{
+                    "element": out_id,
+                    "web_name": sell_row["web_name"],
+                    "team": _safe_team(sell_row["team"]),
+                    "position": sell_row["position"],
+                    "sell_price": m["sell_prices"][out_id] / 10.0,
+                    "expected_points": round(float(sell_row.get("expected_points", 0.0)), 2),
+                }],
+                "hits": hits,
+                "hit_cost": hit_cost,
+                "gross_expected_points": round(trial_xp, 2),
+                "net_expected_points": round(net_trial_xp, 2),
+                "expected_gain": gw_gain,
+                "remaining_bank": round((initial_bank + m["bank_delta"]) / 10.0, 2),
+                "next_banked_ft": min(5, max(1, free_transfers)),
+                "lineup": trial_lineup,
+                "horizon_gross_xp": round(traj["total_gross_xp"], 2),
+                "horizon_hits": traj["total_hits"],
+                "horizon_hit_cost": round(traj["total_hits"] * self.hit_penalty, 2),
+                "horizon_net_xp": round(traj["total_net_xp"], 2),
+                "horizon_gain_vs_roll": horizon_gain,
+                "pure_xp_gain": horizon_gain,
+                "price_movement_gain": price_delta,
+                "robust_score": 0.0,
+                "is_no_regret": False,
+                "recommendation_summary": f"Transfer out {sell_row['web_name']} -> {buy_row['web_name']} (+{gw_gain} xP, Horizon: {horizon_gain:+} xP)",
+                "trajectory": traj["history"],
+            }
+            cand_1_plans.append(plan_dict)
+
+        if cand_1_plans:
+            cand_1_plans.sort(
+                key=lambda p: (p["pure_xp_gain"] + (p["price_movement_gain"] * 1.5 if include_price_gain else 0.0)),
+                reverse=True,
+            )
+            best_1_plan = cand_1_plans[0]
+
+        # ----------------------------------------------------------------------
+        # Candidate 2-Transfer Moves at Target GW
+        # ----------------------------------------------------------------------
+        cand_2_moves = self._get_candidate_2_transfers(
+            elements=initial_elements,
+            bank=initial_bank,
+            purchase_prices=initial_purchase,
+            pool_df=target_gw_df,
+            player_map=target_pmap,
+            locked_in=locked_in,
+            locked_out=locked_out,
+            excluded_teams=excluded_teams,
+            cand_1_moves=cand_1_moves,
+            max_total=4,
+        )
+
+        best_2_plan = None
+        cand_2_plans = []
+        for m in cand_2_moves:
+            traj = self._run_beam_search_trajectory(
+                initial_action=m,
+                initial_elements=initial_elements,
+                initial_bank=initial_bank,
+                initial_purchase_prices=initial_purchase,
+                initial_ft=free_transfers,
+                horizon_gws=horizon_gws,
+                horizon_projections=clean_projections,
+                player_maps=player_maps,
+                locked_in=locked_in,
+                locked_out=locked_out,
+                excluded_teams=excluded_teams,
+                risk_preference=risk_preference,
+            )
+
+            in_ids = m["transfers_in"]
+            out_ids = m["transfers_out"]
+
+            trial_squad_2 = pd.concat([
+                curr_squad_target[~curr_squad_target["element"].isin(out_ids)],
+                target_gw_df[target_gw_df["element"].isin(in_ids)],
+            ]).reset_index(drop=True)
+
+            trial2_lineup = lineup_optimizer.select_lineup_and_captain(
+                trial_squad_2, risk_preference=risk_preference
+            )
+            trial2_xp = trial2_lineup["total_gameweek_expected_points"]
+            hits_2 = max(0, 2 - free_transfers)
+            hit_cost_2 = hits_2 * self.hit_penalty
+            net_trial2_xp = trial2_xp - hit_cost_2
+            gw_gain_2 = round(net_trial2_xp - base_xp, 2)
+            horizon_gain_2 = round(traj["total_net_xp"] - roll_plan["horizon_net_xp"], 2)
+
+            plan_dict_2 = {
+                "plan_type": "2_TRANSFERS",
+                "transfers_count": 2,
+                "transfers_in": [
+                    {
+                        "element": eid,
+                        "web_name": target_pmap[eid]["web_name"],
+                        "team": _safe_team(target_pmap[eid]["team"]),
+                        "position": target_pmap[eid]["position"],
+                        "cost": target_pmap[eid]["value"] / 10.0,
+                        "expected_points": round(float(target_pmap[eid]["expected_points"]), 2),
+                    }
+                    for eid in in_ids
+                ],
+                "transfers_out": [
+                    {
+                        "element": eid,
+                        "web_name": target_pmap[eid]["web_name"],
+                        "team": _safe_team(target_pmap[eid]["team"]),
+                        "position": target_pmap[eid]["position"],
+                        "sell_price": m["sell_prices"][eid] / 10.0,
+                        "expected_points": round(float(target_pmap[eid].get("expected_points", 0.0)), 2),
+                    }
+                    for eid in out_ids
+                ],
+                "hits": hits_2,
+                "hit_cost": hit_cost_2,
+                "gross_expected_points": round(trial2_xp, 2),
+                "net_expected_points": round(net_trial2_xp, 2),
+                "expected_gain": gw_gain_2,
+                "remaining_bank": round((initial_bank + m["bank_delta"]) / 10.0, 2),
+                "next_banked_ft": 1,
+                "lineup": trial2_lineup,
+                "horizon_gross_xp": round(traj["total_gross_xp"], 2),
+                "horizon_hits": traj["total_hits"],
+                "horizon_hit_cost": round(traj["total_hits"] * self.hit_penalty, 2),
+                "horizon_net_xp": round(traj["total_net_xp"], 2),
+                "horizon_gain_vs_roll": horizon_gain_2,
+                "pure_xp_gain": horizon_gain_2,
+                "price_movement_gain": 0.0,
+                "robust_score": 0.0,
+                "is_no_regret": False,
+                "recommendation_summary": (
+                    f"Take 2 transfers (Net +{gw_gain_2} xP after {int(hit_cost_2)} pt hit, Horizon: {horizon_gain_2:+} xP)"
+                    if hit_cost_2 > 0
+                    else f"Take 2 free transfers (Net +{gw_gain_2} xP, Horizon: {horizon_gain_2:+} xP)"
+                ),
+                "trajectory": traj["history"],
+            }
+            cand_2_plans.append(plan_dict_2)
+
+        if cand_2_plans:
+            cand_2_plans.sort(key=lambda p: p["horizon_gain_vs_roll"], reverse=True)
+            best_2_plan = cand_2_plans[0]
+
+        # ----------------------------------------------------------------------
+        # Assemble Candidate Branches
+        # ----------------------------------------------------------------------
+        candidate_plans = [roll_plan]
+        if best_1_plan:
+            candidate_plans.append(best_1_plan)
+        if best_2_plan:
+            candidate_plans.append(best_2_plan)
+
+        # ----------------------------------------------------------------------
+        # Robustness Re-ranking across Monte Carlo Scenarios (T5)
+        # ----------------------------------------------------------------------
+        if num_mc_scenarios > 0 and len(candidate_plans) > 1:
+            win_counts = {i: 0 for i in range(len(candidate_plans))}
+            for _ in range(num_mc_scenarios):
+                # Sample noise per player
+                noise_map = {
+                    eid: float(np.random.normal(1.0, 0.15))
+                    for eid in target_pmap
+                }
+                # Score each candidate under noise
+                scores = []
+                for p_idx, plan in enumerate(candidate_plans):
+                    if plan["plan_type"] == "ROLL_TRANSFER":
+                        score = plan["horizon_net_xp"] * np.mean(list(noise_map.values()))
+                    else:
+                        in_elems = [t["element"] for t in plan["transfers_in"]]
+                        mult = np.mean([noise_map.get(e, 1.0) for e in in_elems])
+                        score = plan["horizon_net_xp"] * mult
+                    scores.append((score, p_idx))
+                scores.sort(key=lambda x: x[0], reverse=True)
+                top_idx = scores[0][1]
+                win_counts[top_idx] += 1
+
+            for p_idx, plan in enumerate(candidate_plans):
+                r_score = round(win_counts[p_idx] / float(num_mc_scenarios), 2)
+                plan["robustness_score"] = r_score
+                plan["is_no_regret"] = bool(r_score >= 0.70)
+
+        # ----------------------------------------------------------------------
+        # Future-Hit Avoidance Metric vs Greedy (T3)
+        # ----------------------------------------------------------------------
+        greedy_res = self._run_greedy_trajectory(
+            initial_elements=initial_elements,
+            initial_bank=initial_bank,
+            initial_purchase_prices=initial_purchase,
+            initial_ft=free_transfers,
+            horizon_gws=horizon_gws,
+            horizon_projections=clean_projections,
+            player_maps=player_maps,
+            locked_in=locked_in,
+            locked_out=locked_out,
+            excluded_teams=excluded_teams,
+            risk_preference=risk_preference,
+        )
+
+        # Multi-GW planned trajectory hits
+        best_cand = max(candidate_plans, key=lambda p: p.get("horizon_gain_vs_roll", 0.0))
+        multi_gw_hits = best_cand["horizon_hits"]
+        greedy_hits = greedy_res["total_hits"]
+        future_hits_avoided = max(0, greedy_hits - multi_gw_hits)
+
+        hit_avoidance = {
+            "greedy_horizon_hits": greedy_hits,
+            "multi_gw_horizon_hits": multi_gw_hits,
+            "future_hits_avoided": future_hits_avoided,
+            "explanation": (
+                f"Multi-GW sequential plan avoids {future_hits_avoided} future hit(s) compared to single-GW greedy execution."
+                if future_hits_avoided > 0
+                else "Multi-GW plan matches greedy trajectory on transfer hits."
+            ),
+        }
+
+        # ----------------------------------------------------------------------
+        # Free Transfer Option Value (T4)
+        # ----------------------------------------------------------------------
+        traj_plus_1 = self._run_beam_search_trajectory(
+            initial_action=roll_action,
+            initial_elements=initial_elements,
+            initial_bank=initial_bank,
+            initial_purchase_prices=initial_purchase,
+            initial_ft=min(5, free_transfers + 1),
+            horizon_gws=horizon_gws,
+            horizon_projections=clean_projections,
+            player_maps=player_maps,
+            locked_in=locked_in,
+            locked_out=locked_out,
+            excluded_teams=excluded_teams,
+            risk_preference=risk_preference,
+        )
+        ft_option_value = max(0.0, round(traj_plus_1["total_net_xp"] - roll_plan["horizon_net_xp"], 2))
+        ft_option_explanation = (
+            f"Option value of an extra banked free transfer is +{ft_option_value} xP over the 5-GW horizon "
+            f"(provides restructuring flexibility without incurring a -4 hit penalty)."
+        )
+
+        # ----------------------------------------------------------------------
+        # Recommendation Selection & Plan Stability Threshold (T8)
+        # ----------------------------------------------------------------------
+        # Rank candidates by objective
+        sort_key = (
+            (lambda p: p["horizon_gain_vs_roll"] + (p.get("price_movement_gain", 0.0) * 1.5))
+            if include_price_gain
+            else (lambda p: p["horizon_gain_vs_roll"])
+        )
+        sorted_candidates = sorted(candidate_plans, key=sort_key, reverse=True)
+        top_candidate = sorted_candidates[0]
+
+        # Check for ruled-out player in current starting XI (cop == 0)
+        has_ruled_out_starter = False
+        if "starters" in curr_lineup:
+            starters_obj = curr_lineup["starters"]
+            if isinstance(starters_obj, pd.DataFrame):
+                if "chance_of_playing" in starters_obj.columns:
+                    has_ruled_out_starter = bool((starters_obj["chance_of_playing"] == 0.0).any())
+            elif isinstance(starters_obj, list):
+                for s in starters_obj:
+                    if isinstance(s, dict) and s.get("chance_of_playing") == 0.0:
+                        has_ruled_out_starter = True
+                        break
+
+        # Apply stability threshold
+        if (
+            top_candidate["plan_type"] != "ROLL_TRANSFER"
+            and top_candidate["expected_gain"] < stability_threshold
+            and not has_ruled_out_starter
+        ):
+            recommended_plan = roll_plan
+            recommended_plan["recommendation_summary"] = (
+                f"Roll transfer recommended. Top candidate transfer (+{round(top_candidate['expected_gain'], 2)} xP) "
+                f"does not exceed the {stability_threshold:.2f} xP stability threshold."
+            )
+        else:
+            recommended_plan = top_candidate
+
+        # ----------------------------------------------------------------------
+        # Dynamic Roadmap Generation (T7)
+        # ----------------------------------------------------------------------
+        roadmap = self._generate_dynamic_roadmap(
+            trajectory=recommended_plan.get("trajectory", roll_plan["trajectory"]),
+            horizon_gws=horizon_gws,
+            clean_projections=clean_projections,
+            player_maps=player_maps,
+        )
+
+        # ----------------------------------------------------------------------
+        # Hit Verdict
+        # ----------------------------------------------------------------------
         hit_verdict = "No hit recommended"
         if recommended_plan.get("hits", 0) > 0:
-            hit_verdict = f"HIT RECOMMENDED: The 4-point hit yields a net gain of +{recommended_plan['expected_gain']} xP this gameweek."
-        elif best_2_transfer and best_2_transfer.get("hits", 0) > 0:
-            if best_2_transfer["expected_gain"] < 0:
-                hit_verdict = f"HIT NOT WORTH IT: The candidate 2nd transfer gives only +{round(best_2_transfer['gross_expected_points'] - base_xp, 2)} gross xP, failing to recover the -4 hit."
+            hit_verdict = (
+                f"HIT RECOMMENDED: The {recommended_plan['hits'] * 4}-point hit yields net "
+                f"+{recommended_plan['expected_gain']} xP this gameweek and +{recommended_plan['horizon_gain_vs_roll']} xP across the horizon."
+            )
+        elif best_2_plan and best_2_plan.get("hits", 0) > 0:
+            if best_2_plan["expected_gain"] < 0:
+                hit_verdict = (
+                    f"HIT NOT WORTH IT: The candidate 2nd transfer gives only "
+                    f"+{round(best_2_plan['gross_expected_points'] - base_xp, 2)} gross xP, failing to recover the -4 hit."
+                )
             else:
-                hit_verdict = f"MARGINAL HIT: Yields net +{best_2_transfer['expected_gain']} xP. Single transfer preferred for lower variance."
+                hit_verdict = (
+                    f"MARGINAL HIT: Yields net +{best_2_plan['expected_gain']} xP. "
+                    f"Single transfer or roll preferred for lower variance."
+                )
 
         return {
             "recommended_plan": recommended_plan,
-            "candidate_plans": candidates,
+            "candidate_plans": sorted_candidates,
             "hit_verdict": hit_verdict,
             "transfer_roadmap": roadmap,
+            "future_hit_avoidance": hit_avoidance,
+            "ft_option_value": ft_option_value,
+            "ft_option_explanation": ft_option_explanation,
             "target_gameweek": target_gw,
-            "current_bank_millions": bank / 10.0,
+            "current_bank_millions": round(bank / 10.0, 2),
             "available_free_transfers": free_transfers,
+            "stability_threshold": stability_threshold,
+            "include_price_gain": include_price_gain,
         }
 
-    def _generate_roadmap(
+    def _generate_dynamic_roadmap(
         self,
-        current_squad_df: pd.DataFrame,
-        horizon_projections: dict[int, pd.DataFrame],
-        start_gw: int,
-        horizon_length: int = 5,
-        starting_banked_ft: int = 1,
+        trajectory: list[dict[str, Any]],
+        horizon_gws: list[int],
+        clean_projections: dict[int, pd.DataFrame],
+        player_maps: dict[int, dict[int, dict[str, Any]]],
     ) -> list[dict[str, Any]]:
         """
-        Generate sequential transfer roadmap for next 4-6 gameweeks with banking and firm vs contingent status.
+        Generates dynamic transfer roadmap from actual trajectory player picks, fixtures & DGW/BGW tags.
         """
         roadmap_steps = []
-        running_ft = starting_banked_ft
-        for offset in range(horizon_length):
-            gw = start_gw + offset
-            if gw > 38 or gw not in horizon_projections:
-                break
-            gw_df = horizon_projections[gw]
-            top_performers = gw_df.sort_values(by="expected_points", ascending=False).head(3)
+        for offset, step in enumerate(trajectory):
+            gw = step["gameweek"]
+            t_in = step.get("transfers_in", [])
+            t_out = step.get("transfers_out", [])
+            pmap = player_maps.get(gw, {})
+
+            in_players = [pmap.get(eid, {}) for eid in t_in]
+            out_players = [pmap.get(eid, {}) for eid in t_out]
 
             if offset == 0:
-                firmness = "FIRM"
-                action = "Execute Primary Transfer (or Roll to Bank)"
-                reasoning = "Locked plan based on finalized matchday data and pre-deadline press conferences."
-                ft_next = min(5, max(1, running_ft))
+                status = "FIRM"
             elif offset == 1:
-                firmness = "PROBABLE"
-                action = "Targeted Transfer / Bank FT"
-                reasoning = "Contingent on post-match injuries and midweek European cup minutes."
-                ft_next = min(5, running_ft + 1)
+                status = "PROBABLE"
             else:
-                firmness = "CONTINGENT_ON_NEWS"
-                action = "Target Fixture Swing / Build toward Chip"
-                reasoning = "Contingent on injury returns, form trends, and Set 1 GW19 chip preparation."
-                ft_next = min(5, running_ft + 1)
+                status = "CONTINGENT_ON_NEWS"
 
-            roadmap_steps.append(
-                {
-                    "gameweek": gw,
-                    "status": firmness,
-                    "action": action,
-                    "banked_free_transfers_projected": min(5, running_ft),
-                    "key_targets": [
-                        f"{r['web_name']} ({r['expected_points']} xP)" for _, r in top_performers.iterrows()
-                    ],
-                    "strategic_focus": "Attack favorable fixture swing"
-                    if offset % 2 == 1
-                    else "Consolidate core assets & bank FT",
-                    "reasoning": reasoning,
-                }
+            # Check DGW / BGW tags from pool
+            pool_df = clean_projections.get(gw)
+            dgw_teams = set()
+            bgw_teams = set()
+            if pool_df is not None and "fixtures" in pool_df.columns:
+                for _, r in pool_df.iterrows():
+                    fix_list = r.get("fixtures", [])
+                    if isinstance(fix_list, list):
+                        if len(fix_list) >= 2:
+                            dgw_teams.add(r["team"])
+                        elif len(fix_list) == 0:
+                            bgw_teams.add(r["team"])
+
+            dgw_bgw_tags = []
+            if dgw_teams:
+                dgw_bgw_tags.append(f"DGW: {', '.join(str(t) for t in sorted(dgw_teams)[:3])}")
+            if bgw_teams:
+                dgw_bgw_tags.append(f"BGW: {', '.join(str(t) for t in sorted(bgw_teams)[:3])}")
+
+            # Dynamic action text
+            if not t_in:
+                action = f"Roll transfer (bank to {step['banked_ft']} FTs)"
+                strategic_focus = (
+                    f"Preserve transfer capital; accumulate {step['banked_ft']} FTs for tactical flexibility in GW{gw + 1}."
+                )
+            elif len(t_in) == 1:
+                in_name = in_players[0].get("web_name", f"Player {t_in[0]}")
+                out_name = out_players[0].get("web_name", f"Player {t_out[0]}")
+                action = f"Transfer OUT {out_name} -> Transfer IN {in_name}"
+                strategic_focus = f"Target {in_name} fixture run and replace {out_name}."
+            else:
+                in_names = ", ".join(p.get("web_name", str(p.get("element", ""))) for p in in_players)
+                out_names = ", ".join(p.get("web_name", str(p.get("element", ""))) for p in out_players)
+                action = f"Double Transfer: OUT {out_names} -> IN {in_names}"
+                strategic_focus = "Execute tactical restructuring."
+
+            cap_id = step.get("captain")
+            cap_name = pmap.get(cap_id, {}).get("web_name", f"Captain #{cap_id}")
+
+            top_targets = (
+                pool_df.sort_values(by="expected_points", ascending=False).head(3)
+                if pool_df is not None
+                else pd.DataFrame()
             )
-            running_ft = ft_next
+            key_targets = (
+                [f"{r['web_name']} ({r['expected_points']:.1f} xP)" for _, r in top_targets.iterrows()]
+                if not top_targets.empty
+                else []
+            )
+
+            roadmap_steps.append({
+                "gameweek": gw,
+                "status": status,
+                "action": action,
+                "transfers_in": [p.get("web_name", "") for p in in_players],
+                "transfers_out": [p.get("web_name", "") for p in out_players],
+                "banked_free_transfers_projected": step["banked_ft"],
+                "captain": cap_name,
+                "is_dgw": len(dgw_teams) > 0,
+                "is_bgw": len(bgw_teams) > 0,
+                "dgw_bgw_tags": dgw_bgw_tags,
+                "key_targets": key_targets,
+                "strategic_focus": strategic_focus,
+            })
+
         return roadmap_steps
 
 
