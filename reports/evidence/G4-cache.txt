@@ -1,0 +1,14 @@
+=== G4 CONTENT-BASED PREDICTION CACHING VERIFICATION ===
+COMMAND: C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe scripts/check_freshness.py --mode cache
+EXIT CODE: 0
+OUTPUT:
+Execution 1: Base calculation for GW6...
+  Generated cache key: v2026.10.06.1713:2026-27:gw6:e23a5bf3ab71aba1:none
+  Predicted expected points: 3.59
+  Namespace verification: model=v2026.10.06.1713, season=2026-27, gw=gw6, hash=e23a5bf3ab71aba1
+Execution 2: Duplicate call with identical inputs...
+  [PASS] Cache HIT: Retrieved cached projection without model re-evaluation.
+Execution 3: Call with modified availability override (25% chance)...
+  Generated distinct cache key: v2026.10.06.1713:2026-27:gw6:615ec1048cc8c8c9:c7ad1161
+  Adjusted expected points: 1.91
+  [PASS] Cache MISS: Re-evaluated with modified availability.

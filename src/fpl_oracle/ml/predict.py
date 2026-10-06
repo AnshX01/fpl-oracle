@@ -4,6 +4,7 @@ Coordinates feature generation, component model inference, and scoring aggregati
 to deliver single and multi-gameweek player point distributions.
 """
 
+import hashlib
 import logging
 from datetime import UTC
 from typing import Any
@@ -35,7 +36,7 @@ class ProjectionEngine:
         self.bonus_model = BonusModel()
         self.cards_saves_model = CardsSavesModel()
         self.is_loaded = False
-        self._cache: dict[tuple[int, int, int], pd.DataFrame] = {}
+        self._cache: dict[str, pd.DataFrame] = {}
 
     def load_or_train(self, X: pd.DataFrame | None = None, Y: pd.DataFrame | None = None):
         """Load trained model weights from disk or train if missing."""
@@ -110,10 +111,6 @@ class ProjectionEngine:
         if not self.is_loaded:
             self.load_or_train()
 
-        cache_key = (target_gw, len(bootstrap.elements), len(fixtures))
-        if reconciled_availabilities is None and cache_key in self._cache:
-            return self._cache[cache_key].copy()
-
         features_df = feature_engineering.extract_live_features_for_upcoming(
             bootstrap=bootstrap,
             fixtures=fixtures,
@@ -123,6 +120,25 @@ class ProjectionEngine:
 
         if features_df.empty:
             return pd.DataFrame()
+
+        # Content-based hash prediction caching with namespace isolation per model version and season (G4)
+        active_entry = model_registry.get_active_version()
+        if isinstance(active_entry, dict):
+            model_version = str(active_entry.get("version", "default"))
+        else:
+            model_version = str(active_entry or "default")
+        season = "2026-27"
+        feature_hash = hashlib.sha256(
+            pd.util.hash_pandas_object(features_df[FEATURE_COLUMNS], index=True).values.tobytes()
+        ).hexdigest()[:16]
+        avail_str = ""
+        if reconciled_availabilities:
+            avail_str = str(sorted(reconciled_availabilities.items()))
+        avail_hash = hashlib.sha256(avail_str.encode("utf-8")).hexdigest()[:8] if avail_str else "none"
+        cache_key = f"{model_version}:{season}:gw{target_gw}:{feature_hash}:{avail_hash}"
+
+        if cache_key in self._cache:
+            return self._cache[cache_key].copy()
 
         # Isolate model features
         X = features_df[FEATURE_COLUMNS].copy()
@@ -191,8 +207,7 @@ class ProjectionEngine:
         # Blank gameweek zeroing
         dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, ["expected_points", "p10", "p50", "p90", "variance"]] = 0.0
 
-        if reconciled_availabilities is None:
-            self._cache[cache_key] = dgw_grouped.copy()
+        self._cache[cache_key] = dgw_grouped.copy()
 
         return dgw_grouped
 

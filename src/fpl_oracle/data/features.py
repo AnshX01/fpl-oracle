@@ -13,6 +13,7 @@ import pandas as pd
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.config import HISTORICAL_DIR
+from fpl_oracle.data.player_identity import normalize_player_name, player_identity_resolver
 
 logger = logging.getLogger("fpl_oracle.features")
 
@@ -739,7 +740,9 @@ class FeatureEngineering:
                 else:
                     df_player[c] = def_val
 
-        grouped = df_player.groupby("name", group_keys=False)
+        if "norm_name" not in df_player.columns:
+            df_player["norm_name"] = df_player["name"].apply(normalize_player_name)
+        grouped = df_player.groupby("norm_name", group_keys=False)
 
         # Shifted rolling stats (Strictly pre-match!)
         for window in [3, 5, 8]:
@@ -953,17 +956,10 @@ class FeatureEngineering:
                 except Exception as e:
                     logger.warning("Could not read master_history.csv for live features: %s", e)
 
-        # Index player histories by web_name and element_id
-        hist_by_name: dict[str, pd.DataFrame] = {}
-        hist_by_elem: dict[int, pd.DataFrame] = {}
         team_history_map: dict[Any, dict[str, float]] = {}
 
         if history_df is not None and not history_df.empty:
-            for name, p_df in history_df.groupby("name"):
-                hist_by_name[name] = p_df.sort_values(by=["season", "round"])
-            if "element" in history_df.columns:
-                for elem_id, p_df in history_df.groupby("element"):
-                    hist_by_elem[int(elem_id)] = p_df.sort_values(by=["season", "round"])
+            player_identity_resolver.load(history_df=history_df, bootstrap_elements=bootstrap.elements)
             team_history_map = self._build_team_history_map(history_df)
 
             # Supplement last_team_kickoff from history_df if fixture kickoff not available
@@ -994,10 +990,15 @@ class FeatureEngineering:
             elif elem.chance_of_playing_next_round is not None:
                 cop = float(elem.chance_of_playing_next_round)
 
-            # Look up player match history for authentic rolling stats
-            p_hist = hist_by_elem.get(elem.id)
-            if p_hist is None or p_hist.empty:
-                p_hist = hist_by_name.get(elem.web_name)
+            # Look up player match history for authentic rolling stats via canonical identity
+            full_name = f"{elem.first_name} {elem.second_name}".strip()
+            p_hist = player_identity_resolver.get_player_history(
+                elem_id=elem.id,
+                season="2026-27",
+                full_name=full_name,
+                web_name=elem.web_name,
+                code=elem.code,
+            )
 
             # Shared canonical transformer ensures 100% train/serve parity!
             player_stats = compute_player_rolling_stats(p_hist, pos_code=pos_code, val_m=val_m)

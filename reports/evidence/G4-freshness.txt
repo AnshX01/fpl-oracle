@@ -1,0 +1,21 @@
+=== G4 MASTER HISTORY FRESHNESS VERIFICATION ===
+COMMAND: C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe scripts/check_freshness.py --mode freshness
+EXIT CODE: 0
+OUTPUT:
+Local master_history.csv season 2026-27 total rows: 2,054
+Local master_history.csv season 2026-27 max GW: 5
+Official FPL API current finished gameweeks count: 5
+Official FPL API max finished GW: 5
+STATUS: Fresh. Local master matches latest official finished gameweek (GW5 == GW5).
+
+Validating zero nulls across critical columns:
+  season: 0 nulls
+  name: 0 nulls
+  element: 0 nulls
+  position: 0 nulls
+  team: 0 nulls
+  round: 0 nulls
+  minutes: 0 nulls
+  total_points: 0 nulls
+
+All critical columns validated with 0 null values.

@@ -1,0 +1,21 @@
+=== G4 PLAYER IDENTITY & COLLISION ELIMINATION VERIFICATION ===
+COMMAND: C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe scripts/check_freshness.py --mode identity
+EXIT CODE: 0
+OUTPUT:
+Raw master_history.csv cross-season element collisions: 841 IDs
+
+Player 1 Verification (David Raya, Element ID 1 in 2026-27):
+  Resolved canonical identity: david raya martin
+  Total historical appearances retrieved: 119
+  Seasons breakdown: {'2023-24': 38, '2024-25': 38, '2025-26': 38, '2026-27': 5}
+  Element IDs mapped across seasons: {'2023-24': [np.int64(113)], '2024-25': [np.int64(15)], '2025-26': [np.int64(1)], '2026-27': [np.int64(1)]}
+  Contains Balogun records (2023-24 ID 1): False (MUST BE False)
+  Contains Vieira records (2024-25 ID 1): False (MUST BE False)
+  [PASS] ZERO cross-contamination on colliding Element ID 1.
+
+Player 2 Verification (Erling Haaland, Element ID 411 in 2026-27):
+  Resolved canonical identity: erling haaland
+  Total historical appearances retrieved: 119
+  Seasons breakdown: {'2023-24': 38, '2024-25': 38, '2025-26': 38, '2026-27': 5}
+  Element IDs mapped across seasons: {'2023-24': [np.int64(355)], '2024-25': [np.int64(351)], '2025-26': [np.int64(430)], '2026-27': [np.int64(411)]}
+  [PASS] Full 4-season authentic historical trajectory mapped without error.

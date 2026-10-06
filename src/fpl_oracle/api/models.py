@@ -100,6 +100,7 @@ class Element(FPLBaseModel):
     price_change_percent: str | float | None = None
     price_change_hourly_rate: int | None = None
     price_change_projections: list[dict[str, Any]] | None = None
+    code: int | None = None
 
 
 class BootstrapStatic(FPLBaseModel):
