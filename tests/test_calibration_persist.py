@@ -12,7 +12,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from fpl_oracle.config import MODELS_DIR
 from fpl_oracle.ml.ensemble import ScoringEnsemble, scoring_ensemble
@@ -87,12 +86,14 @@ def test_interval_coverage_on_synthetic_holdout():
     ens = ScoringEnsemble()
     ens.bucket_quantiles = {"MID_high": {"q10": q10, "q90": q90, "n": n}}
 
-    X_test = pd.DataFrame({
-        "pos_MID": np.ones(n),
-        "roll_points_5": xP,
-        "roll_starts_ratio_5": np.ones(n),
-        "opponent_difficulty": np.full(n, 3),
-    })
+    X_test = pd.DataFrame(
+        {
+            "pos_MID": np.ones(n),
+            "roll_points_5": xP,
+            "roll_starts_ratio_5": np.ones(n),
+            "opponent_difficulty": np.full(n, 3),
+        }
+    )
     comps = {
         "p_min60": np.ones(n),
         "p_starts": np.ones(n),

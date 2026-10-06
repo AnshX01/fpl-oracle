@@ -10,8 +10,6 @@ from typing import Any
 
 import pandas as pd
 
-logger = logging.getLogger("fpl_oracle.briefing.decision_card")
-
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
 from fpl_oracle.chips.planner import chip_planner
@@ -26,6 +24,8 @@ from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.transfers import transfer_optimizer
+
+logger = logging.getLogger("fpl_oracle.briefing.decision_card")
 
 
 class DecisionCardGenerator:
@@ -63,7 +63,9 @@ class DecisionCardGenerator:
             xp_map = {int(r["element"]): float(r["expected_points"]) for _, r in target_df.iterrows()}
             p10_map = {int(r["element"]): float(r.get("p10", 0.0)) for _, r in target_df.iterrows()}
             p90_map = {int(r["element"]): float(r.get("p90", 0.0)) for _, r in target_df.iterrows()}
-            user_squad_df["expected_points"] = user_squad_df["element"].map(xp_map).fillna(user_squad_df["expected_points"])
+            user_squad_df["expected_points"] = (
+                user_squad_df["element"].map(xp_map).fillna(user_squad_df["expected_points"])
+            )
             user_squad_df["p10"] = user_squad_df["element"].map(p10_map).fillna(0.0)
             user_squad_df["p90"] = user_squad_df["element"].map(p90_map).fillna(0.0)
 
@@ -79,32 +81,36 @@ class DecisionCardGenerator:
         for _, s in lineup_res["starters"].iterrows():
             eid = int(s["element"])
             tm = team_map.get(int(s["team"]))
-            starters_list.append({
-                "element": eid,
-                "web_name": s["web_name"],
-                "position": s["position"],
-                "team": int(s["team"]),
-                "team_short": tm.short_name if tm else "PL",
-                "expected_points": round(float(s["expected_points"]), 2),
-                "p10": round(float(s.get("p10", 0.0)), 2),
-                "p90": round(float(s.get("p90", 0.0)), 2),
-                "is_captain": eid == captain_elem,
-                "is_vice_captain": eid == vice_elem,
-            })
+            starters_list.append(
+                {
+                    "element": eid,
+                    "web_name": s["web_name"],
+                    "position": s["position"],
+                    "team": int(s["team"]),
+                    "team_short": tm.short_name if tm else "PL",
+                    "expected_points": round(float(s["expected_points"]), 2),
+                    "p10": round(float(s.get("p10", 0.0)), 2),
+                    "p90": round(float(s.get("p90", 0.0)), 2),
+                    "is_captain": eid == captain_elem,
+                    "is_vice_captain": eid == vice_elem,
+                }
+            )
 
         bench_list = []
         for idx, (_, b) in enumerate(lineup_res["bench"].iterrows(), start=1):
             eid = int(b["element"])
             tm = team_map.get(int(b["team"]))
-            bench_list.append({
-                "element": eid,
-                "web_name": b["web_name"],
-                "position": b["position"],
-                "team": int(b["team"]),
-                "team_short": tm.short_name if tm else "PL",
-                "expected_points": round(float(b["expected_points"]), 2),
-                "bench_order": idx,
-            })
+            bench_list.append(
+                {
+                    "element": eid,
+                    "web_name": b["web_name"],
+                    "position": b["position"],
+                    "team": int(b["team"]),
+                    "team_short": tm.short_name if tm else "PL",
+                    "expected_points": round(float(b["expected_points"]), 2),
+                    "bench_order": idx,
+                }
+            )
 
         cap_tm = team_map.get(int(lineup_res["captain"].get("team", 0)))
         vice_tm = team_map.get(int(lineup_res["vice_captain"].get("team", 0)))
@@ -147,22 +153,26 @@ class DecisionCardGenerator:
         transfers_in = []
         for p in t_in_raw:
             if isinstance(p, dict):
-                transfers_in.append({
-                    "element": int(p.get("element", 0)),
-                    "web_name": p.get("web_name", ""),
-                    "cost": round(float(p.get("buy_price", 0.0)), 1),
-                    "expected_points": round(float(p.get("expected_points", 0.0)), 2),
-                })
+                transfers_in.append(
+                    {
+                        "element": int(p.get("element", 0)),
+                        "web_name": p.get("web_name", ""),
+                        "cost": round(float(p.get("buy_price", 0.0)), 1),
+                        "expected_points": round(float(p.get("expected_points", 0.0)), 2),
+                    }
+                )
 
         transfers_out = []
         for p in t_out_raw:
             if isinstance(p, dict):
-                transfers_out.append({
-                    "element": int(p.get("element", 0)),
-                    "web_name": p.get("web_name", ""),
-                    "cost": round(float(p.get("sell_price", 0.0)), 1),
-                    "expected_points": round(float(p.get("expected_points", 0.0)), 2),
-                })
+                transfers_out.append(
+                    {
+                        "element": int(p.get("element", 0)),
+                        "web_name": p.get("web_name", ""),
+                        "cost": round(float(p.get("sell_price", 0.0)), 1),
+                        "expected_points": round(float(p.get("expected_points", 0.0)), 2),
+                    }
+                )
 
         is_roll = rec_plan.get("plan_type") == "ROLL_TRANSFER" or len(transfers_in) == 0
         action_name = "ROLL" if is_roll else ("SINGLE_TRANSFER" if len(transfers_in) == 1 else "MULTIPLE_TRANSFERS")
@@ -218,7 +228,11 @@ class DecisionCardGenerator:
             "next_best_window": (
                 active_chip_item.get("alternative_gw")
                 if active_chip_item
-                else (chip_strat.get("chip_plan_table", [{}])[0].get("recommended_gw") if chip_strat.get("chip_plan_table") else None)
+                else (
+                    chip_strat.get("chip_plan_table", [{}])[0].get("recommended_gw")
+                    if chip_strat.get("chip_plan_table")
+                    else None
+                )
             ),
             "gain_vs_hold": round(float(active_chip_item.get("expected_gain", 0.0)), 1) if active_chip_item else 0.0,
             "set_1_deadline_warning": chip_strat.get("set_1_deadline_warning"),
@@ -291,7 +305,9 @@ class DecisionCardGenerator:
                         "status": "configured",
                         "league_name": standings_data.get("league_name", "Mini-League"),
                         "posture": strategy.get("posture", "BALANCED_ATTACK"),
-                        "posture_reason": strategy.get("rationale", "Maintain balanced upside with core template coverage."),
+                        "posture_reason": strategy.get(
+                            "rationale", "Maintain balanced upside with core template coverage."
+                        ),
                         "nearest_above_gap": strategy.get("gap_to_leader"),
                         "nearest_below_gap": strategy.get("gap_to_next"),
                         "rival_count": len(rivals_res.get("rival_squads", [])),
@@ -302,7 +318,9 @@ class DecisionCardGenerator:
                     win_prob_dict = {
                         "status": "simulated",
                         "p_first": round(float(mc_res.get("user_win_probability_pct", 0.0)), 1),
-                        "p_above_key_rivals": round(float(mc_res.get("p_above_key_rivals", mc_res.get("user_win_probability_pct", 0.0))), 1),
+                        "p_above_key_rivals": round(
+                            float(mc_res.get("p_above_key_rivals", mc_res.get("user_win_probability_pct", 0.0))), 1
+                        ),
                         "expected_rank": round(float(mc_res.get("expected_final_rank", 1.0)), 1),
                         "mc_se": round(float(mc_res.get("win_prob_se", 0.5)), 2),
                         "simulation_note": "Joint Bernoulli Monte Carlo simulation (correlated clean-sheets & shared player draws).",
@@ -422,11 +440,13 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
     if chip.get("set_1_deadline_warning"):
         lines.append(f"- **Set 1 Expiry:** ⚠️ {chip['set_1_deadline_warning']}")
 
-    lines.extend([
-        "",
-        "## 2. Transfer Plan",
-        f"**Recommended Move:** {t.get('action_summary', '')}",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 2. Transfer Plan",
+            f"**Recommended Move:** {t.get('action_summary', '')}",
+        ]
+    )
 
     if t.get("is_roll"):
         lines.append(f"- **Strategy:** Roll transfer to accumulate {t.get('ft_remaining', 2)} free transfers.")
@@ -436,60 +456,72 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
         lines.append(f"- **Transfers Out:** {out_names}")
         lines.append(f"- **Transfers In:** {in_names}")
 
-    lines.extend([
-        f"- **GW Net Gain vs Roll:** +{t.get('expected_gain_gw', 0.0):.1f} pts",
-        f"- **5-GW Horizon Net Gain:** +{t.get('net_gain_vs_roll', 0.0):.1f} pts",
-        f"- **Hit Penalty:** -{t.get('hit_cost', 0)} pts ({t.get('hits_count', 0)} extra transfer(s))",
-        f"- **Bank After:** £{t.get('bank_after', 0.0):.1f}m | **FTs Next Week:** {t.get('ft_remaining', 1)}",
-        f"- **No-Regret Status:** {'CONFIRMED (>=70% win-rate under noise)' if t.get('no_regret_flag') else 'Standard optimal'}",
-        "",
-        "## 3. Starting XI & Captaincy",
-        f"**Formation:** {card.get('formation', '3-5-2')}",
-        f"- **Captain (C):** {cap.get('web_name', '')} ({cap.get('team_short', '')}) — {cap.get('expected_points', 0.0)} xP [P10: {cap.get('p10', 0.0)}, P90: {cap.get('p90', 0.0)}]",
-        f"- **Vice-Captain (V):** {vice.get('web_name', '')} ({vice.get('team_short', '')}) — {vice.get('expected_points', 0.0)} xP",
-        "",
-        "### Starting Lineup",
-        "| Pos | Player | Club | xP | P10-P90 | Role |",
-        "|:---|:---|:---:|:---:|:---:|:---:|",
-    ])
+    lines.extend(
+        [
+            f"- **GW Net Gain vs Roll:** +{t.get('expected_gain_gw', 0.0):.1f} pts",
+            f"- **5-GW Horizon Net Gain:** +{t.get('net_gain_vs_roll', 0.0):.1f} pts",
+            f"- **Hit Penalty:** -{t.get('hit_cost', 0)} pts ({t.get('hits_count', 0)} extra transfer(s))",
+            f"- **Bank After:** £{t.get('bank_after', 0.0):.1f}m | **FTs Next Week:** {t.get('ft_remaining', 1)}",
+            f"- **No-Regret Status:** {'CONFIRMED (>=70% win-rate under noise)' if t.get('no_regret_flag') else 'Standard optimal'}",
+            "",
+            "## 3. Starting XI & Captaincy",
+            f"**Formation:** {card.get('formation', '3-5-2')}",
+            f"- **Captain (C):** {cap.get('web_name', '')} ({cap.get('team_short', '')}) — {cap.get('expected_points', 0.0)} xP [P10: {cap.get('p10', 0.0)}, P90: {cap.get('p90', 0.0)}]",
+            f"- **Vice-Captain (V):** {vice.get('web_name', '')} ({vice.get('team_short', '')}) — {vice.get('expected_points', 0.0)} xP",
+            "",
+            "### Starting Lineup",
+            "| Pos | Player | Club | xP | P10-P90 | Role |",
+            "|:---|:---|:---:|:---:|:---:|:---:|",
+        ]
+    )
 
     for p in card.get("xi", []):
         role = "Captain (C)" if p.get("is_captain") else ("Vice (V)" if p.get("is_vice_captain") else "")
         interval = f"[{p.get('p10', 0.0):.1f} - {p.get('p90', 0.0):.1f}]"
-        lines.append(f"| {p.get('position')} | {p.get('web_name')} | {p.get('team_short')} | {p.get('expected_points', 0.0):.1f} | {interval} | {role} |")
+        lines.append(
+            f"| {p.get('position')} | {p.get('web_name')} | {p.get('team_short')} | {p.get('expected_points', 0.0):.1f} | {interval} | {role} |"
+        )
 
-    lines.extend([
-        "",
-        "### Bench Order",
-    ])
+    lines.extend(
+        [
+            "",
+            "### Bench Order",
+        ]
+    )
     for b in card.get("bench", []):
-        lines.append(f"{b.get('bench_order')}. {b.get('web_name')} ({b.get('position')}, {b.get('team_short')}) — {b.get('expected_points', 0.0):.1f} xP")
+        lines.append(
+            f"{b.get('bench_order')}. {b.get('web_name')} ({b.get('position')}, {b.get('team_short')}) — {b.get('expected_points', 0.0):.1f} xP"
+        )
 
-    lines.extend([
-        "",
-        "## 4. Mini-League & Rivals",
-        f"- **Mini-League:** {riv.get('league_name', 'None')} ({riv.get('status', 'unconfigured')})",
-        f"- **Tactical Posture:** {riv.get('posture', 'BALANCED_ATTACK')}",
-        f"- **Posture Rationale:** {riv.get('posture_reason', '')}",
-        f"- **Championship Win Probability:** {wp.get('p_first', 0.0):.1f}% (Expected Finish: {wp.get('expected_rank', 1.0):.1f})",
-        f"- **Key Exposure Risks:** {', '.join(riv.get('exposure_players', [])) or 'None'}",
-        f"- **Key Differentials:** {', '.join(riv.get('differential_players', [])) or 'None'}",
-        "",
-        "## 5. Decision Summary & Pre-Deadline Caveats",
-        f"**Rationale:** {card.get('two_line_reasoning', '')}",
-        "",
-        "**Caveats:**",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 4. Mini-League & Rivals",
+            f"- **Mini-League:** {riv.get('league_name', 'None')} ({riv.get('status', 'unconfigured')})",
+            f"- **Tactical Posture:** {riv.get('posture', 'BALANCED_ATTACK')}",
+            f"- **Posture Rationale:** {riv.get('posture_reason', '')}",
+            f"- **Championship Win Probability:** {wp.get('p_first', 0.0):.1f}% (Expected Finish: {wp.get('expected_rank', 1.0):.1f})",
+            f"- **Key Exposure Risks:** {', '.join(riv.get('exposure_players', [])) or 'None'}",
+            f"- **Key Differentials:** {', '.join(riv.get('differential_players', [])) or 'None'}",
+            "",
+            "## 5. Decision Summary & Pre-Deadline Caveats",
+            f"**Rationale:** {card.get('two_line_reasoning', '')}",
+            "",
+            "**Caveats:**",
+        ]
+    )
 
     for c in card.get("caveats", []):
         lines.append(f"- {c}")
 
-    lines.extend([
-        f"- {card.get('what_changed', '')}",
-        "",
-        "---",
-        f"*{card.get('advice_disclaimer', '')}*",
-    ])
+    lines.extend(
+        [
+            f"- {card.get('what_changed', '')}",
+            "",
+            "---",
+            f"*{card.get('advice_disclaimer', '')}*",
+        ]
+    )
 
     return "\n".join(lines)
 

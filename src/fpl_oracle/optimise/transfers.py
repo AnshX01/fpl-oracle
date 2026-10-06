@@ -281,15 +281,17 @@ class TransferOptimizer:
                 if buy_team != sell_team and cnt >= 3:
                     continue
 
-                moves.append({
-                    "plan_type": "1_TRANSFER",
-                    "transfers_in": [buy_id],
-                    "transfers_out": [sell_id],
-                    "sell_prices": {sell_id: sell_price},
-                    "buy_costs": {buy_id: int(buy_row["value"])},
-                    "bank_delta": sell_price - int(buy_row["value"]),
-                    "immediate_gain": float(buy_row["expected_points"]) - float(sell_p.get("expected_points", 0.0)),
-                })
+                moves.append(
+                    {
+                        "plan_type": "1_TRANSFER",
+                        "transfers_in": [buy_id],
+                        "transfers_out": [sell_id],
+                        "sell_prices": {sell_id: sell_price},
+                        "buy_costs": {buy_id: int(buy_row["value"])},
+                        "bank_delta": sell_price - int(buy_row["value"]),
+                        "immediate_gain": float(buy_row["expected_points"]) - float(sell_p.get("expected_points", 0.0)),
+                    }
+                )
 
         moves.sort(key=lambda m: m["immediate_gain"], reverse=True)
         return moves
@@ -341,15 +343,17 @@ class TransferOptimizer:
                 combined_buy_costs = dict(m1["buy_costs"])
                 combined_buy_costs.update(m2["buy_costs"])
 
-                moves_2.append({
-                    "plan_type": "2_TRANSFERS",
-                    "transfers_in": [in1, in2],
-                    "transfers_out": [out1, out2],
-                    "sell_prices": combined_sell_prices,
-                    "buy_costs": combined_buy_costs,
-                    "bank_delta": m1["bank_delta"] + m2["bank_delta"],
-                    "immediate_gain": m1["immediate_gain"] + m2["immediate_gain"],
-                })
+                moves_2.append(
+                    {
+                        "plan_type": "2_TRANSFERS",
+                        "transfers_in": [in1, in2],
+                        "transfers_out": [out1, out2],
+                        "sell_prices": combined_sell_prices,
+                        "buy_costs": combined_buy_costs,
+                        "bank_delta": m1["bank_delta"] + m2["bank_delta"],
+                        "immediate_gain": m1["immediate_gain"] + m2["immediate_gain"],
+                    }
+                )
 
         moves_2.sort(key=lambda m: m["immediate_gain"], reverse=True)
         return moves_2[:max_total]
@@ -414,20 +418,22 @@ class TransferOptimizer:
             "banked_ft": next_ft0,
         }
 
-        beam = [{
-            "elements": curr_elements,
-            "bank": curr_bank,
-            "purchase_prices": curr_purch,
-            "banked_ft": next_ft0,
-            "history": [step0_record],
-            "accumulated_discounted_net_xp": net_xp0,
-            "total_hits": hits0,
-            "total_gross_xp": xp0,
-            "total_net_xp": net_xp0,
-        }]
+        beam = [
+            {
+                "elements": curr_elements,
+                "bank": curr_bank,
+                "purchase_prices": curr_purch,
+                "banked_ft": next_ft0,
+                "history": [step0_record],
+                "accumulated_discounted_net_xp": net_xp0,
+                "total_hits": hits0,
+                "total_gross_xp": xp0,
+                "total_net_xp": net_xp0,
+            }
+        ]
 
         for step_idx, gw in enumerate(horizon_gws[1:], start=1):
-            discount = self.discount_factor ** step_idx
+            discount = self.discount_factor**step_idx
             pmap = player_maps[gw]
             pool_df = horizon_projections[gw]
             next_beam = []
@@ -451,17 +457,19 @@ class TransferOptimizer:
                     "bank": state["bank"],
                     "banked_ft": min(5, state["banked_ft"] + 1),
                 }
-                next_beam.append({
-                    "elements": set(state["elements"]),
-                    "bank": state["bank"],
-                    "purchase_prices": dict(state["purchase_prices"]),
-                    "banked_ft": min(5, state["banked_ft"] + 1),
-                    "history": state["history"] + [roll_rec],
-                    "total_hits": state["total_hits"],
-                    "total_gross_xp": state["total_gross_xp"] + xp_roll,
-                    "total_net_xp": state["total_net_xp"] + xp_roll,
-                    "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * xp_roll,
-                })
+                next_beam.append(
+                    {
+                        "elements": set(state["elements"]),
+                        "bank": state["bank"],
+                        "purchase_prices": dict(state["purchase_prices"]),
+                        "banked_ft": min(5, state["banked_ft"] + 1),
+                        "history": state["history"] + [roll_rec],
+                        "total_hits": state["total_hits"],
+                        "total_gross_xp": state["total_gross_xp"] + xp_roll,
+                        "total_net_xp": state["total_net_xp"] + xp_roll,
+                        "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * xp_roll,
+                    }
+                )
 
                 # 2. 1-Transfer candidate actions
                 c_moves = self._get_candidate_1_transfers(
@@ -496,9 +504,7 @@ class TransferOptimizer:
                         n_ft = 1
 
                     h_cost = hits * self.hit_penalty
-                    xp_m, cap_m, form_m = _fast_eval_squad_formation(
-                        new_elems, pmap, risk_preference=risk_preference
-                    )
+                    xp_m, cap_m, form_m = _fast_eval_squad_formation(new_elems, pmap, risk_preference=risk_preference)
                     net_m = xp_m - h_cost
 
                     m_rec = {
@@ -516,17 +522,19 @@ class TransferOptimizer:
                         "banked_ft": n_ft,
                     }
 
-                    next_beam.append({
-                        "elements": new_elems,
-                        "bank": new_bank,
-                        "purchase_prices": new_purch,
-                        "banked_ft": n_ft,
-                        "history": state["history"] + [m_rec],
-                        "total_hits": state["total_hits"] + hits,
-                        "total_gross_xp": state["total_gross_xp"] + xp_m,
-                        "total_net_xp": state["total_net_xp"] + net_m,
-                        "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * net_m,
-                    })
+                    next_beam.append(
+                        {
+                            "elements": new_elems,
+                            "bank": new_bank,
+                            "purchase_prices": new_purch,
+                            "banked_ft": n_ft,
+                            "history": state["history"] + [m_rec],
+                            "total_hits": state["total_hits"] + hits,
+                            "total_gross_xp": state["total_gross_xp"] + xp_m,
+                            "total_net_xp": state["total_net_xp"] + net_m,
+                            "accumulated_discounted_net_xp": state["accumulated_discounted_net_xp"] + discount * net_m,
+                        }
+                    )
 
             next_beam.sort(key=lambda s: s["accumulated_discounted_net_xp"], reverse=True)
             beam = next_beam[:beam_width]
@@ -589,7 +597,7 @@ class TransferOptimizer:
             action_type, m_obj, net_xp, hits, hit_c = best_action
             total_hits += hits
             total_net += net_xp
-            total_gross += (net_xp + hit_c)
+            total_gross += net_xp + hit_c
 
             if action_type == "ROLL":
                 curr_ft = min(5, curr_ft + 1)
@@ -641,8 +649,7 @@ class TransferOptimizer:
         initial_elements = set(current_squad_df["element"].tolist())
         initial_bank = int(bank)
         initial_purchase = {
-            int(r["element"]): int(r.get("purchase_price", r.get("value", 50)))
-            for _, r in current_squad_df.iterrows()
+            int(r["element"]): int(r.get("purchase_price", r.get("value", 50))) for _, r in current_squad_df.iterrows()
         }
 
         # Horizon gameweeks (up to 5 GWs)
@@ -666,9 +673,7 @@ class TransferOptimizer:
         if len(curr_squad_target) < 15:
             curr_squad_target = current_squad_df.copy()
 
-        curr_lineup = lineup_optimizer.select_lineup_and_captain(
-            curr_squad_target, risk_preference=risk_preference
-        )
+        curr_lineup = lineup_optimizer.select_lineup_and_captain(curr_squad_target, risk_preference=risk_preference)
         base_xp = curr_lineup["total_gameweek_expected_points"]
 
         # ----------------------------------------------------------------------
@@ -762,14 +767,14 @@ class TransferOptimizer:
             sell_row = target_pmap[out_id]
 
             # Rich lineup selection
-            trial_squad = pd.concat([
-                curr_squad_target[curr_squad_target["element"] != out_id],
-                target_gw_df[target_gw_df["element"] == in_id],
-            ]).reset_index(drop=True)
+            trial_squad = pd.concat(
+                [
+                    curr_squad_target[curr_squad_target["element"] != out_id],
+                    target_gw_df[target_gw_df["element"] == in_id],
+                ]
+            ).reset_index(drop=True)
 
-            trial_lineup = lineup_optimizer.select_lineup_and_captain(
-                trial_squad, risk_preference=risk_preference
-            )
+            trial_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad, risk_preference=risk_preference)
             trial_xp = trial_lineup["total_gameweek_expected_points"]
             hits = 0 if free_transfers >= 1 else 1
             hit_cost = hits * self.hit_penalty
@@ -784,22 +789,26 @@ class TransferOptimizer:
             plan_dict = {
                 "plan_type": "1_TRANSFER",
                 "transfers_count": 1,
-                "transfers_in": [{
-                    "element": in_id,
-                    "web_name": buy_row["web_name"],
-                    "team": _safe_team(buy_row["team"]),
-                    "position": buy_row["position"],
-                    "cost": buy_row["value"] / 10.0,
-                    "expected_points": round(float(buy_row["expected_points"]), 2),
-                }],
-                "transfers_out": [{
-                    "element": out_id,
-                    "web_name": sell_row["web_name"],
-                    "team": _safe_team(sell_row["team"]),
-                    "position": sell_row["position"],
-                    "sell_price": m["sell_prices"][out_id] / 10.0,
-                    "expected_points": round(float(sell_row.get("expected_points", 0.0)), 2),
-                }],
+                "transfers_in": [
+                    {
+                        "element": in_id,
+                        "web_name": buy_row["web_name"],
+                        "team": _safe_team(buy_row["team"]),
+                        "position": buy_row["position"],
+                        "cost": buy_row["value"] / 10.0,
+                        "expected_points": round(float(buy_row["expected_points"]), 2),
+                    }
+                ],
+                "transfers_out": [
+                    {
+                        "element": out_id,
+                        "web_name": sell_row["web_name"],
+                        "team": _safe_team(sell_row["team"]),
+                        "position": sell_row["position"],
+                        "sell_price": m["sell_prices"][out_id] / 10.0,
+                        "expected_points": round(float(sell_row.get("expected_points", 0.0)), 2),
+                    }
+                ],
                 "hits": hits,
                 "hit_cost": hit_cost,
                 "gross_expected_points": round(trial_xp, 2),
@@ -824,7 +833,7 @@ class TransferOptimizer:
 
         if cand_1_plans:
             cand_1_plans.sort(
-                key=lambda p: (p["pure_xp_gain"] + (p["price_movement_gain"] * 1.5 if include_price_gain else 0.0)),
+                key=lambda p: p["pure_xp_gain"] + (p["price_movement_gain"] * 1.5 if include_price_gain else 0.0),
                 reverse=True,
             )
             best_1_plan = cand_1_plans[0]
@@ -866,14 +875,14 @@ class TransferOptimizer:
             in_ids = m["transfers_in"]
             out_ids = m["transfers_out"]
 
-            trial_squad_2 = pd.concat([
-                curr_squad_target[~curr_squad_target["element"].isin(out_ids)],
-                target_gw_df[target_gw_df["element"].isin(in_ids)],
-            ]).reset_index(drop=True)
+            trial_squad_2 = pd.concat(
+                [
+                    curr_squad_target[~curr_squad_target["element"].isin(out_ids)],
+                    target_gw_df[target_gw_df["element"].isin(in_ids)],
+                ]
+            ).reset_index(drop=True)
 
-            trial2_lineup = lineup_optimizer.select_lineup_and_captain(
-                trial_squad_2, risk_preference=risk_preference
-            )
+            trial2_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad_2, risk_preference=risk_preference)
             trial2_xp = trial2_lineup["total_gameweek_expected_points"]
             hits_2 = max(0, 2 - free_transfers)
             hit_cost_2 = hits_2 * self.hit_penalty
@@ -952,10 +961,7 @@ class TransferOptimizer:
             win_counts = {i: 0 for i in range(len(candidate_plans))}
             for _ in range(num_mc_scenarios):
                 # Sample noise per player
-                noise_map = {
-                    eid: float(np.random.normal(1.0, 0.15))
-                    for eid in target_pmap
-                }
+                noise_map = {eid: float(np.random.normal(1.0, 0.15)) for eid in target_pmap}
                 # Score each candidate under noise
                 scores = []
                 for p_idx, plan in enumerate(candidate_plans):
@@ -1161,14 +1167,13 @@ class TransferOptimizer:
         )
         hold_plan = dict(base_res["recommended_plan"])
         hold_discounted_score = float(
-            hold_plan.get("accumulated_discounted_net_xp")
-            or hold_plan.get("horizon_net_xp", 0.0)
+            hold_plan.get("accumulated_discounted_net_xp") or hold_plan.get("horizon_net_xp", 0.0)
         )
 
         # 2. Chip retention opportunity cost definitions
         default_retention = {
-            "3xc": 6.0,       # Opportunity cost of burning TC outside a Double Gameweek
-            "bboost": 10.0,   # Opportunity cost of burning BB outside a full-squad DGW
+            "3xc": 6.0,  # Opportunity cost of burning TC outside a Double Gameweek
+            "bboost": 10.0,  # Opportunity cost of burning BB outside a full-squad DGW
             "freehit": 10.0,  # Opportunity cost of burning FH outside a major blank/double GW
             "wildcard": 8.0,  # Opportunity cost of burning WC outside an emergency/major swing
         }
@@ -1204,7 +1209,11 @@ class TransferOptimizer:
         # Evaluate 3xc
         if "3xc" in active_chips:
             cap_info = hold_plan.get("lineup", {}).get("captain", {})
-            cap_xp = float(cap_info.get("expected_points", 0.0)) if isinstance(cap_info, dict) else float(getattr(cap_info, "expected_points", 0.0))
+            cap_xp = (
+                float(cap_info.get("expected_points", 0.0))
+                if isinstance(cap_info, dict)
+                else float(getattr(cap_info, "expected_points", 0.0))
+            )
             gross_tc = round(cap_xp, 2)
             cost_tc = round(retention_costs.get("3xc", 6.0), 2)
             net_tc = round(gross_tc - cost_tc, 2)
@@ -1215,24 +1224,34 @@ class TransferOptimizer:
             tc_plan["gross_expected_points"] = round(hold_plan["gross_expected_points"] + gross_tc, 2)
             tc_plan["net_expected_points"] = round(hold_plan["net_expected_points"] + gross_tc, 2)
 
-            cap_name = cap_info.get("web_name", "Captain") if isinstance(cap_info, dict) else getattr(cap_info, "web_name", "Captain")
-            candidates.append({
-                "chip": "3xc",
-                "chip_code": "3xc",
-                "action": "DEPLOY",
-                "gross_gain_vs_hold": gross_tc,
-                "opportunity_cost": cost_tc,
-                "net_gain_vs_hold": net_tc,
-                "effective_trajectory_score": score_tc,
-                "plan": tc_plan,
-                "reason": f"Triple Captain on {cap_name} gains +{gross_tc} xP (retention cost: {cost_tc} xP, net: {net_tc:+} xP).",
-            })
+            cap_name = (
+                cap_info.get("web_name", "Captain")
+                if isinstance(cap_info, dict)
+                else getattr(cap_info, "web_name", "Captain")
+            )
+            candidates.append(
+                {
+                    "chip": "3xc",
+                    "chip_code": "3xc",
+                    "action": "DEPLOY",
+                    "gross_gain_vs_hold": gross_tc,
+                    "opportunity_cost": cost_tc,
+                    "net_gain_vs_hold": net_tc,
+                    "effective_trajectory_score": score_tc,
+                    "plan": tc_plan,
+                    "reason": f"Triple Captain on {cap_name} gains +{gross_tc} xP (retention cost: {cost_tc} xP, net: {net_tc:+} xP).",
+                }
+            )
 
         # Evaluate Bench Boost
         if "bboost" in active_chips:
             bench_obj = hold_plan.get("lineup", {}).get("bench")
             if isinstance(bench_obj, pd.DataFrame):
-                bench_xp = float(bench_obj["expected_points"].sum()) if not bench_obj.empty and "expected_points" in bench_obj.columns else 0.0
+                bench_xp = (
+                    float(bench_obj["expected_points"].sum())
+                    if not bench_obj.empty and "expected_points" in bench_obj.columns
+                    else 0.0
+                )
             elif isinstance(bench_obj, list):
                 bench_xp = sum(float(b.get("expected_points", 0.0)) for b in bench_obj)
             else:
@@ -1247,22 +1266,25 @@ class TransferOptimizer:
             bb_plan["gross_expected_points"] = round(hold_plan["gross_expected_points"] + gross_bb, 2)
             bb_plan["net_expected_points"] = round(hold_plan["net_expected_points"] + gross_bb, 2)
 
-            candidates.append({
-                "chip": "bboost",
-                "chip_code": "bboost",
-                "action": "DEPLOY",
-                "gross_gain_vs_hold": gross_bb,
-                "opportunity_cost": cost_bb,
-                "net_gain_vs_hold": net_bb,
-                "effective_trajectory_score": score_bb,
-                "plan": bb_plan,
-                "reason": f"Bench Boost contributes bench points (+{gross_bb} xP, retention cost: {cost_bb} xP, net: {net_bb:+} xP).",
-            })
+            candidates.append(
+                {
+                    "chip": "bboost",
+                    "chip_code": "bboost",
+                    "action": "DEPLOY",
+                    "gross_gain_vs_hold": gross_bb,
+                    "opportunity_cost": cost_bb,
+                    "net_gain_vs_hold": net_bb,
+                    "effective_trajectory_score": score_bb,
+                    "plan": bb_plan,
+                    "reason": f"Bench Boost contributes bench points (+{gross_bb} xP, retention cost: {cost_bb} xP, net: {net_bb:+} xP).",
+                }
+            )
 
         # Evaluate Free Hit
         if "freehit" in active_chips:
             try:
                 from fpl_oracle.optimise.squad import squad_optimizer
+
                 fh_solve = squad_optimizer.solve_best_squad(
                     player_pool_df=player_pool_df,
                     budget=total_budget,
@@ -1286,17 +1308,19 @@ class TransferOptimizer:
                 fh_plan["hits"] = 0
                 fh_plan["hit_cost"] = 0.0
 
-                candidates.append({
-                    "chip": "freehit",
-                    "chip_code": "freehit",
-                    "action": "DEPLOY",
-                    "gross_gain_vs_hold": gross_fh,
-                    "opportunity_cost": cost_fh,
-                    "net_gain_vs_hold": net_fh,
-                    "effective_trajectory_score": score_fh,
-                    "plan": fh_plan,
-                    "reason": f"Free Hit single-gameweek restructure yields +{gross_fh} xP (retention cost: {cost_fh} xP, net: {net_fh:+} xP).",
-                })
+                candidates.append(
+                    {
+                        "chip": "freehit",
+                        "chip_code": "freehit",
+                        "action": "DEPLOY",
+                        "gross_gain_vs_hold": gross_fh,
+                        "opportunity_cost": cost_fh,
+                        "net_gain_vs_hold": net_fh,
+                        "effective_trajectory_score": score_fh,
+                        "plan": fh_plan,
+                        "reason": f"Free Hit single-gameweek restructure yields +{gross_fh} xP (retention cost: {cost_fh} xP, net: {net_fh:+} xP).",
+                    }
+                )
             except Exception:
                 pass
 
@@ -1304,6 +1328,7 @@ class TransferOptimizer:
         if "wildcard" in active_chips:
             try:
                 from fpl_oracle.optimise.squad import squad_optimizer
+
                 wc_solve = squad_optimizer.solve_best_squad(
                     player_pool_df=player_pool_df,
                     budget=total_budget,
@@ -1316,7 +1341,7 @@ class TransferOptimizer:
                 horizon_gws = [target_gw + offset for offset in range(5) if target_gw + offset <= 38]
                 wc_multi_net = 0.0
                 for idx, h_gw in enumerate(horizon_gws):
-                    disc = self.discount_factor ** idx
+                    disc = self.discount_factor**idx
                     gw_df = horizon_projections.get(h_gw, player_pool_df)
                     sub_df = gw_df[gw_df["element"].isin(wc_squad["element"])].copy()
                     if len(sub_df) < 15:
@@ -1338,17 +1363,19 @@ class TransferOptimizer:
                 wc_plan["hits"] = 0
                 wc_plan["hit_cost"] = 0.0
 
-                candidates.append({
-                    "chip": "wildcard",
-                    "chip_code": "wildcard",
-                    "action": "DEPLOY",
-                    "gross_gain_vs_hold": gross_wc,
-                    "opportunity_cost": cost_wc,
-                    "net_gain_vs_hold": net_wc,
-                    "effective_trajectory_score": score_wc,
-                    "plan": wc_plan,
-                    "reason": f"Wildcard multi-GW restructure yields +{gross_wc} trajectory xP (retention cost: {cost_wc} xP, net: {net_wc:+} xP).",
-                })
+                candidates.append(
+                    {
+                        "chip": "wildcard",
+                        "chip_code": "wildcard",
+                        "action": "DEPLOY",
+                        "gross_gain_vs_hold": gross_wc,
+                        "opportunity_cost": cost_wc,
+                        "net_gain_vs_hold": net_wc,
+                        "effective_trajectory_score": score_wc,
+                        "plan": wc_plan,
+                        "reason": f"Wildcard multi-GW restructure yields +{gross_wc} trajectory xP (retention cost: {cost_wc} xP, net: {net_wc:+} xP).",
+                    }
+                )
             except Exception:
                 pass
 
@@ -1430,9 +1457,7 @@ class TransferOptimizer:
             # Dynamic action text
             if not t_in:
                 action = f"Roll transfer (bank to {step['banked_ft']} FTs)"
-                strategic_focus = (
-                    f"Preserve transfer capital; accumulate {step['banked_ft']} FTs for tactical flexibility in GW{gw + 1}."
-                )
+                strategic_focus = f"Preserve transfer capital; accumulate {step['banked_ft']} FTs for tactical flexibility in GW{gw + 1}."
             elif len(t_in) == 1:
                 in_name = in_players[0].get("web_name", f"Player {t_in[0]}")
                 out_name = out_players[0].get("web_name", f"Player {t_out[0]}")
@@ -1458,20 +1483,22 @@ class TransferOptimizer:
                 else []
             )
 
-            roadmap_steps.append({
-                "gameweek": gw,
-                "status": status,
-                "action": action,
-                "transfers_in": [p.get("web_name", "") for p in in_players],
-                "transfers_out": [p.get("web_name", "") for p in out_players],
-                "banked_free_transfers_projected": step["banked_ft"],
-                "captain": cap_name,
-                "is_dgw": len(dgw_teams) > 0,
-                "is_bgw": len(bgw_teams) > 0,
-                "dgw_bgw_tags": dgw_bgw_tags,
-                "key_targets": key_targets,
-                "strategic_focus": strategic_focus,
-            })
+            roadmap_steps.append(
+                {
+                    "gameweek": gw,
+                    "status": status,
+                    "action": action,
+                    "transfers_in": [p.get("web_name", "") for p in in_players],
+                    "transfers_out": [p.get("web_name", "") for p in out_players],
+                    "banked_free_transfers_projected": step["banked_ft"],
+                    "captain": cap_name,
+                    "is_dgw": len(dgw_teams) > 0,
+                    "is_bgw": len(bgw_teams) > 0,
+                    "dgw_bgw_tags": dgw_bgw_tags,
+                    "key_targets": key_targets,
+                    "strategic_focus": strategic_focus,
+                }
+            )
 
         return roadmap_steps
 

@@ -119,10 +119,7 @@ class NewsIngestion:
             if has_news or not_fully_available:
                 # Check for scout risks like loan ineligibility
                 risks_list = getattr(elem, "scout_risks", None) or []
-                risk_types = [
-                    (r.property if hasattr(r, "property") else r.get("property", ""))
-                    for r in risks_list
-                ]
+                risk_types = [(r.property if hasattr(r, "property") else r.get("property", "")) for r in risks_list]
 
                 updates.append(
                     {

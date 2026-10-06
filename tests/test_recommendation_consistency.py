@@ -30,6 +30,7 @@ def _get_json_data(response):
 
 def test_cross_surface_recommendation_consistency():
     """Assert that decision card, squad, and optimizer agree on transfers, captaincy, and chips."""
+
     async def _run():
         with patch("fpl_oracle.news.ingest.news_ingestion.fetch_rss_articles", new=AsyncMock(return_value=[])):
             # 1. Fetch Decision Card
@@ -60,8 +61,7 @@ def test_cross_surface_recommendation_consistency():
         dc_vice_id = dc_data["vice_captain"]["element"]
         sq_vice_id = sq_data["vice_captain"]["element"]
         assert dc_vice_id == sq_vice_id, (
-            f"Vice-captain mismatch: Decision Card recommends id {dc_vice_id} "
-            f"while Squad recommends id {sq_vice_id}"
+            f"Vice-captain mismatch: Decision Card recommends id {dc_vice_id} while Squad recommends id {sq_vice_id}"
         )
 
         # --- Consistency Check 2: Transfer Move Alignment ---

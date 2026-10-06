@@ -219,8 +219,7 @@ class MonteCarloSimulator:
 
                 # User points this GW
                 gw_user = sum(
-                    player_draws.get(elem, 0.0) * (2.0 if elem == user_cap else 1.0)
-                    for elem in user_starters
+                    player_draws.get(elem, 0.0) * (2.0 if elem == user_cap else 1.0) for elem in user_starters
                 )
                 trial_user_pts += gw_user
 
@@ -228,10 +227,7 @@ class MonteCarloSimulator:
                 for i, _r in enumerate(rival_entries):
                     r_roster = trial_rival_rosters[i]
                     r_cap = trial_rival_caps[i]
-                    gw_rival = sum(
-                        player_draws.get(elem, 0.0) * (2.0 if elem == r_cap else 1.0)
-                        for elem in r_roster
-                    )
+                    gw_rival = sum(player_draws.get(elem, 0.0) * (2.0 if elem == r_cap else 1.0) for elem in r_roster)
                     trial_rival_pts[i] += gw_rival
 
                     # 3. Model rival future behavior at subsequent steps (W2)

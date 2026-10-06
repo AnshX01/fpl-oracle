@@ -8,9 +8,6 @@ Verifies that:
 """
 
 import json
-from pathlib import Path
-
-import pytest
 
 from fpl_oracle.config import REPORTS_DIR
 

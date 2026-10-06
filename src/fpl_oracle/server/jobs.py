@@ -221,8 +221,7 @@ async def retrain_trigger_job():
         bonus_finalized = False
         if status_list and len(status_list) > 0 and curr_gw:
             matching = [
-                s for s in status_list
-                if (s.get("event") if isinstance(s, dict) else getattr(s, "event", 0)) == curr_gw
+                s for s in status_list if (s.get("event") if isinstance(s, dict) else getattr(s, "event", 0)) == curr_gw
             ]
             if matching:
                 bonus_finalized = all(

@@ -378,24 +378,32 @@ def test_controlled_mock_xp_shadow_vs_gated_active():
     }
 
     # Evaluate shadow mode (chance_of_playing = 100.0)
-    df_shadow_features = pd.DataFrame([{
-        "pos_FWD": 1.0,
-        "pos_MID": 0.0,
-        "pos_DEF": 0.0,
-        "pos_GKP": 0.0,
-        "chance_of_playing": res_shadow.effective_chance_of_playing,
-    }])
+    df_shadow_features = pd.DataFrame(
+        [
+            {
+                "pos_FWD": 1.0,
+                "pos_MID": 0.0,
+                "pos_DEF": 0.0,
+                "pos_GKP": 0.0,
+                "chance_of_playing": res_shadow.effective_chance_of_playing,
+            }
+        ]
+    )
     df_shadow_pred = scoring_ensemble.aggregate_components(comps, df_shadow_features)
     shadow_xp = df_shadow_pred["expected_points"].iloc[0]
 
     # Evaluate gated_active mode (chance_of_playing = 0.0)
-    df_gated_features = pd.DataFrame([{
-        "pos_FWD": 1.0,
-        "pos_MID": 0.0,
-        "pos_DEF": 0.0,
-        "pos_GKP": 0.0,
-        "chance_of_playing": res_gated.effective_chance_of_playing,
-    }])
+    df_gated_features = pd.DataFrame(
+        [
+            {
+                "pos_FWD": 1.0,
+                "pos_MID": 0.0,
+                "pos_DEF": 0.0,
+                "pos_GKP": 0.0,
+                "chance_of_playing": res_gated.effective_chance_of_playing,
+            }
+        ]
+    )
     df_gated_pred = scoring_ensemble.aggregate_components(comps, df_gated_features)
     gated_xp = df_gated_pred["expected_points"].iloc[0]
 
@@ -446,4 +454,3 @@ def test_reconcile_named_probability_settings():
     res = reconciler.reconcile_player_fixture(element, target_gw=12, candidate_evidence=ev)
     assert res.p_available == 0.80
     assert res.p_start_given_available == 0.55
-

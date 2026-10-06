@@ -57,7 +57,10 @@ class GeminiBudgetManager:
         if state["requests_count"] + 1 > MAX_DAILY_REQUESTS:
             return False, f"Daily free request budget exceeded ({state['requests_count']}/{MAX_DAILY_REQUESTS})"
         if state["tokens_count"] + estimated_tokens > MAX_DAILY_TOKENS:
-            return False, f"Daily free token budget exceeded ({state['tokens_count']} + {estimated_tokens} > {MAX_DAILY_TOKENS})"
+            return (
+                False,
+                f"Daily free token budget exceeded ({state['tokens_count']} + {estimated_tokens} > {MAX_DAILY_TOKENS})",
+            )
 
         state["requests_count"] += 1
         state["tokens_count"] += estimated_tokens
@@ -90,7 +93,10 @@ class GeminiEvidenceExtractor:
         if not api_key:
             return False, "GEMINI_API_KEY not set in .env (Running official API baseline)"
         if not free_tier_confirmed:
-            return False, "GEMINI_FREE_TIER_CONFIRMED is not true in .env (Safeguard active: won't risk unconfirmed tier)"
+            return (
+                False,
+                "GEMINI_FREE_TIER_CONFIRMED is not true in .env (Safeguard active: won't risk unconfirmed tier)",
+            )
         return True, "Ready"
 
     async def extract_evidence_from_text(
@@ -159,16 +165,16 @@ class GeminiEvidenceExtractor:
             "Output JSON matching this schema:\n"
             "[\n"
             "  {\n"
-            "    \"player_id\": integer (or 0 if unknown),\n"
-            "    \"player_name\": string,\n"
-            "    \"team_name\": string,\n"
-            "    \"category\": one of [\"ruled_out\", \"doubtful\", \"available\", \"returned_to_training\", \"minutes_limit\", \"selection_statement\", \"ineligible\", \"unknown\"],\n"
-            "    \"quote\": string (verbatim snippet),\n"
-            "    \"match_context\": string or null,\n"
-            "    \"is_negated\": boolean,\n"
-            "    \"minutes_restriction\": integer or null,\n"
-            "    \"confidence\": float (0.0 to 1.0),\n"
-            "    \"ambiguity_notes\": string or null\n"
+            '    "player_id": integer (or 0 if unknown),\n'
+            '    "player_name": string,\n'
+            '    "team_name": string,\n'
+            '    "category": one of ["ruled_out", "doubtful", "available", "returned_to_training", "minutes_limit", "selection_statement", "ineligible", "unknown"],\n'
+            '    "quote": string (verbatim snippet),\n'
+            '    "match_context": string or null,\n'
+            '    "is_negated": boolean,\n'
+            '    "minutes_restriction": integer or null,\n'
+            '    "confidence": float (0.0 to 1.0),\n'
+            '    "ambiguity_notes": string or null\n'
             "  }\n"
             "]"
         )
@@ -194,7 +200,9 @@ class GeminiEvidenceExtractor:
                 resp = await client.post(url, json=request_body)
 
                 if resp.status_code == 429:
-                    logger.warning("[Gemini 429] Rate limited on free tier. Falling back gracefully to official baseline.")
+                    logger.warning(
+                        "[Gemini 429] Rate limited on free tier. Falling back gracefully to official baseline."
+                    )
                     return ExtractedNewsPayload(
                         article_url=article_url,
                         article_hash=article_hash,

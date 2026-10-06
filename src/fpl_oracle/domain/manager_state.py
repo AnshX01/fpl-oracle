@@ -170,7 +170,9 @@ class ManagerStateService:
         if not history_current:
             return 1
 
-        entries = sorted(history_current, key=lambda e: getattr(e, "event", 0) if not isinstance(e, dict) else e.get("event", 0))
+        entries = sorted(
+            history_current, key=lambda e: getattr(e, "event", 0) if not isinstance(e, dict) else e.get("event", 0)
+        )
         chips_used_map = {}
         if chips_history:
             for c in chips_history:
@@ -181,7 +183,9 @@ class ManagerStateService:
         banked = 1
         for entry in entries:
             gw = getattr(entry, "event", 0) if not isinstance(entry, dict) else entry.get("event", 0)
-            transfers_made = getattr(entry, "event_transfers", 0) if not isinstance(entry, dict) else entry.get("event_transfers", 0)
+            transfers_made = (
+                getattr(entry, "event_transfers", 0) if not isinstance(entry, dict) else entry.get("event_transfers", 0)
+            )
             active_chip = chips_used_map.get(gw, "")
 
             if active_chip in ("wildcard", "freehit"):
@@ -238,7 +242,11 @@ class ManagerStateService:
             t_list = transfers_by_elem.get(elem_id)
             if t_list and len(t_list) > 0:
                 most_recent = t_list[0]
-                cost = getattr(most_recent, "element_in_cost", None) if not isinstance(most_recent, dict) else most_recent.get("element_in_cost")
+                cost = (
+                    getattr(most_recent, "element_in_cost", None)
+                    if not isinstance(most_recent, dict)
+                    else most_recent.get("element_in_cost")
+                )
                 if cost is not None and cost > 0:
                     purchase_price = int(cost)
                     selling_price = cls.calculate_selling_price(purchase_price, now_cost)
@@ -331,11 +339,13 @@ class ManagerStateService:
                 free_transfers = cls.calculate_banked_free_transfers(manager_history.current, chips_hist)
                 ft_source = "fpl_api_calculated"
                 for c in chips_hist:
-                    chips_used_list.append({
-                        "name": getattr(c, "name", ""),
-                        "event": getattr(c, "event", 0),
-                        "time": getattr(c, "time", None),
-                    })
+                    chips_used_list.append(
+                        {
+                            "name": getattr(c, "name", ""),
+                            "event": getattr(c, "event", 0),
+                            "time": getattr(c, "time", None),
+                        }
+                    )
 
             picks_list = manager_picks.picks
             squad_ids = [p.element for p in picks_list]
@@ -393,7 +403,9 @@ class ManagerStateService:
             if not elem:
                 continue
 
-            purchase_p, selling_p, prov = prices_map.get(elem_id, (elem.now_cost, elem.now_cost, PriceProvenance.MARKET_ESTIMATE))
+            purchase_p, selling_p, prov = prices_map.get(
+                elem_id, (elem.now_cost, elem.now_cost, PriceProvenance.MARKET_ESTIMATE)
+            )
             pick_meta = picks_pos_map.get(elem_id)
 
             is_starter = True
@@ -418,29 +430,39 @@ class ManagerStateService:
             else:
                 cop = 100.0
 
-            squad_players.append(PlayerSquadState(
-                element=elem.id,
-                web_name=elem.web_name,
-                team=elem.team,
-                position=pos_map.get(elem.element_type, "MID"),
-                now_cost=int(elem.now_cost),
-                purchase_price=purchase_p,
-                selling_price=selling_p,
-                price_provenance=prov,
-                is_starter=is_starter,
-                is_captain=is_cap,
-                is_vice_captain=is_vc,
-                multiplier=multiplier,
-                bench_order=bench_order,
-                chance_of_playing=cop,
-                status=elem.status or "a",
-                news=elem.news or "",
-            ))
+            squad_players.append(
+                PlayerSquadState(
+                    element=elem.id,
+                    web_name=elem.web_name,
+                    team=elem.team,
+                    position=pos_map.get(elem.element_type, "MID"),
+                    now_cost=int(elem.now_cost),
+                    purchase_price=purchase_p,
+                    selling_price=selling_p,
+                    price_provenance=prov,
+                    is_starter=is_starter,
+                    is_captain=is_cap,
+                    is_vice_captain=is_vc,
+                    multiplier=multiplier,
+                    bench_order=bench_order,
+                    chance_of_playing=cop,
+                    status=elem.status or "a",
+                    news=elem.news or "",
+                )
+            )
 
         # Chip sets calculation
         all_chips = ["wildcard", "freehit", "3xc", "bboost"]
-        rem_set_1 = [c for c in all_chips if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) <= 19]]
-        rem_set_2 = [c for c in all_chips if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) > 19]]
+        rem_set_1 = [
+            c
+            for c in all_chips
+            if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) <= 19]
+        ]
+        rem_set_2 = [
+            c
+            for c in all_chips
+            if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) > 19]
+        ]
 
         # If squad is incomplete (e.g. no manager ID and no manual squad yet)
         if len(squad_players) < 15:

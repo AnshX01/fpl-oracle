@@ -53,22 +53,32 @@ class FPLSettings(BaseModel):
 
     # Google Gemini Free-Tier Configuration
     gemini_api_key: str = Field(default="", description="Google AI Studio Gemini API Key")
-    gemini_free_tier_confirmed: bool = Field(default=False, description="Confirmation that project is non-billable Free Tier")
+    gemini_free_tier_confirmed: bool = Field(
+        default=False, description="Confirmation that project is non-billable Free Tier"
+    )
     gemini_model: str = Field(default="gemini-2.5-flash-lite", description="Supported Gemini free model")
     gemini_daily_request_limit: int = Field(default=150, description="Max daily requests on free tier")
     gemini_daily_token_limit: int = Field(default=500_000, description="Max daily tokens on free tier")
 
     # Recommendation Mode (api_only, shadow, gated_active)
     news_recommendation_mode: str = Field(default="shadow", description="Application mode for candidate news evidence")
-    gated_active_opt_in: bool = Field(default=False, description="Explicit opt-in to apply candidate news to production")
+    gated_active_opt_in: bool = Field(
+        default=False, description="Explicit opt-in to apply candidate news to production"
+    )
 
     # Optional Providers
-    odds_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses continuous Dixon-Coles team ratings")
+    odds_api_key: str = Field(
+        default="", description="Dormant/deprecated (N8): zero-cost guarantee uses continuous Dixon-Coles team ratings"
+    )
     llm_provider: str = Field(default="gemini", description="LLM provider for chat/briefings")
     anthropic_api_key: str = Field(default="", description="Optional Anthropic API Key")
     openai_api_key: str = Field(default="", description="Optional OpenAI API Key")
-    tavily_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds")
-    brave_api_key: str = Field(default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds")
+    tavily_api_key: str = Field(
+        default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds"
+    )
+    brave_api_key: str = Field(
+        default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds"
+    )
     discord_webhook_url: str = Field(default="", description="Optional Discord webhook")
     telegram_bot_token: str = Field(default="", description="Optional Telegram bot token")
     telegram_chat_id: str = Field(default="", description="Optional Telegram chat ID")

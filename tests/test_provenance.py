@@ -40,7 +40,9 @@ def test_manifest_file_hashes_match_disk():
             while chunk := f.read(65536):
                 sha.update(chunk)
         actual_hash = sha.hexdigest()
-        assert actual_hash == expected_hash, f"Hash mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+        assert actual_hash == expected_hash, (
+            f"Hash mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+        )
 
 
 def test_model_integrity_verification_success():

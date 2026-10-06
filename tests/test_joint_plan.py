@@ -19,32 +19,36 @@ def sample_squad_and_pool():
     for i in range(1, 16):
         pos = positions[i - 1]
         xp = 5.0 if i <= 11 else 2.0
-        squad_rows.append({
-            "element": i,
-            "web_name": f"Squad_{i}",
-            "position": pos,
-            "team": (i % 20) + 1,
-            "value": 55,
-            "selling_price": 55,
-            "purchase_price": 55,
-            "expected_points": xp,
-        })
+        squad_rows.append(
+            {
+                "element": i,
+                "web_name": f"Squad_{i}",
+                "position": pos,
+                "team": (i % 20) + 1,
+                "value": 55,
+                "selling_price": 55,
+                "purchase_price": 55,
+                "expected_points": xp,
+            }
+        )
     squad_df = pd.DataFrame(squad_rows)
 
     # Pool with 30 players
     pool_rows = list(squad_rows)
     for i in range(16, 35):
         pos = positions[(i - 16) % 15]
-        pool_rows.append({
-            "element": i,
-            "web_name": f"Pool_{i}",
-            "position": pos,
-            "team": (i % 20) + 1,
-            "value": 60,
-            "selling_price": 60,
-            "purchase_price": 60,
-            "expected_points": 5.5,
-        })
+        pool_rows.append(
+            {
+                "element": i,
+                "web_name": f"Pool_{i}",
+                "position": pos,
+                "team": (i % 20) + 1,
+                "value": 60,
+                "selling_price": 60,
+                "purchase_price": 60,
+                "expected_points": 5.5,
+            }
+        )
     pool_df = pd.DataFrame(pool_rows)
 
     horizon_projections = {gw: pool_df.copy() for gw in range(6, 11)}

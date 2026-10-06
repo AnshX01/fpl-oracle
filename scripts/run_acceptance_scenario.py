@@ -3,28 +3,24 @@ Simulates manager score 338 after GW5, trailing in mini-league,
 runs the complete pipeline, 5-minute pre-deadline routine, panic button dry run,
 and outputs reports/acceptance_scenario.md.
 """
-import sys
-import io
+
 import asyncio
-from datetime import datetime, timezone
+import io
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
+
 import pandas as pd
-
-# Force UTF-8 output on Windows consoles that default to cp1252
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-
-# Ensure src is in sys.path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
+from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.store import data_store
 from fpl_oracle.ml.predict import projection_engine
-from fpl_oracle.optimise.lineup import lineup_optimizer
-from fpl_oracle.optimise.transfers import transfer_optimizer
 from fpl_oracle.optimise.contingency import contingency_engine
-from fpl_oracle.chips.planner import chip_planner
+from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.squad import squad_optimizer
+from fpl_oracle.optimise.transfers import transfer_optimizer
 
 
 async def run_scenario():
@@ -75,7 +71,7 @@ async def run_scenario():
         bank = 10.0
         free_transfers = 1
 
-    print(f"Squad: {len(user_squad_df)} players. Bank: £{bank/10:.1f}m. FTs: {free_transfers}.")
+    print(f"Squad: {len(user_squad_df)} players. Bank: £{bank / 10:.1f}m. FTs: {free_transfers}.")
 
     # 4. Lineup & Captaincy (Chasing mode — trailing mini-league)
     lineup_res = lineup_optimizer.select_lineup_and_captain(user_squad_df, risk_preference="aggressive")
@@ -168,7 +164,7 @@ async def run_scenario():
 
     report_md = f"""# FPL Oracle — Acceptance Scenario & Live Pre-Deadline Delivery
 
-**Simulation Date:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+**Simulation Date:** {datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")}
 **Season / Target Gameweek:** 2026/27 — GW{target_gw} (Deadline in ~{hours_to_dl:.1f} hours)
 **Manager Status:** Score **338 pts** after GW5 — trailing mini-league leader.
 **Data Freshness:** `data_as_of` from live API (stale={is_stale})
@@ -184,16 +180,16 @@ async def run_scenario():
 ### Headline Decisions for GW{target_gw}
 | Decision | Recommendation |
 |---|---|
-| **Starting Formation** | **{lineup_res['formation']}** — {len(starters_df)} starters, total xP **{total_xp:.1f} pts** (P₉₀ ceiling: **{p90_total:.1f} pts**) |
-| **Captain (C)** | **{captain['web_name']}** — xP: **{captain['expected_points']:.2f}**, Ceiling P₉₀: **{captain.get('p90', 0.0):.2f}** |
-| **Vice-Captain (VC)** | **{vice_captain['web_name']}** — xP: **{vice_captain['expected_points']:.2f}** |
-| **Transfer Action** | {plan_a['action_summary']} |
+| **Starting Formation** | **{lineup_res["formation"]}** — {len(starters_df)} starters, total xP **{total_xp:.1f} pts** (P₉₀ ceiling: **{p90_total:.1f} pts**) |
+| **Captain (C)** | **{captain["web_name"]}** — xP: **{captain["expected_points"]:.2f}**, Ceiling P₉₀: **{captain.get("p90", 0.0):.2f}** |
+| **Vice-Captain (VC)** | **{vice_captain["web_name"]}** — xP: **{vice_captain["expected_points"]:.2f}** |
+| **Transfer Action** | {plan_a["action_summary"]} |
 | **-4 Hit?** | **NOT recommended** this week — break-even threshold not met over 3 GW horizon |
-| **Chip Alert** | {gws_to_expiry} GWs remaining until Set 1 hard expiry. **Opportunity cost if unused: ~{chip_strategy.get('total_set_1_opportunity_cost', 0.0):.0f} pts** |
+| **Chip Alert** | {gws_to_expiry} GWs remaining until Set 1 hard expiry. **Opportunity cost if unused: ~{chip_strategy.get("total_set_1_opportunity_cost", 0.0):.0f} pts** |
 
 ---
 
-## 2. Starting XI & Pitch View ({lineup_res['formation']})
+## 2. Starting XI & Pitch View ({lineup_res["formation"]})
 
 | Pos | Player | Team | Cost | Sell £ | xP (P₅₀) | Floor (P₁₀) | Ceiling (P₉₀) | Role |
 |:---:|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -203,8 +199,8 @@ async def run_scenario():
         is_cap = elem_id == captain["element"]
         is_vc = elem_id == vice_captain["element"]
         role = "⭐ **C**" if is_cap else ("🛡️ **VC**" if is_vc else "Starter")
-        cost_str = f"£{s['value']/10:.1f}m"
-        sell_str = f"£{float(s.get('selling_price', s['value']))/10:.1f}m"
+        cost_str = f"£{s['value'] / 10:.1f}m"
+        sell_str = f"£{float(s.get('selling_price', s['value'])) / 10:.1f}m"
         report_md += (
             f"| {s['position']} | **{s['web_name']}** | {s['team']} | {cost_str} | {sell_str}"
             f" | {s['expected_points']:.2f} | {s.get('p10', 0.0):.2f} | {s.get('p90', 0.0):.2f} | {role} |\n"
@@ -213,7 +209,7 @@ async def run_scenario():
     report_md += "\n### Bench (Ordered by Autosub Priority)\n"
     for idx, (_, b) in enumerate(bench_df.iterrows(), 1):
         report_md += (
-            f"{idx}. **{b['web_name']}** ({b['position']}, £{b['value']/10:.1f}m) — "
+            f"{idx}. **{b['web_name']}** ({b['position']}, £{b['value'] / 10:.1f}m) — "
             f"xP: **{b['expected_points']:.2f}** | P₉₀: **{b.get('p90', 0.0):.2f}**\n"
         )
 
@@ -223,20 +219,20 @@ async def run_scenario():
 ## 3. Transfer Workbench — 3-Way Scenario Analysis
 
 ### 🟢 Plan A: Primary Path (Optimal Horizon Value)
-- **Action**: {plan_a['action_summary']}
-- **Transfers**: {plan_a['transfers_count']} | **Hits**: {plan_a['hits']} (-{plan_a['hit_cost']:.0f} pts)
-- **Net Expected Points (GW{target_gw})**: **{plan_a['net_expected_points']:.2f} pts**
+- **Action**: {plan_a["action_summary"]}
+- **Transfers**: {plan_a["transfers_count"]} | **Hits**: {plan_a["hits"]} (-{plan_a["hit_cost"]:.0f} pts)
+- **Net Expected Points (GW{target_gw})**: **{plan_a["net_expected_points"]:.2f} pts**
 - **Trigger**: No late injury or team news changes by Friday press conferences.
 
 ### 🟡 Plan B: Injury / Press Conference Pivot
-- **Action**: {plan_b['action_summary']}
-- **Transfers**: {plan_b['transfers_count']} | **Net xP**: **{plan_b['net_expected_points']:.2f} pts** (Δ vs Plan A: **{plan_b['delta_vs_plan_a']:+.2f} pts**)
-- **Trigger**: {plan_b['trigger_condition']}
+- **Action**: {plan_b["action_summary"]}
+- **Transfers**: {plan_b["transfers_count"]} | **Net xP**: **{plan_b["net_expected_points"]:.2f} pts** (Δ vs Plan A: **{plan_b["delta_vs_plan_a"]:+.2f} pts**)
+- **Trigger**: {plan_b["trigger_condition"]}
 
 ### 🟣 Plan C: Differential / Price Rise Pivot
-- **Action**: {plan_c['action_summary']}
-- **Transfers**: {plan_c['transfers_count']} | **Net xP**: **{plan_c['net_expected_points']:.2f} pts** (Δ vs Plan A: **{plan_c['delta_vs_plan_a']:+.2f} pts**)
-- **Trigger**: {plan_c['trigger_condition']}
+- **Action**: {plan_c["action_summary"]}
+- **Transfers**: {plan_c["transfers_count"]} | **Net xP**: **{plan_c["net_expected_points"]:.2f} pts** (Δ vs Plan A: **{plan_c["delta_vs_plan_a"]:+.2f} pts**)
+- **Trigger**: {plan_c["trigger_condition"]}
 
 ---
 
@@ -263,16 +259,16 @@ async def run_scenario():
 
 ## 5. Panic Button Dry Run — Breaking News Simulation
 
-**Crisis Simulated:** **{panic_ruled_out.get('web_name', panic_query)}** confirmed absent/benched 40 minutes before deadline.
+**Crisis Simulated:** **{panic_ruled_out.get("web_name", panic_query)}** confirmed absent/benched 40 minutes before deadline.
 
 | Field | Detail |
 |---|---|
 | **Crisis Status** | `{panic_status}` |
-| **Lost Expected Points** | {panic_ruled_out.get('lost_expected_points', '?')} xP |
-| **Auto-Promoted Starter** | **{promoted.get('web_name', 'First reserve')}** ({promoted.get('position', '?')}) — xP: {promoted.get('expected_points', '?')} |
-| **Revised Captain (C)** | **{new_cap.get('web_name', vice_captain['web_name'])}** |
-| **Revised Formation** | {panic_lineup_action.get('new_formation', lineup_res['formation'])} |
-| **Revised Total xP** | {panic_lineup_action.get('total_gameweek_expected_points', total_xp - panic_ruled_out.get('lost_expected_points', 0)):.2f} pts |
+| **Lost Expected Points** | {panic_ruled_out.get("lost_expected_points", "?")} xP |
+| **Auto-Promoted Starter** | **{promoted.get("web_name", "First reserve")}** ({promoted.get("position", "?")}) — xP: {promoted.get("expected_points", "?")} |
+| **Revised Captain (C)** | **{new_cap.get("web_name", vice_captain["web_name"])}** |
+| **Revised Formation** | {panic_lineup_action.get("new_formation", lineup_res["formation"])} |
+| **Revised Total xP** | {panic_lineup_action.get("total_gameweek_expected_points", total_xp - panic_ruled_out.get("lost_expected_points", 0)):.2f} pts |
 """
     if panic_emergency_transfer:
         et = panic_emergency_transfer
@@ -283,7 +279,7 @@ async def run_scenario():
             f"Hit cost: -{et.get('hit_cost', 0):.0f} pts → Net: **{et.get('net_expected_points', '?'):.2f} pts**).\n"
         )
 
-    report_md += f"""
+    report_md += """
 ### Injury Contingency Matrix (All Doubtful Starters)
 | Starter | Status | Autosub → | Autosub xP Δ | Emergency Buy | Verdict |
 |---|:---:|---|:---:|---|:---:|
@@ -319,7 +315,7 @@ This report was generated autonomously on live 2026/27 data with zero lookahead 
 .venv\\Scripts\\python.exe run.py verify
 ```
 
-*FPL Oracle 2026/27 — Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*
+*FPL Oracle 2026/27 — Generated {datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")}*
 """
 
     out_file = Path(__file__).parent.parent / "reports" / "acceptance_scenario.md"
@@ -329,4 +325,5 @@ This report was generated autonomously on live 2026/27 data with zero lookahead 
 
 
 if __name__ == "__main__":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     asyncio.run(run_scenario())

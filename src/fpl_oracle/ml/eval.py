@@ -104,22 +104,22 @@ class ModelEvaluator:
             "calibration_verdict": cal_verdict,
         }
 
-    def compute_partial_dependence_diagnostics(
-        self, X: pd.DataFrame, ml_preds: np.ndarray
-    ) -> dict[str, Any]:
+    def compute_partial_dependence_diagnostics(self, X: pd.DataFrame, ml_preds: np.ndarray) -> dict[str, Any]:
         """
         A2 Diagnostics: Verify model sensitivity to opponent defence & opponent form across player form tiers.
         Confirms that strong players in peak form naturally project 6-7+ xP even against tough opposition,
         with ZERO artificial caps or hard constraints.
         """
-        df_diag = pd.DataFrame({
-            "pred": ml_preds,
-            "opp_def": X["opp_strength_defence"].values,
-            "opp_xgc": X["opp_roll_xGC_5"].values,
-            "player_xg": X["roll_xG_5"].values,
-            "player_pts": X["roll_points_5"].values,
-            "was_home": X["was_home"].values,
-        })
+        df_diag = pd.DataFrame(
+            {
+                "pred": ml_preds,
+                "opp_def": X["opp_strength_defence"].values,
+                "opp_xgc": X["opp_roll_xGC_5"].values,
+                "player_xg": X["roll_xG_5"].values,
+                "player_pts": X["roll_points_5"].values,
+                "was_home": X["was_home"].values,
+            }
+        )
 
         # Stratify by player form
         star_form_mask = (df_diag["player_xg"] >= 0.50) | (df_diag["player_pts"] >= 6.0)
@@ -145,10 +145,12 @@ class ModelEvaluator:
             "low_player_vs_tough_defence": get_mean(low_form_mask & tough_def_mask),
             "low_player_vs_avg_defence": get_mean(low_form_mask & avg_def_mask),
             "low_player_vs_weak_defence": get_mean(low_form_mask & weak_def_mask),
-            "home_advantage_premium_pts": float(np.round(
-                df_diag[df_diag["was_home"] == 1]["pred"].mean() - df_diag[df_diag["was_home"] == 0]["pred"].mean(),
-                2
-            )),
+            "home_advantage_premium_pts": float(
+                np.round(
+                    df_diag[df_diag["was_home"] == 1]["pred"].mean() - df_diag[df_diag["was_home"] == 0]["pred"].mean(),
+                    2,
+                )
+            ),
         }
         return grid
 
@@ -225,7 +227,9 @@ class ModelEvaluator:
                         "ml_rmse": float(np.round(root_mean_squared_error(pos_actual, pos_ml), 3)),
                         "base_mae": p_base_mae,
                         "base_rmse": float(np.round(root_mean_squared_error(pos_actual, pos_base), 3)),
-                        "improvement_mae_pct": float(np.round((p_base_mae - p_ml_mae) / max(0.01, p_base_mae) * 100, 2)),
+                        "improvement_mae_pct": float(
+                            np.round((p_base_mae - p_ml_mae) / max(0.01, p_base_mae) * 100, 2)
+                        ),
                     }
 
         # Uncertainty Calibration
@@ -363,7 +367,9 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
             content += f"| **{split['season']}** | {split['train_size']:,} | {split['test_size']:,} | **{split['mae']}** pts | {split['rmse']} pts | **{split['spearman']}** |\n"
 
         if not res.get("rolling_origins"):
-            content += "| *Full rolling origins evaluated sequentially across historical seasons* | — | — | — | — | — |\n"
+            content += (
+                "| *Full rolling origins evaluated sequentially across historical seasons* | — | — | — | — | — |\n"
+            )
 
         content += f"""
 ---

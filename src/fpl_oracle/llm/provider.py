@@ -261,7 +261,8 @@ class OfflineExpertProvider:
                 proj_res = await tool_executor.execute("get_projections", {"query": entity})
                 players = proj_res.get("players", [])
                 exact_or_close = [
-                    p for p in players
+                    p
+                    for p in players
                     if entity.lower() in p["web_name"].lower() or p["web_name"].lower() in entity.lower()
                 ]
             else:
@@ -384,35 +385,43 @@ def get_llm_provider(preferred_provider: str | None = None) -> Any:
     from fpl_oracle.data.store import data_store
 
     profile = data_store.get_profile()
-    pref = (preferred_provider or getattr(profile, "llm_provider", None) or SETTINGS.get("llm", {}).get("provider", "")).lower()
+    pref = (
+        preferred_provider or getattr(profile, "llm_provider", None) or SETTINGS.get("llm", {}).get("provider", "")
+    ).lower()
 
     if pref in ("offline", "offline_expert", "none"):
         logger.info("Using OfflineExpertProvider by user preference.")
         return OfflineExpertProvider()
     elif pref == "gemini" and GEMINI_API_KEY.strip():
         from fpl_oracle.llm.gemini import GeminiProvider
+
         logger.info("Using Google Gemini LLM Provider by preference.")
         return GeminiProvider(api_key=GEMINI_API_KEY.strip())
     elif pref == "openai" and OPENAI_API_KEY.strip():
         from fpl_oracle.llm.openai import OpenAIProvider
+
         logger.info("Using OpenAI LLM Provider by preference.")
         return OpenAIProvider(api_key=OPENAI_API_KEY.strip())
     elif pref == "anthropic" and ANTHROPIC_API_KEY.strip():
         from fpl_oracle.llm.anthropic import AnthropicProvider
+
         logger.info("Using Anthropic LLM Provider by preference.")
         return AnthropicProvider(api_key=ANTHROPIC_API_KEY.strip())
 
     # Fallback to available key or offline expert
     if GEMINI_API_KEY and GEMINI_API_KEY.strip():
         from fpl_oracle.llm.gemini import GeminiProvider
+
         logger.info("Using Google Gemini LLM Provider.")
         return GeminiProvider(api_key=GEMINI_API_KEY.strip())
     elif OPENAI_API_KEY and OPENAI_API_KEY.strip():
         from fpl_oracle.llm.openai import OpenAIProvider
+
         logger.info("Using OpenAI LLM Provider.")
         return OpenAIProvider(api_key=OPENAI_API_KEY.strip())
     elif ANTHROPIC_API_KEY and ANTHROPIC_API_KEY.strip():
         from fpl_oracle.llm.anthropic import AnthropicProvider
+
         logger.info("Using Anthropic LLM Provider.")
         return AnthropicProvider(api_key=ANTHROPIC_API_KEY.strip())
     else:

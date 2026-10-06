@@ -66,31 +66,163 @@ def make_mock_pool():
 
 def make_mock_squad_and_projections(horizon_len: int = 5):
     rows = [
-        {"element": 1, "web_name": "Raya", "position": "GKP", "team": 1, "value": 55, "expected_points": 4.5, "purchase_price": 55},
-        {"element": 2, "web_name": "Fabianski", "position": "GKP", "team": 19, "value": 40, "expected_points": 1.5, "purchase_price": 40},
-        {"element": 3, "web_name": "Saliba", "position": "DEF", "team": 1, "value": 60, "expected_points": 4.8, "purchase_price": 60},
-        {"element": 4, "web_name": "Gabriel", "position": "DEF", "team": 1, "value": 60, "expected_points": 4.7, "purchase_price": 60},
-        {"element": 5, "web_name": "Alexander-Arnold", "position": "DEF", "team": 11, "value": 70, "expected_points": 5.5, "purchase_price": 70},
-        {"element": 6, "web_name": "Robinson", "position": "DEF", "team": 8, "value": 45, "expected_points": 3.2, "purchase_price": 45},
-        {"element": 7, "web_name": "Faes", "position": "DEF", "team": 9, "value": 40, "expected_points": 2.0, "purchase_price": 40},
-        {"element": 8, "web_name": "Saka", "position": "MID", "team": 1, "value": 100, "expected_points": 7.5, "purchase_price": 100},
-        {"element": 9, "web_name": "Palmer", "position": "MID", "team": 6, "value": 105, "expected_points": 7.8, "purchase_price": 105},
-        {"element": 10, "web_name": "Mbeumo", "position": "MID", "team": 3, "value": 75, "expected_points": 6.2, "purchase_price": 75},
-        {"element": 11, "web_name": "Rogers", "position": "MID", "team": 2, "value": 50, "expected_points": 4.8, "purchase_price": 50},
-        {"element": 12, "web_name": "Winks", "position": "MID", "team": 9, "value": 45, "expected_points": 2.1, "purchase_price": 45},
-        {"element": 13, "web_name": "Haaland", "position": "FWD", "team": 12, "value": 150, "expected_points": 9.0, "purchase_price": 150},
-        {"element": 14, "web_name": "Watkins", "position": "FWD", "team": 2, "value": 90, "expected_points": 6.5, "purchase_price": 90},
-        {"element": 15, "web_name": "Wood", "position": "FWD", "team": 14, "value": 60, "expected_points": 5.2, "purchase_price": 60},
+        {
+            "element": 1,
+            "web_name": "Raya",
+            "position": "GKP",
+            "team": 1,
+            "value": 55,
+            "expected_points": 4.5,
+            "purchase_price": 55,
+        },
+        {
+            "element": 2,
+            "web_name": "Fabianski",
+            "position": "GKP",
+            "team": 19,
+            "value": 40,
+            "expected_points": 1.5,
+            "purchase_price": 40,
+        },
+        {
+            "element": 3,
+            "web_name": "Saliba",
+            "position": "DEF",
+            "team": 1,
+            "value": 60,
+            "expected_points": 4.8,
+            "purchase_price": 60,
+        },
+        {
+            "element": 4,
+            "web_name": "Gabriel",
+            "position": "DEF",
+            "team": 1,
+            "value": 60,
+            "expected_points": 4.7,
+            "purchase_price": 60,
+        },
+        {
+            "element": 5,
+            "web_name": "Alexander-Arnold",
+            "position": "DEF",
+            "team": 11,
+            "value": 70,
+            "expected_points": 5.5,
+            "purchase_price": 70,
+        },
+        {
+            "element": 6,
+            "web_name": "Robinson",
+            "position": "DEF",
+            "team": 8,
+            "value": 45,
+            "expected_points": 3.2,
+            "purchase_price": 45,
+        },
+        {
+            "element": 7,
+            "web_name": "Faes",
+            "position": "DEF",
+            "team": 9,
+            "value": 40,
+            "expected_points": 2.0,
+            "purchase_price": 40,
+        },
+        {
+            "element": 8,
+            "web_name": "Saka",
+            "position": "MID",
+            "team": 1,
+            "value": 100,
+            "expected_points": 7.5,
+            "purchase_price": 100,
+        },
+        {
+            "element": 9,
+            "web_name": "Palmer",
+            "position": "MID",
+            "team": 6,
+            "value": 105,
+            "expected_points": 7.8,
+            "purchase_price": 105,
+        },
+        {
+            "element": 10,
+            "web_name": "Mbeumo",
+            "position": "MID",
+            "team": 3,
+            "value": 75,
+            "expected_points": 6.2,
+            "purchase_price": 75,
+        },
+        {
+            "element": 11,
+            "web_name": "Rogers",
+            "position": "MID",
+            "team": 2,
+            "value": 50,
+            "expected_points": 4.8,
+            "purchase_price": 50,
+        },
+        {
+            "element": 12,
+            "web_name": "Winks",
+            "position": "MID",
+            "team": 9,
+            "value": 45,
+            "expected_points": 2.1,
+            "purchase_price": 45,
+        },
+        {
+            "element": 13,
+            "web_name": "Haaland",
+            "position": "FWD",
+            "team": 12,
+            "value": 150,
+            "expected_points": 9.0,
+            "purchase_price": 150,
+        },
+        {
+            "element": 14,
+            "web_name": "Watkins",
+            "position": "FWD",
+            "team": 2,
+            "value": 90,
+            "expected_points": 6.5,
+            "purchase_price": 90,
+        },
+        {
+            "element": 15,
+            "web_name": "Wood",
+            "position": "FWD",
+            "team": 14,
+            "value": 60,
+            "expected_points": 5.2,
+            "purchase_price": 60,
+        },
     ]
     squad_df = pd.DataFrame(rows)
 
     pool_rows = list(rows)
-    pool_rows.append({"element": 16, "web_name": "Salah", "position": "MID", "team": 11, "value": 125, "expected_points": 8.5})
-    pool_rows.append({"element": 17, "web_name": "Son", "position": "MID", "team": 17, "value": 98, "expected_points": 6.8})
-    pool_rows.append({"element": 18, "web_name": "Isak", "position": "FWD", "team": 13, "value": 85, "expected_points": 6.9})
-    pool_rows.append({"element": 19, "web_name": "Solanke", "position": "FWD", "team": 17, "value": 75, "expected_points": 5.8})
-    pool_rows.append({"element": 20, "web_name": "Gvardiol", "position": "DEF", "team": 12, "value": 60, "expected_points": 5.1})
-    pool_rows.append({"element": 21, "web_name": "Pedro Porro", "position": "DEF", "team": 17, "value": 55, "expected_points": 4.9})
+    pool_rows.append(
+        {"element": 16, "web_name": "Salah", "position": "MID", "team": 11, "value": 125, "expected_points": 8.5}
+    )
+    pool_rows.append(
+        {"element": 17, "web_name": "Son", "position": "MID", "team": 17, "value": 98, "expected_points": 6.8}
+    )
+    pool_rows.append(
+        {"element": 18, "web_name": "Isak", "position": "FWD", "team": 13, "value": 85, "expected_points": 6.9}
+    )
+    pool_rows.append(
+        {"element": 19, "web_name": "Solanke", "position": "FWD", "team": 17, "value": 75, "expected_points": 5.8}
+    )
+    pool_rows.append(
+        {"element": 20, "web_name": "Gvardiol", "position": "DEF", "team": 12, "value": 60, "expected_points": 5.1}
+    )
+    pool_rows.append(
+        {"element": 21, "web_name": "Pedro Porro", "position": "DEF", "team": 17, "value": 55, "expected_points": 4.9}
+    )
     pool_df = pd.DataFrame(pool_rows)
 
     projections = {}

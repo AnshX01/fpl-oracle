@@ -5,7 +5,6 @@ Asserts that all 62 feature values produced by the live serving kernel
 by the training kernel (build_historical_features) on identical historical snapshots.
 """
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -19,10 +18,54 @@ def synthetic_history_and_upcoming():
     fe = FeatureEngineering()
 
     players_meta = [
-        {"id": 1, "name": "Star Midfielder", "team": "Arsenal", "team_id": 1, "opp": "Chelsea", "opp_id": 2, "pos": "MID", "pos_id": 3, "cost": 105.0, "home": True},
-        {"id": 2, "name": "Solid Defender", "team": "Chelsea", "team_id": 2, "opp": "Arsenal", "opp_id": 1, "pos": "DEF", "pos_id": 2, "cost": 55.0, "home": False},
-        {"id": 3, "name": "Elite Forward", "team": "Arsenal", "team_id": 1, "opp": "Chelsea", "opp_id": 2, "pos": "FWD", "pos_id": 4, "cost": 140.0, "home": True},
-        {"id": 4, "name": "Top Goalkeeper", "team": "Chelsea", "team_id": 2, "opp": "Arsenal", "opp_id": 1, "pos": "GKP", "pos_id": 1, "cost": 50.0, "home": False},
+        {
+            "id": 1,
+            "name": "Star Midfielder",
+            "team": "Arsenal",
+            "team_id": 1,
+            "opp": "Chelsea",
+            "opp_id": 2,
+            "pos": "MID",
+            "pos_id": 3,
+            "cost": 105.0,
+            "home": True,
+        },
+        {
+            "id": 2,
+            "name": "Solid Defender",
+            "team": "Chelsea",
+            "team_id": 2,
+            "opp": "Arsenal",
+            "opp_id": 1,
+            "pos": "DEF",
+            "pos_id": 2,
+            "cost": 55.0,
+            "home": False,
+        },
+        {
+            "id": 3,
+            "name": "Elite Forward",
+            "team": "Arsenal",
+            "team_id": 1,
+            "opp": "Chelsea",
+            "opp_id": 2,
+            "pos": "FWD",
+            "pos_id": 4,
+            "cost": 140.0,
+            "home": True,
+        },
+        {
+            "id": 4,
+            "name": "Top Goalkeeper",
+            "team": "Chelsea",
+            "team_id": 2,
+            "opp": "Arsenal",
+            "opp_id": 1,
+            "pos": "GKP",
+            "pos_id": 1,
+            "cost": 50.0,
+            "home": False,
+        },
     ]
 
     history_rows = []
@@ -33,9 +76,50 @@ def synthetic_history_and_upcoming():
             is_fwd = p["pos"] == "FWD"
             is_gkp = p["pos"] == "GKP"
 
-            history_rows.append({
+            history_rows.append(
+                {
+                    "season": "2026-27",
+                    "round": r,
+                    "name": p["name"],
+                    "element": p["id"],
+                    "team": p["team"],
+                    "opponent_team": p["opp"],
+                    "position": p["pos"],
+                    "minutes": 90,
+                    "starts": 1,
+                    "total_points": 8 if is_fwd else (6 if is_mid else 3),
+                    "expected_goals": 0.6 if is_fwd else (0.3 if is_mid else 0.0),
+                    "expected_assists": 0.2 if is_fwd else (0.4 if is_mid else 0.0),
+                    "expected_goal_involvements": 0.8 if is_fwd else (0.7 if is_mid else 0.0),
+                    "expected_goals_conceded": 0.9 if p["team"] == "Arsenal" else 1.4,
+                    "goals_scored": 1 if is_fwd else (0 if not is_mid else 1),
+                    "assists": 0 if is_fwd else (1 if is_mid else 0),
+                    "clean_sheets": 1 if p["team"] == "Arsenal" else 0,
+                    "goals_conceded": 0 if p["team"] == "Arsenal" else 1,
+                    "saves": 3 if is_gkp else 0,
+                    "defensive_contribution": 2 if p["pos"] in ("DEF", "GKP") else 0,
+                    "ict_index": 12.0 if is_fwd else 8.0,
+                    "bps": 28 if is_fwd else 18,
+                    "bonus": 2 if is_fwd else 0,
+                    "yellow_cards": 1 if r == 3 else 0,
+                    "red_cards": 0,
+                    "own_goals": 0,
+                    "penalties_missed": 0,
+                    "penalties_saved": 1 if is_gkp and r == 2 else 0,
+                    "was_home": bool(r % 2 == 1),
+                    "value": p["cost"],
+                    "kickoff_time": ko,
+                }
+            )
+
+    # GW6 matches for training (to simulate pre-deadline round 6 evaluation)
+    gw6_rows = []
+    ko_gw6 = "2026-09-12T15:00:00Z"
+    for p in players_meta:
+        gw6_rows.append(
+            {
                 "season": "2026-27",
-                "round": r,
+                "round": 6,
                 "name": p["name"],
                 "element": p["id"],
                 "team": p["team"],
@@ -43,67 +127,30 @@ def synthetic_history_and_upcoming():
                 "position": p["pos"],
                 "minutes": 90,
                 "starts": 1,
-                "total_points": 8 if is_fwd else (6 if is_mid else 3),
-                "expected_goals": 0.6 if is_fwd else (0.3 if is_mid else 0.0),
-                "expected_assists": 0.2 if is_fwd else (0.4 if is_mid else 0.0),
-                "expected_goal_involvements": 0.8 if is_fwd else (0.7 if is_mid else 0.0),
-                "expected_goals_conceded": 0.9 if p["team"] == "Arsenal" else 1.4,
-                "goals_scored": 1 if is_fwd else (0 if not is_mid else 1),
-                "assists": 0 if is_fwd else (1 if is_mid else 0),
-                "clean_sheets": 1 if p["team"] == "Arsenal" else 0,
-                "goals_conceded": 0 if p["team"] == "Arsenal" else 1,
-                "saves": 3 if is_gkp else 0,
-                "defensive_contribution": 2 if p["pos"] in ("DEF", "GKP") else 0,
-                "ict_index": 12.0 if is_fwd else 8.0,
-                "bps": 28 if is_fwd else 18,
-                "bonus": 2 if is_fwd else 0,
-                "yellow_cards": 1 if r == 3 else 0,
+                "total_points": 5,
+                "expected_goals": 0.3,
+                "expected_assists": 0.2,
+                "expected_goal_involvements": 0.5,
+                "expected_goals_conceded": 1.0,
+                "goals_scored": 0,
+                "assists": 0,
+                "clean_sheets": 0,
+                "goals_conceded": 1,
+                "saves": 2,
+                "defensive_contribution": 1,
+                "ict_index": 5.0,
+                "bps": 15,
+                "bonus": 0,
+                "yellow_cards": 0,
                 "red_cards": 0,
                 "own_goals": 0,
                 "penalties_missed": 0,
-                "penalties_saved": 1 if is_gkp and r == 2 else 0,
-                "was_home": bool(r % 2 == 1),
+                "penalties_saved": 0,
+                "was_home": p["home"],
                 "value": p["cost"],
-                "kickoff_time": ko,
-            })
-
-    # GW6 matches for training (to simulate pre-deadline round 6 evaluation)
-    gw6_rows = []
-    ko_gw6 = "2026-09-12T15:00:00Z"
-    for p in players_meta:
-        gw6_rows.append({
-            "season": "2026-27",
-            "round": 6,
-            "name": p["name"],
-            "element": p["id"],
-            "team": p["team"],
-            "opponent_team": p["opp"],
-            "position": p["pos"],
-            "minutes": 90,
-            "starts": 1,
-            "total_points": 5,
-            "expected_goals": 0.3,
-            "expected_assists": 0.2,
-            "expected_goal_involvements": 0.5,
-            "expected_goals_conceded": 1.0,
-            "goals_scored": 0,
-            "assists": 0,
-            "clean_sheets": 0,
-            "goals_conceded": 1,
-            "saves": 2,
-            "defensive_contribution": 1,
-            "ict_index": 5.0,
-            "bps": 15,
-            "bonus": 0,
-            "yellow_cards": 0,
-            "red_cards": 0,
-            "own_goals": 0,
-            "penalties_missed": 0,
-            "penalties_saved": 0,
-            "was_home": p["home"],
-            "value": p["cost"],
-            "kickoff_time": ko_gw6,
-        })
+                "kickoff_time": ko_gw6,
+            }
+        )
 
     hist_df = pd.DataFrame(history_rows)
     train_full_df = pd.concat([hist_df, pd.DataFrame(gw6_rows)], ignore_index=True)
@@ -125,10 +172,26 @@ def synthetic_history_and_upcoming():
         for p in players_meta
     ]
     el_types = [
-        ElementType(id=1, plural_name="Goalkeepers", plural_name_short="GKP", singular_name="Goalkeeper", singular_name_short="GKP"),
-        ElementType(id=2, plural_name="Defenders", plural_name_short="DEF", singular_name="Defender", singular_name_short="DEF"),
-        ElementType(id=3, plural_name="Midfielders", plural_name_short="MID", singular_name="Midfielder", singular_name_short="MID"),
-        ElementType(id=4, plural_name="Forwards", plural_name_short="FWD", singular_name="Forward", singular_name_short="FWD"),
+        ElementType(
+            id=1,
+            plural_name="Goalkeepers",
+            plural_name_short="GKP",
+            singular_name="Goalkeeper",
+            singular_name_short="GKP",
+        ),
+        ElementType(
+            id=2, plural_name="Defenders", plural_name_short="DEF", singular_name="Defender", singular_name_short="DEF"
+        ),
+        ElementType(
+            id=3,
+            plural_name="Midfielders",
+            plural_name_short="MID",
+            singular_name="Midfielder",
+            singular_name_short="MID",
+        ),
+        ElementType(
+            id=4, plural_name="Forwards", plural_name_short="FWD", singular_name="Forward", singular_name_short="FWD"
+        ),
     ]
     boot = BootstrapStatic(teams=teams, elements=elements, element_types=el_types)
 

@@ -14,9 +14,7 @@ class LeagueStrategyAdvisor:
     def __init__(self):
         self.tie_breaker_margin_xp = 0.5
 
-    def determine_risk_posture(
-        self, points_gap: float, win_probability_pct: float | None = None
-    ) -> str:
+    def determine_risk_posture(self, points_gap: float, win_probability_pct: float | None = None) -> str:
         """
         Determines risk posture:
         - DEFENDING_LEAD: Points lead >= 10 pts or win probability >= 60%
@@ -75,8 +73,7 @@ class LeagueStrategyAdvisor:
 
         # Candidates within margin
         close_candidates = [
-            p for p in sorted_plans
-            if (top_plan.get("expected_gain", 0.0) - p.get("expected_gain", 0.0)) <= margin_xp
+            p for p in sorted_plans if (top_plan.get("expected_gain", 0.0) - p.get("expected_gain", 0.0)) <= margin_xp
         ]
 
         if posture == "DEFENDING_LEAD":

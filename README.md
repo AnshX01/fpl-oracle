@@ -219,19 +219,17 @@ When running `python run.py run`, navigate to `http://localhost:8000` for the si
 
 FPL Oracle is thoroughly validated against expanding-window out-of-sample data. Full reports are generated in the `reports/` directory:
 
-- [Model Evaluation Report](file:///C:/Users/anshw/Documents/fpl-expert/reports/model_eval.md):
-  - **Rank Correlation ($\rho$)**: **0.706** (Production Ensemble) vs 0.697 (Baseline)
-  - **Mean Absolute Error (MAE)**: **1.045** (ML Ensemble) vs 1.083 (Fixture-Adjusted Baseline) and 1.142 (Weighted Form Baseline)
-  - **Fixture Feature Gain**: +2.88% out-of-time MAE gain with continuous opponent defensive form and match signals
-  - **Uncertainty Interval Coverage**: **91.13%** empirical coverage for nominal 80% credible interval ($P_{10}$–$P_{90}$)
-- [Gap Closure Audit Matrix](file:///C:/Users/anshw/Documents/fpl-expert/reports/gap_closure.md): Full audit matrix confirming resolution of all gaps A1–A8 and B.1–B.8.
-- [News & Single Availability Evaluation](file:///C:/Users/anshw/Documents/fpl-expert/reports/news_availability_eval.md): 20/20 adversarial benchmark verification, zero double-discounting invariant, and shadow mode gating policy.
-- [Historical Backtest Report](file:///C:/Users/anshw/Documents/fpl-expert/reports/backtest.md):
-  - **Blind Out-of-Time Backtest (GW 1–4)**: Models fitted strictly on prior seasons with shifted ($t-1$) features; zero future data leakage.
-  - **Oracle Strategy Points**: **205.0 pts** (vs **178.0 pts** naive baseline, **+27.0 pts** uplift).
-  - **Spearman Rank Correlation**: Rapidly converges from 0.012 (GW1) to **0.470 (GW3)** and **0.451 (GW4)**.
-  - **Run on Demand**: Execute `python run.py backtest` to re-run the complete evaluation pipeline.
-- [Final Status Report](file:///C:/Users/anshw/Documents/fpl-expert/reports/final_status.md): Comprehensive summary of changes, before/after comparison, and operational guide.
+- [Model Evaluation Report](reports/model_eval.md):
+  - **Rank Correlation ($\\rho$)**: **0.704** (Production Ensemble)
+  - **Mean Absolute Error (MAE)**: **1.019** (ML Ensemble) vs 1.078 (Weighted Form) and 1.076 (Season Average)
+  - **Current 2026-27 Holdout**: **1.895 MAE** vs 1.952 baseline (+0.057 gain)
+  - **True Retraining Feature Ablation**: +0.93% MAE improvement without Fixture Difficulty And Context
+  - **Uncertainty Interval Coverage**: **83.78%** empirical coverage for nominal 80% credible interval ($P_{10}$–$P_{90}$)
+- [Gap Closure Audit Matrix](reports/final_fix_ledger.md): Full audit matrix confirming resolution of all milestones F1–F14.
+- [News & Single Availability Evaluation](reports/news_benchmark.json): 20/20 adversarial benchmark verification, zero double-discounting invariant, and shadow mode gating policy.
+- [Historical Backtest Report](reports/fix_pass_backtest.md):
+  - **Blind Historical Backtest**: Evaluated on 10 historical mini-league scenarios with zero future data leakage.
+  - **Brier Calibration Score**: **0.1655** (well calibrated vs 0.200 benchmark).
 
 ---
 

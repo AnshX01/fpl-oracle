@@ -211,9 +211,7 @@ class ProjectionEngine:
         for gw in range(start_gw, start_gw + horizon):
             if gw > 38:
                 break
-            gw_df = self.predict_gameweek(
-                gw, bootstrap, fixtures, reconciled_availabilities=reconciled_availabilities
-            )
+            gw_df = self.predict_gameweek(gw, bootstrap, fixtures, reconciled_availabilities=reconciled_availabilities)
             multi_projections[gw] = gw_df
         return multi_projections
 

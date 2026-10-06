@@ -32,6 +32,7 @@ class ReconcileProbabilitySettings:
     - Minutes restricted assets have ~70% start rate with capped ceiling.
     - Regular starters with official >= 75% have ~90% baseline start probability.
     """
+
     prob_start_high_base: float = 0.90
     prob_start_low_base: float = 0.50
     prob_start_minutes_limit: float = 0.70
@@ -108,12 +109,18 @@ class AvailabilityReconciler:
 
         # 2. Evaluate Candidate Text Evidence if in Shadow or Gated-Active mode
         if self.mode != RecommendationMode.API_ONLY and candidate_evidence:
-            player_evidences = [e for e in candidate_evidence if e.player_id == elem_id or e.player_name.lower() == web_name.lower()]
+            player_evidences = [
+                e for e in candidate_evidence if e.player_id == elem_id or e.player_name.lower() == web_name.lower()
+            ]
 
             for ev in player_evidences:
                 # Filter out cup-only quotes for Premier League planning
-                if ev.match_context and any(cup in ev.match_context.lower() for cup in ["carabao", "fa cup", "champions league", "europa"]):
-                    rejected_signals.append(f"Cup competition quote ('{ev.match_context}') does not apply to PL GW {target_gw}")
+                if ev.match_context and any(
+                    cup in ev.match_context.lower() for cup in ["carabao", "fa cup", "champions league", "europa"]
+                ):
+                    rejected_signals.append(
+                        f"Cup competition quote ('{ev.match_context}') does not apply to PL GW {target_gw}"
+                    )
                     continue
 
                 # Filter out negated updates ("not ruled out") - abstain from ruling out
@@ -146,7 +153,9 @@ class AvailabilityReconciler:
                     effective_cop = max(effective_cop, 75.0)
                     p_avail = 1.0
                     p_start_given_avail = self.prob_settings.prob_start_minutes_limit
-                    reconciliation_reason = f"Candidate Evidence: Minutes restricted to {mins_limit:.0f}m ('{ev.quote[:50]}...')"
+                    reconciliation_reason = (
+                        f"Candidate Evidence: Minutes restricted to {mins_limit:.0f}m ('{ev.quote[:50]}...')"
+                    )
                     break
 
                 elif ev.category in (EvidenceCategory.AVAILABLE, EvidenceCategory.RETURNED_TO_TRAINING):
@@ -156,7 +165,9 @@ class AvailabilityReconciler:
                         effective_cop = 75.0
                         p_avail = self.prob_settings.prob_avail_returned_training
                         p_start_given_avail = self.prob_settings.prob_start_returned_training
-                        reconciliation_reason = f"Candidate Evidence: Confirmed returned to training ('{ev.quote[:50]}...')"
+                        reconciliation_reason = (
+                            f"Candidate Evidence: Confirmed returned to training ('{ev.quote[:50]}...')"
+                        )
                     break
 
                 elif ev.category == EvidenceCategory.DOUBTFUL:
@@ -165,7 +176,9 @@ class AvailabilityReconciler:
                         effective_cop = 50.0
                         p_avail = self.prob_settings.prob_avail_doubtful
                         p_start_given_avail = self.prob_settings.prob_start_doubtful
-                        reconciliation_reason = f"Candidate Evidence: Manager reported late fitness test ('{ev.quote[:50]}...')"
+                        reconciliation_reason = (
+                            f"Candidate Evidence: Manager reported late fitness test ('{ev.quote[:50]}...')"
+                        )
                     break
 
         applied_to_production = (self.mode == RecommendationMode.GATED_ACTIVE) and is_shadow_override

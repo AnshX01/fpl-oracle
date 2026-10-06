@@ -267,11 +267,7 @@ class RivalAnalyzer:
             else pd.DataFrame()
         )
 
-        template = (
-            eo_df[eo_df["effective_ownership"] >= 50.0].to_dict(orient="records")
-            if not eo_df.empty
-            else []
-        )
+        template = eo_df[eo_df["effective_ownership"] >= 50.0].to_dict(orient="records") if not eo_df.empty else []
         differentials = (
             eo_df[(eo_df["effective_ownership"] > 0) & (eo_df["effective_ownership"] <= 20.0)]
             .head(10)

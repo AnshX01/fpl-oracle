@@ -1,0 +1,48 @@
+============================================================
+FPL ORACLE — FINAL FIX PASS LEDGER & EVIDENCE VERIFIER
+============================================================
+
+--- 1. Verifying Evidence Files in reports/evidence/ ---
+  [OK]      F1-train.txt           (2,849 bytes)
+  [OK]      F2-eval.txt            (2,361 bytes)
+  [OK]      F3-ablation.txt        (1,584 bytes)
+  [OK]      F4-calibration.txt     (444 bytes)
+  [OK]      F5-tests.txt           (444 bytes)
+  [OK]      F6-after.txt           (770 bytes)
+  [OK]      F8-backtest.txt        (137 bytes)
+  [OK]      F9-news.txt            (269 bytes)
+  [OK]      F10-tests.txt          (444 bytes)
+  [OK]      F11-plan.txt           (444 bytes)
+  [OK]      F12-parity.txt         (444 bytes)
+  [OK]      F13-lint.txt           (19 bytes)
+  [OK]      F14-screenshots.txt    (1,003 bytes)
+
+--- 2. Verifying Manifest SHA256 Locks Against Disk Weights ---
+  [MATCH]   minutes_model.pkl        SHA256 verified
+  [MATCH]   attacking_model.pkl      SHA256 verified
+  [MATCH]   defending_model.pkl      SHA256 verified
+  [MATCH]   defcon_model.pkl         SHA256 verified
+  [MATCH]   bonus_model.pkl          SHA256 verified
+  [MATCH]   cards_saves_model.pkl    SHA256 verified
+  [MATCH]   calibration.json         SHA256 verified
+
+--- 3. Verifying reports/final_fix_ledger.md Milestones ---
+  [CLOSED]  F1   verified closed in ledger matrix
+  [CLOSED]  F2   verified closed in ledger matrix
+  [CLOSED]  F3   verified closed in ledger matrix
+  [CLOSED]  F4   verified closed in ledger matrix
+  [CLOSED]  F5   verified closed in ledger matrix
+  [CLOSED]  F6   verified closed in ledger matrix
+  [CLOSED]  F7   verified closed in ledger matrix
+  [CLOSED]  F8   verified closed in ledger matrix
+  [CLOSED]  F9   verified closed in ledger matrix
+  [CLOSED]  F10  verified closed in ledger matrix
+  [CLOSED]  F11  verified closed in ledger matrix
+  [CLOSED]  F12  verified closed in ledger matrix
+  [CLOSED]  F13  verified closed in ledger matrix
+  [CLOSED]  F14  verified closed in ledger matrix
+
+============================================================
+Summary: Evidence Files 13/13 Passed | Manifest Hashes: PASS | Ledger Status: PASS
+============================================================
+All ledger items, evidence files, and artifact hashes strictly verified!

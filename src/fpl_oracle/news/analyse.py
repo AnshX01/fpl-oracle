@@ -39,8 +39,7 @@ class NewsAnalyzer:
             articles = await news_ingestion.fetch_rss_articles()
             # Batch all roster players with canonical integer IDs (N4: no [:50] truncation)
             roster_batch = [
-                {"id": int(e.id), "web_name": e.web_name, "team_name": str(e.team)}
-                for e in bootstrap.elements
+                {"id": int(e.id), "web_name": e.web_name, "team_name": str(e.team)} for e in bootstrap.elements
             ]
 
             is_gemini_ready, _ = gemini_extractor.is_configured()

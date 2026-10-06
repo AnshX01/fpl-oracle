@@ -32,6 +32,7 @@ class DefendingModel(BaseComponent):
         prob_cs_raw = self.clf_cs.predict_proba(X)[:, 1]
         if len(X) >= 6:
             from sklearn.model_selection import KFold
+
             kf = KFold(n_splits=3, shuffle=True, random_state=42)
             prob_oof = np.zeros(len(X))
             for train_idx, val_idx in kf.split(X):

@@ -8,7 +8,6 @@ Generates machine-readable reports/news_benchmark.json and reports/news_benchmar
 import json
 import logging
 import sys
-from pathlib import Path
 from typing import Any
 
 from fpl_oracle.config import REPORTS_DIR
@@ -53,19 +52,25 @@ def run_all_cases() -> dict[str, Any]:
     raw_01 = "Haaland suffered an ankle sprain and is ruled out for Saturday"
     ev = text_extractor.extract_evidence_from_text(raw_01, player_name="Haaland", player_id=1, target_gw=10)
     res = reconciler.reconcile_player_fixture(p, target_gw=10, candidate_evidence=ev)
-    p1 = res.effective_chance_of_playing == 0.0 and res.p_available == 0.0 and ev[0].category == EvidenceCategory.RULED_OUT
+    p1 = (
+        res.effective_chance_of_playing == 0.0
+        and res.p_available == 0.0
+        and ev[0].category == EvidenceCategory.RULED_OUT
+    )
     if p1:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-01",
-        "description": "Haaland ruled out for Saturday",
-        "category": "ruled_out",
-        "raw_text": raw_01,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p1,
-        "detail": f"effective_cop={res.effective_chance_of_playing}, p_avail={res.p_available}",
-    })
+    cases.append(
+        {
+            "id": "TC-01",
+            "description": "Haaland ruled out for Saturday",
+            "category": "ruled_out",
+            "raw_text": raw_01,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p1,
+            "detail": f"effective_cop={res.effective_chance_of_playing}, p_avail={res.p_available}",
+        }
+    )
 
     # TC-02: Negated update ("not injured")
     p = MockPlayer(1, "Haaland", status="a", cop_next=100.0)
@@ -76,15 +81,17 @@ def run_all_cases() -> dict[str, Any]:
     if p2:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-02",
-        "description": "Guardiola confirms Haaland is not injured (negation)",
-        "category": "is_negated=True",
-        "raw_text": raw_02,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p2,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-02",
+            "description": "Guardiola confirms Haaland is not injured (negation)",
+            "category": "is_negated=True",
+            "raw_text": raw_02,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p2,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-03: Dismissed rumors
     p = MockPlayer(2, "Saka", status="a", cop_next=100.0)
@@ -95,15 +102,17 @@ def run_all_cases() -> dict[str, Any]:
     if p3:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-03",
-        "description": "Dismissed rumors for Saka (negation)",
-        "category": "is_negated=True",
-        "raw_text": raw_03,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p3,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-03",
+            "description": "Dismissed rumors for Saka (negation)",
+            "category": "is_negated=True",
+            "raw_text": raw_03,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p3,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-04: Carabao Cup quote ignored for PL
     p = MockPlayer(2, "Saka", status="a", cop_next=100.0)
@@ -114,15 +123,17 @@ def run_all_cases() -> dict[str, Any]:
     if p4:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-04",
-        "description": "Carabao Cup rest filtered from PL planning",
-        "category": "cup_context",
-        "raw_text": raw_04,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p4,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-04",
+            "description": "Carabao Cup rest filtered from PL planning",
+            "category": "cup_context",
+            "raw_text": raw_04,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p4,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-05: FA Cup suspension served, cleared for PL
     p = MockPlayer(3, "Saliba", status="a", cop_next=100.0)
@@ -133,40 +144,50 @@ def run_all_cases() -> dict[str, Any]:
     if p5:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-05",
-        "description": "FA Cup suspension served, cleared for PL",
-        "category": "cup_context",
-        "raw_text": raw_05,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p5,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-05",
+            "description": "FA Cup suspension served, cleared for PL",
+            "category": "cup_context",
+            "raw_text": raw_05,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p5,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-06: Loan ineligible for target GW
-    p = MockPlayer(4, "Sterling", status="a", cop_next=100.0, scout_risks=[{"property": "loan_ineligible", "gameweek": 10}])
+    p = MockPlayer(
+        4, "Sterling", status="a", cop_next=100.0, scout_risks=[{"property": "loan_ineligible", "gameweek": 10}]
+    )
     res = reconciler.reconcile_player_fixture(p, target_gw=10)
     p6 = res.effective_chance_of_playing == 0.0 and res.p_available == 0.0
-    cases.append({
-        "id": "TC-06",
-        "description": "Sterling loan ineligible for GW10",
-        "category": "loan_ineligible",
-        "passed": p6,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-06",
+            "description": "Sterling loan ineligible for GW10",
+            "category": "loan_ineligible",
+            "passed": p6,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-07: Loan ineligible for GW28, but available for GW29
-    p = MockPlayer(4, "Sterling", status="a", cop_next=100.0, scout_risks=[{"property": "loan_ineligible", "gameweek": 28}])
+    p = MockPlayer(
+        4, "Sterling", status="a", cop_next=100.0, scout_risks=[{"property": "loan_ineligible", "gameweek": 28}]
+    )
     res28 = reconciler.reconcile_player_fixture(p, target_gw=28)
     res29 = reconciler.reconcile_player_fixture(p, target_gw=29)
     p7 = res28.effective_chance_of_playing == 0.0 and res29.effective_chance_of_playing == 100.0
-    cases.append({
-        "id": "TC-07",
-        "description": "Sterling loan ineligible for GW28, available GW29",
-        "category": "multi_gw_loan",
-        "passed": p7,
-        "detail": f"GW28={res28.effective_chance_of_playing}, GW29={res29.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-07",
+            "description": "Sterling loan ineligible for GW28, available GW29",
+            "category": "multi_gw_loan",
+            "passed": p7,
+            "detail": f"GW28={res28.effective_chance_of_playing}, GW29={res29.effective_chance_of_playing}",
+        }
+    )
 
     # TC-08: Isak 50% fitness test (single adjustment invariant)
     p = MockPlayer(5, "Isak", status="d", cop_next=50.0)
@@ -177,15 +198,17 @@ def run_all_cases() -> dict[str, Any]:
     if p8:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-08",
-        "description": "Isak late fitness test preserves 50% without double discount",
-        "category": "single_adjustment",
-        "raw_text": raw_08,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p8,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-08",
+            "description": "Isak late fitness test preserves 50% without double discount",
+            "category": "single_adjustment",
+            "raw_text": raw_08,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p8,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-09: Minutes restriction
     p = MockPlayer(6, "Palmer", status="a", cop_next=100.0)
@@ -196,34 +219,42 @@ def run_all_cases() -> dict[str, Any]:
     if p9:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-09",
-        "description": "Palmer 30-minute restriction recorded",
-        "category": "minutes_limit",
-        "raw_text": raw_09,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p9,
-        "detail": f"mins_limit={res.expected_minutes_limit}, p_start={res.p_start_given_available}",
-    })
+    cases.append(
+        {
+            "id": "TC-09",
+            "description": "Palmer 30-minute restriction recorded",
+            "category": "minutes_limit",
+            "raw_text": raw_09,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p9,
+            "detail": f"mins_limit={res.expected_minutes_limit}, p_start={res.p_start_given_available}",
+        }
+    )
 
     # TC-10: Returned to training upgrades stale doubt
     p = MockPlayer(7, "Foden", status="d", cop_next=25.0)
     raw_10 = "Foden returned to full training on Thursday after illness"
     ev = text_extractor.extract_evidence_from_text(raw_10, player_name="Foden", player_id=7, target_gw=10)
     res = reconciler.reconcile_player_fixture(p, target_gw=10, candidate_evidence=ev)
-    p10 = res.effective_chance_of_playing == 75.0 and res.p_available == 0.85 and ev[0].category == EvidenceCategory.RETURNED_TO_TRAINING
+    p10 = (
+        res.effective_chance_of_playing == 75.0
+        and res.p_available == 0.85
+        and ev[0].category == EvidenceCategory.RETURNED_TO_TRAINING
+    )
     if p10:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-10",
-        "description": "Foden returned to training upgrades 25% to 75%",
-        "category": "returned_to_training",
-        "raw_text": raw_10,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p10,
-        "detail": f"effective_cop={res.effective_chance_of_playing}, p_avail={res.p_available}",
-    })
+    cases.append(
+        {
+            "id": "TC-10",
+            "description": "Foden returned to training upgrades 25% to 75%",
+            "category": "returned_to_training",
+            "raw_text": raw_10,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p10,
+            "detail": f"effective_cop={res.effective_chance_of_playing}, p_avail={res.p_available}",
+        }
+    )
 
     # TC-11: Selection statement preserves 100%
     p = MockPlayer(8, "Son", status="a", cop_next=100.0)
@@ -234,15 +265,17 @@ def run_all_cases() -> dict[str, Any]:
     if p11:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-11",
-        "description": "Son selection statement preserves 100%",
-        "category": "selection_statement",
-        "raw_text": raw_11,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p11,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-11",
+            "description": "Son selection statement preserves 100%",
+            "category": "selection_statement",
+            "raw_text": raw_11,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p11,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-12: Transfer rumor ignored
     p = MockPlayer(3, "Saliba", status="a", cop_next=100.0)
@@ -253,15 +286,17 @@ def run_all_cases() -> dict[str, Any]:
     if p12:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-12",
-        "description": "Transfer rumor ignored",
-        "category": "unknown",
-        "raw_text": raw_12,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p12,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-12",
+            "description": "Transfer rumor ignored",
+            "category": "unknown",
+            "raw_text": raw_12,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p12,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-13: Colloquial idiom ignored
     p = MockPlayer(8, "Son", status="a", cop_next=100.0)
@@ -272,15 +307,17 @@ def run_all_cases() -> dict[str, Any]:
     if p13:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-13",
-        "description": "Colloquial idiom not parsed as injury",
-        "category": "unknown",
-        "raw_text": raw_13,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p13,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-13",
+            "description": "Colloquial idiom not parsed as injury",
+            "category": "unknown",
+            "raw_text": raw_13,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p13,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-14: Adversarial Prompt Injection 1
     p = MockPlayer(9, "Salah", status="a", cop_next=100.0)
@@ -293,15 +330,17 @@ def run_all_cases() -> dict[str, Any]:
     if p14:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-14",
-        "description": "Adversarial Prompt Injection blocked",
-        "category": "injection_defense",
-        "raw_text": raw_14,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p14,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-14",
+            "description": "Adversarial Prompt Injection blocked",
+            "category": "injection_defense",
+            "raw_text": raw_14,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p14,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-15: Adversarial Prompt Injection 2
     p = MockPlayer(1, "Haaland", status="a", cop_next=100.0)
@@ -314,15 +353,17 @@ def run_all_cases() -> dict[str, Any]:
     if p15:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-15",
-        "description": "Adversarial System Alert Injection blocked",
-        "category": "injection_defense",
-        "raw_text": raw_15,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p15,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-15",
+            "description": "Adversarial System Alert Injection blocked",
+            "category": "injection_defense",
+            "raw_text": raw_15,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p15,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-16: Low confidence extraction (<0.65) rejected
     p = MockPlayer(10, "Bowen", status="a", cop_next=100.0)
@@ -333,15 +374,17 @@ def run_all_cases() -> dict[str, Any]:
     if p16:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-16",
-        "description": "Low confidence extraction rejected",
-        "category": "confidence_threshold",
-        "raw_text": raw_16,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p16,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-16",
+            "description": "Low confidence extraction rejected",
+            "category": "confidence_threshold",
+            "raw_text": raw_16,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p16,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-17: Player missing next 3 weeks
     p = MockPlayer(11, "PlayerX", status="a", cop_next=100.0)
@@ -352,15 +395,17 @@ def run_all_cases() -> dict[str, Any]:
     if p17:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-17",
-        "description": "Miss 3 weeks parsed as ruled out",
-        "category": "ruled_out",
-        "raw_text": raw_17,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p17,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-17",
+            "description": "Miss 3 weeks parsed as ruled out",
+            "category": "ruled_out",
+            "raw_text": raw_17,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p17,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-18: Slight niggle expect to make it
     p = MockPlayer(12, "PlayerY", status="d", cop_next=50.0)
@@ -371,15 +416,17 @@ def run_all_cases() -> dict[str, Any]:
     if p18:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-18",
-        "description": "Positive assessment upgrades 50% to 75%",
-        "category": "available",
-        "raw_text": raw_18,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p18,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-18",
+            "description": "Positive assessment upgrades 50% to 75%",
+            "category": "available",
+            "raw_text": raw_18,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p18,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-19: Substituted as precaution in 85th minute
     p = MockPlayer(13, "PlayerZ", status="a", cop_next=100.0)
@@ -390,27 +437,31 @@ def run_all_cases() -> dict[str, Any]:
     if p19:
         extraction_matches += 1
     total_extractions += 1
-    cases.append({
-        "id": "TC-19",
-        "description": "Precaution substitution preserves 100%",
-        "category": "precaution",
-        "raw_text": raw_19,
-        "extracted_category": ev[0].category if ev else None,
-        "passed": p19,
-        "detail": f"effective_cop={res.effective_chance_of_playing}",
-    })
+    cases.append(
+        {
+            "id": "TC-19",
+            "description": "Precaution substitution preserves 100%",
+            "category": "precaution",
+            "raw_text": raw_19,
+            "extracted_category": ev[0].category if ev else None,
+            "passed": p19,
+            "detail": f"effective_cop={res.effective_chance_of_playing}",
+        }
+    )
 
     # TC-20: SSRF Payload blocking
     ssrf_blocked = not is_safe_external_url("http://169.254.169.254/latest/meta-data/", resolve_dns=False)
     loopback_blocked = not is_safe_external_url("http://127.0.0.1:8000/api", resolve_dns=False)
     p20 = ssrf_blocked and loopback_blocked
-    cases.append({
-        "id": "TC-20",
-        "description": "SSRF payload blocked (169.254.169.254 and 127.0.0.1)",
-        "category": "ssrf_protection",
-        "passed": p20,
-        "detail": f"ssrf_blocked={ssrf_blocked}, loopback_blocked={loopback_blocked}",
-    })
+    cases.append(
+        {
+            "id": "TC-20",
+            "description": "SSRF payload blocked (169.254.169.254 and 127.0.0.1)",
+            "category": "ssrf_protection",
+            "passed": p20,
+            "detail": f"ssrf_blocked={ssrf_blocked}, loopback_blocked={loopback_blocked}",
+        }
+    )
 
     passed_count = sum(1 for c in cases if c["passed"])
     total_count = len(cases)

@@ -78,11 +78,7 @@ class FPLClient:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
-        if (
-            self._client is None
-            or self._client.is_closed
-            or self._client_loop != loop
-        ):
+        if self._client is None or self._client.is_closed or self._client_loop != loop:
             self._client_loop = loop
             limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
             self._client = httpx.AsyncClient(

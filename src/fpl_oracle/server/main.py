@@ -129,4 +129,5 @@ async def serve_index():
 @app.get("/health")
 async def health_redirect():
     from fpl_oracle.server.routes.api import get_health
+
     return await get_health()

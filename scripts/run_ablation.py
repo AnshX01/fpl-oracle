@@ -15,20 +15,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import json
 import logging
 from datetime import UTC, datetime
+
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from scipy.stats import spearmanr
+from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 from fpl_oracle.config import REPORTS_DIR
+from fpl_oracle.data.features import feature_engineering
 from fpl_oracle.data.historical import historical_manager
-from fpl_oracle.data.features import feature_engineering, FEATURE_COLUMNS
-from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.components.attacking import AttackingModel
-from fpl_oracle.ml.components.defending import DefendingModel
-from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.bonus import BonusModel
 from fpl_oracle.ml.components.cards_saves import CardsSavesModel
+from fpl_oracle.ml.components.defcon import DefConModel
+from fpl_oracle.ml.components.defending import DefendingModel
+from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -37,32 +38,53 @@ logger = logging.getLogger("ablation")
 
 FEATURE_GROUPS_TO_ABLATE = {
     "fixture_difficulty_and_context": [
-        "was_home", "team_strength_attack", "opp_strength_defence",
-        "net_strength_diff", "opponent_difficulty", "days_rest",
-        "implied_team_xG", "implied_team_cs_prob",
+        "was_home",
+        "team_strength_attack",
+        "opp_strength_defence",
+        "net_strength_diff",
+        "opponent_difficulty",
+        "days_rest",
+        "implied_team_xG",
+        "implied_team_cs_prob",
     ],
     "team_form_attack_defense": [
-        "team_roll_goals_for_5", "team_roll_goals_against_5",
-        "opp_roll_goals_for_5", "opp_roll_goals_against_5",
-        "team_form_attack_ratio_5", "opp_form_defence_ratio_5",
+        "team_roll_goals_for_5",
+        "team_roll_goals_against_5",
+        "opp_roll_goals_for_5",
+        "opp_roll_goals_against_5",
+        "team_form_attack_ratio_5",
+        "opp_form_defence_ratio_5",
     ],
     "player_underlying_metrics": [
-        "roll_xG_3", "roll_xG_5", "roll_xG_8",
-        "roll_xA_3", "roll_xA_5", "roll_xA_8",
-        "roll_xGI_5", "roll_xGC_5",
+        "roll_xG_3",
+        "roll_xG_5",
+        "roll_xG_8",
+        "roll_xA_3",
+        "roll_xA_5",
+        "roll_xA_8",
+        "roll_xGI_5",
+        "roll_xGC_5",
     ],
     "minutes_and_starts": [
-        "roll_minutes_3", "roll_minutes_5", "roll_minutes_8",
-        "roll_starts_ratio_5", "roll_min60_ratio_5", "std_minutes_per_gw",
+        "roll_minutes_3",
+        "roll_minutes_5",
+        "roll_minutes_8",
+        "roll_starts_ratio_5",
+        "roll_min60_ratio_5",
+        "std_minutes_per_gw",
     ],
     "disciplinary_and_rare": [
-        "roll_cards_5", "roll_own_goals_5",
-        "roll_penalties_missed_5", "roll_penalties_saved_5",
+        "roll_cards_5",
+        "roll_own_goals_5",
+        "roll_penalties_missed_5",
+        "roll_penalties_saved_5",
     ],
 }
 
 
-def fit_and_evaluate_models(X_tr: pd.DataFrame, Y_tr: pd.DataFrame, X_te: pd.DataFrame, Y_te: pd.DataFrame) -> tuple[np.ndarray, float, float, float]:
+def fit_and_evaluate_models(
+    X_tr: pd.DataFrame, Y_tr: pd.DataFrame, X_te: pd.DataFrame, Y_te: pd.DataFrame
+) -> tuple[np.ndarray, float, float, float]:
     models = {
         "minutes_model": MinutesModel(),
         "attacking_model": AttackingModel(),
@@ -93,7 +115,9 @@ def fit_and_evaluate_models(X_tr: pd.DataFrame, Y_tr: pd.DataFrame, X_te: pd.Dat
     return preds, mae, rmse, sp
 
 
-def compute_bootstrap_ci(actual: np.ndarray, preds_full: np.ndarray, preds_ablated: np.ndarray, n_boot: int = 1000) -> tuple[float, float]:
+def compute_bootstrap_ci(
+    actual: np.ndarray, preds_full: np.ndarray, preds_ablated: np.ndarray, n_boot: int = 1000
+) -> tuple[float, float]:
     """Compute 95% bootstrap confidence interval on MAE delta (ablated_mae - full_mae)."""
     rng = np.random.default_rng(42)
     n = len(actual)
@@ -157,17 +181,19 @@ def run_ablation_experiment():
         print(f"  Ablated MAE: {abl_mae:.4f} (Delta vs Full: {mae_delta:+.4f}, Gain: {mae_gain_pct:+.2f}%)")
         print(f"  95% Bootstrap CI on Delta: [{ci_low:+.4f}, {ci_high:+.4f}]")
 
-        group_results.append({
-            "group_name": grp_name,
-            "features_removed": existing_drop,
-            "feature_count_removed": len(existing_drop),
-            "ablated_mae": abl_mae,
-            "ablated_rmse": abl_rmse,
-            "ablated_spearman": abl_sp,
-            "mae_delta_vs_full": mae_delta,
-            "mae_gain_pct": mae_gain_pct,
-            "ci_95": [ci_low, ci_high],
-        })
+        group_results.append(
+            {
+                "group_name": grp_name,
+                "features_removed": existing_drop,
+                "feature_count_removed": len(existing_drop),
+                "ablated_mae": abl_mae,
+                "ablated_rmse": abl_rmse,
+                "ablated_spearman": abl_sp,
+                "mae_delta_vs_full": mae_delta,
+                "mae_gain_pct": mae_gain_pct,
+                "ci_95": [ci_low, ci_high],
+            }
+        )
         idx += 1
 
     # 4. Save ablation artifact

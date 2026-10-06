@@ -200,7 +200,8 @@ class BacktestHarness:
                         elem_actual = actual_r[actual_r["element"] == elem_id]["total_points"].values[0]
                         mult = 2.0 if elem_id == u_cap else 1.0
                         user_raw_gw += elem_actual * mult
-            user_scores.append(round(user_raw_gw, 1) if user_raw_gw > 0 else 67.6)
+            user_pts = round(user_raw_gw, 1) if user_raw_gw > 0 else 67.6
+            user_scores.append(user_pts)
 
             # Strategy 3: Naive Baseline (Picks using raw unweighted 3-match rolling form)
             actual_r["naive_form"] = X_r["roll_points_3"].values
@@ -244,7 +245,7 @@ class BacktestHarness:
                 {
                     "gw": r,
                     "oracle": round(actual_pts_oracle, 1),
-                    "user": round(user_calibrated, 1),
+                    "user": round(user_pts, 1),
                     "baseline": round(actual_pts_base, 1),
                     "average": avg_gw_score,
                     "hindsight": round(actual_pts_hind, 1),

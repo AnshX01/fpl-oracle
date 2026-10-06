@@ -60,11 +60,11 @@ def calculate_match_points(
 
     # 5. Goals Conceded (-1 per 2 goals for GKP and DEF)
     if pos in ("GKP", "DEF"):
-        pts -= (goals_conceded // 2)
+        pts -= goals_conceded // 2
 
     # 6. Saves (1 pt per 3 saves for GKP)
     if pos == "GKP":
-        pts += (saves // 3)
+        pts += saves // 3
 
     # 7. Penalties
     pts += penalties_saved * 5

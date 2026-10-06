@@ -147,17 +147,69 @@ def test_decision_card_api_endpoints():
             "no_regret_flag": True,
         },
         "formation": "3-5-2",
-        "captain": {"element": 10, "web_name": "Haaland", "team_short": "MCI", "expected_points": 7.4, "p10": 4.0, "p90": 11.2},
-        "vice_captain": {"element": 20, "web_name": "Salah", "team_short": "LIV", "expected_points": 6.8, "p10": 3.5, "p90": 10.5},
+        "captain": {
+            "element": 10,
+            "web_name": "Haaland",
+            "team_short": "MCI",
+            "expected_points": 7.4,
+            "p10": 4.0,
+            "p90": 11.2,
+        },
+        "vice_captain": {
+            "element": 20,
+            "web_name": "Salah",
+            "team_short": "LIV",
+            "expected_points": 6.8,
+            "p10": 3.5,
+            "p90": 10.5,
+        },
         "xi": [
-            {"element": 10, "position": "FWD", "web_name": "Haaland", "team_short": "MCI", "expected_points": 7.4, "p10": 4.0, "p90": 11.2, "is_captain": True, "is_vice_captain": False},
-            {"element": 20, "position": "MID", "web_name": "Salah", "team_short": "LIV", "expected_points": 6.8, "p10": 3.5, "p90": 10.5, "is_captain": False, "is_vice_captain": True},
-        ] + [
-            {"element": i, "position": "DEF", "web_name": f"Def_{i}", "team_short": "ARS", "expected_points": 4.5, "p10": 2.0, "p90": 7.0, "is_captain": False, "is_vice_captain": False}
+            {
+                "element": 10,
+                "position": "FWD",
+                "web_name": "Haaland",
+                "team_short": "MCI",
+                "expected_points": 7.4,
+                "p10": 4.0,
+                "p90": 11.2,
+                "is_captain": True,
+                "is_vice_captain": False,
+            },
+            {
+                "element": 20,
+                "position": "MID",
+                "web_name": "Salah",
+                "team_short": "LIV",
+                "expected_points": 6.8,
+                "p10": 3.5,
+                "p90": 10.5,
+                "is_captain": False,
+                "is_vice_captain": True,
+            },
+        ]
+        + [
+            {
+                "element": i,
+                "position": "DEF",
+                "web_name": f"Def_{i}",
+                "team_short": "ARS",
+                "expected_points": 4.5,
+                "p10": 2.0,
+                "p90": 7.0,
+                "is_captain": False,
+                "is_vice_captain": False,
+            }
             for i in range(30, 39)
         ],
         "bench": [
-            {"element": i, "bench_order": idx, "web_name": f"Bench_{i}", "position": "MID", "team_short": "AVL", "expected_points": 3.2}
+            {
+                "element": i,
+                "bench_order": idx,
+                "web_name": f"Bench_{i}",
+                "position": "MID",
+                "team_short": "AVL",
+                "expected_points": 3.2,
+            }
             for idx, i in enumerate(range(40, 44), start=1)
         ],
         "rivals": {
@@ -189,7 +241,10 @@ def test_decision_card_api_endpoints():
         test_app = FastAPI()
         test_app.include_router(api_router)
 
-        with patch("fpl_oracle.briefing.decision_card.decision_card_generator.generate_decision_card", new=AsyncMock(return_value=mock_card)):
+        with patch(
+            "fpl_oracle.briefing.decision_card.decision_card_generator.generate_decision_card",
+            new=AsyncMock(return_value=mock_card),
+        ):
             async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as ac:
                 # 1. JSON endpoint (D1)
                 resp = await ac.get("/api/decision-card")
@@ -248,8 +303,26 @@ def test_format_decision_card_markdown():
         "captain": {"web_name": "Haaland", "team_short": "MCI", "expected_points": 7.4, "p10": 4.0, "p90": 11.2},
         "vice_captain": {"web_name": "Salah", "team_short": "LIV", "expected_points": 6.8, "p10": 3.5, "p90": 10.5},
         "xi": [
-            {"position": "FWD", "web_name": "Haaland", "team_short": "MCI", "expected_points": 7.4, "p10": 4.0, "p90": 11.2, "is_captain": True, "is_vice_captain": False},
-            {"position": "MID", "web_name": "Salah", "team_short": "LIV", "expected_points": 6.8, "p10": 3.5, "p90": 10.5, "is_captain": False, "is_vice_captain": True},
+            {
+                "position": "FWD",
+                "web_name": "Haaland",
+                "team_short": "MCI",
+                "expected_points": 7.4,
+                "p10": 4.0,
+                "p90": 11.2,
+                "is_captain": True,
+                "is_vice_captain": False,
+            },
+            {
+                "position": "MID",
+                "web_name": "Salah",
+                "team_short": "LIV",
+                "expected_points": 6.8,
+                "p10": 3.5,
+                "p90": 10.5,
+                "is_captain": False,
+                "is_vice_captain": True,
+            },
         ],
         "bench": [
             {"bench_order": 1, "web_name": "Rogers", "position": "MID", "team_short": "AVL", "expected_points": 3.2}
@@ -281,6 +354,7 @@ def test_format_decision_card_markdown():
 
 def test_decision_card_unmocked_happy_path():
     """Verify unmocked end-to-end decision card execution and honest metrics."""
+
     async def _run():
         card = await decision_card_generator.generate_decision_card()
         assert isinstance(card["gameweek"], int)
@@ -307,16 +381,31 @@ def test_decision_card_unmocked_happy_path():
 
 def test_decision_card_error_path_honest_reporting():
     """Verify that Monte Carlo exceptions emit status='error' with null metrics rather than swallowing."""
+
     async def _run():
-        with patch(
-            "fpl_oracle.league.standings.league_standings_manager.get_league_standings",
-            new=AsyncMock(return_value={"league_name": "Test League", "standings": [{"entry": 1, "rank": 1, "total": 500}]}),
-        ), patch(
-            "fpl_oracle.league.rivals.rival_analyzer.analyze_rivals",
-            new=AsyncMock(return_value={"rival_squads": [{"entry_id": 2, "player_name": "Rival Leader", "rank": 1, "total_points": 490, "squad": []}], "template_players": [], "differential_players": []}),
-        ), patch(
-            "fpl_oracle.league.montecarlo.monte_carlo_simulator.simulate_league",
-            side_effect=RuntimeError("Simulated Monte Carlo numerical breakdown"),
+        with (
+            patch(
+                "fpl_oracle.league.standings.league_standings_manager.get_league_standings",
+                new=AsyncMock(
+                    return_value={"league_name": "Test League", "standings": [{"entry": 1, "rank": 1, "total": 500}]}
+                ),
+            ),
+            patch(
+                "fpl_oracle.league.rivals.rival_analyzer.analyze_rivals",
+                new=AsyncMock(
+                    return_value={
+                        "rival_squads": [
+                            {"entry_id": 2, "player_name": "Rival Leader", "rank": 1, "total_points": 490, "squad": []}
+                        ],
+                        "template_players": [],
+                        "differential_players": [],
+                    }
+                ),
+            ),
+            patch(
+                "fpl_oracle.league.montecarlo.monte_carlo_simulator.simulate_league",
+                side_effect=RuntimeError("Simulated Monte Carlo numerical breakdown"),
+            ),
         ):
             card = await decision_card_generator.generate_decision_card()
             wp = card["win_prob"]
@@ -326,4 +415,3 @@ def test_decision_card_error_path_honest_reporting():
             assert "Simulated Monte Carlo numerical breakdown" in wp["error_message"]
 
     asyncio.run(_run())
-

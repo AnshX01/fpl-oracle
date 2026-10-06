@@ -38,8 +38,8 @@ TRIGGER_CONDITIONS_DEFAULT = {
 
 # Strict recommendation thresholds (gain vs no-chip baseline must exceed uncertainty margin) (C3)
 CHIP_RECOMMENDATION_THRESHOLDS = {
-    "3xc": 4.0,       # Extra 1x captain must be >= 4.0 xP
-    "bboost": 8.0,    # Bench must provide >= 8.0 xP
+    "3xc": 4.0,  # Extra 1x captain must be >= 4.0 xP
+    "bboost": 8.0,  # Bench must provide >= 8.0 xP
     "freehit": 10.0,  # One-week swing must be >= 10.0 xP
     "wildcard": 8.0,  # Multi-week squad uplift must be >= 8.0 xP
 }
@@ -343,7 +343,14 @@ class ChipPlanner:
                 if rec_gw is not None:
                     joint_schedule[rec_gw] = c
                     gain, conf, base_xp, chip_xp = self.compute_chip_utility(
-                        c, rec_gw, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget, current_gw=current_gw
+                        c,
+                        rec_gw,
+                        current_squad_df,
+                        horizon_projections,
+                        dgw_gws,
+                        bgw_gws,
+                        budget,
+                        current_gw=current_gw,
                     )
                     alt_gw = alt_assign.get(c, rec_gw + 1 if rec_gw < 19 else rec_gw - 1)
                     threshold = CHIP_RECOMMENDATION_THRESHOLDS.get(c, 8.0)
@@ -369,7 +376,9 @@ class ChipPlanner:
                         }
                     )
         elif current_gw > 19:
-            set_1_warning = "SET 1 EXPIRED: Gameweek 19 deadline has passed. Set 1 chips are expired and cannot be deployed."
+            set_1_warning = (
+                "SET 1 EXPIRED: Gameweek 19 deadline has passed. Set 1 chips are expired and cannot be deployed."
+            )
 
         # ----------------------------------------------------------------------
         # SET 2 PLANNING (GW 20 to 38)
@@ -445,11 +454,7 @@ class ChipPlanner:
 
         # Current GW Chip Decision
         chip_for_curr_gw = next((item for item in chip_plan_table if item["recommended_gw"] == current_gw), None)
-        recommend_chip_now = (
-            bool(chip_for_curr_gw["is_recommended_this_gw"])
-            if chip_for_curr_gw
-            else False
-        )
+        recommend_chip_now = bool(chip_for_curr_gw["is_recommended_this_gw"]) if chip_for_curr_gw else False
 
         return {
             "chips_status": chips_status,
@@ -490,11 +495,7 @@ class ChipPlanner:
         from fpl_oracle.optimise.transfers import transfer_optimizer
 
         chips_status = self.get_remaining_chips(manager_history)
-        available = (
-            chips_status["set_1_remaining"]
-            if target_gw <= 19
-            else chips_status["set_2_remaining"]
-        )
+        available = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
 
         return transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
             current_squad_df=current_squad_df,
@@ -510,4 +511,3 @@ class ChipPlanner:
 
 
 chip_planner = ChipPlanner()
-

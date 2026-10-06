@@ -36,9 +36,12 @@ def test_exact_match_scoring_all_positions_and_cases():
     assert calculate_match_points("GKP", minutes=90, saves=5, goals_conceded=3) == 2
 
     # 3. DEF: 60+ min (2 pts), 1 goal (6 pts), 1 assist (3 pts), clean sheet (4 pts), DefCon (+2 pts), bonus 3 = 20 pts
-    assert calculate_match_points(
-        "DEF", minutes=90, goals_scored=1, assists=1, clean_sheet=True, defensive_contribution=True, bonus=3
-    ) == 20
+    assert (
+        calculate_match_points(
+            "DEF", minutes=90, goals_scored=1, assists=1, clean_sheet=True, defensive_contribution=True, bonus=3
+        )
+        == 20
+    )
 
     # 4. DEF clean sheet NOT awarded if played <60 min (e.g. 59 min)
     assert calculate_match_points("DEF", minutes=59, clean_sheet=True) == 1  # 1 appearance, 0 CS
@@ -232,4 +235,3 @@ def test_manager_state_preserves_zero_bank_and_ft_overrides():
     assert state.free_transfers == 0
     assert state.has_ft_override is True
     assert state.ft_source == "manual_override"
-

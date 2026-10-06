@@ -151,7 +151,9 @@ class TextExtractor:
         sentences = re.split(r"(?<=[.!?])\s+", cleaned)
         quote = cleaned
         for s in sentences:
-            if player_name.lower() in s.lower() or any(w in s.lower() for w in ["injury", "training", "test", "out", "minutes"]):
+            if player_name.lower() in s.lower() or any(
+                w in s.lower() for w in ["injury", "training", "test", "out", "minutes"]
+            ):
                 quote = s.strip()
                 break
 

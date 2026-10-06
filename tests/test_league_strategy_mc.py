@@ -248,28 +248,34 @@ def test_bounded_posture_tie_breaker():
 
 def test_joint_player_draws_and_clean_sheet_correlations():
     """W1: Verifies joint draws (shared players get identical score per trial) and defensive clean sheets."""
-    user_squad = pd.DataFrame([
-        {"element": 1, "position": "GKP", "team": 1, "expected_points": 4.5, "variance": 4.0, "is_starter": True},
-        {"element": 2, "position": "DEF", "team": 1, "expected_points": 4.5, "variance": 4.0, "is_starter": True},
-        {"element": 3, "position": "MID", "team": 2, "expected_points": 6.0, "variance": 4.0, "is_starter": True},
-    ])
-    projections = pd.DataFrame([
-        {"element": 1, "position": "GKP", "team": 1, "expected_points": 4.5, "variance": 4.0},
-        {"element": 2, "position": "DEF", "team": 1, "expected_points": 4.5, "variance": 4.0},
-        {"element": 3, "position": "MID", "team": 2, "expected_points": 6.0, "variance": 4.0},
-    ])
+    user_squad = pd.DataFrame(
+        [
+            {"element": 1, "position": "GKP", "team": 1, "expected_points": 4.5, "variance": 4.0, "is_starter": True},
+            {"element": 2, "position": "DEF", "team": 1, "expected_points": 4.5, "variance": 4.0, "is_starter": True},
+            {"element": 3, "position": "MID", "team": 2, "expected_points": 6.0, "variance": 4.0, "is_starter": True},
+        ]
+    )
+    projections = pd.DataFrame(
+        [
+            {"element": 1, "position": "GKP", "team": 1, "expected_points": 4.5, "variance": 4.0},
+            {"element": 2, "position": "DEF", "team": 1, "expected_points": 4.5, "variance": 4.0},
+            {"element": 3, "position": "MID", "team": 2, "expected_points": 6.0, "variance": 4.0},
+        ]
+    )
 
-    rival_squads = [{
-        "entry_id": 999,
-        "player_name": "Rival",
-        "total_points": 100.0,
-        "captain_element": 3,
-        "squad": [
-            {"element": 1, "is_starter": True},  # Shared GKP
-            {"element": 2, "is_starter": True},  # Shared DEF
-            {"element": 3, "is_starter": True},  # Shared MID
-        ],
-    }]
+    rival_squads = [
+        {
+            "entry_id": 999,
+            "player_name": "Rival",
+            "total_points": 100.0,
+            "captain_element": 3,
+            "squad": [
+                {"element": 1, "is_starter": True},  # Shared GKP
+                {"element": 2, "is_starter": True},  # Shared DEF
+                {"element": 3, "is_starter": True},  # Shared MID
+            ],
+        }
+    ]
 
     # When squads are identical and starting points identical, win prob must be balanced (around 50% or tied)
     res = monte_carlo_simulator.simulate_league(
@@ -291,13 +297,15 @@ def test_rival_future_behavior_assumptions():
     """W2: Verifies explicit rival future behavior model and visible assumptions."""
     user_squad = pd.DataFrame([{"element": i, "expected_points": 5.0, "variance": 4.0} for i in range(1, 16)])
     projections = pd.DataFrame([{"element": i, "expected_points": 5.0, "variance": 4.0} for i in range(1, 50)])
-    rival_squads = [{
-        "entry_id": 101,
-        "player_name": "Leader",
-        "total_points": 200.0,
-        "captain_element": 1,
-        "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
-    }]
+    rival_squads = [
+        {
+            "entry_id": 101,
+            "player_name": "Leader",
+            "total_points": 200.0,
+            "captain_element": 1,
+            "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
+        }
+    ]
 
     res = monte_carlo_simulator.simulate_league(
         user_points=190.0,
@@ -317,19 +325,30 @@ def test_rival_future_behavior_assumptions():
 
 def test_side_by_side_plan_win_prob_comparison():
     """W3: Verifies side-by-side comparison of candidate plans and bounded runtime (< 1.5s)."""
-    user_squad = pd.DataFrame([{"element": i, "expected_points": 5.0, "variance": 4.0, "is_starter": True} for i in range(1, 16)])
-    projections = pd.DataFrame([{"element": i, "expected_points": 5.0 + (i * 0.1), "variance": 4.0} for i in range(1, 50)])
-    rival_squads = [{
-        "entry_id": 101,
-        "player_name": "Leader",
-        "total_points": 350.0,
-        "captain_element": 1,
-        "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
-    }]
+    user_squad = pd.DataFrame(
+        [{"element": i, "expected_points": 5.0, "variance": 4.0, "is_starter": True} for i in range(1, 16)]
+    )
+    projections = pd.DataFrame(
+        [{"element": i, "expected_points": 5.0 + (i * 0.1), "variance": 4.0} for i in range(1, 50)]
+    )
+    rival_squads = [
+        {
+            "entry_id": 101,
+            "player_name": "Leader",
+            "total_points": 350.0,
+            "captain_element": 1,
+            "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
+        }
+    ]
 
     candidate_plans = [
         {"plan_type": "ROLL_TRANSFER", "net_expected_points": 60.0, "transfers_in": [], "transfers_out": []},
-        {"plan_type": "1_TRANSFER", "net_expected_points": 62.5, "transfers_in": [{"element": 35}], "transfers_out": [{"element": 10}]},
+        {
+            "plan_type": "1_TRANSFER",
+            "net_expected_points": 62.5,
+            "transfers_in": [{"element": 35}],
+            "transfers_out": [{"element": 10}],
+        },
     ]
 
     t0 = time.time()

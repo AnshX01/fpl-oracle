@@ -5,8 +5,6 @@ Unit and AST enforcement tests for proximity rival selection and uncapped league
 import ast
 from pathlib import Path
 
-import pytest
-
 from fpl_oracle.league.rivals import get_rival_set
 
 
@@ -22,39 +20,47 @@ def test_rival_set_120_managers_exact_window():
     standings = []
     # Rank 1..34: 510 to 600 pts
     for r in range(1, 35):
-        standings.append({
-            "entry": 1000 + r,
-            "player_name": f"Manager {r}",
-            "rank": r,
-            "total": 600 - (r * 2),
-        })
+        standings.append(
+            {
+                "entry": 1000 + r,
+                "player_name": f"Manager {r}",
+                "rank": r,
+                "total": 600 - (r * 2),
+            }
+        )
 
     # User at Rank 35: 500 pts
     user_id = 9999
-    standings.append({
-        "entry": user_id,
-        "player_name": "User Manager",
-        "rank": 35,
-        "total": 500,
-    })
+    standings.append(
+        {
+            "entry": user_id,
+            "player_name": "User Manager",
+            "rank": 35,
+            "total": 500,
+        }
+    )
 
     # Rank 36..60: 480 to 499 pts (within 20 pts) -> 25 managers
     for r in range(36, 61):
-        standings.append({
-            "entry": 2000 + r,
-            "player_name": f"Manager {r}",
-            "rank": r,
-            "total": 499 - ((r - 36) * (19 / 24)),  # all between 480 and 499
-        })
+        standings.append(
+            {
+                "entry": 2000 + r,
+                "player_name": f"Manager {r}",
+                "rank": r,
+                "total": 499 - ((r - 36) * (19 / 24)),  # all between 480 and 499
+            }
+        )
 
     # Rank 61..120: 300 to 475 pts (outside 20 pts) -> 60 managers
     for r in range(61, 121):
-        standings.append({
-            "entry": 3000 + r,
-            "player_name": f"Manager {r}",
-            "rank": r,
-            "total": 475 - (r - 61),
-        })
+        standings.append(
+            {
+                "entry": 3000 + r,
+                "player_name": f"Manager {r}",
+                "rank": r,
+                "total": 475 - (r - 61),
+            }
+        )
 
     assert len(standings) == 120
 
@@ -88,12 +94,14 @@ def test_rival_set_user_rank_1():
     user_id = 7777
     standings = [{"entry": user_id, "player_name": "Leader", "rank": 1, "total": 600}]
     for r in range(2, 25):
-        standings.append({
-            "entry": 1000 + r,
-            "player_name": f"Manager {r}",
-            "rank": r,
-            "total": 550 - (r * 5),  # All > 20 pts below (540, 535, ...)
-        })
+        standings.append(
+            {
+                "entry": 1000 + r,
+                "player_name": f"Manager {r}",
+                "rank": r,
+                "total": 550 - (r * 5),  # All > 20 pts below (540, 535, ...)
+            }
+        )
 
     rivals, mode, user_rank = get_rival_set(standings, user_manager_id=user_id, points_window=20)
     assert user_rank == 1

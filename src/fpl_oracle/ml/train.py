@@ -23,15 +23,12 @@ from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
 from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.model_registry import model_registry
-from fpl_oracle.ml.predict import projection_engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("fpl_oracle.train")
 
 
-def compute_rolling_origin_cv(
-    X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFrame
-) -> list[dict[str, Any]]:
+def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFrame) -> list[dict[str, Any]]:
     """
     True temporal rolling-origin cross-validation with per-origin heuristic baselines on identical rows:
     Origin 1: Train 2023-24 -> Test 2024-25
@@ -104,8 +101,8 @@ def compute_rolling_origin_cv(
 
                 from scipy.optimize import minimize
 
-                def _mae_loss(w):
-                    return mean_absolute_error(v_act, w[0] * v_preds + w[1] * v_rec + w[2] * v_sea)
+                def _mae_loss(w, _act=v_act, _p=v_preds, _r=v_rec, _s=v_sea):
+                    return mean_absolute_error(_act, w[0] * _p + w[1] * _r + w[2] * _s)
 
                 res = minimize(
                     _mae_loss,
@@ -191,7 +188,9 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     cal_season = str(meta_train.iloc[cal_split_target]["season"])
     cal_round = int(meta_train.iloc[cal_split_target]["round"])
 
-    fit_mask = (meta_train["season"] < cal_season) | ((meta_train["season"] == cal_season) & (meta_train["round"] < cal_round))
+    fit_mask = (meta_train["season"] < cal_season) | (
+        (meta_train["season"] == cal_season) & (meta_train["round"] < cal_round)
+    )
     cal_mask = ~fit_mask
 
     X_fit, Y_fit = X_train[fit_mask].copy(), Y_train[fit_mask].copy()
@@ -223,7 +222,14 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         "bonus_model": candidate_models["bonus_model"].predict(X_cal),
         "cards_saves_model": candidate_models["cards_saves_model"].predict(X_cal),
     }
-    cal_comps_flat = {**cal_comps["minutes_model"], **cal_comps["attacking_model"], **cal_comps["defending_model"], **cal_comps["defcon_model"], **cal_comps["bonus_model"], **cal_comps["cards_saves_model"]}
+    cal_comps_flat = {
+        **cal_comps["minutes_model"],
+        **cal_comps["attacking_model"],
+        **cal_comps["defending_model"],
+        **cal_comps["defcon_model"],
+        **cal_comps["bonus_model"],
+        **cal_comps["cards_saves_model"],
+    }
     z10, z90 = scoring_ensemble.calibrate(cal_comps_flat, X_cal, Y_cal)
     logger.info(f"Empirical quantile calibration fit: z10={z10:.3f}, z90={z90:.3f}")
 
@@ -286,7 +292,14 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         "bonus_model": candidate_models["bonus_model"].predict(X_val_ablated),
         "cards_saves_model": candidate_models["cards_saves_model"].predict(X_val_ablated),
     }
-    ablated_comps_flat = {**ablated_comps["minutes_model"], **ablated_comps["attacking_model"], **ablated_comps["defending_model"], **ablated_comps["defcon_model"], **ablated_comps["bonus_model"], **ablated_comps["cards_saves_model"]}
+    ablated_comps_flat = {
+        **ablated_comps["minutes_model"],
+        **ablated_comps["attacking_model"],
+        **ablated_comps["defending_model"],
+        **ablated_comps["defcon_model"],
+        **ablated_comps["bonus_model"],
+        **ablated_comps["cards_saves_model"],
+    }
     ablated_preds_df = scoring_ensemble.aggregate_components(ablated_comps_flat, X_val_ablated)
     ablated_preds = ablated_preds_df["expected_points"].values
 
@@ -314,22 +327,26 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     # Generate real sample projections from validation holdout split (M1, M8)
     val_sample_df = meta_val.copy()
     val_sample_df["expected_points"] = full_preds
-    top_samples = val_sample_df.sort_values(by="expected_points", ascending=False).drop_duplicates(subset=["name"]).head(8)
+    top_samples = (
+        val_sample_df.sort_values(by="expected_points", ascending=False).drop_duplicates(subset=["name"]).head(8)
+    )
     upcoming_sample = []
     for _, r_samp in top_samples.iterrows():
         p_name = str(r_samp.get("name", "Player"))
         p_team = str(r_samp.get("team", "Unknown"))
         p_pos = str(r_samp.get("position", "MID"))
         p_xp = float(np.round(r_samp.get("expected_points", 0.0), 2))
-        upcoming_sample.append({
-            "position": p_pos,
-            "name": p_name,
-            "team": p_team,
-            "opponent": "Scheduled Opponent",
-            "venue": "H",
-            "xp": p_xp,
-            "drivers": f"Form projection {p_xp:.2f} xP, position role {p_pos}",
-        })
+        upcoming_sample.append(
+            {
+                "position": p_pos,
+                "name": p_name,
+                "team": p_team,
+                "opponent": "Scheduled Opponent",
+                "venue": "H",
+                "xp": p_xp,
+                "drivers": f"Form projection {p_xp:.2f} xP, position role {p_pos}",
+            }
+        )
 
     # Check active production model metrics on same validation split first
     active_metrics = model_registry.evaluate_production_weights(X_val, Y_val, rolling_origins=rolling_origins)

@@ -140,6 +140,7 @@ async def get_game_state_endpoint():
 def get_profile():
     p = data_store.get_profile()
     from fpl_oracle.config import app_config
+
     diag = app_config.get_redacted_status()
     return {
         "manager_id": p.manager_id,
@@ -178,6 +179,7 @@ def update_profile(req: ProfileUpdateRequest):
 def get_config_status():
     """Diagnostic status endpoint returning configured variables without exposing secrets."""
     from fpl_oracle.config import app_config
+
     return app_config.get_redacted_status()
 
 
@@ -226,6 +228,7 @@ async def get_squad(manager_id: int | None = None):
     user_squad_df = effective_state.to_squad_dataframe()
     if user_squad_df.empty or len(user_squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
+
         squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
         user_squad_df = squad_res["squad"].copy()
         user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
@@ -250,20 +253,24 @@ async def get_squad(manager_id: int | None = None):
             if f.event and f.event >= target_gw and f.event < target_gw + 5:
                 if f.team_h == team_id:
                     opp = team_map.get(f.team_a)
-                    f_list.append({
-                        "event": f.event,
-                        "opp_short": opp.short_name if opp else "OPP",
-                        "is_home": True,
-                        "difficulty": f.team_h_difficulty or 3,
-                    })
+                    f_list.append(
+                        {
+                            "event": f.event,
+                            "opp_short": opp.short_name if opp else "OPP",
+                            "is_home": True,
+                            "difficulty": f.team_h_difficulty or 3,
+                        }
+                    )
                 elif f.team_a == team_id:
                     opp = team_map.get(f.team_h)
-                    f_list.append({
-                        "event": f.event,
-                        "opp_short": opp.short_name if opp else "OPP",
-                        "is_home": False,
-                        "difficulty": f.team_a_difficulty or 3,
-                    })
+                    f_list.append(
+                        {
+                            "event": f.event,
+                            "opp_short": opp.short_name if opp else "OPP",
+                            "is_home": False,
+                            "difficulty": f.team_a_difficulty or 3,
+                        }
+                    )
         return f_list[:5]
 
     news_map = {}
@@ -278,98 +285,110 @@ async def get_squad(manager_id: int | None = None):
     for _, s in lineup_res["starters"].iterrows():
         elem_id = int(s["element"])
         sig = news_map.get(elem_id, {})
-        starters_out.append({
-            "element": elem_id,
-            "web_name": s["web_name"],
-            "team": int(s["team"]),
-            "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
-            "position": s["position"],
-            "now_cost": round(float(s["value"]) / 10.0, 1),
-            "purchase_price": round(float(s.get("purchase_price", s["value"])) / 10.0, 1),
-            "selling_price": round(float(s.get("selling_price", s["value"])) / 10.0, 1),
-            "expected_points": round(float(s["expected_points"]), 2),
-            "p10": round(float(s.get("p10", 0.0)), 2),
-            "p90": round(float(s.get("p90", 0.0)), 2),
-            "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
-            "chance_of_playing": s.get("chance_of_playing", 100),
-            "status": s.get("status", "a"),
-            "news": s.get("news", ""),
-            "news_quote": sig.get("quote", ""),
-            "source_url": sig.get("source_url", ""),
-            "news_mode": "gated_active" if sig.get("applied_to_production") else ("shadow" if sig.get("quote") else "official"),
-            "expected_minutes_limit": sig.get("expected_minutes_limit"),
-            "reconciliation_reason": sig.get("reconciliation_reason", ""),
-            "is_captain": elem_id == lineup_res["captain"]["element"],
-            "is_vice_captain": elem_id == lineup_res["vice_captain"]["element"],
-            "next_fixtures": get_next_fixtures(int(s["team"])),
-        })
+        starters_out.append(
+            {
+                "element": elem_id,
+                "web_name": s["web_name"],
+                "team": int(s["team"]),
+                "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
+                "position": s["position"],
+                "now_cost": round(float(s["value"]) / 10.0, 1),
+                "purchase_price": round(float(s.get("purchase_price", s["value"])) / 10.0, 1),
+                "selling_price": round(float(s.get("selling_price", s["value"])) / 10.0, 1),
+                "expected_points": round(float(s["expected_points"]), 2),
+                "p10": round(float(s.get("p10", 0.0)), 2),
+                "p90": round(float(s.get("p90", 0.0)), 2),
+                "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
+                "chance_of_playing": s.get("chance_of_playing", 100),
+                "status": s.get("status", "a"),
+                "news": s.get("news", ""),
+                "news_quote": sig.get("quote", ""),
+                "source_url": sig.get("source_url", ""),
+                "news_mode": "gated_active"
+                if sig.get("applied_to_production")
+                else ("shadow" if sig.get("quote") else "official"),
+                "expected_minutes_limit": sig.get("expected_minutes_limit"),
+                "reconciliation_reason": sig.get("reconciliation_reason", ""),
+                "is_captain": elem_id == lineup_res["captain"]["element"],
+                "is_vice_captain": elem_id == lineup_res["vice_captain"]["element"],
+                "next_fixtures": get_next_fixtures(int(s["team"])),
+            }
+        )
 
     bench_out = []
     for idx, (_, b) in enumerate(lineup_res["bench"].iterrows(), start=1):
         b_elem_id = int(b["element"])
         b_sig = news_map.get(b_elem_id, {})
-        bench_out.append({
-            "element": b_elem_id,
-            "web_name": b["web_name"],
-            "team": int(b["team"]),
-            "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
-            "position": b["position"],
-            "now_cost": round(float(b["value"]) / 10.0, 1),
-            "purchase_price": round(float(b.get("purchase_price", b["value"])) / 10.0, 1),
-            "selling_price": round(float(b.get("selling_price", b["value"])) / 10.0, 1),
-            "expected_points": round(float(b["expected_points"]), 2),
-            "p10": round(float(b.get("p10", 0.0)), 2),
-            "p90": round(float(b.get("p90", 0.0)), 2),
-            "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
-            "chance_of_playing": b.get("chance_of_playing", 100),
-            "status": b.get("status", "a"),
-            "news": b.get("news", ""),
-            "news_quote": b_sig.get("quote", ""),
-            "source_url": b_sig.get("source_url", ""),
-            "news_mode": "gated_active" if b_sig.get("applied_to_production") else ("shadow" if b_sig.get("quote") else "official"),
-            "expected_minutes_limit": b_sig.get("expected_minutes_limit"),
-            "reconciliation_reason": b_sig.get("reconciliation_reason", ""),
-            "bench_order": idx,
-            "next_fixtures": get_next_fixtures(int(b["team"])),
-        })
+        bench_out.append(
+            {
+                "element": b_elem_id,
+                "web_name": b["web_name"],
+                "team": int(b["team"]),
+                "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
+                "position": b["position"],
+                "now_cost": round(float(b["value"]) / 10.0, 1),
+                "purchase_price": round(float(b.get("purchase_price", b["value"])) / 10.0, 1),
+                "selling_price": round(float(b.get("selling_price", b["value"])) / 10.0, 1),
+                "expected_points": round(float(b["expected_points"]), 2),
+                "p10": round(float(b.get("p10", 0.0)), 2),
+                "p90": round(float(b.get("p90", 0.0)), 2),
+                "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
+                "chance_of_playing": b.get("chance_of_playing", 100),
+                "status": b.get("status", "a"),
+                "news": b.get("news", ""),
+                "news_quote": b_sig.get("quote", ""),
+                "source_url": b_sig.get("source_url", ""),
+                "news_mode": "gated_active"
+                if b_sig.get("applied_to_production")
+                else ("shadow" if b_sig.get("quote") else "official"),
+                "expected_minutes_limit": b_sig.get("expected_minutes_limit"),
+                "reconciliation_reason": b_sig.get("reconciliation_reason", ""),
+                "bench_order": idx,
+                "next_fixtures": get_next_fixtures(int(b["team"])),
+            }
+        )
 
     squad_val = round(sum(s["now_cost"] for s in starters_out + bench_out), 1)
     sell_val = round(sum(s["selling_price"] for s in starters_out + bench_out), 1)
     team_val = round(sell_val + effective_state.bank_millions, 1)
 
-    return safe_json_serialize({
-        "manager_id": effective_state.manager_id,
-        "manager_name": effective_state.manager_name,
-        "team_name": effective_state.team_name,
-        "overall_points": effective_state.overall_points,
-        "overall_rank": effective_state.overall_rank,
-        "mode": effective_state.mode.value,
-        "confidence": effective_state.confidence,
-        "target_gameweek": target_gw,
-        "bank_millions": effective_state.bank_millions,
-        "bank": effective_state.bank_millions,
-        "bank_source": effective_state.bank_source,
-        "has_bank_override": effective_state.has_bank_override,
-        "free_transfers": effective_state.free_transfers,
-        "available_transfers": effective_state.free_transfers,
-        "ft_source": effective_state.ft_source,
-        "has_ft_override": effective_state.has_ft_override,
-        "total_squad_value": squad_val,
-        "total_selling_value": sell_val,
-        "total_team_value": team_val,
-        "chips_used": [c.get("name") for c in effective_state.chips_used],
-        "formation": lineup_res["formation"],
-        "captain": lineup_res["captain"],
-        "vice_captain": lineup_res["vice_captain"],
-        "starters": starters_out,
-        "bench": bench_out,
-        "starters_expected_points": lineup_res.get("starters_expected_points", 0.0),
-        "captain_bonus_expected_points": lineup_res.get("captain_bonus_expected_points", lineup_res["captain"]["expected_points"]),
-        "total_expected_points": lineup_res["total_gameweek_expected_points"],
-        "stale": is_stale,
-        "is_stale": is_stale,
-        "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
-    })
+    return safe_json_serialize(
+        {
+            "manager_id": effective_state.manager_id,
+            "manager_name": effective_state.manager_name,
+            "team_name": effective_state.team_name,
+            "overall_points": effective_state.overall_points,
+            "overall_rank": effective_state.overall_rank,
+            "mode": effective_state.mode.value,
+            "confidence": effective_state.confidence,
+            "target_gameweek": target_gw,
+            "bank_millions": effective_state.bank_millions,
+            "bank": effective_state.bank_millions,
+            "bank_source": effective_state.bank_source,
+            "has_bank_override": effective_state.has_bank_override,
+            "free_transfers": effective_state.free_transfers,
+            "available_transfers": effective_state.free_transfers,
+            "ft_source": effective_state.ft_source,
+            "has_ft_override": effective_state.has_ft_override,
+            "total_squad_value": squad_val,
+            "total_selling_value": sell_val,
+            "total_team_value": team_val,
+            "chips_used": [c.get("name") for c in effective_state.chips_used],
+            "formation": lineup_res["formation"],
+            "captain": lineup_res["captain"],
+            "vice_captain": lineup_res["vice_captain"],
+            "starters": starters_out,
+            "bench": bench_out,
+            "starters_expected_points": lineup_res.get("starters_expected_points", 0.0),
+            "captain_bonus_expected_points": lineup_res.get(
+                "captain_bonus_expected_points", lineup_res["captain"]["expected_points"]
+            ),
+            "total_expected_points": lineup_res["total_gameweek_expected_points"],
+            "stale": is_stale,
+            "is_stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+        }
+    )
 
 
 @router.post("/squad/match")
@@ -648,11 +667,13 @@ async def get_news_signals(
     boot, _ = await fpl_client.get_bootstrap_static()
     target_gw = gw or 6
     signals = await news_analyzer.get_player_news_signals(boot, target_gw=target_gw)
-    return safe_json_serialize({
-        "target_gw": target_gw,
-        "count": len(signals),
-        "signals": signals,
-    })
+    return safe_json_serialize(
+        {
+            "target_gw": target_gw,
+            "count": len(signals),
+            "signals": signals,
+        }
+    )
 
 
 @router.get("/decision-card")

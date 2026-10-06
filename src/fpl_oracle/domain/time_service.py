@@ -21,8 +21,7 @@ class GameweekPhase(StrEnum):
 
 
 class Clock(Protocol):
-    def now_utc(self) -> datetime:
-        ...
+    def now_utc(self) -> datetime: ...
 
 
 class SystemClock:
@@ -140,7 +139,9 @@ class TimeService:
         curr_fixtures = [f for f in fixtures if getattr(f, "event", None) == curr_gw]
         is_live = False
         if curr_fixtures:
-            live_count = sum(1 for f in curr_fixtures if getattr(f, "started", False) and not getattr(f, "finished", False))
+            live_count = sum(
+                1 for f in curr_fixtures if getattr(f, "started", False) and not getattr(f, "finished", False)
+            )
             if live_count > 0:
                 is_live = True
 

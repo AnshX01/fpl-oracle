@@ -60,12 +60,14 @@ def run_backtest():
         future_df = season_df[(season_df["round"] > t) & (season_df["round"] <= t + h)].copy()
 
         # Build pre-deadline player projections at round t using strictly historical rolling form
-        player_stats = past_df.groupby("element").agg({
-            "total_points": ["count", "mean", "std"],
-            "team": "last",
-            "position": "last",
-            "name": "last",
-        })
+        player_stats = past_df.groupby("element").agg(
+            {
+                "total_points": ["count", "mean", "std"],
+                "team": "last",
+                "position": "last",
+                "name": "last",
+            }
+        )
         player_stats.columns = ["n_games", "mean_pts", "std_pts", "team", "position", "name"]
         player_stats = player_stats.reset_index()
 
@@ -83,10 +85,7 @@ def run_backtest():
         for m_idx in range(n_managers):
             # Staggered squads with differential players
             # Manager 0 has top template, managers 1..5 have varied differentials
-            chosen_indices = [
-                (i * n_managers + (m_idx * 3)) % len(top_players)
-                for i in range(11)
-            ]
+            chosen_indices = [(i * n_managers + (m_idx * 3)) % len(top_players) for i in range(11)]
             m_squad = top_players.iloc[chosen_indices].copy()
             m_starters = m_squad["element"].tolist()
             m_cap = m_squad.sort_values(by="expected_points", ascending=False)["element"].iloc[0]
@@ -95,14 +94,16 @@ def run_backtest():
             # Base score + realistic points spread
             pts_at_t = 1200.0 - (m_idx * 15.0)
 
-            managers.append({
-                "entry_id": 100 + m_idx,
-                "name": f"Manager_{m_idx + 1}",
-                "points_at_t": pts_at_t,
-                "starters": m_starters,
-                "captain": m_cap,
-                "squad_df": m_squad,
-            })
+            managers.append(
+                {
+                    "entry_id": 100 + m_idx,
+                    "name": f"Manager_{m_idx + 1}",
+                    "points_at_t": pts_at_t,
+                    "starters": m_starters,
+                    "captain": m_cap,
+                    "squad_df": m_squad,
+                }
+            )
 
         # Evaluate actual future points scored by each manager's squad over future rounds
         manager_final_actual_points = []
@@ -128,18 +129,22 @@ def run_backtest():
         user_mgr = managers[0]
         rival_entries = []
         for r_m in managers[1:]:
-            rival_entries.append({
-                "entry_id": r_m["entry_id"],
-                "player_name": r_m["name"],
-                "total_points": r_m["points_at_t"],
-                "captain_element": r_m["captain"],
-                "squad": [{"element": eid, "is_starter": True} for eid in r_m["starters"]],
-            })
+            rival_entries.append(
+                {
+                    "entry_id": r_m["entry_id"],
+                    "player_name": r_m["name"],
+                    "total_points": r_m["points_at_t"],
+                    "captain_element": r_m["captain"],
+                    "squad": [{"element": eid, "is_starter": True} for eid in r_m["starters"]],
+                }
+            )
 
-        user_squad_df = pd.DataFrame([
-            {"element": eid, "is_starter": True, "is_captain": (eid == user_mgr["captain"])}
-            for eid in user_mgr["starters"]
-        ])
+        user_squad_df = pd.DataFrame(
+            [
+                {"element": eid, "is_starter": True, "is_captain": (eid == user_mgr["captain"])}
+                for eid in user_mgr["starters"]
+            ]
+        )
 
         sim_res = monte_carlo_simulator.simulate_league(
             user_points=user_mgr["points_at_t"],
@@ -158,17 +163,19 @@ def run_backtest():
 
         brier = round((p_win_user - y_user_actual) ** 2, 4)
 
-        scenario_results.append({
-            "scenario": sc["name"],
-            "season": season,
-            "horizon_gws": h,
-            "lead_pts": user_mgr["points_at_t"] - managers[1]["points_at_t"],
-            "p_win": round(p_win_user * 100.0, 1),
-            "actual_won": bool(actual_winner_idx == 0),
-            "brier": brier,
-        })
+        scenario_results.append(
+            {
+                "scenario": sc["name"],
+                "season": season,
+                "horizon_gws": h,
+                "lead_pts": user_mgr["points_at_t"] - managers[1]["points_at_t"],
+                "p_win": round(p_win_user * 100.0, 1),
+                "actual_won": bool(actual_winner_idx == 0),
+                "brier": brier,
+            }
+        )
 
-    overall_brier = float(np.mean([(p - y) ** 2 for p, y in zip(all_predictions, all_actuals)]))
+    overall_brier = float(np.mean([(p - y) ** 2 for p, y in zip(all_predictions, all_actuals, strict=True)]))
 
     # Reliability calibration curve
     bins = [(0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.0)]
@@ -177,12 +184,19 @@ def run_backtest():
         mask = [b_low <= p < b_high or (b_high == 1.0 and p == 1.0) for p in all_predictions]
         n_bin = sum(mask)
         if n_bin > 0:
-            mean_pred = float(np.mean([p for p, m in zip(all_predictions, mask) if m]))
-            mean_act = float(np.mean([y for y, m in zip(all_actuals, mask) if m]))
+            mean_pred = float(np.mean([p for p, m in zip(all_predictions, mask, strict=True) if m]))
+            mean_act = float(np.mean([y for y, m in zip(all_actuals, mask, strict=True) if m]))
         else:
             mean_pred = (b_low + b_high) / 2.0
             mean_act = 0.0
-        calib_rows.append({"bin": f"{int(b_low*100)}%-{int(b_high*100)}%", "count": n_bin, "pred": round(mean_pred * 100, 1), "actual": round(mean_act * 100, 1)})
+        calib_rows.append(
+            {
+                "bin": f"{int(b_low * 100)}%-{int(b_high * 100)}%",
+                "count": n_bin,
+                "pred": round(mean_pred * 100, 1),
+                "actual": round(mean_act * 100, 1),
+            }
+        )
 
     # Generate markdown report
     report_lines = [
@@ -207,15 +221,17 @@ def run_backtest():
             f"| {sr['scenario']} | {sr['season']} | {sr['horizon_gws']} | +{sr['lead_pts']:.0f} pts | {sr['p_win']}% | {res_str} | {sr['brier']:.4f} |"
         )
 
-    report_lines.extend([
-        "",
-        "---",
-        "",
-        "## 2. Reliability Calibration Curve",
-        "",
-        "| Forecast Bin | Sample Count | Mean Forecast Win Prob (%) | Realized Win Frequency (%) |",
-        "| :---: | :---: | :---: | :---: |",
-    ])
+    report_lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 2. Reliability Calibration Curve",
+            "",
+            "| Forecast Bin | Sample Count | Mean Forecast Win Prob (%) | Realized Win Frequency (%) |",
+            "| :---: | :---: | :---: | :---: |",
+        ]
+    )
 
     for cr in calib_rows:
         report_lines.append(f"| {cr['bin']} | {cr['count']} | {cr['pred']}% | {cr['actual']}% |")

@@ -86,34 +86,36 @@ def test_identical_feature_computation_train_serve_parity():
 def test_opponent_form_features_presence_and_bounds():
     """Verify opponent form and continuous implied match strength features exist and are bounded."""
     fe = FeatureEngineering()
-    sample_df = pd.DataFrame([
-        {
-            "name": "Target FWD",
-            "season": "2025-26",
-            "round": 1,
-            "team": "Arsenal",
-            "opponent_team": "Chelsea",
-            "position": "FWD",
-            "minutes": 90,
-            "starts": 1,
-            "total_points": 8,
-            "expected_goals": 0.80,
-            "expected_assists": 0.20,
-            "expected_goal_involvements": 1.00,
-            "expected_goals_conceded": 1.10,
-            "goals_scored": 1,
-            "assists": 1,
-            "clean_sheets": 0,
-            "goals_conceded": 1,
-            "saves": 0,
-            "defensive_contribution": 0,
-            "ict_index": 14.0,
-            "bps": 32,
-            "bonus": 3,
-            "was_home": True,
-            "value": 140.0,
-        }
-    ])
+    sample_df = pd.DataFrame(
+        [
+            {
+                "name": "Target FWD",
+                "season": "2025-26",
+                "round": 1,
+                "team": "Arsenal",
+                "opponent_team": "Chelsea",
+                "position": "FWD",
+                "minutes": 90,
+                "starts": 1,
+                "total_points": 8,
+                "expected_goals": 0.80,
+                "expected_assists": 0.20,
+                "expected_goal_involvements": 1.00,
+                "expected_goals_conceded": 1.10,
+                "goals_scored": 1,
+                "assists": 1,
+                "clean_sheets": 0,
+                "goals_conceded": 1,
+                "saves": 0,
+                "defensive_contribution": 0,
+                "ict_index": 14.0,
+                "bps": 32,
+                "bonus": 3,
+                "was_home": True,
+                "value": 140.0,
+            }
+        ]
+    )
 
     X, Y = fe.build_historical_features(sample_df)
     row = X.iloc[0]
@@ -132,70 +134,74 @@ def test_no_hard_rules_or_caps_on_elite_projections():
     with NO artificial caps or ceilings.
     """
     # Create feature vector for an elite talisman (e.g. Haaland/Salah) in prime form
-    star_features = pd.DataFrame([{
-        "roll_minutes_3": 90.0,
-        "roll_minutes_5": 90.0,
-        "roll_minutes_8": 90.0,
-        "roll_starts_ratio_5": 1.0,
-        "roll_min60_ratio_5": 1.0,
-        "std_minutes_per_gw": 88.0,
-        "roll_points_3": 9.5,
-        "roll_points_5": 8.8,
-        "roll_points_8": 8.0,
-        "roll_xG_3": 1.10,
-        "roll_xG_5": 0.95,
-        "roll_xG_8": 0.85,
-        "roll_xA_3": 0.30,
-        "roll_xA_5": 0.25,
-        "roll_xA_8": 0.20,
-        "roll_xGI_5": 1.20,
-        "roll_goals_5": 1.20,
-        "roll_assists_5": 0.40,
-        "roll_xGC_5": 0.80,
-        "roll_clean_sheets_5": 0.40,
-        "roll_saves_5": 0.0,
-        "roll_goals_conceded_5": 0.80,
-        "roll_defcon_5": 0.0,
-        "roll_ict_5": 16.0,
-        "roll_bps_5": 35.0,
-        "roll_cards_5": 0.0,
-        "roll_own_goals_5": 0.0,
-        "roll_penalties_missed_5": 0.0,
-        "roll_penalties_saved_5": 0.0,
-        "was_home": 1.0,
-        "team_strength_attack": 2.2,
-        "opp_strength_defence": 0.85,  # Elite defence!
-        "net_strength_diff": 1.35,
-        "opponent_difficulty": 4.0,
-        "days_rest": 7.0,
-        "implied_team_xG": 1.85,
-        "implied_team_cs_prob": 0.45,
-        "implied_opp_xG": 0.75,
-        "implied_opp_cs_prob": 0.40,
-        "team_roll_goals_3": 2.5,
-        "team_roll_goals_5": 2.2,
-        "team_roll_goals_8": 2.0,
-        "team_roll_xG_3": 2.3,
-        "team_roll_xG_5": 2.1,
-        "team_roll_xG_8": 2.0,
-        "opp_roll_points_3": 2.2,
-        "opp_roll_points_5": 2.0,
-        "opp_roll_points_8": 1.8,
-        "opp_roll_goals_conceded_3": 0.8,
-        "opp_roll_goals_conceded_5": 0.9,
-        "opp_roll_goals_conceded_8": 1.0,
-        "opp_roll_xGC_3": 0.8,
-        "opp_roll_xGC_5": 0.85,
-        "opp_roll_xGC_8": 0.90,
-        "opp_roll_clean_sheets_5": 0.50,
-        "pos_GKP": 0.0,
-        "pos_DEF": 0.0,
-        "pos_MID": 0.0,
-        "pos_FWD": 1.0,
-        "value": 150.0,
-        "is_2026_27": 1.0,
-        "chance_of_playing": 100.0,
-    }])
+    star_features = pd.DataFrame(
+        [
+            {
+                "roll_minutes_3": 90.0,
+                "roll_minutes_5": 90.0,
+                "roll_minutes_8": 90.0,
+                "roll_starts_ratio_5": 1.0,
+                "roll_min60_ratio_5": 1.0,
+                "std_minutes_per_gw": 88.0,
+                "roll_points_3": 9.5,
+                "roll_points_5": 8.8,
+                "roll_points_8": 8.0,
+                "roll_xG_3": 1.10,
+                "roll_xG_5": 0.95,
+                "roll_xG_8": 0.85,
+                "roll_xA_3": 0.30,
+                "roll_xA_5": 0.25,
+                "roll_xA_8": 0.20,
+                "roll_xGI_5": 1.20,
+                "roll_goals_5": 1.20,
+                "roll_assists_5": 0.40,
+                "roll_xGC_5": 0.80,
+                "roll_clean_sheets_5": 0.40,
+                "roll_saves_5": 0.0,
+                "roll_goals_conceded_5": 0.80,
+                "roll_defcon_5": 0.0,
+                "roll_ict_5": 16.0,
+                "roll_bps_5": 35.0,
+                "roll_cards_5": 0.0,
+                "roll_own_goals_5": 0.0,
+                "roll_penalties_missed_5": 0.0,
+                "roll_penalties_saved_5": 0.0,
+                "was_home": 1.0,
+                "team_strength_attack": 2.2,
+                "opp_strength_defence": 0.85,  # Elite defence!
+                "net_strength_diff": 1.35,
+                "opponent_difficulty": 4.0,
+                "days_rest": 7.0,
+                "implied_team_xG": 1.85,
+                "implied_team_cs_prob": 0.45,
+                "implied_opp_xG": 0.75,
+                "implied_opp_cs_prob": 0.40,
+                "team_roll_goals_3": 2.5,
+                "team_roll_goals_5": 2.2,
+                "team_roll_goals_8": 2.0,
+                "team_roll_xG_3": 2.3,
+                "team_roll_xG_5": 2.1,
+                "team_roll_xG_8": 2.0,
+                "opp_roll_points_3": 2.2,
+                "opp_roll_points_5": 2.0,
+                "opp_roll_points_8": 1.8,
+                "opp_roll_goals_conceded_3": 0.8,
+                "opp_roll_goals_conceded_5": 0.9,
+                "opp_roll_goals_conceded_8": 1.0,
+                "opp_roll_xGC_3": 0.8,
+                "opp_roll_xGC_5": 0.85,
+                "opp_roll_xGC_8": 0.90,
+                "opp_roll_clean_sheets_5": 0.50,
+                "pos_GKP": 0.0,
+                "pos_DEF": 0.0,
+                "pos_MID": 0.0,
+                "pos_FWD": 1.0,
+                "value": 150.0,
+                "is_2026_27": 1.0,
+                "chance_of_playing": 100.0,
+            }
+        ]
+    )
 
     projection_engine.load_or_train()
     mins_pred = projection_engine.minutes_model.predict(star_features)
@@ -215,35 +221,39 @@ def test_no_hard_rules_or_caps_on_elite_projections():
 
 def test_cards_and_rare_components_target_math():
     """Verify disciplinary deductions correctly penalize yellow cards, red cards, own goals, and missed penalties."""
-    df_raw = pd.DataFrame([{
-        "name": "Fiery Midfielder",
-        "season": "2025-26",
-        "round": 1,
-        "position": "MID",
-        "minutes": 90,
-        "starts": 1,
-        "total_points": 1,
-        "expected_goals": 0.1,
-        "expected_assists": 0.1,
-        "expected_goal_involvements": 0.2,
-        "expected_goals_conceded": 2.0,
-        "goals_scored": 0,
-        "assists": 0,
-        "clean_sheets": 0,
-        "goals_conceded": 2,
-        "saves": 0,
-        "defensive_contribution": 0,
-        "ict_index": 4.0,
-        "bps": 5,
-        "bonus": 0,
-        "yellow_cards": 1,  # -1 pt
-        "red_cards": 0,
-        "own_goals": 1,     # -2 pts
-        "penalties_missed": 1, # -2 pts
-        "penalties_saved": 0,
-        "was_home": True,
-        "value": 60.0,
-    }])
+    df_raw = pd.DataFrame(
+        [
+            {
+                "name": "Fiery Midfielder",
+                "season": "2025-26",
+                "round": 1,
+                "position": "MID",
+                "minutes": 90,
+                "starts": 1,
+                "total_points": 1,
+                "expected_goals": 0.1,
+                "expected_assists": 0.1,
+                "expected_goal_involvements": 0.2,
+                "expected_goals_conceded": 2.0,
+                "goals_scored": 0,
+                "assists": 0,
+                "clean_sheets": 0,
+                "goals_conceded": 2,
+                "saves": 0,
+                "defensive_contribution": 0,
+                "ict_index": 4.0,
+                "bps": 5,
+                "bonus": 0,
+                "yellow_cards": 1,  # -1 pt
+                "red_cards": 0,
+                "own_goals": 1,  # -2 pts
+                "penalties_missed": 1,  # -2 pts
+                "penalties_saved": 0,
+                "was_home": True,
+                "value": 60.0,
+            }
+        ]
+    )
 
     fe = FeatureEngineering()
     _, Y = fe.build_historical_features(df_raw)
@@ -264,13 +274,117 @@ def test_card_deduction_label_alignment_alpha_zulu():
     fe = FeatureEngineering()
     rows = [
         # Zulu GW1 (deduction 3)
-        {"name": "Zulu", "season": "2025-26", "round": 1, "kickoff_time": "2025-08-10T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": -1, "yellow_cards": 0, "red_cards": 1, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+        {
+            "name": "Zulu",
+            "season": "2025-26",
+            "round": 1,
+            "kickoff_time": "2025-08-10T12:00:00Z",
+            "position": "MID",
+            "minutes": 90,
+            "starts": 1,
+            "goals_scored": 0,
+            "assists": 0,
+            "expected_goals": 0.0,
+            "expected_assists": 0.0,
+            "clean_sheets": 0,
+            "goals_conceded": 0,
+            "saves": 0,
+            "defensive_contribution": 0,
+            "bonus": 0,
+            "total_points": -1,
+            "yellow_cards": 0,
+            "red_cards": 1,
+            "own_goals": 0,
+            "penalties_missed": 0,
+            "was_home": True,
+            "value": 50.0,
+            "team": "Arsenal",
+            "opponent_team": 2,
+        },
         # Zulu GW2 (deduction 4)
-        {"name": "Zulu", "season": "2025-26", "round": 2, "kickoff_time": "2025-08-17T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": -2, "yellow_cards": 1, "red_cards": 1, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+        {
+            "name": "Zulu",
+            "season": "2025-26",
+            "round": 2,
+            "kickoff_time": "2025-08-17T12:00:00Z",
+            "position": "MID",
+            "minutes": 90,
+            "starts": 1,
+            "goals_scored": 0,
+            "assists": 0,
+            "expected_goals": 0.0,
+            "expected_assists": 0.0,
+            "clean_sheets": 0,
+            "goals_conceded": 0,
+            "saves": 0,
+            "defensive_contribution": 0,
+            "bonus": 0,
+            "total_points": -2,
+            "yellow_cards": 1,
+            "red_cards": 1,
+            "own_goals": 0,
+            "penalties_missed": 0,
+            "was_home": True,
+            "value": 50.0,
+            "team": "Arsenal",
+            "opponent_team": 2,
+        },
         # Alpha GW1 (deduction 0)
-        {"name": "Alpha", "season": "2025-26", "round": 1, "kickoff_time": "2025-08-10T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": 2, "yellow_cards": 0, "red_cards": 0, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+        {
+            "name": "Alpha",
+            "season": "2025-26",
+            "round": 1,
+            "kickoff_time": "2025-08-10T12:00:00Z",
+            "position": "MID",
+            "minutes": 90,
+            "starts": 1,
+            "goals_scored": 0,
+            "assists": 0,
+            "expected_goals": 0.0,
+            "expected_assists": 0.0,
+            "clean_sheets": 0,
+            "goals_conceded": 0,
+            "saves": 0,
+            "defensive_contribution": 0,
+            "bonus": 0,
+            "total_points": 2,
+            "yellow_cards": 0,
+            "red_cards": 0,
+            "own_goals": 0,
+            "penalties_missed": 0,
+            "was_home": True,
+            "value": 50.0,
+            "team": "Arsenal",
+            "opponent_team": 2,
+        },
         # Alpha GW2 (deduction 1)
-        {"name": "Alpha", "season": "2025-26", "round": 2, "kickoff_time": "2025-08-17T12:00:00Z", "position": "MID", "minutes": 90, "starts": 1, "goals_scored": 0, "assists": 0, "expected_goals": 0.0, "expected_assists": 0.0, "clean_sheets": 0, "goals_conceded": 0, "saves": 0, "defensive_contribution": 0, "bonus": 0, "total_points": 1, "yellow_cards": 1, "red_cards": 0, "own_goals": 0, "penalties_missed": 0, "was_home": True, "value": 50.0, "team": "Arsenal", "opponent_team": 2},
+        {
+            "name": "Alpha",
+            "season": "2025-26",
+            "round": 2,
+            "kickoff_time": "2025-08-17T12:00:00Z",
+            "position": "MID",
+            "minutes": 90,
+            "starts": 1,
+            "goals_scored": 0,
+            "assists": 0,
+            "expected_goals": 0.0,
+            "expected_assists": 0.0,
+            "clean_sheets": 0,
+            "goals_conceded": 0,
+            "saves": 0,
+            "defensive_contribution": 0,
+            "bonus": 0,
+            "total_points": 1,
+            "yellow_cards": 1,
+            "red_cards": 0,
+            "own_goals": 0,
+            "penalties_missed": 0,
+            "was_home": True,
+            "value": 50.0,
+            "team": "Arsenal",
+            "opponent_team": 2,
+        },
     ]
     df = pd.DataFrame(rows)
     X, Y, meta = fe.build_historical_features(df, return_meta=True)
@@ -310,35 +424,40 @@ def test_train_serve_parity_all_62_columns():
     assert len(FEATURE_COLUMNS) == 62, f"Expected 62 FEATURE_COLUMNS, found {len(FEATURE_COLUMNS)}"
 
     # Generate sample player history and verify column set
-    sample_hist = pd.DataFrame([{
-        "name": "Parity Player",
-        "season": "2025-26",
-        "round": r,
-        "position": "MID",
-        "minutes": 90,
-        "starts": 1,
-        "goals_scored": 0,
-        "assists": 0,
-        "expected_goals": 0.2,
-        "expected_assists": 0.1,
-        "clean_sheets": 0,
-        "goals_conceded": 1,
-        "saves": 0,
-        "defensive_contribution": 1,
-        "ict_index": 5.0,
-        "bps": 12,
-        "bonus": 0,
-        "yellow_cards": 0,
-        "red_cards": 0,
-        "own_goals": 0,
-        "penalties_missed": 0,
-        "penalties_saved": 0,
-        "was_home": True,
-        "value": 75.0,
-        "team": "Arsenal",
-        "opponent_team": 2,
-        "total_points": 3,
-    } for r in range(1, 6)])
+    sample_hist = pd.DataFrame(
+        [
+            {
+                "name": "Parity Player",
+                "season": "2025-26",
+                "round": r,
+                "position": "MID",
+                "minutes": 90,
+                "starts": 1,
+                "goals_scored": 0,
+                "assists": 0,
+                "expected_goals": 0.2,
+                "expected_assists": 0.1,
+                "clean_sheets": 0,
+                "goals_conceded": 1,
+                "saves": 0,
+                "defensive_contribution": 1,
+                "ict_index": 5.0,
+                "bps": 12,
+                "bonus": 0,
+                "yellow_cards": 0,
+                "red_cards": 0,
+                "own_goals": 0,
+                "penalties_missed": 0,
+                "penalties_saved": 0,
+                "was_home": True,
+                "value": 75.0,
+                "team": "Arsenal",
+                "opponent_team": 2,
+                "total_points": 3,
+            }
+            for r in range(1, 6)
+        ]
+    )
 
     X, _ = fe.build_historical_features(sample_hist)
     assert list(X.columns) == FEATURE_COLUMNS, "Training features columns must match FEATURE_COLUMNS exactly"
@@ -352,6 +471,7 @@ def test_card_deduction_label_alignment_randomized():
     even when input dataframe is randomly shuffled.
     """
     import random
+
     fe = FeatureEngineering()
 
     players = ["Player_A", "Player_B", "Player_C", "Player_D"]
@@ -367,23 +487,25 @@ def test_card_deduction_label_alignment_randomized():
             expected_deduction = float(yc * 1.0 + rc * 3.0 + og * 2.0 + pm * 2.0)
             expected_map[(name, gw)] = expected_deduction
 
-            rows.append({
-                "name": name,
-                "season": "2025-26",
-                "round": gw,
-                "kickoff_time": f"2025-08-{10 + gw}T15:00:00Z",
-                "position": "MID",
-                "minutes": 90,
-                "starts": 1,
-                "yellow_cards": yc,
-                "red_cards": rc,
-                "own_goals": og,
-                "penalties_missed": pm,
-                "team": "Arsenal",
-                "opponent_team": 2,
-                "was_home": True,
-                "value": 60.0,
-            })
+            rows.append(
+                {
+                    "name": name,
+                    "season": "2025-26",
+                    "round": gw,
+                    "kickoff_time": f"2025-08-{10 + gw}T15:00:00Z",
+                    "position": "MID",
+                    "minutes": 90,
+                    "starts": 1,
+                    "yellow_cards": yc,
+                    "red_cards": rc,
+                    "own_goals": og,
+                    "penalties_missed": pm,
+                    "team": "Arsenal",
+                    "opponent_team": 2,
+                    "was_home": True,
+                    "value": 60.0,
+                }
+            )
 
     # Shuffle rows deliberately
     random.seed(42)
@@ -398,4 +520,3 @@ def test_card_deduction_label_alignment_randomized():
         assert actual_deduction == expected_map[key], (
             f"Card deduction mismatch for {key}: expected {expected_map[key]}, got {actual_deduction}"
         )
-

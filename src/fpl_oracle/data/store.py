@@ -283,6 +283,7 @@ class DataStore:
 
                 # If manager_id or league_id still unconfigured, seed from environment
                 from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+
                 if profile.manager_id is None and FPL_MANAGER_ID:
                     try:
                         val = int(str(FPL_MANAGER_ID).strip())
@@ -305,6 +306,7 @@ class DataStore:
 
             # If existing profile has None for IDs, also offer safe initial seeding from env without overwriting existing IDs
             from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+
             changed = False
             if profile.manager_id is None and FPL_MANAGER_ID:
                 try:
@@ -346,6 +348,7 @@ class DataStore:
     def sync_from_env(self) -> ProfileData:
         """Explicit action to overwrite profile IDs from .env if user requests it."""
         from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+
         with self.get_session() as session:
             profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
             if not profile:
@@ -370,7 +373,6 @@ class DataStore:
             session.refresh(profile)
             self._sync_profile_json(profile)
             return self.get_profile()
-
 
     def update_profile(self, **kwargs):
         with self.get_session() as session:

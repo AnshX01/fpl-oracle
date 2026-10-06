@@ -6,7 +6,6 @@ Computes calibrated point distributions: P10, P50 (median), P90, and variance wi
 
 import json
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -87,7 +86,7 @@ class ScoringEnsemble:
         exp_mins = components_cal.get("expected_minutes", np.zeros(len(X_cal)))
         buckets = {}
         for pos in ["GKP", "DEF", "MID", "FWD"]:
-            pos_mask = (X_cal.get(f"pos_{pos}", pd.Series(0, index=X_cal.index)).values > 0)
+            pos_mask = X_cal.get(f"pos_{pos}", pd.Series(0, index=X_cal.index)).values > 0
             for mins_cat, mins_mask in [
                 ("low", exp_mins < 30),
                 ("mid", (exp_mins >= 30) & (exp_mins < 65)),
@@ -116,9 +115,7 @@ class ScoringEnsemble:
         exp_mins = components["expected_minutes"]
 
         cop_scale = (
-            np.clip(X["chance_of_playing"].values / 100.0, 0.0, 1.0)
-            if "chance_of_playing" in X.columns
-            else 1.0
+            np.clip(X["chance_of_playing"].values / 100.0, 0.0, 1.0) if "chance_of_playing" in X.columns else 1.0
         )
         p_min60 = p_min60 * cop_scale
         p_starts = p_starts * cop_scale
@@ -195,8 +192,13 @@ class ScoringEnsemble:
 
         # Apply learned validation blend with heuristic baselines if configured and baseline features present
         if self.blend_weights is not None and any(w > 1e-4 for w in self.blend_weights[1:]):
-            if "roll_points_5" in X.columns and "roll_starts_ratio_5" in X.columns and "opponent_difficulty" in X.columns:
+            if (
+                "roll_points_5" in X.columns
+                and "roll_starts_ratio_5" in X.columns
+                and "opponent_difficulty" in X.columns
+            ):
                 from fpl_oracle.ml.eval import model_evaluator
+
                 base_recent = model_evaluator.compute_baseline_projections(X)
                 base_season = model_evaluator.compute_season_avg_baseline(X)
                 w_ml, w_rec, w_sea = self.blend_weights

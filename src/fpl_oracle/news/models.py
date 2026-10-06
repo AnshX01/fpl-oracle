@@ -25,17 +25,24 @@ class PlayerEvidence(BaseModel):
     Structured extraction schema for LLM evidence extractor.
     Enforces factual quotes, negation handling, and canonical entity links.
     """
+
     player_id: int = Field(description="Canonical FPL element ID if resolved, else 0")
     player_name: str = Field(description="Exact player name referenced")
     team_name: str = Field(default="", description="Club name referenced")
     team_id: int | None = Field(default=None, description="FPL team ID if resolved")
-    category: EvidenceCategory = Field(default=EvidenceCategory.UNKNOWN, description="Category of reported availability")
+    category: EvidenceCategory = Field(
+        default=EvidenceCategory.UNKNOWN, description="Category of reported availability"
+    )
     quote: str = Field(default="", description="Exact verbatim manager or medical quote from article")
     quote_start_offset: int | None = Field(default=None, description="Character offset start in cleaned source text")
     quote_end_offset: int | None = Field(default=None, description="Character offset end in cleaned source text")
     target_gw: int | None = Field(default=None, description="Explicit gameweek if mentioned")
-    match_context: str | None = Field(default=None, description="Context, e.g. Premier League match vs European/Cup tie")
-    is_negated: bool = Field(default=False, description="True if statement is negated (e.g. 'not ruled out', 'not fit')")
+    match_context: str | None = Field(
+        default=None, description="Context, e.g. Premier League match vs European/Cup tie"
+    )
+    is_negated: bool = Field(
+        default=False, description="True if statement is negated (e.g. 'not ruled out', 'not fit')"
+    )
     minutes_restriction: int | None = Field(default=None, description="Explicit minutes limit if mentioned by manager")
     confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Extraction certainty score")
     ambiguity_notes: str | None = Field(default=None, description="Reason for ambiguity or conflicting signals")
@@ -46,6 +53,7 @@ class PlayerEvidence(BaseModel):
 
 class ExtractedNewsPayload(BaseModel):
     """Container for batch article extractions."""
+
     article_url: str
     article_hash: str
     published_at: str | None = None
@@ -66,6 +74,7 @@ class ReconciledAvailability(BaseModel):
     Auditable single per-player, per-fixture reconciliation outcome.
     Combines authoritative official baseline with validated text evidence without double counting.
     """
+
     element_id: int
     web_name: str
     team_id: int

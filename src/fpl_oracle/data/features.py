@@ -134,7 +134,11 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         r_min60_5 = float((last_5["minutes"] >= 60).mean()) if not last_5.empty else 0.0
         std_mins = float(p_hist["minutes"].mean())
 
-        r_xgi_5 = float(last_5["expected_goal_involvements"].mean()) if "expected_goal_involvements" in last_5.columns and not last_5.empty else (r_xg_5 + r_xa_5)
+        r_xgi_5 = (
+            float(last_5["expected_goal_involvements"].mean())
+            if "expected_goal_involvements" in last_5.columns and not last_5.empty
+            else (r_xg_5 + r_xa_5)
+        )
         r_goals_5 = float(last_5["goals_scored"].mean()) if not last_5.empty else 0.0
         r_assists_5 = float(last_5["assists"].mean()) if not last_5.empty else 0.0
 
@@ -142,7 +146,11 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         r_cs_5 = float(last_5["clean_sheets"].mean()) if not last_5.empty else 0.0
         r_saves_5 = float(last_5["saves"].mean()) if not last_5.empty else 0.0
         r_gc_5 = float(last_5["goals_conceded"].mean()) if not last_5.empty else 0.0
-        r_defcon_5 = float(last_5["defensive_contribution"].mean()) if "defensive_contribution" in last_5.columns and not last_5.empty else 0.0
+        r_defcon_5 = (
+            float(last_5["defensive_contribution"].mean())
+            if "defensive_contribution" in last_5.columns and not last_5.empty
+            else 0.0
+        )
 
         r_ict_5 = float(last_5["ict_index"].mean()) if "ict_index" in last_5.columns and not last_5.empty else 0.0
         r_bps_5 = float(last_5["bps"].mean()) if "bps" in last_5.columns and not last_5.empty else 0.0
@@ -262,7 +270,11 @@ class FeatureEngineering:
         if "team" not in df.columns:
             return {}
 
-        sum_cols = [c for c in ["expected_goals", "goals_scored", "goals_conceded", "expected_goals_conceded"] if c in df.columns]
+        sum_cols = [
+            c
+            for c in ["expected_goals", "goals_scored", "goals_conceded", "expected_goals_conceded"]
+            if c in df.columns
+        ]
         if not sum_cols:
             return {}
 
@@ -278,12 +290,7 @@ class FeatureEngineering:
             agg_dict["expected_goals_conceded"] = "max"
 
         group_cols = ["season", "round", "team"]
-        team_match = (
-            df.groupby(group_cols)
-            .agg(agg_dict)
-            .reset_index()
-            .sort_values(by=["season", "round"])
-        )
+        team_match = df.groupby(group_cols).agg(agg_dict).reset_index().sort_values(by=["season", "round"])
         if "goals_scored" not in team_match.columns:
             team_match["goals_scored"] = 0.0
         if "goals_conceded" not in team_match.columns:
@@ -303,47 +310,71 @@ class FeatureEngineering:
 
         # Shifted rolling stats per team (historical match pre-deadline state)
         for w in [3, 5, 8]:
-            team_match[f"team_roll_goals_{w}"] = grouped["goals_scored"].apply(
-                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_GOALS)
-            team_match[f"team_roll_xG_{w}"] = grouped["expected_goals"].apply(
-                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_XG)
-            team_match[f"team_roll_goals_conceded_{w}"] = grouped["goals_conceded"].apply(
-                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_GOALS_CONCEDED)
-            team_match[f"team_roll_xGC_{w}"] = grouped["expected_goals_conceded"].apply(
-                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_XGC)
-            team_match[f"team_roll_points_{w}"] = grouped["match_points"].apply(
-                lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_POINTS)
+            team_match[f"team_roll_goals_{w}"] = (
+                grouped["goals_scored"]
+                .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_GOALS)
+            )
+            team_match[f"team_roll_xG_{w}"] = (
+                grouped["expected_goals"]
+                .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_XG)
+            )
+            team_match[f"team_roll_goals_conceded_{w}"] = (
+                grouped["goals_conceded"]
+                .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_GOALS_CONCEDED)
+            )
+            team_match[f"team_roll_xGC_{w}"] = (
+                grouped["expected_goals_conceded"]
+                .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_XGC)
+            )
+            team_match[f"team_roll_points_{w}"] = (
+                grouped["match_points"]
+                .apply(lambda s, win=w: s.shift(1).rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_POINTS)
+            )
 
-        team_match["team_roll_clean_sheets_5"] = grouped["match_clean_sheet"].apply(
-            lambda s: s.shift(1).rolling(5, min_periods=1).mean()
-        ).fillna(PRIOR_TEAM_CLEAN_SHEET)
+        team_match["team_roll_clean_sheets_5"] = (
+            grouped["match_clean_sheet"]
+            .apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean())
+            .fillna(PRIOR_TEAM_CLEAN_SHEET)
+        )
 
         # Unshifted rolling stats per team (as-of latest completed match for upcoming serving)
         for w in [3, 5, 8]:
-            team_match[f"team_roll_goals_{w}_unshifted"] = grouped["goals_scored"].apply(
-                lambda s, win=w: s.rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_GOALS)
-            team_match[f"team_roll_xG_{w}_unshifted"] = grouped["expected_goals"].apply(
-                lambda s, win=w: s.rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_XG)
-            team_match[f"team_roll_goals_conceded_{w}_unshifted"] = grouped["goals_conceded"].apply(
-                lambda s, win=w: s.rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_GOALS_CONCEDED)
-            team_match[f"team_roll_xGC_{w}_unshifted"] = grouped["expected_goals_conceded"].apply(
-                lambda s, win=w: s.rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_XGC)
-            team_match[f"team_roll_points_{w}_unshifted"] = grouped["match_points"].apply(
-                lambda s, win=w: s.rolling(win, min_periods=1).mean()
-            ).fillna(PRIOR_TEAM_POINTS)
+            team_match[f"team_roll_goals_{w}_unshifted"] = (
+                grouped["goals_scored"]
+                .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_GOALS)
+            )
+            team_match[f"team_roll_xG_{w}_unshifted"] = (
+                grouped["expected_goals"]
+                .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_XG)
+            )
+            team_match[f"team_roll_goals_conceded_{w}_unshifted"] = (
+                grouped["goals_conceded"]
+                .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_GOALS_CONCEDED)
+            )
+            team_match[f"team_roll_xGC_{w}_unshifted"] = (
+                grouped["expected_goals_conceded"]
+                .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_XGC)
+            )
+            team_match[f"team_roll_points_{w}_unshifted"] = (
+                grouped["match_points"]
+                .apply(lambda s, win=w: s.rolling(win, min_periods=1).mean())
+                .fillna(PRIOR_TEAM_POINTS)
+            )
 
-        team_match["team_roll_clean_sheets_5_unshifted"] = grouped["match_clean_sheet"].apply(
-            lambda s: s.rolling(5, min_periods=1).mean()
-        ).fillna(PRIOR_TEAM_CLEAN_SHEET)
+        team_match["team_roll_clean_sheets_5_unshifted"] = (
+            grouped["match_clean_sheet"]
+            .apply(lambda s: s.rolling(5, min_periods=1).mean())
+            .fillna(PRIOR_TEAM_CLEAN_SHEET)
+        )
 
         # Build lookup map: shifted for history + unshifted for live serving
         result_map: dict[Any, dict[str, float]] = {}
@@ -551,15 +582,19 @@ class FeatureEngineering:
             team_matches = team_matches.sort_values(by=["season", "team", "_dt"])
             team_matches["_prev_dt"] = team_matches.groupby(["season", "team"])["_dt"].shift(1)
             team_matches["days_rest"] = (
-                (team_matches["_dt"] - team_matches["_prev_dt"]).dt.total_seconds() / 86400.0
-            ).clip(2.0, 14.0).fillna(7.0)
+                ((team_matches["_dt"] - team_matches["_prev_dt"]).dt.total_seconds() / 86400.0)
+                .clip(2.0, 14.0)
+                .fillna(7.0)
+            )
 
             rest_map = {
                 (str(r["season"]), int(r["round"]), str(r["team"])): float(r["days_rest"])
                 for _, r in team_matches.iterrows()
             }
             df["days_rest"] = [
-                rest_map.get((str(row.get("season", "2025-26")), int(row.get("round", 1)), str(row.get("team", "Unknown"))), 7.0)
+                rest_map.get(
+                    (str(row.get("season", "2025-26")), int(row.get("round", 1)), str(row.get("team", "Unknown"))), 7.0
+                )
                 for _, row in df.iterrows()
             ]
         else:
@@ -733,7 +768,8 @@ class FeatureEngineering:
         is_gw1 = df_player["round"] == 1
         has_baseline = df_player["std_minutes_per_gw"] >= 50.0
         df_player.loc[is_gw1 & has_baseline, "roll_minutes_3"] = np.maximum(
-            df_player.loc[is_gw1 & has_baseline, "roll_minutes_3"], df_player.loc[is_gw1 & has_baseline, "std_minutes_per_gw"] * 0.90
+            df_player.loc[is_gw1 & has_baseline, "roll_minutes_3"],
+            df_player.loc[is_gw1 & has_baseline, "std_minutes_per_gw"] * 0.90,
         )
         df_player.loc[is_gw1 & has_baseline, "roll_starts_ratio_5"] = np.maximum(
             df_player.loc[is_gw1 & has_baseline, "roll_starts_ratio_5"], 0.85
@@ -782,7 +818,9 @@ class FeatureEngineering:
 
         og = df_player.get("own_goals", pd.Series(0, index=df_player.index)).fillna(0)
         df_player["roll_own_goals_5"] = (
-            grouped[og.name if hasattr(og, 'name') else 'own_goals'].apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean()).fillna(0.0)
+            grouped[og.name if hasattr(og, "name") else "own_goals"]
+            .apply(lambda s: s.shift(1).rolling(5, min_periods=1).mean())
+            .fillna(0.0)
             if "own_goals" in df_player.columns
             else 0.0
         )
@@ -833,7 +871,9 @@ class FeatureEngineering:
                 "target_defcon": (df_sorted["defensive_contribution"] >= 2).astype(float),
                 "target_bonus": df_sorted["bonus"].astype(float),
                 "target_card_deduction": df_sorted["target_card_deduction"].astype(float),
-                "target_penalties_saved": df_sorted.get("penalties_saved", pd.Series(0, index=df_sorted.index)).fillna(0).astype(float),
+                "target_penalties_saved": df_sorted.get("penalties_saved", pd.Series(0, index=df_sorted.index))
+                .fillna(0)
+                .astype(float),
                 "target_points": df_sorted["total_points"].astype(float),
             }
         )
@@ -1032,8 +1072,17 @@ class FeatureEngineering:
                     t_xg5 = my_t_stats["team_roll_xG_5"]
                     t_xg8 = my_t_stats["team_roll_xG_8"]
                 else:
-                    my_att = float((my_team.strength_attack_home if was_h else my_team.strength_attack_away) or 1000) / 750.0 if my_team else 1.30
-                    my_def = float((my_team.strength_defence_home if was_h else my_team.strength_defence_away) or 1000) / 750.0 if my_team else 1.35
+                    my_att = (
+                        float((my_team.strength_attack_home if was_h else my_team.strength_attack_away) or 1000) / 750.0
+                        if my_team
+                        else 1.30
+                    )
+                    my_def = (
+                        float((my_team.strength_defence_home if was_h else my_team.strength_defence_away) or 1000)
+                        / 750.0
+                        if my_team
+                        else 1.35
+                    )
                     t_g3, t_g5, t_g8 = PRIOR_TEAM_GOALS, PRIOR_TEAM_GOALS, PRIOR_TEAM_GOALS
                     t_xg3, t_xg5, t_xg8 = my_att, my_att, my_att
 
@@ -1051,10 +1100,24 @@ class FeatureEngineering:
                     opp_xgc8 = opp_t_stats["team_roll_xGC_8"]
                     opp_cs5 = opp_t_stats["team_roll_clean_sheets_5"]
                 else:
-                    opp_att = float((opp_team.strength_attack_away if was_h else opp_team.strength_attack_home) or 1000) / 750.0 if opp_team else 1.30
-                    opp_def = float((opp_team.strength_defence_away if was_h else opp_team.strength_defence_home) or 1000) / 750.0 if opp_team else 1.35
+                    opp_att = (
+                        float((opp_team.strength_attack_away if was_h else opp_team.strength_attack_home) or 1000)
+                        / 750.0
+                        if opp_team
+                        else 1.30
+                    )
+                    opp_def = (
+                        float((opp_team.strength_defence_away if was_h else opp_team.strength_defence_home) or 1000)
+                        / 750.0
+                        if opp_team
+                        else 1.35
+                    )
                     opp_p3, opp_p5, opp_p8 = PRIOR_TEAM_POINTS, PRIOR_TEAM_POINTS, PRIOR_TEAM_POINTS
-                    opp_gc3, opp_gc5, opp_gc8 = PRIOR_TEAM_GOALS_CONCEDED, PRIOR_TEAM_GOALS_CONCEDED, PRIOR_TEAM_GOALS_CONCEDED
+                    opp_gc3, opp_gc5, opp_gc8 = (
+                        PRIOR_TEAM_GOALS_CONCEDED,
+                        PRIOR_TEAM_GOALS_CONCEDED,
+                        PRIOR_TEAM_GOALS_CONCEDED,
+                    )
                     opp_xgc3, opp_xgc5, opp_xgc8 = opp_def, opp_def, opp_def
                     opp_cs5 = PRIOR_TEAM_CLEAN_SHEET
 
@@ -1069,7 +1132,9 @@ class FeatureEngineering:
                             if prev_fix_ko:
                                 prev_dt = pd.to_datetime(prev_fix_ko, errors="coerce")
                                 if pd.notnull(prev_dt):
-                                    days_rest_val = float(np.clip((fix_dt - prev_dt).total_seconds() / 86400.0, 2.0, 14.0))
+                                    days_rest_val = float(
+                                        np.clip((fix_dt - prev_dt).total_seconds() / 86400.0, 2.0, 14.0)
+                                    )
                         else:
                             prev_dt = last_team_kickoff.get(elem.team)
                             if prev_dt and pd.notnull(prev_dt):

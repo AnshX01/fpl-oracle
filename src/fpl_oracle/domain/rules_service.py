@@ -108,11 +108,19 @@ class RulesService:
             passed = actual_banked == cfg_transfers.get("max_banked_free_transfers", 5)
             st = "PASS" if passed else "FAIL"
             if not passed:
-                mismatches.append(f"Max Banked FTs mismatch: API {actual_banked} vs config {cfg_transfers.get('max_banked_free_transfers')}")
-            items.append(RuleItemVerification("Max Banked FTs", cfg_transfers.get("max_banked_free_transfers", 5), actual_banked, st))
+                mismatches.append(
+                    f"Max Banked FTs mismatch: API {actual_banked} vs config {cfg_transfers.get('max_banked_free_transfers')}"
+                )
+            items.append(
+                RuleItemVerification(
+                    "Max Banked FTs", cfg_transfers.get("max_banked_free_transfers", 5), actual_banked, st
+                )
+            )
 
         if "transfers_sell_on_fee" not in gs:
-            items.append(RuleItemVerification("Sell-on Fee Rate", 0.5, None, "UNKNOWN", "transfers_sell_on_fee missing"))
+            items.append(
+                RuleItemVerification("Sell-on Fee Rate", 0.5, None, "UNKNOWN", "transfers_sell_on_fee missing")
+            )
         else:
             fee = float(gs["transfers_sell_on_fee"])
             passed = fee == float(cfg_transfers.get("sell_on_fee", 0.5))
@@ -135,14 +143,28 @@ class RulesService:
             chip_names = [getattr(c, "name", c.get("name") if isinstance(c, dict) else "") for c in chips_api]
             # Check absence of assistant manager
             has_assistant = "assistant_manager" in chip_names or "manager" in chip_names
-            items.append(RuleItemVerification("Assistant Manager Removed", True, not has_assistant, "PASS" if not has_assistant else "FAIL"))
+            items.append(
+                RuleItemVerification(
+                    "Assistant Manager Removed", True, not has_assistant, "PASS" if not has_assistant else "FAIL"
+                )
+            )
             if has_assistant:
                 mismatches.append("Assistant Manager chip unexpectedly present in API")
 
             # Check 8 chips count across season (2 sets)
-            items.append(RuleItemVerification("Total Season Chips", 8, len(chips_api), "PASS" if len(chips_api) == 8 else "UNKNOWN", f"Found {len(chips_api)} chips"))
+            items.append(
+                RuleItemVerification(
+                    "Total Season Chips",
+                    8,
+                    len(chips_api),
+                    "PASS" if len(chips_api) == 8 else "UNKNOWN",
+                    f"Found {len(chips_api)} chips",
+                )
+            )
         else:
-            items.append(RuleItemVerification("Chips Configuration", 8, None, "UNKNOWN", "chips array missing in bootstrap"))
+            items.append(
+                RuleItemVerification("Chips Configuration", 8, None, "UNKNOWN", "chips array missing in bootstrap")
+            )
             limitations.append("Chips configuration missing in API response")
 
         # 4. Scoring Verification
@@ -155,7 +177,9 @@ class RulesService:
                     passed = goals_pts[pos] == cfg_goals.get(pos)
                     st = "PASS" if passed else "FAIL"
                     if not passed:
-                        mismatches.append(f"Goal points {pos} mismatch: API {goals_pts[pos]} vs config {cfg_goals.get(pos)}")
+                        mismatches.append(
+                            f"Goal points {pos} mismatch: API {goals_pts[pos]} vs config {cfg_goals.get(pos)}"
+                        )
                     items.append(RuleItemVerification(f"Goals Scored ({pos})", cfg_goals.get(pos), goals_pts[pos], st))
                 else:
                     items.append(RuleItemVerification(f"Goals Scored ({pos})", cfg_goals.get(pos), None, "UNKNOWN"))
@@ -181,7 +205,9 @@ class RulesService:
                 st = "PASS" if passed else "FAIL"
                 if not passed:
                     mismatches.append(f"DefCon DEF mismatch: API {defcon_pts['DEF']} vs config {cfg_defcon.get('DEF')}")
-                items.append(RuleItemVerification("DefCon Points (DEF)", cfg_defcon.get("DEF", 2), defcon_pts["DEF"], st))
+                items.append(
+                    RuleItemVerification("DefCon Points (DEF)", cfg_defcon.get("DEF", 2), defcon_pts["DEF"], st)
+                )
             else:
                 items.append(RuleItemVerification("DefCon Points (DEF)", cfg_defcon.get("DEF", 2), None, "UNKNOWN"))
 
