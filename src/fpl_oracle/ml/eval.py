@@ -15,7 +15,7 @@ import pandas as pd
 from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
-from fpl_oracle.config import BASE_DIR, REPORTS_DIR
+from fpl_oracle.config import REPORTS_DIR
 
 logger = logging.getLogger("fpl_oracle.eval")
 

@@ -8,7 +8,6 @@ Gracefully degrades to official FPL API baseline without errors.
 import json
 import logging
 import os
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any

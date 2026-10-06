@@ -9,7 +9,6 @@ Verifies:
 6. Absence of secret/ID input fields in web/index.html.
 """
 
-import os
 from pathlib import Path
 from unittest.mock import MagicMock
 

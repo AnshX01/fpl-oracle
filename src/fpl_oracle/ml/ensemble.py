@@ -7,7 +7,7 @@ Computes calibrated point distributions: P10, P50 (median), P90, and variance wi
 import numpy as np
 import pandas as pd
 
-from fpl_oracle.domain.scoring import calculate_expected_fixture_points, expected_floor_div
+from fpl_oracle.domain.scoring import expected_floor_div
 
 
 class ScoringEnsemble:

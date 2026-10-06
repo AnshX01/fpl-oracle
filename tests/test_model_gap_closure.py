@@ -4,11 +4,8 @@ Verifies train/serve parity, canonical schema hash, continuous opponent form fea
 uncapped predictions, ground-truth disciplinary labels, and honest calibrated uncertainty.
 """
 
-import numpy as np
 import pandas as pd
-import pytest
 
-from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.data.features import (
     FEATURE_COLUMNS,
     FEATURE_SCHEMA_HASH,
@@ -16,7 +13,6 @@ from fpl_oracle.data.features import (
     compute_player_rolling_stats,
     feature_engineering,
 )
-from fpl_oracle.ml.components.cards_saves import CardsSavesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
 from fpl_oracle.ml.predict import projection_engine
 

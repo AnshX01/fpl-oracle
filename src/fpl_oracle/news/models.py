@@ -4,13 +4,12 @@ official scout risks, and single availability reconciliation.
 """
 
 from datetime import datetime
-from enum import Enum
-from typing import Any
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class EvidenceCategory(str, Enum):
+class EvidenceCategory(StrEnum):
     RULED_OUT = "ruled_out"
     DOUBTFUL = "doubtful"
     AVAILABLE = "available"
@@ -56,7 +55,7 @@ class ExtractedNewsPayload(BaseModel):
     raw_response_snippet: str | None = None
 
 
-class RecommendationMode(str, Enum):
+class RecommendationMode(StrEnum):
     API_ONLY = "api_only"
     SHADOW = "shadow"
     GATED_ACTIVE = "gated_active"

@@ -7,14 +7,12 @@ via the single auditable AvailabilityReconciler.
 """
 
 import logging
-import re
 from typing import Any
 
 from fpl_oracle.api.models import BootstrapStatic
 from fpl_oracle.news.extract import text_extractor
 from fpl_oracle.news.gemini_extractor import gemini_extractor
 from fpl_oracle.news.ingest import news_ingestion
-from fpl_oracle.news.models import PlayerEvidence
 from fpl_oracle.news.reconcile import availability_reconciler
 
 logger = logging.getLogger("fpl_oracle.news.analyse")
