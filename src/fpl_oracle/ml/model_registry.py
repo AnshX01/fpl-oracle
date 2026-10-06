@@ -135,7 +135,11 @@ class ModelRegistry:
         return []
 
     def evaluate_model_suite(
-        self, models_dict: dict[str, Any], X_val: pd.DataFrame, Y_val: pd.DataFrame
+        self,
+        models_dict: dict[str, Any],
+        X_val: pd.DataFrame,
+        Y_val: pd.DataFrame,
+        rolling_origins: list[dict[str, Any]] | None = None,
     ) -> dict[str, float]:
         """Generate holdout predictions and compute validation metrics."""
         mins_p = models_dict["minutes_model"].predict(X_val)
@@ -156,6 +160,7 @@ class ModelRegistry:
             p10=val_preds_df["p10"].values,
             p50=val_preds_df["p50"].values,
             p90=val_preds_df["p90"].values,
+            rolling_origins=rolling_origins,
         )
         return {
             "ml_mae": float(metrics["ml_mae"]),
@@ -163,7 +168,9 @@ class ModelRegistry:
             "base_mae": float(metrics["base_mae"]),
         }
 
-    def evaluate_production_weights(self, X_val: pd.DataFrame, Y_val: pd.DataFrame) -> dict[str, float] | None:
+    def evaluate_production_weights(
+        self, X_val: pd.DataFrame, Y_val: pd.DataFrame, rolling_origins: list[dict[str, Any]] | None = None
+    ) -> dict[str, float] | None:
         """Evaluate current production weights in data/models on holdout split."""
         models: dict[str, Any] = {}
         for name, filename, cls in COMPONENT_WEIGHTS:
@@ -178,7 +185,7 @@ class ModelRegistry:
             except Exception as e:
                 logger.warning(f"Error loading production model {filename}: {e}")
                 return None
-        return self.evaluate_model_suite(models, X_val, Y_val)
+        return self.evaluate_model_suite(models, X_val, Y_val, rolling_origins=rolling_origins)
 
     def verify_and_promote(
         self,

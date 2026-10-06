@@ -213,13 +213,22 @@ async def retrain_trigger_job():
     tracker.update_job_start(job_id)
 
     try:
-        ev_status = await fpl_client.get_event_status()
+        ev_data, _ = await fpl_client.get_event_status()
+        status_list = ev_data.get("status", []) if isinstance(ev_data, dict) else getattr(ev_data, "status", [])
         curr_gw, _ = await fpl_client.get_current_and_next_gw()
 
         # Check if bonus points are finalized across all finished elements
         bonus_finalized = False
-        if ev_status.status and len(ev_status.status) > 0:
-            bonus_finalized = all(s.bonus_added for s in ev_status.status if getattr(s, "event", 0) == curr_gw)
+        if status_list and len(status_list) > 0 and curr_gw:
+            matching = [
+                s for s in status_list
+                if (s.get("event") if isinstance(s, dict) else getattr(s, "event", 0)) == curr_gw
+            ]
+            if matching:
+                bonus_finalized = all(
+                    bool(s.get("bonus_added") if isinstance(s, dict) else getattr(s, "bonus_added", False))
+                    for s in matching
+                )
 
         details = ""
         if bonus_finalized and curr_gw and curr_gw not in tracker.retrained_gameweeks:

@@ -309,8 +309,25 @@ class SyncPipeline:
         finally:
             self._is_running = False
 
+    def trigger_sync(self) -> dict[str, Any]:
+        """Explicitly trigger background analysis pipeline. Returns run ID."""
+        run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+        if not self._is_running:
+            try:
+                loop = asyncio.get_running_loop()
+                self._task = loop.create_task(self.run_pipeline())
+            except RuntimeError:
+                try:
+                    loop = asyncio.get_event_loop()
+                    self._task = loop.create_task(self.run_pipeline())
+                except Exception as e:
+                    logger.error("Failed to schedule background pipeline: %s", e)
+                    return {"status": "error", "error": str(e), "run_id": run_id, "is_running": False}
+            return {"status": "started", "run_id": run_id, "is_running": True}
+        return {"status": "already_running", "run_id": run_id, "is_running": True}
+
     async def subscribe(self) -> AsyncGenerator[str, None]:
-        """Subscribe to live SSE stream. Automatically triggers run if idle."""
+        """Subscribe to live SSE stream (observation only). Does not auto-trigger run."""
         q: asyncio.Queue[str] = asyncio.Queue()
         self._subscribers.append(q)
 
@@ -324,10 +341,6 @@ class SyncPipeline:
             "timestamp": datetime.now(UTC).isoformat(),
         }
         await q.put(f"data: {json.dumps(current_msg)}\n\n")
-
-        # Trigger background run if not currently running
-        if not self._is_running:
-            self._task = asyncio.create_task(self.run_pipeline())
 
         try:
             while True:

@@ -1,82 +1,77 @@
 """
 Projection aggregator & Scoring ensemble.
 Combines decomposed ML components strictly according to verified 2026/27 rules.
-Computes point distributions: P10, P50 (median), P90, and variance.
+Computes calibrated point distributions: P10, P50 (median), P90, and variance without naive mean=median equality.
 """
 
 import numpy as np
 import pandas as pd
 
-from fpl_oracle.config import SCORING
+from fpl_oracle.domain.scoring import calculate_expected_fixture_points, expected_floor_div
 
 
 class ScoringEnsemble:
     def __init__(self):
-        self.scoring = SCORING
+        pass
 
     def aggregate_components(self, components: dict[str, np.ndarray], X: pd.DataFrame) -> pd.DataFrame:
         """
         Aggregate component predictions into expected points and distributions.
+        Enforces verified 2026/27 scoring rules and coherent probabilities.
         """
         n = len(X)
         p_min60 = components["p_min60"]
         p_starts = components["p_starts"]
         exp_mins = components["expected_minutes"]
 
-        # 1. Appearance points
-        # If min >= 60 -> 2 pts; if 0 < min < 60 -> 1 pt
-        p_play = np.clip(exp_mins / 70.0, 0.0, 1.0)
+        # Probability of playing (at least 1 minute)
+        # Bounded coherently: p_play >= p_min60
+        p_play = np.clip(np.maximum(p_min60, np.minimum(1.0, exp_mins / 60.0)), 0.0, 1.0)
         p_sub = np.clip(p_play - p_min60, 0.0, 1.0)
-        appearance_pts = p_min60 * self.scoring["minutes"]["long_play"] + p_sub * self.scoring["minutes"]["short_play"]
 
-        # 2. Position weights
-        pos_gkp = X.get("pos_GKP", np.zeros(n)).values
-        pos_def = X.get("pos_DEF", np.zeros(n)).values
-        pos_mid = X.get("pos_MID", np.zeros(n)).values
-        pos_fwd = X.get("pos_FWD", np.zeros(n)).values
+        # 1. Appearance points
+        # 60+ mins -> 2 pts; 1-59 mins -> 1 pt
+        appearance_pts = p_min60 * 2.0 + p_sub * 1.0
 
-        # Goals scored points
-        goal_pts_multiplier = (
-            pos_gkp * self.scoring["goals_scored"]["GKP"]
-            + pos_def * self.scoring["goals_scored"]["DEF"]
-            + pos_mid * self.scoring["goals_scored"]["MID"]
-            + pos_fwd * self.scoring["goals_scored"]["FWD"]
-        )
-        exp_goal_pts = components["expected_goals"] * goal_pts_multiplier
+        # Positional masks
+        pos_gkp = X.get("pos_GKP", pd.Series(np.zeros(n), index=X.index)).values
+        pos_def = X.get("pos_DEF", pd.Series(np.zeros(n), index=X.index)).values
+        pos_mid = X.get("pos_MID", pd.Series(np.zeros(n), index=X.index)).values
+        pos_fwd = X.get("pos_FWD", pd.Series(np.zeros(n), index=X.index)).values
 
-        # Assists points (3 pts across all positions)
-        exp_assist_pts = components["expected_assists"] * self.scoring["assists"]["MID"]
+        # 2. Goals scored points
+        goal_pts_rate = pos_gkp * 10.0 + pos_def * 6.0 + pos_mid * 5.0 + pos_fwd * 4.0
+        exp_goal_pts = components["expected_goals"] * goal_pts_rate
 
-        # Clean sheet points (requires >= 60 mins)
-        cs_pts_multiplier = (
-            pos_gkp * self.scoring["clean_sheets"]["GKP"]
-            + pos_def * self.scoring["clean_sheets"]["DEF"]
-            + pos_mid * self.scoring["clean_sheets"]["MID"]
-            + pos_fwd * self.scoring["clean_sheets"]["FWD"]
-        )
-        exp_cs_pts = components["p_clean_sheet"] * p_min60 * cs_pts_multiplier
+        # 3. Assists points (3 pts across all positions)
+        exp_assist_pts = components["expected_assists"] * 3.0
 
-        # Goals conceded deductions (-1 pt per 2 goals conceded for DEF/GKP)
-        gc_penalty_multiplier = pos_gkp * abs(self.scoring["goals_conceded"]["GKP"]) + pos_def * abs(
-            self.scoring["goals_conceded"]["DEF"]
-        )
-        exp_gc_deduction = (components["expected_goals_conceded"] / 2.0) * gc_penalty_multiplier
+        # 4. Clean sheet points (requires >= 60 mins)
+        cs_pts_rate = pos_gkp * 4.0 + pos_def * 4.0 + pos_mid * 1.0 + pos_fwd * 0.0
+        exp_cs_pts = components["p_clean_sheet"] * p_min60 * cs_pts_rate
 
-        # Goalkeeper saves (1 pt per 3 saves)
-        exp_saves_pts = (components["expected_saves"] / 3.0) * self.scoring["saves"]["points"]
+        # 5. Goals conceded deductions (-1 pt per 2 goals conceded for DEF/GKP)
+        # Using Poisson expectation for floor(conceded / 2) to correctly account for threshold probability
+        exp_gc = components["expected_goals_conceded"]
+        gc_penalty_multiplier = pos_gkp * 1.0 + pos_def * 1.0
+        exp_gc_deduction = np.array([expected_floor_div(float(r), 2) for r in exp_gc]) * gc_penalty_multiplier
 
-        # Defensive Contribution (DefCon) - verified 2026/27 rule (+2 pts for DEF/MID/FWD)
+        # 6. Goalkeeper saves (1 pt per 3 saves)
+        # Using Poisson expectation for floor(saves / 3)
+        exp_saves = components["expected_saves"]
+        exp_saves_pts = np.array([expected_floor_div(float(s), 3) for s in exp_saves]) * pos_gkp
+
+        # 7. Defensive Contribution (DefCon +2 for DEF, MID, FWD)
         defcon_eligible = 1.0 - pos_gkp
-        defcon_pts_rate = self.scoring["defensive_contribution"]["DEF"]
-        exp_defcon_pts = components["p_defcon"] * defcon_eligible * defcon_pts_rate
+        exp_defcon_pts = components["p_defcon"] * p_play * 2.0 * defcon_eligible
 
-        # Disciplinary deductions
+        # 8. Disciplinary deductions (trained on real card labels)
         exp_card_deduction = components["expected_card_deduction"]
 
-        # Bonus points
+        # 9. Bonus points
         exp_bonus_pts = components["expected_bonus"]
 
-        # Total Expected Points
+        # Total Expected Points (unclipped to preserve negative point outcomes!)
         xP = (
             appearance_pts
             + exp_goal_pts
@@ -88,16 +83,32 @@ class ScoringEnsemble:
             - exp_card_deduction
             + exp_bonus_pts
         )
-        xP = np.clip(xP, 0.0, 25.0)
 
-        # Uncertainty modeling: position-specific variance
-        # Strikers/attacking mids have higher variance (higher ceiling/floor spread)
-        base_sigma = 1.2 + (pos_fwd * 1.5) + (pos_mid * 1.3) + (pos_def * 1.0) + (pos_gkp * 0.8)
-        sigma = base_sigma * np.sqrt(np.clip(xP / 3.5, 0.5, 3.0))
+        # When player has 0 minutes / chance of playing is 0, zero out everything
+        zero_mask = (p_play <= 1e-4) | (exp_mins <= 1e-4)
+        xP = np.where(zero_mask, 0.0, xP)
 
-        p10 = np.clip(xP - 1.28 * sigma, 0.0, None)
-        p50 = xP
-        p90 = xP + 1.28 * sigma
+        # Calibrated Distribution (P10, P50, P90, Variance)
+        # In FPL scoring, distribution is positively skewed (hauls are in the upper tail, floor is bounded by appearance)
+        # Mean > Median for skewed haulers.
+        base_sigma = 1.1 + (pos_fwd * 1.4) + (pos_mid * 1.2) + (pos_def * 0.9) + (pos_gkp * 0.7)
+        sigma = base_sigma * np.sqrt(np.clip(np.maximum(0.1, xP) / 3.0, 0.4, 3.5))
+
+        # P10: Lower outcome floor (for starters, typically 1 or 2 appearance points; for subs 0)
+        p10 = np.where(
+            zero_mask,
+            0.0,
+            np.maximum(-1.0, np.where(p_min60 > 0.7, 2.0 - np.clip(exp_card_deduction, 0.0, 1.0), p_play * 1.0)),
+        )
+
+        # P50: True Median (below mean due to right skew of goal/bonus hauls)
+        # Median is typically xP minus skew adjustment
+        skew_adj = np.where(xP > 3.0, np.minimum(0.6, (exp_goal_pts + exp_assist_pts + exp_bonus_pts) * 0.25), 0.0)
+        p50 = np.where(zero_mask, 0.0, np.maximum(p10, xP - skew_adj))
+
+        # P90: Upper ceiling outcome
+        p90 = np.where(zero_mask, 0.0, np.maximum(p50 + 1.0, xP + 1.45 * sigma))
+
         variance = sigma**2
 
         res_df = pd.DataFrame(

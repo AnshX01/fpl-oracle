@@ -2,6 +2,10 @@
 Monte Carlo Mini-League Win-Probability Simulator.
 Simulates player point distributions across rivals to estimate
 championship probability P(1st) and rank distributions.
+Features:
+- Local seeded RNG (np.random.default_rng)
+- Common-player draw across all managers (no independent noise for the same player)
+- Honest handling when rivals data is not loaded (no fake 100% win rate)
 """
 
 from typing import Any
@@ -25,18 +29,22 @@ class MonteCarloSimulator:
     ) -> dict[str, Any]:
         """
         Run Monte Carlo simulations across user and rivals over the horizon.
+        Uses common-player draws so shared players produce identical scores for all managers.
         """
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.default_rng(seed)
+
         if not rival_squads:
             return {
-                "user_win_probability_pct": 100.0,
-                "user_top3_probability_pct": 100.0,
+                "status": "NO_RIVALS_FOUND",
+                "user_win_probability_pct": 0.0,
+                "user_top3_probability_pct": 0.0,
                 "expected_final_rank": 1.0,
-                "simulations_count": self.n_simulations,
+                "simulations_count": 0,
+                "rank_distribution": {"rank_1": 0.0, "top_3": 0.0},
+                "message": "No mini-league rivals loaded. Enter a valid target league ID or sync league standings to simulate.",
             }
 
-        # Map player projections
+        # Map player projections (mean, std)
         proj_map = {}
         for _, row in projections_df.iterrows():
             elem_id = int(row["element"])
@@ -45,9 +53,21 @@ class MonteCarloSimulator:
             sigma = max(0.5, np.sqrt(var))
             proj_map[elem_id] = (xp, sigma)
 
-        # Collect user elements
-        user_elements = [int(e) for e in user_squad_df["element"].tolist()[:11]]  # starters
-        user_cap = int(user_squad_df.iloc[0]["element"])  # approximate captain
+        # Collect user starting elements
+        if "is_starter" in user_squad_df.columns:
+            user_starters = [int(e) for e in user_squad_df[user_squad_df["is_starter"] == True]["element"].tolist()[:11]]
+        else:
+            user_starters = [int(e) for e in user_squad_df["element"].tolist()[:11]]
+
+        # Identify user captain
+        if "is_captain" in user_squad_df.columns and (user_squad_df["is_captain"] == True).any():
+            user_cap = int(user_squad_df[user_squad_df["is_captain"] == True].iloc[0]["element"])
+        elif "expected_points" in user_squad_df.columns:
+            user_cap = int(user_squad_df.sort_values(by="expected_points", ascending=False).iloc[0]["element"])
+        elif user_starters:
+            user_cap = user_starters[0]
+        else:
+            user_cap = None
 
         # Prepare rival entries
         rival_entries = []
@@ -64,40 +84,45 @@ class MonteCarloSimulator:
                 }
             )
 
+        # Identify all unique players in user + rival teams
+        all_unique_elements = set(user_starters)
+        for r in rival_entries:
+            all_unique_elements.update(r["starters"])
+
         # Run simulations
         user_wins = 0
         user_top3 = 0
         user_ranks = []
 
         for _ in range(self.n_simulations):
-            # Simulate gameweeks
             trial_user_pts = user_points
             trial_rival_pts = [r["current_points"] for r in rival_entries]
 
             for _ in range(horizon_gws):
-                # User points this GW
-                gw_user = 0.0
-                for elem in user_elements:
+                # Common player draw: draw each player's score ONCE per matchday
+                player_draws: dict[int, float] = {}
+                for elem in all_unique_elements:
                     mu, sig = proj_map.get(elem, (3.5, 2.0))
-                    draw = max(0.0, np.random.normal(mu, sig))
-                    mult = 2.0 if elem == user_cap else 1.0
-                    gw_user += draw * mult
+                    player_draws[elem] = max(0.0, float(rng.normal(mu, sig)))
+
+                # User points this GW
+                gw_user = sum(
+                    player_draws.get(elem, 0.0) * (2.0 if elem == user_cap else 1.0)
+                    for elem in user_starters
+                )
                 trial_user_pts += gw_user
 
                 # Rivals points this GW
                 for i, r in enumerate(rival_entries):
-                    gw_rival = 0.0
-                    for elem in r["starters"]:
-                        mu, sig = proj_map.get(elem, (3.5, 2.0))
-                        draw = max(0.0, np.random.normal(mu, sig))
-                        mult = 2.0 if elem == r["captain"] else 1.0
-                        gw_rival += draw * mult
+                    gw_rival = sum(
+                        player_draws.get(elem, 0.0) * (2.0 if elem == r["captain"] else 1.0)
+                        for elem in r["starters"]
+                    )
                     trial_rival_pts[i] += gw_rival
 
             # Determine rank
             all_scores = [trial_user_pts] + trial_rival_pts
             user_score = trial_user_pts
-            # Rank (1-indexed, lower is better)
             rank = sum(1 for s in all_scores if s > user_score) + 1
             user_ranks.append(rank)
 
@@ -111,6 +136,7 @@ class MonteCarloSimulator:
         avg_rank = round(float(np.mean(user_ranks)), 2)
 
         return {
+            "status": "SIMULATION_SUCCESS",
             "user_win_probability_pct": win_prob,
             "user_top3_probability_pct": top3_prob,
             "expected_final_rank": avg_rank,

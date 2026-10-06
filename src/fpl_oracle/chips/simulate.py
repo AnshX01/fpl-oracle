@@ -119,7 +119,7 @@ class ChipSimulator:
             single_gw_gain = max(
                 0.0, opt_lineup["total_gameweek_expected_points"] - curr_lineup["total_gameweek_expected_points"]
             )
-            total_gain = max(14.0, single_gw_gain * 2.5)
+            total_gain = max(0.0, single_gw_gain * 2.5)
             target_squad = opt_squad_res["squad"]
         except Exception:
             single_gw_gain = 6.0

@@ -33,7 +33,8 @@ data/snapshots/*
 data/models/*.pkl
 data/models/versions/
 data/models/rejected/
-
+data/backups/
+backups/
 
 # Logs & monitoring
 logs/

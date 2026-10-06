@@ -80,38 +80,26 @@ class ChipPlanner:
 
         if chip == "3xc":
             res = chip_simulator.evaluate_triple_captain(gw, current_squad_df if len(current_squad_df) == 15 else gw_df)
-            gain = res["expected_gain"]
-            if is_dgw:
-                gain += 6.5  # Double gameweek 2nd match expected return
-                confidence = "HIGH"
-            else:
-                confidence = "HIGH" if gain >= 8.0 else "MEDIUM"
+            gain = float(res["expected_gain"])
+            confidence = "HIGH" if (is_dgw or gain >= 7.5) else "MEDIUM"
             return round(gain, 1), confidence
 
         elif chip == "bboost":
             res = chip_simulator.evaluate_bench_boost(gw, current_squad_df, gw_df)
-            gain = res["expected_gain"]
-            if is_dgw:
-                gain += 8.0  # Bench players play twice
-                confidence = "HIGH"
-            else:
-                confidence = "HIGH" if gain >= 12.0 else "MEDIUM"
+            gain = float(res["expected_gain"])
+            confidence = "HIGH" if (is_dgw or gain >= 10.0) else "MEDIUM"
             return round(gain, 1), confidence
 
         elif chip == "freehit":
-            if is_bgw:
-                gain = 16.5
-                confidence = "HIGH"
-            else:
-                res = chip_simulator.evaluate_free_hit(gw, current_squad_df, gw_df, budget)
-                gain = max(6.0, res["expected_gain"])
-                confidence = "MEDIUM"
+            res = chip_simulator.evaluate_free_hit(gw, current_squad_df, gw_df, budget)
+            gain = float(res["expected_gain"])
+            confidence = "HIGH" if (is_bgw or gain >= 12.0) else "MEDIUM"
             return round(gain, 1), confidence
 
         elif chip == "wildcard":
             res = chip_simulator.evaluate_wildcard(gw, current_squad_df, gw_df, budget)
-            gain = max(14.0, res["expected_gain"])
-            confidence = "HIGH"
+            gain = float(res["expected_gain"])
+            confidence = "HIGH" if gain >= 10.0 else "MEDIUM"
             return round(gain, 1), confidence
 
         return 0.0, "LOW"

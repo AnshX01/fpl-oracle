@@ -94,12 +94,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
-# CORS
+# CORS: Restrict to local loopback origins for local security
+ALLOWED_ORIGINS = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -117,3 +124,9 @@ async def serve_index():
     if index_file.exists():
         return FileResponse(str(index_file))
     return HTMLResponse("<h1>FPL Oracle Server Running</h1><p>Frontend file not found.</p>")
+
+
+@app.get("/health")
+async def health_redirect():
+    from fpl_oracle.server.routes.api import get_health
+    return await get_health()

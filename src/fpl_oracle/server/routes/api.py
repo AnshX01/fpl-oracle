@@ -19,6 +19,7 @@ from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.fuzzy_match import fuzzy_matcher
 from fpl_oracle.data.store import data_store
+from fpl_oracle.domain.manager_state import manager_state_service
 from fpl_oracle.league.montecarlo import monte_carlo_simulator
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
@@ -170,6 +171,12 @@ def update_profile(req: ProfileUpdateRequest):
     return {"status": "success", "profile": get_profile()}
 
 
+@router.post("/sync/trigger")
+async def trigger_sync_endpoint():
+    """Trigger the background synchronization and analysis pipeline. Returns run ID."""
+    return sync_pipeline.trigger_sync()
+
+
 @router.get("/sync/stream")
 async def get_sync_stream():
     """
@@ -195,83 +202,37 @@ def get_sync_status():
 
 @router.get("/squad")
 async def get_squad(manager_id: int | None = None):
-    profile = data_store.get_profile()
-    m_id = manager_id or profile.manager_id
-
+    effective_state = await manager_state_service.get_current_state()
     boot, is_stale = await fpl_client.get_bootstrap_static()
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or 6
+    target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(
-        target_gw,
-        5,
-        boot,
-        fixtures=await fpl_client.get_fixtures()[0] if False else (await fpl_client.get_fixtures())[0],
-    )
+    fixtures_list, _ = await fpl_client.get_fixtures()
+    team_map = {t.id: t for t in boot.teams}
+
+    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures=fixtures_list)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
-    user_squad_df = None
-    bank = float(profile.bank or 0.5) * 10.0
-    free_transfers = int(profile.free_transfers or 1)
-    chips_used = []
-    manager_name = "Manager"
-    team_name = "My FPL Squad"
-    overall_points = 0
-    overall_rank = None
-
-    if m_id:
-        try:
-            entry, _ = await fpl_client.get_manager_entry(m_id)
-            picks, _ = await fpl_client.get_manager_picks(m_id, curr_gw or 5)
-            history, _ = await fpl_client.get_manager_history(m_id)
-            transfers, _ = await fpl_client.get_manager_transfers(m_id)
-            manager_name = f"{entry.player_first_name} {entry.player_last_name}"
-            team_name = entry.name
-            overall_points = entry.summary_overall_points or 0
-            overall_rank = entry.summary_overall_rank
-            chips_used = [c.name for c in history.chips]
-            if picks.entry_history:
-                bank = float(picks.entry_history.bank)
-            if profile.bank is not None and profile.bank > 0:
-                bank = float(profile.bank * 10.0)
-
-            auto_ft = transfer_optimizer.calculate_banked_free_transfers(history)
-            if profile.free_transfers and profile.free_transfers > 1:
-                free_transfers = profile.free_transfers
-            else:
-                free_transfers = auto_ft
-
-            picks_ids = [p.element for p in picks.picks]
-            user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-            user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, transfers, boot)
-        except Exception:
-            pass
-    if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad:
-        try:
-            manual_ids = (
-                json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
-            )
-            if manual_ids and len(manual_ids) == 15:
-                user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
-                team_name = "Custom / Pasted Squad"
-                bank = (profile.bank or 0.0) * 10.0
-                user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
-        except Exception:
-            pass
-
-    if user_squad_df is None or len(user_squad_df) < 15:
+    user_squad_df = effective_state.to_squad_dataframe()
+    if user_squad_df.empty or len(user_squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
-
         squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
         user_squad_df = squad_res["squad"].copy()
         user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
 
-    # Formations and Lineup
-    lineup_res = lineup_optimizer.select_lineup_and_captain(user_squad_df)
+    # Attach current GW projections to user squad
+    if not target_df.empty and "expected_points" in target_df.columns:
+        xp_map = {int(r["element"]): float(r["expected_points"]) for _, r in target_df.iterrows()}
+        p10_map = {int(r["element"]): float(r.get("p10", 0.0)) for _, r in target_df.iterrows()}
+        p90_map = {int(r["element"]): float(r.get("p90", 0.0)) for _, r in target_df.iterrows()}
+        defcon_map = {int(r["element"]): float(r.get("exp_defcon_pts", 0.0)) for _, r in target_df.iterrows()}
 
-    # Next 5 fixtures per player
-    fixtures_list, _ = await fpl_client.get_fixtures()
-    team_map = {t.id: t for t in boot.teams}
+        user_squad_df["expected_points"] = user_squad_df["element"].map(xp_map).fillna(user_squad_df["expected_points"])
+        user_squad_df["p10"] = user_squad_df["element"].map(p10_map).fillna(0.0)
+        user_squad_df["p90"] = user_squad_df["element"].map(p90_map).fillna(0.0)
+        user_squad_df["exp_defcon_pts"] = user_squad_df["element"].map(defcon_map).fillna(0.0)
+
+    lineup_res = lineup_optimizer.select_lineup_and_captain(user_squad_df)
 
     def get_next_fixtures(team_id: int):
         f_list = []
@@ -279,97 +240,104 @@ async def get_squad(manager_id: int | None = None):
             if f.event and f.event >= target_gw and f.event < target_gw + 5:
                 if f.team_h == team_id:
                     opp = team_map.get(f.team_a)
-                    f_list.append(
-                        {
-                            "event": f.event,
-                            "opp_short": opp.short_name if opp else "OPP",
-                            "is_home": True,
-                            "difficulty": f.team_h_difficulty or 3,
-                        }
-                    )
+                    f_list.append({
+                        "event": f.event,
+                        "opp_short": opp.short_name if opp else "OPP",
+                        "is_home": True,
+                        "difficulty": f.team_h_difficulty or 3,
+                    })
                 elif f.team_a == team_id:
                     opp = team_map.get(f.team_h)
-                    f_list.append(
-                        {
-                            "event": f.event,
-                            "opp_short": opp.short_name if opp else "OPP",
-                            "is_home": False,
-                            "difficulty": f.team_a_difficulty or 3,
-                        }
-                    )
+                    f_list.append({
+                        "event": f.event,
+                        "opp_short": opp.short_name if opp else "OPP",
+                        "is_home": False,
+                        "difficulty": f.team_a_difficulty or 3,
+                    })
         return f_list[:5]
 
     starters_out = []
     for _, s in lineup_res["starters"].iterrows():
-        starters_out.append(
-            {
-                "element": int(s["element"]),
-                "web_name": s["web_name"],
-                "team": int(s["team"]),
-                "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
-                "position": s["position"],
-                "now_cost": round(s["value"] / 10.0, 1),
-                "purchase_price": round(float(s.get("purchase_price", s["value"])) / 10.0, 1),
-                "selling_price": round(float(s.get("selling_price", s["value"])) / 10.0, 1),
-                "expected_points": round(float(s["expected_points"]), 2),
-                "p10": round(float(s.get("p10", 0.0)), 2),
-                "p90": round(float(s.get("p90", 0.0)), 2),
-                "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
-                "is_captain": s["element"] == lineup_res["captain"]["element"],
-                "is_vice_captain": s["element"] == lineup_res["vice_captain"]["element"],
-                "next_fixtures": get_next_fixtures(int(s["team"])),
-            }
-        )
+        starters_out.append({
+            "element": int(s["element"]),
+            "web_name": s["web_name"],
+            "team": int(s["team"]),
+            "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
+            "position": s["position"],
+            "now_cost": round(float(s["value"]) / 10.0, 1),
+            "purchase_price": round(float(s.get("purchase_price", s["value"])) / 10.0, 1),
+            "selling_price": round(float(s.get("selling_price", s["value"])) / 10.0, 1),
+            "expected_points": round(float(s["expected_points"]), 2),
+            "p10": round(float(s.get("p10", 0.0)), 2),
+            "p90": round(float(s.get("p90", 0.0)), 2),
+            "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
+            "chance_of_playing": s.get("chance_of_playing", 100),
+            "status": s.get("status", "a"),
+            "news": s.get("news", ""),
+            "is_captain": int(s["element"]) == lineup_res["captain"]["element"],
+            "is_vice_captain": int(s["element"]) == lineup_res["vice_captain"]["element"],
+            "next_fixtures": get_next_fixtures(int(s["team"])),
+        })
 
     bench_out = []
-    for _, b in lineup_res["bench"].iterrows():
-        bench_out.append(
-            {
-                "element": int(b["element"]),
-                "web_name": b["web_name"],
-                "team": int(b["team"]),
-                "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
-                "position": b["position"],
-                "now_cost": round(b["value"] / 10.0, 1),
-                "purchase_price": round(float(b.get("purchase_price", b["value"])) / 10.0, 1),
-                "selling_price": round(float(b.get("selling_price", b["value"])) / 10.0, 1),
-                "expected_points": round(float(b["expected_points"]), 2),
-                "p10": round(float(b.get("p10", 0.0)), 2),
-                "p90": round(float(b.get("p90", 0.0)), 2),
-                "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
-                "next_fixtures": get_next_fixtures(int(b["team"])),
-            }
-        )
-    squad_val = round(float(user_squad_df["value"].sum()) / 10.0, 1)
-    sell_val = round(float(user_squad_df.get("selling_price", user_squad_df["value"]).sum()) / 10.0, 1)
-    bank_m = round(bank / 10.0, 2)
-    team_val = round(sell_val + bank_m, 1)
+    for idx, (_, b) in enumerate(lineup_res["bench"].iterrows(), start=1):
+        bench_out.append({
+            "element": int(b["element"]),
+            "web_name": b["web_name"],
+            "team": int(b["team"]),
+            "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
+            "position": b["position"],
+            "now_cost": round(float(b["value"]) / 10.0, 1),
+            "purchase_price": round(float(b.get("purchase_price", b["value"])) / 10.0, 1),
+            "selling_price": round(float(b.get("selling_price", b["value"])) / 10.0, 1),
+            "expected_points": round(float(b["expected_points"]), 2),
+            "p10": round(float(b.get("p10", 0.0)), 2),
+            "p90": round(float(b.get("p90", 0.0)), 2),
+            "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
+            "chance_of_playing": b.get("chance_of_playing", 100),
+            "status": b.get("status", "a"),
+            "news": b.get("news", ""),
+            "bench_order": idx,
+            "next_fixtures": get_next_fixtures(int(b["team"])),
+        })
 
-    return safe_json_serialize(
-        {
-            "manager_id": m_id,
-            "manager_name": manager_name,
-            "team_name": team_name,
-            "overall_points": overall_points,
-            "overall_rank": overall_rank,
-            "bank_millions": bank_m,
-            "free_transfers": free_transfers,
-            "available_transfers": free_transfers,
-            "total_squad_value": squad_val,
-            "total_selling_value": sell_val,
-            "total_team_value": team_val,
-            "chips_used": chips_used,
-            "formation": lineup_res["formation"],
-            "captain": lineup_res["captain"],
-            "vice_captain": lineup_res["vice_captain"],
-            "starters": starters_out,
-            "bench": bench_out,
-            "total_expected_points": lineup_res["total_gameweek_expected_points"],
-            "stale": is_stale,
-            "is_stale": is_stale,
-            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
-        }
-    )
+    squad_val = round(sum(s["now_cost"] for s in starters_out + bench_out), 1)
+    sell_val = round(sum(s["selling_price"] for s in starters_out + bench_out), 1)
+    team_val = round(sell_val + effective_state.bank_millions, 1)
+
+    return safe_json_serialize({
+        "manager_id": effective_state.manager_id,
+        "manager_name": effective_state.manager_name,
+        "team_name": effective_state.team_name,
+        "overall_points": effective_state.overall_points,
+        "overall_rank": effective_state.overall_rank,
+        "mode": effective_state.mode.value,
+        "confidence": effective_state.confidence,
+        "target_gameweek": target_gw,
+        "bank_millions": effective_state.bank_millions,
+        "bank": effective_state.bank_millions,
+        "bank_source": effective_state.bank_source,
+        "has_bank_override": effective_state.has_bank_override,
+        "free_transfers": effective_state.free_transfers,
+        "available_transfers": effective_state.free_transfers,
+        "ft_source": effective_state.ft_source,
+        "has_ft_override": effective_state.has_ft_override,
+        "total_squad_value": squad_val,
+        "total_selling_value": sell_val,
+        "total_team_value": team_val,
+        "chips_used": [c.get("name") for c in effective_state.chips_used],
+        "formation": lineup_res["formation"],
+        "captain": lineup_res["captain"],
+        "vice_captain": lineup_res["vice_captain"],
+        "starters": starters_out,
+        "bench": bench_out,
+        "starters_expected_points": lineup_res.get("starters_expected_points", 0.0),
+        "captain_bonus_expected_points": lineup_res.get("captain_bonus_expected_points", lineup_res["captain"]["expected_points"]),
+        "total_expected_points": lineup_res["total_gameweek_expected_points"],
+        "stale": is_stale,
+        "is_stale": is_stale,
+        "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+    })
 
 
 @router.post("/squad/match")
@@ -453,41 +421,18 @@ async def get_projections(position: str | None = None, team_id: int | None = Non
 
 @router.post("/optimize")
 async def run_optimizer(req: OptimizeRequest | None = None):
-    profile = data_store.get_profile()
+    effective_state = await manager_state_service.get_current_state()
     boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, _ = await fpl_client.get_fixtures()
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or 6
+    target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
 
     horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
-    # Get user squad
-    user_squad_df = None
-    bank = 5.0
-    if profile.manager_id:
-        try:
-            picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw or 5)
-            picks_ids = [p.element for p in picks.picks]
-            user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-            if picks.entry_history:
-                bank = picks.entry_history.bank
-        except Exception:
-            pass
-
-    if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad:
-        try:
-            manual_ids = (
-                json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
-            )
-            if manual_ids and len(manual_ids) == 15:
-                user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
-                bank = (profile.bank or 0.0) * 10.0
-                user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
-        except Exception:
-            pass
-
-    if user_squad_df is None or len(user_squad_df) < 15:
+    # Get user squad from single source of truth
+    user_squad_df = effective_state.to_squad_dataframe()
+    if user_squad_df.empty or len(user_squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
 
         user_squad_df = squad_optimizer.solve_best_squad(target_df, budget=1000.0)["squad"].copy()
@@ -500,8 +445,8 @@ async def run_optimizer(req: OptimizeRequest | None = None):
     res = transfer_optimizer.evaluate_transfer_options(
         current_squad_df=user_squad_df,
         player_pool_df=target_df,
-        bank=bank,
-        free_transfers=profile.free_transfers or 1,
+        bank=float(effective_state.bank_tenths),
+        free_transfers=int(effective_state.free_transfers),
         horizon_projections=horizon_proj,
         current_gw=curr_gw or 5,
         target_gw=target_gw,
@@ -512,41 +457,36 @@ async def run_optimizer(req: OptimizeRequest | None = None):
     res["stale"] = is_stale
     res["is_stale"] = is_stale
     res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
+    res["manager_state"] = {
+        "mode": effective_state.mode.value,
+        "bank_millions": effective_state.bank_millions,
+        "bank_source": effective_state.bank_source,
+        "free_transfers": effective_state.free_transfers,
+        "ft_source": effective_state.ft_source,
+    }
     return safe_json_serialize(res)
 
 
 @router.get("/chips")
 async def get_chip_strategy():
-    profile = data_store.get_profile()
+    effective_state = await manager_state_service.get_current_state()
     boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, _ = await fpl_client.get_fixtures()
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(next_gw or 6, 8, boot, fixtures)
-    pool_df = horizon_proj.get(next_gw or 6, pd.DataFrame())
+    target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
+    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 8, boot, fixtures)
+    pool_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     hist = None
-    squad_df = None
-    if profile.manager_id:
+    if effective_state.manager_id:
         try:
-            hist, _ = await fpl_client.get_manager_history(profile.manager_id)
-            picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw or 5)
-            picks_ids = [p.element for p in picks.picks]
-            squad_df = pool_df[pool_df["element"].isin(picks_ids)].copy()
+            hist, _ = await fpl_client.get_manager_history(effective_state.manager_id)
         except Exception:
             pass
 
-    if (squad_df is None or len(squad_df) < 15) and profile.manual_squad:
-        try:
-            manual_ids = (
-                json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
-            )
-            if manual_ids and len(manual_ids) == 15:
-                squad_df = pool_df[pool_df["element"].isin(manual_ids)].copy()
-        except Exception:
-            pass
-
-    if squad_df is None or len(squad_df) < 15:
+    squad_df = effective_state.to_squad_dataframe()
+    if squad_df.empty or len(squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
 
         squad_df = squad_optimizer.solve_best_squad(pool_df, budget=1000.0)["squad"]
@@ -567,6 +507,7 @@ async def get_chip_strategy():
 
 @router.get("/league")
 async def get_league_intel(league_id: int | None = None):
+    effective_state = await manager_state_service.get_current_state()
     profile = data_store.get_profile()
     l_id = league_id or profile.target_league_id
     if not l_id:
@@ -619,36 +560,40 @@ async def get_league_intel(league_id: int | None = None):
 
     rivals_res = await rival_analyzer.analyze_rivals(
         standings=standings_data["standings"],
-        user_manager_id=profile.manager_id,
+        user_manager_id=effective_state.manager_id,
         current_gw=curr_gw or 5,
         bootstrap=boot,
         max_rivals_to_inspect=8,
     )
 
-    user_pts = 0
-    if profile.manager_id:
-        try:
-            entry, _ = await fpl_client.get_manager_entry(profile.manager_id)
-            user_pts = entry.summary_overall_points or 0
-        except Exception:
-            pass
+    user_pts = effective_state.overall_points
+    # Find user's rank in this mini-league if present, otherwise fallback to overall_rank or 1
+    user_mini_rank = None
+    if effective_state.manager_id and standings_data.get("standings"):
+        for row in standings_data["standings"]:
+            if row.get("entry") == effective_state.manager_id:
+                user_mini_rank = row.get("rank")
+                break
+    user_rank = user_mini_rank or (1 if effective_state.overall_rank == 0 else effective_state.overall_rank)
 
     # Monte Carlo simulation
     fixtures, _ = await fpl_client.get_fixtures()
     proj_df = projection_engine.predict_gameweek((curr_gw or 5) + 1, boot, fixtures)
 
-    user_squad_mock = proj_df.sort_values(by="expected_points", ascending=False).head(15)
+    user_squad_df = effective_state.to_squad_dataframe()
+    if user_squad_df.empty or len(user_squad_df) < 15:
+        user_squad_df = proj_df.sort_values(by="expected_points", ascending=False).head(15)
 
     mc_res = monte_carlo_simulator.simulate_league(
         user_points=user_pts,
-        user_squad_df=user_squad_mock,
+        user_squad_df=user_squad_df,
         rival_squads=rivals_res["rival_squads"],
         projections_df=proj_df,
         horizon_gws=5,
     )
 
     strategy = league_strategy_advisor.evaluate_strategy(
-        user_rank=1, user_total_points=user_pts, rivals_analysis=rivals_res, user_squad_df=user_squad_mock
+        user_rank=user_rank, user_total_points=user_pts, rivals_analysis=rivals_res, user_squad_df=user_squad_df
     )
 
     return safe_json_serialize(
@@ -695,52 +640,16 @@ async def get_price_changes():
 
 
 async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple[pd.DataFrame, float, int]:
-    profile = data_store.get_profile()
-    curr_gw, _ = await fpl_client.get_current_and_next_gw()
-    bank = float(profile.bank or 0.5) * 10.0
-    free_transfers = int(profile.free_transfers or 1)
-    user_squad_df = None
-
-    if profile.manager_id:
-        try:
-            picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw or 5)
-            history, _ = await fpl_client.get_manager_history(profile.manager_id)
-            transfers, _ = await fpl_client.get_manager_transfers(profile.manager_id)
-            if picks.entry_history:
-                bank = float(picks.entry_history.bank)
-            if profile.bank is not None and profile.bank > 0:
-                bank = float(profile.bank * 10.0)
-            auto_ft = transfer_optimizer.calculate_banked_free_transfers(history)
-            if profile.free_transfers and profile.free_transfers > 1:
-                free_transfers = profile.free_transfers
-            else:
-                free_transfers = auto_ft
-            picks_ids = [p.element for p in picks.picks]
-            user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-            user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, transfers, boot)
-        except Exception:
-            pass
-
-    if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad:
-        try:
-            manual_ids = (
-                json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
-            )
-            if manual_ids and len(manual_ids) == 15:
-                user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
-                bank = float(profile.bank or 0.0) * 10.0
-                user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
-        except Exception:
-            pass
-
-    if user_squad_df is None or len(user_squad_df) < 15:
+    effective_state = await manager_state_service.get_current_state()
+    user_squad_df = effective_state.to_squad_dataframe()
+    if user_squad_df.empty or len(user_squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
 
         squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
         user_squad_df = squad_res["squad"].copy()
         user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
 
-    return user_squad_df, bank, free_transfers
+    return user_squad_df, float(effective_state.bank_tenths), int(effective_state.free_transfers)
 
 
 @router.get("/contingency/plans")

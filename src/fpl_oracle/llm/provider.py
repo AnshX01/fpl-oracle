@@ -113,8 +113,10 @@ class OfflineExpertProvider:
             )
             proj = await tool_executor.execute("get_projections", {"query": pos_filter, "horizon": 3})
             players = proj.get("players", [])
-            # Filter players <= 6.5m
-            budget_cands = [p for p in players if p.get("cost", 10.0) <= 6.5]
+            # Extract budget dynamically (e.g. "under 6.5", "under £7.0m", "under 5")
+            budget_match = re.search(r"under\s+(?:£)?(\d+(?:\.\d+)?)", last_raw, re.IGNORECASE)
+            max_cost = float(budget_match.group(1)) if budget_match else 6.5
+            budget_cands = [p for p in players if p.get("cost", 10.0) <= max_cost]
             if not budget_cands:
                 budget_cands = players[:3]
             top3 = budget_cands[:3]
@@ -122,9 +124,9 @@ class OfflineExpertProvider:
                 f"- **{c['web_name']}** (£{c.get('cost', 6.0)}m): {c['expected_points_gw']} xP (DefCon: +{c.get('exp_defcon_points', 0.0)})"
                 for c in top3
             ]
-            best_diff = top3[0]["web_name"] if top3 else "Rogers"
+            best_diff = top3[0]["web_name"] if top3 else "Selected player"
             return (
-                f"### 🚀 Top Differential {pos_filter}s (Under £6.5m)\n"
+                f"### 🚀 Top Differential {pos_filter}s (Under £{max_cost:.1f}m)\n"
                 f"**The Decision:** Target **{best_diff}** as your premier budget differential for the upcoming fixture swing.\n\n"
                 f"**The Numbers:**\n" + "\n".join(c_lines) + "\n\n"
                 "**The Why:** High baseline minutes reliability and substantial upside from the 2026/27 DefCon actions and attacking output.\n"
@@ -336,43 +338,83 @@ class OfflineExpertProvider:
 
 def get_llm_status() -> dict[str, Any]:
     """Report LLM provider status for diagnostic health checks."""
-    if GEMINI_API_KEY and GEMINI_API_KEY.strip():
-        provider = "gemini"
-        configured = True
-    elif OPENAI_API_KEY and OPENAI_API_KEY.strip():
-        provider = "openai"
-        configured = True
-    elif ANTHROPIC_API_KEY and ANTHROPIC_API_KEY.strip():
-        provider = "anthropic"
-        configured = True
-    else:
-        provider = "offline_expert"
+    from fpl_oracle.config import SETTINGS
+    from fpl_oracle.data.store import data_store
+
+    profile = data_store.get_profile()
+    pref = (getattr(profile, "llm_provider", None) or SETTINGS.get("llm", {}).get("provider", "")).lower()
+
+    active_provider = "offline_expert"
+    configured = False
+
+    if pref in ("offline", "offline_expert", "none"):
+        active_provider = "offline_expert"
         configured = False
+    elif pref == "gemini" and GEMINI_API_KEY.strip():
+        active_provider = "gemini"
+        configured = True
+    elif pref == "openai" and OPENAI_API_KEY.strip():
+        active_provider = "openai"
+        configured = True
+    elif pref == "anthropic" and ANTHROPIC_API_KEY.strip():
+        active_provider = "anthropic"
+        configured = True
+    elif GEMINI_API_KEY.strip():
+        active_provider = "gemini"
+        configured = True
+    elif OPENAI_API_KEY.strip():
+        active_provider = "openai"
+        configured = True
+    elif ANTHROPIC_API_KEY.strip():
+        active_provider = "anthropic"
+        configured = True
+
     return {
-        "active_provider": provider,
+        "active_provider": active_provider,
+        "preferred_provider": pref or None,
         "is_api_key_configured": configured,
         "fallback_available": True,
         "supported_providers": ["gemini", "openai", "anthropic", "offline_expert"],
     }
 
 
-def get_llm_provider() -> Any:
-    """Factory to instantiate the appropriate LLM provider."""
+def get_llm_provider(preferred_provider: str | None = None) -> Any:
+    """Factory to instantiate the appropriate LLM provider respecting preferences."""
+    from fpl_oracle.config import SETTINGS
+    from fpl_oracle.data.store import data_store
+
+    profile = data_store.get_profile()
+    pref = (preferred_provider or getattr(profile, "llm_provider", None) or SETTINGS.get("llm", {}).get("provider", "")).lower()
+
+    if pref in ("offline", "offline_expert", "none"):
+        logger.info("Using OfflineExpertProvider by user preference.")
+        return OfflineExpertProvider()
+    elif pref == "gemini" and GEMINI_API_KEY.strip():
+        from fpl_oracle.llm.gemini import GeminiProvider
+        logger.info("Using Google Gemini LLM Provider by preference.")
+        return GeminiProvider(api_key=GEMINI_API_KEY.strip())
+    elif pref == "openai" and OPENAI_API_KEY.strip():
+        from fpl_oracle.llm.openai import OpenAIProvider
+        logger.info("Using OpenAI LLM Provider by preference.")
+        return OpenAIProvider(api_key=OPENAI_API_KEY.strip())
+    elif pref == "anthropic" and ANTHROPIC_API_KEY.strip():
+        from fpl_oracle.llm.anthropic import AnthropicProvider
+        logger.info("Using Anthropic LLM Provider by preference.")
+        return AnthropicProvider(api_key=ANTHROPIC_API_KEY.strip())
+
+    # Fallback to available key or offline expert
     if GEMINI_API_KEY and GEMINI_API_KEY.strip():
         from fpl_oracle.llm.gemini import GeminiProvider
-
         logger.info("Using Google Gemini LLM Provider.")
         return GeminiProvider(api_key=GEMINI_API_KEY.strip())
     elif OPENAI_API_KEY and OPENAI_API_KEY.strip():
         from fpl_oracle.llm.openai import OpenAIProvider
-
         logger.info("Using OpenAI LLM Provider.")
         return OpenAIProvider(api_key=OPENAI_API_KEY.strip())
     elif ANTHROPIC_API_KEY and ANTHROPIC_API_KEY.strip():
         from fpl_oracle.llm.anthropic import AnthropicProvider
-
         logger.info("Using Anthropic LLM Provider.")
         return AnthropicProvider(api_key=ANTHROPIC_API_KEY.strip())
     else:
-        logger.info("No external LLM API key provided. Using OfflineExpertProvider (fully grounded).")
+        logger.info("No external LLM API key configured. Using OfflineExpertProvider (fully grounded).")
         return OfflineExpertProvider()

@@ -220,7 +220,8 @@ class TransferOptimizer:
         for sell_row in sellable:
             sell_id = int(sell_row["element"])
             sell_pos = sell_row["position"]
-            sell_val = int(sell_row["value"])
+            # Correct selling price accounting: use selling_price if present (never market value)
+            sell_val = int(sell_row.get("selling_price", sell_row["value"]))
             # Available cash to replace this player
             available_funds = sell_val + bank
 
@@ -305,16 +306,15 @@ class TransferOptimizer:
         hit_cost_2 = 0.0 if free_transfers >= 2 else self.hit_penalty
 
         if best_1_transfer is not None and len(sellable) >= 2:
-            # Greedily search second complementary transfer using remaining funds
             first_out_id = best_1_transfer["transfers_out"][0]["element"]
             first_in_id = best_1_transfer["transfers_in"][0]["element"]
             rem_bank = int(best_1_transfer["remaining_bank"] * 10)
 
             second_sellable = [r for r in sellable if int(r["element"]) != first_out_id]
-            for sell2_row in second_sellable[:3]:
+            for sell2_row in second_sellable[:4]:
                 sell2_id = int(sell2_row["element"])
                 sell2_pos = sell2_row["position"]
-                sell2_val = int(sell2_row["value"])
+                sell2_val = int(sell2_row.get("selling_price", sell2_row["value"]))
                 avail2 = sell2_val + rem_bank
 
                 pos2_pool = (
@@ -326,7 +326,7 @@ class TransferOptimizer:
                         & (target_gw_df["value"] <= avail2)
                     ]
                     .sort_values(by="expected_points", ascending=False)
-                    .head(3)
+                    .head(4)
                 )
 
                 for _, buy2_row in pos2_pool.iterrows():

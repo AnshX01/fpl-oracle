@@ -1,0 +1,237 @@
+/* ==========================================================================
+   Atlas Workspace & Council Decision Design System Tokens
+   FPL Oracle 2026/27 Redesign
+   ========================================================================== */
+
+:root {
+  /* Atlas Dark Theme Tokens (Default) */
+  --bg-primary: #000000;
+  --bg-canvas: #09090b;
+  --bg-card: #111113;
+  --bg-card-hover: #18181b;
+  --bg-card-elevated: #1f1f23;
+  --border-subtle: #1c1c20;
+  --border-muted: #27272a;
+  --border-highlight: #3f3f46;
+
+  --text-primary: #fafafa;
+  --text-muted: #a1a1aa;
+  --text-subtle: #71717a;
+  --text-inverse: #09090b;
+
+  --accent-emerald: #10b981;
+  --accent-emerald-light: #34d399;
+  --accent-emerald-dim: rgba(16, 185, 129, 0.12);
+  --accent-amber: #f59e0b;
+  --accent-amber-dim: rgba(245, 158, 11, 0.12);
+  --accent-blue: #3b82f6;
+  --accent-blue-dim: rgba(59, 130, 246, 0.12);
+  --accent-red: #ef4444;
+  --accent-red-dim: rgba(239, 68, 68, 0.12);
+  --accent-purple: #a855f7;
+  --accent-purple-dim: rgba(168, 85, 247, 0.12);
+
+  --pitch-grass-1: #061c10;
+  --pitch-grass-2: #0a2918;
+  --pitch-line: rgba(255, 255, 255, 0.15);
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+}
+
+html.light {
+  /* Atlas Light Theme Tokens */
+  --bg-primary: #f8fafc;
+  --bg-canvas: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f1f5f9;
+  --bg-card-elevated: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-muted: #e2e8f0;
+  --border-highlight: #cbd5e1;
+
+  --text-primary: #0f172a;
+  --text-muted: #475569;
+  --text-subtle: #64748b;
+  --text-inverse: #ffffff;
+
+  --pitch-grass-1: #0f3d24;
+  --pitch-grass-2: #164e2e;
+  --pitch-line: rgba(255, 255, 255, 0.22);
+}
+
+[v-cloak] {
+  display: none !important;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-muted);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-highlight);
+}
+
+/* Council Decision Card */
+.council-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25);
+  transition: border-color 0.2s ease, transform 0.15s ease;
+}
+
+.council-card:hover {
+  border-color: var(--border-highlight);
+}
+
+.decision-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Pitch Board Styling */
+.pitch-canvas {
+  background: radial-gradient(circle at center, var(--pitch-grass-2) 0%, var(--pitch-grass-1) 100%);
+  border: 2px solid rgba(16, 185, 129, 0.2);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.5);
+}
+
+.pitch-markings {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.pitch-center-circle {
+  width: 90px;
+  height: 90px;
+  border: 1px solid var(--pitch-line);
+  border-radius: 9999px;
+  margin: auto;
+}
+
+.pitch-divider-line {
+  width: 100%;
+  border-bottom: 1px solid var(--pitch-line);
+}
+
+/* FDR (Fixture Difficulty Rating) Badges */
+.fdr-1 { background-color: #059669; color: #ffffff; }
+.fdr-2 { background-color: #10b981; color: #000000; }
+.fdr-3 { background-color: #64748b; color: #ffffff; }
+.fdr-4 { background-color: #ea580c; color: #ffffff; }
+.fdr-5 { background-color: #dc2626; color: #ffffff; }
+
+/* Pulse animation for urgency / panic button */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+.panic-btn-pulse {
+  animation: pulse-subtle 2.5s infinite ease-in-out;
+}
+
+/* Markdown prose rendering */
+.prose-rendered h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 0.375rem;
+}
+
+.prose-rendered h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--accent-emerald-light);
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-rendered h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--accent-amber);
+  margin-top: 0.875rem;
+  margin-bottom: 0.375rem;
+}
+
+.prose-rendered p {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  margin-bottom: 0.75rem;
+}
+
+.prose-rendered ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.prose-rendered li {
+  margin-bottom: 0.25rem;
+}
+
+.prose-rendered strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.prose-rendered table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.8125rem;
+}
+
+.prose-rendered th,
+.prose-rendered td {
+  border: 1px solid var(--border-muted);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.prose-rendered th {
+  background-color: var(--bg-card-hover);
+  color: var(--accent-emerald-light);
+  font-weight: 600;
+}

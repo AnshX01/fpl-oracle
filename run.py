@@ -79,6 +79,11 @@ def cmd_backtest():
     res = subprocess.run([py, "-m", "fpl_oracle.backtest"], cwd=BASE_DIR)
     sys.exit(res.returncode)
 
+def cmd_cli(cli_args):
+    py = get_python_executable()
+    res = subprocess.run([py, "-m", "fpl_oracle.cli"] + cli_args, cwd=BASE_DIR)
+    sys.exit(res.returncode)
+
 def cmd_clean():
     print("=== Cleaning Cache & Temporary Files ===")
     for root, dirs, files in os.walk(BASE_DIR):
@@ -89,7 +94,7 @@ def cmd_clean():
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python run.py [setup|run|train|test|verify|backtest|clean]")
+        print("Usage: python run.py [setup|run|train|test|verify|backtest|clean|cli]")
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
@@ -107,9 +112,11 @@ def main():
         cmd_backtest()
     elif cmd == "clean":
         cmd_clean()
+    elif cmd == "cli":
+        cmd_cli(sys.argv[2:])
     else:
         print(f"Unknown command: {cmd}")
-        print("Available commands: setup, run, train, test, verify, backtest, clean")
+        print("Available commands: setup, run, train, test, verify, backtest, clean, cli")
         sys.exit(1)
 
 if __name__ == "__main__":

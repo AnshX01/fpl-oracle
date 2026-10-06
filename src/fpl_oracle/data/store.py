@@ -280,9 +280,53 @@ class DataStore:
                                 profile.manual_squad = json.dumps(p_data["manual_squad"])  # type: ignore[assignment]
                     except Exception:
                         pass
+
+                # If manager_id or league_id still unconfigured, seed from environment
+                from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+                if profile.manager_id is None and FPL_MANAGER_ID:
+                    try:
+                        val = int(str(FPL_MANAGER_ID).strip())
+                        if val > 0:
+                            profile.manager_id = val
+                    except (ValueError, TypeError):
+                        pass
+
+                if profile.target_league_id is None and FPL_TARGET_LEAGUE_ID:
+                    try:
+                        val = int(str(FPL_TARGET_LEAGUE_ID).strip())
+                        if val > 0:
+                            profile.target_league_id = val
+                    except (ValueError, TypeError):
+                        pass
+
                 session.add(profile)
                 session.commit()
                 session.refresh(profile)
+
+            # If existing profile has None for IDs, also offer safe initial seeding from env without overwriting existing IDs
+            from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+            changed = False
+            if profile.manager_id is None and FPL_MANAGER_ID:
+                try:
+                    val = int(str(FPL_MANAGER_ID).strip())
+                    if val > 0:
+                        profile.manager_id = val
+                        changed = True
+                except (ValueError, TypeError):
+                    pass
+            if profile.target_league_id is None and FPL_TARGET_LEAGUE_ID:
+                try:
+                    val = int(str(FPL_TARGET_LEAGUE_ID).strip())
+                    if val > 0:
+                        profile.target_league_id = val
+                        changed = True
+                except (ValueError, TypeError):
+                    pass
+            if changed:
+                profile.updated_at = datetime.now(UTC)
+                session.commit()
+                session.refresh(profile)
+                self._sync_profile_json(profile)
 
             if not PROFILE_JSON_PATH.exists():
                 self._sync_profile_json(profile)
@@ -293,11 +337,40 @@ class DataStore:
                 target_league_id=int(profile.target_league_id) if profile.target_league_id is not None else None,
                 risk_preference=str(profile.risk_preference or "balanced"),
                 llm_provider=str(profile.llm_provider or "gemini"),
-                bank=float(profile.bank or 0.0),
-                free_transfers=int(profile.free_transfers or 1),
+                bank=float(profile.bank if profile.bank is not None else 0.0),
+                free_transfers=int(profile.free_transfers if profile.free_transfers is not None else 1),
                 manual_squad=str(profile.manual_squad) if profile.manual_squad else None,
                 updated_at=profile.updated_at if isinstance(profile.updated_at, datetime) else None,
             )
+
+    def sync_from_env(self) -> ProfileData:
+        """Explicit action to overwrite profile IDs from .env if user requests it."""
+        from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
+        with self.get_session() as session:
+            profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
+            if not profile:
+                profile = UserProfile(id=1)
+                session.add(profile)
+            if FPL_MANAGER_ID:
+                try:
+                    val = int(str(FPL_MANAGER_ID).strip())
+                    if val > 0:
+                        profile.manager_id = val
+                except (ValueError, TypeError):
+                    pass
+            if FPL_TARGET_LEAGUE_ID:
+                try:
+                    val = int(str(FPL_TARGET_LEAGUE_ID).strip())
+                    if val > 0:
+                        profile.target_league_id = val
+                except (ValueError, TypeError):
+                    pass
+            profile.updated_at = datetime.now(UTC)
+            session.commit()
+            session.refresh(profile)
+            self._sync_profile_json(profile)
+            return self.get_profile()
+
 
     def update_profile(self, **kwargs):
         with self.get_session() as session:
@@ -306,9 +379,12 @@ class DataStore:
                 profile = UserProfile(id=1)
                 session.add(profile)
             for k, v in kwargs.items():
-                if k == "manual_squad" and isinstance(v, list):
-                    profile.manual_squad = json.dumps(v)
-                elif hasattr(profile, k) and v is not None:
+                if k == "manual_squad":
+                    if isinstance(v, list) and len(v) > 0:
+                        profile.manual_squad = json.dumps(v)
+                    elif v is None or v == [] or v == "":
+                        profile.manual_squad = None
+                elif hasattr(profile, k):
                     setattr(profile, k, v)
             profile.updated_at = datetime.now(UTC)
             session.commit()

@@ -1,6 +1,6 @@
 {
-  "active_version": "v1.0.0",
-  "last_updated": "2026-10-03T14:11:06.972072+00:00",
+  "active_version": "v2026.10.06.0724",
+  "last_updated": "2026-10-06T07:24:09.653001+00:00",
   "versions": [
     {
       "version": "v1.0.0",
@@ -8,8 +8,17 @@
       "ml_mae": 1.48,
       "ml_spearman": 0.52,
       "base_mae": 1.74,
-      "status": "production",
+      "status": "archived",
       "notes": "Initial calibrated LightGBM component models"
+    },
+    {
+      "version": "v2026.10.06.0724",
+      "created_at": "2026-10-06T07:24:09.653001+00:00",
+      "ml_mae": 1.046,
+      "ml_spearman": 0.706,
+      "base_mae": 1.083,
+      "status": "production",
+      "notes": "Candidate model passed verification. MAE: 1.046 (improvement: +0.128). Promoted to production. | Automated retrain pipeline with true rolling origins"
     }
   ]
 }
