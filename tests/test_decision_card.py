@@ -277,3 +277,53 @@ def test_format_decision_card_markdown():
     assert "Salah" in md
     assert "Set 1 chips expire GW19" in md
     assert "Legends League" in md
+
+
+def test_decision_card_unmocked_happy_path():
+    """Verify unmocked end-to-end decision card execution and honest metrics."""
+    async def _run():
+        card = await decision_card_generator.generate_decision_card()
+        assert isinstance(card["gameweek"], int)
+        assert card["gameweek"] >= 1
+        assert "transfers" in card
+        assert "xi" in card
+        assert len(card["xi"]) == 11
+        # Honest win prob reporting: not a silent fallback
+        wp = card["win_prob"]
+        assert wp["status"] in ["simulated", "unconfigured", "error"]
+        if wp["status"] == "simulated":
+            assert wp["p_first"] is not None
+            assert wp["expected_rank"] is not None
+        elif wp["status"] == "error":
+            assert wp["p_first"] is None
+            assert wp["expected_rank"] is None
+            assert "error_message" in wp
+        elif wp["status"] == "unconfigured":
+            assert wp["p_first"] is None
+            assert wp["expected_rank"] is None
+
+    asyncio.run(_run())
+
+
+def test_decision_card_error_path_honest_reporting():
+    """Verify that Monte Carlo exceptions emit status='error' with null metrics rather than swallowing."""
+    async def _run():
+        with patch(
+            "fpl_oracle.league.standings.league_standings_manager.get_league_standings",
+            new=AsyncMock(return_value={"league_name": "Test League", "standings": [{"entry": 1, "rank": 1, "total": 500}]}),
+        ), patch(
+            "fpl_oracle.league.rivals.rival_analyzer.analyze_rivals",
+            new=AsyncMock(return_value={"rival_squads": [{"entry_id": 2, "player_name": "Rival Leader", "rank": 1, "total_points": 490, "squad": []}], "template_players": [], "differential_players": []}),
+        ), patch(
+            "fpl_oracle.league.montecarlo.monte_carlo_simulator.simulate_league",
+            side_effect=RuntimeError("Simulated Monte Carlo numerical breakdown"),
+        ):
+            card = await decision_card_generator.generate_decision_card()
+            wp = card["win_prob"]
+            assert wp["status"] == "error"
+            assert wp["p_first"] is None, "Failed simulation must emit p_first=None, not 0.0"
+            assert wp["expected_rank"] is None, "Failed simulation must emit expected_rank=None, not 1.0"
+            assert "Simulated Monte Carlo numerical breakdown" in wp["error_message"]
+
+    asyncio.run(_run())
+

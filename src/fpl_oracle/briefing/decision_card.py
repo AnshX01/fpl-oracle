@@ -5,9 +5,12 @@ from the shared game state, projection snapshots, transfer engine, chip calendar
 and rival simulations.
 """
 
+import logging
 from typing import Any
 
 import pandas as pd
+
+logger = logging.getLogger("fpl_oracle.briefing.decision_card")
 
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
@@ -36,7 +39,8 @@ class DecisionCardGenerator:
         boot, is_stale = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
+        effective_curr_gw = curr_gw or game_state.current_gameweek or 1
+        target_gw = next_gw or game_state.next_gameweek or (effective_curr_gw + 1 if effective_curr_gw < 38 else 38)
 
         team_map = {t.id: t for t in boot.teams}
 
@@ -132,7 +136,7 @@ class DecisionCardGenerator:
             bank=float(effective_state.bank_tenths),
             free_transfers=int(effective_state.free_transfers),
             horizon_projections=horizon_proj,
-            current_gw=curr_gw or 5,
+            current_gw=effective_curr_gw,
             target_gw=target_gw,
         )
 
