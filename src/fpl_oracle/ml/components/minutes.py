@@ -3,7 +3,6 @@ Minutes and Starting probability component model.
 Predicts P(starts), P(min60+), and expected minutes.
 """
 
-
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -16,25 +15,13 @@ class MinutesModel(BaseComponent):
     def __init__(self):
         super().__init__("minutes_model")
         self.clf_starts = lgb.LGBMClassifier(
-            n_estimators=120,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1
+            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
         )
         self.clf_min60 = lgb.LGBMClassifier(
-            n_estimators=120,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1
+            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
         )
         self.reg_minutes = lgb.LGBMRegressor(
-            n_estimators=120,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1
+            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
         )
         self.calibrator_starts = Calibrator("isotonic")
         self.calibrator_min60 = Calibrator("isotonic")
@@ -76,8 +63,4 @@ class MinutesModel(BaseComponent):
             p_min60 = p_min60 * cop
             exp_mins = exp_mins * cop
 
-        return {
-            "p_starts": p_starts,
-            "p_min60": p_min60,
-            "expected_minutes": exp_mins
-        }
+        return {"p_starts": p_starts, "p_min60": p_min60, "expected_minutes": exp_mins}

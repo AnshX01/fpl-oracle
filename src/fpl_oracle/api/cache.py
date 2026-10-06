@@ -37,11 +37,7 @@ class CacheManager:
             data, upd = db_entry
             # Rehydrate in memory
             ttl = SETTINGS.get("cache", {}).get("bootstrap_ttl_seconds", 300)
-            self._mem_cache[key] = {
-                "data": data,
-                "expires_at": now + ttl,
-                "updated_at": upd
-            }
+            self._mem_cache[key] = {"data": data, "expires_at": now + ttl, "updated_at": upd}
             return data, upd
         return None
 
@@ -58,11 +54,7 @@ class CacheManager:
     def set(self, key: str, data: Any, ttl_seconds: int):
         now_ts = time.time()
         now_dt = datetime.now(UTC)
-        self._mem_cache[key] = {
-            "data": data,
-            "expires_at": now_ts + ttl_seconds,
-            "updated_at": now_dt
-        }
+        self._mem_cache[key] = {"data": data, "expires_at": now_ts + ttl_seconds, "updated_at": now_dt}
         data_store.set_cache(key, data, ttl_seconds)
 
     def invalidate(self, key: str):
@@ -74,6 +66,7 @@ class CacheManager:
         if key in self._mem_cache:
             del self._mem_cache[key]
         from fpl_oracle.data.store import APICacheEntry
+
         with data_store.get_session() as session:
             entry = session.query(APICacheEntry).filter(APICacheEntry.key == key).first()
             if entry:
@@ -101,5 +94,6 @@ class CacheManager:
             if age is not None:
                 ages[k] = round(age, 1)
         return ages
+
 
 cache_manager = CacheManager()

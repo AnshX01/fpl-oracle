@@ -23,8 +23,9 @@ QUESTIONS = [
     "Explain why you picked Saka over Palmer this week.",
     "Who should I captain for Gameweek 6?",
     "Which players are likely to rise in price tonight?",
-    "Give me my transfer roadmap for the next 4 gameweeks."
+    "Give me my transfer roadmap for the next 4 gameweeks.",
 ]
+
 
 async def run_chat_examples():
     output_path = REPORTS_DIR / "chat_examples.md"
@@ -37,11 +38,12 @@ async def run_chat_examples():
         print(f"[{idx}/{len(QUESTIONS)}] Asking: '{q}'...")
         session_id = f"test_session_{idx}"
         ans = await expert_agent.answer(user_message=q, session_id=session_id)
-        content += f"## Question {idx}: \"{q}\"\n\n"
+        content += f'## Question {idx}: "{q}"\n\n'
         content += f"### Assistant Response:\n\n{ans}\n\n---\n\n"
 
     output_path.write_text(content, encoding="utf-8")
     print(f"=== Chat examples successfully saved to {output_path} ===")
+
 
 if __name__ == "__main__":
     asyncio.run(run_chat_examples())

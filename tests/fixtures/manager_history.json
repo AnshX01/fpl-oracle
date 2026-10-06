@@ -1,0 +1,47 @@
+{
+  "current": [
+    {
+      "event": 1,
+      "points": 60,
+      "total_points": 60,
+      "bank": 10,
+      "value": 1000
+    },
+    {
+      "event": 2,
+      "points": 60,
+      "total_points": 120,
+      "bank": 10,
+      "value": 1000
+    },
+    {
+      "event": 3,
+      "points": 60,
+      "total_points": 180,
+      "bank": 10,
+      "value": 1000
+    },
+    {
+      "event": 4,
+      "points": 60,
+      "total_points": 240,
+      "bank": 10,
+      "value": 1000
+    },
+    {
+      "event": 5,
+      "points": 60,
+      "total_points": 300,
+      "bank": 10,
+      "value": 1000
+    }
+  ],
+  "past": [],
+  "chips": [
+    {
+      "name": "3xc",
+      "time": "2026-09-01T12:00:00Z",
+      "event": 2
+    }
+  ]
+}

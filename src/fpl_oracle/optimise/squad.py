@@ -21,13 +21,13 @@ class SquadOptimizer:
     def solve_best_squad(
         self,
         player_pool_df: pd.DataFrame,
-        budget: float, # in tenths, e.g. 1000 = £100.0m
+        budget: float,  # in tenths, e.g. 1000 = £100.0m
         metric_col: str = "expected_points",
         locked_in_ids: list[int] | None = None,
         locked_out_ids: list[int] | None = None,
         excluded_team_ids: list[int] | None = None,
         bench_weight: float = 0.05,
-        require_talisman: bool = True
+        require_talisman: bool = True,
     ) -> dict[str, Any]:
         """
         Solve optimal 15-man squad within budget.
@@ -42,7 +42,7 @@ class SquadOptimizer:
 
         prob = pulp.LpProblem("FPL_Squad_Optimizer", pulp.LpMaximize)
 
-        use_joint = (metric_col == "expected_points")
+        use_joint = metric_col == "expected_points"
 
         # Decision variables
         x = {idx: pulp.LpVariable(f"sq_{idx}", cat=pulp.LpBinary) for idx in df.index}
@@ -58,12 +58,14 @@ class SquadOptimizer:
 
             # Objective: Starters (1.0) + Captain multiplier (1.0 + ceiling bonus) + Bench (0.05)
             cap_scores = df[metric_col] * 1.0 + df.get("p90", df[metric_col] * 1.5) * 0.35
-            prob += pulp.lpSum([
-                df.loc[idx, metric_col] * s[idx] +
-                cap_scores.loc[idx] * c[idx] +
-                df.loc[idx, metric_col] * bench_weight * (x[idx] - s[idx])
-                for idx in df.index
-            ])
+            prob += pulp.lpSum(
+                [
+                    df.loc[idx, metric_col] * s[idx]
+                    + cap_scores.loc[idx] * c[idx]
+                    + df.loc[idx, metric_col] * bench_weight * (x[idx] - s[idx])
+                    for idx in df.index
+                ]
+            )
 
             # Lineup constraints
             prob += pulp.lpSum([s[idx] for idx in df.index]) == 11
@@ -132,7 +134,7 @@ class SquadOptimizer:
             "total_cost": total_cost,
             "total_expected_points": round(total_xp, 2),
             "remaining_budget": round(budget - total_cost, 1),
-            "squad": selected_df
+            "squad": selected_df,
         }
 
         if use_joint:
@@ -143,5 +145,6 @@ class SquadOptimizer:
                 result["captain_element"] = int(df.loc[cap_indices[0], "element"])
 
         return result
+
 
 squad_optimizer = SquadOptimizer()

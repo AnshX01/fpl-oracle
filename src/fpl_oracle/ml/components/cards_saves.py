@@ -3,7 +3,6 @@ Cards and Saves component model.
 Predicts goalkeeper saves and disciplinary card deductions.
 """
 
-
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -15,18 +14,10 @@ class CardsSavesModel(BaseComponent):
     def __init__(self):
         super().__init__("cards_saves_model")
         self.reg_saves = lgb.LGBMRegressor(
-            n_estimators=100,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1
+            n_estimators=100, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
         )
         self.reg_cards = lgb.LGBMRegressor(
-            n_estimators=100,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1
+            n_estimators=100, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
         )
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
@@ -46,7 +37,4 @@ class CardsSavesModel(BaseComponent):
 
         exp_cards = np.clip(self.reg_cards.predict(X), 0.0, 0.5)
 
-        return {
-            "expected_saves": exp_saves,
-            "expected_card_deduction": exp_cards
-        }
+        return {"expected_saves": exp_saves, "expected_card_deduction": exp_cards}

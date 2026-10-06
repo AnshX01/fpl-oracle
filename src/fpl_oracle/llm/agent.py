@@ -11,6 +11,7 @@ from fpl_oracle.llm.provider import SYSTEM_PROMPT, get_llm_provider
 
 logger = logging.getLogger("fpl_oracle.llm.agent")
 
+
 class ExpertAgent:
     def __init__(self):
         self.system_prompt = SYSTEM_PROMPT
@@ -34,10 +35,12 @@ class ExpertAgent:
         except Exception as e:
             logger.error(f"Error during LLM chat generation: {e}. Falling back to offline engine...")
             from fpl_oracle.llm.provider import OfflineExpertProvider
+
             response_text = await OfflineExpertProvider().chat(messages=history, system_prompt=self.system_prompt)
 
         # Save assistant message
         data_store.add_chat_message(role="assistant", content=response_text, session_id=session_id)
         return response_text
+
 
 expert_agent = ExpertAgent()

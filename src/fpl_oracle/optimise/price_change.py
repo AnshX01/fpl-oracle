@@ -67,21 +67,24 @@ class PriceChangePredictor:
                 direction = "LIKELY_FALL"
                 urgency = "Falling momentum"
 
-            predictions.append({
-                "element": elem.id,
-                "web_name": elem.web_name,
-                "team": elem.team,
-                "now_cost": elem.now_cost / 10.0,
-                "net_transfers_event": net_transfers,
-                "selected_by_percent": ownership,
-                "hourly_rate": hourly_rate,
-                "urgency_score": round(score, 1),
-                "direction": direction,
-                "urgency_message": urgency
-            })
+            predictions.append(
+                {
+                    "element": elem.id,
+                    "web_name": elem.web_name,
+                    "team": elem.team,
+                    "now_cost": elem.now_cost / 10.0,
+                    "net_transfers_event": net_transfers,
+                    "selected_by_percent": ownership,
+                    "hourly_rate": hourly_rate,
+                    "urgency_score": round(score, 1),
+                    "direction": direction,
+                    "urgency_message": urgency,
+                }
+            )
 
         # Sort by urgency
         predictions.sort(key=lambda x: abs(float(str(x["urgency_score"]))), reverse=True)
         return predictions
+
 
 price_change_predictor = PriceChangePredictor()

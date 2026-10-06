@@ -3,7 +3,6 @@ Defending component model.
 Predicts clean sheet probability P(CS) and expected goals conceded.
 """
 
-
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -16,18 +15,10 @@ class DefendingModel(BaseComponent):
     def __init__(self):
         super().__init__("defending_model")
         self.clf_cs = lgb.LGBMClassifier(
-            n_estimators=120,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1
+            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
         )
         self.reg_gc = lgb.LGBMRegressor(
-            n_estimators=120,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1
+            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
         )
         self.calibrator_cs = Calibrator("isotonic")
 
@@ -51,7 +42,4 @@ class DefendingModel(BaseComponent):
         p_cs = self.calibrator_cs.calibrate(p_cs_raw)
         exp_gc = np.clip(self.reg_gc.predict(X), 0.0, 5.0)
 
-        return {
-            "p_clean_sheet": p_cs,
-            "expected_goals_conceded": exp_gc
-        }
+        return {"p_clean_sheet": p_cs, "expected_goals_conceded": exp_gc}

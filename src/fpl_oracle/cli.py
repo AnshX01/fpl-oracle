@@ -23,9 +23,11 @@ if sys.platform == "win32":
 app = typer.Typer(help="FPL Oracle — Local ML-driven 2026/27 Fantasy Premier League Expert")
 console = Console(force_terminal=True, legacy_windows=False)
 
+
 @app.command()
 def analyze():
     """Run full team, projection, and transfer analysis."""
+
     async def _run():
         from fpl_oracle.api.fpl_client import fpl_client
         from fpl_oracle.data.store import data_store
@@ -38,7 +40,9 @@ def analyze():
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         target_gw = next_gw or 6
 
-        console.print(f"Current GW: [bold yellow]{curr_gw}[/bold yellow] | Next GW: [bold green]{target_gw}[/bold green]")
+        console.print(
+            f"Current GW: [bold yellow]{curr_gw}[/bold yellow] | Next GW: [bold green]{target_gw}[/bold green]"
+        )
 
         horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
         target_df = horizon_proj[target_gw]
@@ -55,6 +59,7 @@ def analyze():
 
         if user_squad_df is None or len(user_squad_df) < 15:
             from fpl_oracle.optimise.squad import squad_optimizer
+
             user_squad_df = squad_optimizer.solve_best_squad(target_df, budget=1000.0)["squad"].copy()
 
         lineup = lineup_optimizer.select_lineup_and_captain(user_squad_df)
@@ -76,21 +81,25 @@ def analyze():
             table.add_row(
                 r["position"],
                 f"{r['web_name']}{badge}",
-                f"£{r['value']/10.0:.1f}m",
+                f"£{r['value'] / 10.0:.1f}m",
                 f"{r['expected_points']:.2f}",
                 f"{r.get('p10', 0.0):.2f}",
                 f"{r.get('p90', 0.0):.2f}",
-                f"+{r.get('exp_defcon_pts', 0.0):.2f}"
+                f"+{r.get('exp_defcon_pts', 0.0):.2f}",
             )
 
         console.print(table)
-        console.print(f"[bold]Total Projected Starting Points: [green]{lineup['starters_expected_points']:.2f} xP[/green][/bold]")
+        console.print(
+            f"[bold]Total Projected Starting Points: [green]{lineup['starters_expected_points']:.2f} xP[/green][/bold]"
+        )
 
     asyncio.run(_run())
+
 
 @app.command()
 def optimize():
     """Run mathematical MILP transfer optimizer."""
+
     async def _run():
         from fpl_oracle.api.fpl_client import fpl_client
         from fpl_oracle.ml.predict import projection_engine
@@ -115,10 +124,16 @@ def optimize():
             free_transfers=1,
             horizon_projections=horizon_proj,
             current_gw=curr_gw or 5,
-            target_gw=target_gw
+            target_gw=target_gw,
         )
 
-        console.print(Panel(f"[bold]Recommendation:[/bold] {opt_res['recommended_plan']['recommendation_summary']}\n[bold]Hit Verdict:[/bold] {opt_res['hit_verdict']}", title="Optimizer Decision", border_style="green"))
+        console.print(
+            Panel(
+                f"[bold]Recommendation:[/bold] {opt_res['recommended_plan']['recommendation_summary']}\n[bold]Hit Verdict:[/bold] {opt_res['hit_verdict']}",
+                title="Optimizer Decision",
+                border_style="green",
+            )
+        )
 
         table = Table(title="Candidate Plans Evaluated")
         table.add_column("Plan Type", style="cyan")
@@ -128,15 +143,23 @@ def optimize():
         table.add_column("Hits", justify="right")
 
         for p in opt_res["candidate_plans"]:
-            table.add_row(p["plan_type"], p["recommendation_summary"], f"{p['net_expected_points']:.2f}", f"{p['expected_gain']:+.2f}", str(p["hits"]))
+            table.add_row(
+                p["plan_type"],
+                p["recommendation_summary"],
+                f"{p['net_expected_points']:.2f}",
+                f"{p['expected_gain']:+.2f}",
+                str(p["hits"]),
+            )
 
         console.print(table)
 
     asyncio.run(_run())
 
+
 @app.command()
 def chips():
     """Display 2026/27 dual-set chip strategy plan."""
+
     async def _run():
         from fpl_oracle.api.fpl_client import fpl_client
         from fpl_oracle.chips.planner import chip_planner
@@ -156,11 +179,17 @@ def chips():
             current_squad_df=squad_df,
             horizon_projections=horizon_proj,
             fixtures=fixtures,
-            bootstrap=boot
+            bootstrap=boot,
         )
 
         if chip_res.get("set_1_deadline_warning"):
-            console.print(Panel(chip_res["set_1_deadline_warning"], title="[!] 2026/27 Set 1 Chip Expiry Warning", border_style="yellow"))
+            console.print(
+                Panel(
+                    chip_res["set_1_deadline_warning"],
+                    title="[!] 2026/27 Set 1 Chip Expiry Warning",
+                    border_style="yellow",
+                )
+            )
 
         table = Table(title="2026/27 Chip Strategy Schedule")
         table.add_column("Chip", style="bold white")
@@ -179,29 +208,35 @@ def chips():
                 f"+{c['expected_gain']:.1f} pts",
                 c["confidence"],
                 f"GW {c['alternative_gw']}",
-                c["reasoning"]
+                c["reasoning"],
             )
 
         console.print(table)
 
     asyncio.run(_run())
 
+
 @app.command()
 def briefing():
     """Print the weekly Gameweek Briefing."""
+
     async def _run():
         from fpl_oracle.briefing.weekly import weekly_briefing_generator
+
         console.print("[bold green]=== Generating Gameweek Briefing ===[/bold green]")
         briefing_dict = await weekly_briefing_generator.generate_briefing()
         console.print(Markdown(briefing_dict["markdown"]))
 
     asyncio.run(_run())
 
+
 @app.command()
 def chat():
     """Launch interactive conversational chat with FPL Oracle Expert."""
+
     async def _run():
         from fpl_oracle.llm.agent import expert_agent
+
         console.print("[bold green]=== FPL Oracle Expert Chat (Type 'exit' to quit) ===[/bold green]")
         console.print("[dim]Ask about transfers, captaincy, chips, -4 hits, or mini-league tactics.[/dim]\n")
 
@@ -223,6 +258,7 @@ def chat():
                 break
 
     asyncio.run(_run())
+
 
 if __name__ == "__main__":
     app()

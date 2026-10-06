@@ -62,6 +62,7 @@ class WeeklyBriefingGenerator:
 
         if user_squad_df is None or len(user_squad_df) < 15:
             from fpl_oracle.optimise.squad import squad_optimizer
+
             squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
             user_squad_df = squad_res["squad"].copy()
 
@@ -76,7 +77,7 @@ class WeeklyBriefingGenerator:
             free_transfers=ft,
             horizon_projections=horizon_proj,
             current_gw=curr_gw or 5,
-            target_gw=target_gw
+            target_gw=target_gw,
         )
 
         # 3. Chip Strategy
@@ -86,7 +87,7 @@ class WeeklyBriefingGenerator:
             horizon_projections=horizon_proj,
             fixtures=fixtures,
             bootstrap=boot,
-            manager_history=user_history
+            manager_history=user_history,
         )
 
         # 4. Price Changes Tonight
@@ -110,22 +111,19 @@ class WeeklyBriefingGenerator:
                     user_manager_id=m_id,
                     current_gw=curr_gw or 5,
                     bootstrap=boot,
-                    max_rivals_to_inspect=5
+                    max_rivals_to_inspect=5,
                 )
                 user_total = 0
                 if m_id:
                     user_entry, _ = await fpl_client.get_manager_entry(m_id)
                     user_total = user_entry.summary_overall_points or 0
                 strategy = league_strategy_advisor.evaluate_strategy(
-                    user_rank=1,
-                    user_total_points=user_total,
-                    rivals_analysis=rivals_res,
-                    user_squad_df=user_squad_df
+                    user_rank=1, user_total_points=user_total, rivals_analysis=rivals_res, user_squad_df=user_squad_df
                 )
                 league_summary = {
                     "league_name": standings["league_name"],
                     "strategy_mode": strategy["mode_title"],
-                    "tactics": strategy["tactical_recommendations"]
+                    "tactics": strategy["tactical_recommendations"],
                 }
             except Exception:
                 pass
@@ -137,18 +135,18 @@ class WeeklyBriefingGenerator:
 
         markdown = f"""# ⚽ FPL Oracle — Gameweek {target_gw} Executive Briefing
 
-**Generated:** {datetime.now(UTC).strftime('%A, %d %B %Y %H:%M UTC')}
+**Generated:** {datetime.now(UTC).strftime("%A, %d %B %Y %H:%M UTC")}
 **Deadline:** {deadline_str}
-**Status:** {'⚠️ STALE DATA (API Unavailable)' if is_stale else '🟢 LIVE & SYNCHRONIZED'}
+**Status:** {"⚠️ STALE DATA (API Unavailable)" if is_stale else "🟢 LIVE & SYNCHRONIZED"}
 
 ---
 
 ## 1. Executive Summary & Core Decisions
-- **Captain:** **{cap['web_name']}** ({cap['expected_points']} projected points, {cap['multiplier']}x multiplier).
-- **Vice-Captain:** **{vc['web_name']}** ({vc['expected_points']} projected points).
-- **Transfers Decision:** {rec_plan['recommendation_summary']}
-- **Hit Verdict:** {transfers_res['hit_verdict']}
-- **Starting Formation:** {lineup_res['formation']} (Projected starting points: **{lineup_res['starters_expected_points']}** xP).
+- **Captain:** **{cap["web_name"]}** ({cap["expected_points"]} projected points, {cap["multiplier"]}x multiplier).
+- **Vice-Captain:** **{vc["web_name"]}** ({vc["expected_points"]} projected points).
+- **Transfers Decision:** {rec_plan["recommendation_summary"]}
+- **Hit Verdict:** {transfers_res["hit_verdict"]}
+- **Starting Formation:** {lineup_res["formation"]} (Projected starting points: **{lineup_res["starters_expected_points"]}** xP).
 
 ---
 
@@ -168,32 +166,36 @@ class WeeklyBriefingGenerator:
 ---
 
 ## 3. 2026/27 Chip Strategy & Set 1 Deadlines
-{chip_res.get('set_1_deadline_warning') or 'Set 1 chips are active through GW19.'}
+{chip_res.get("set_1_deadline_warning") or "Set 1 chips are active through GW19."}
 
 | Chip | Recommended GW | Expected Gain | Tactical Notes |
 |---|---|---|---|
 """
         for c in chip_res.get("chip_plan_table", [])[:4]:
-            markdown += f"| **{c['chip']}** | GW {c['recommended_gw']} | +{c['expected_gain']} pts | {c['reasoning']} |\n"
+            markdown += (
+                f"| **{c['chip']}** | GW {c['recommended_gw']} | +{c['expected_gain']} pts | {c['reasoning']} |\n"
+            )
 
         markdown += f"""
 ---
 
 ## 4. Market & Price Change Alert Tonight
-- **Imminent Rises (+£0.1m):** {', '.join([r['web_name'] for r in imminent_rises]) if imminent_rises else 'None at immediate trigger'}
-- **Imminent Falls (-£0.1m):** {', '.join([f['web_name'] for f in imminent_falls]) if imminent_falls else 'None at immediate trigger'}
+- **Imminent Rises (+£0.1m):** {", ".join([r["web_name"] for r in imminent_rises]) if imminent_rises else "None at immediate trigger"}
+- **Imminent Falls (-£0.1m):** {", ".join([f["web_name"] for f in imminent_falls]) if imminent_falls else "None at immediate trigger"}
 
 ---
 
 ## 5. Mini-League & Tactical Situation
-- **Strategy Mode:** {league_summary['strategy_mode'] if league_summary else 'Global Points Optimization'}
+- **Strategy Mode:** {league_summary["strategy_mode"] if league_summary else "Global Points Optimization"}
 - **Key Tactical Directives:**
 """
         if league_summary and league_summary.get("tactics"):
             for t in league_summary["tactics"]:
                 markdown += f"  - {t}\n"
         else:
-            markdown += "  - Focus on maximizing overall expected points and banking free transfers for winter swings.\n"
+            markdown += (
+                "  - Focus on maximizing overall expected points and banking free transfers for winter swings.\n"
+            )
 
         briefing_dict = {
             "target_gameweek": target_gw,
@@ -209,9 +211,10 @@ class WeeklyBriefingGenerator:
             "price_changes": {"rises": imminent_rises, "falls": imminent_falls},
             "squad_news": squad_news,
             "league_summary": league_summary,
-            "markdown": markdown
+            "markdown": markdown,
         }
 
         return safe_json_serialize(briefing_dict)
+
 
 weekly_briefing_generator = WeeklyBriefingGenerator()

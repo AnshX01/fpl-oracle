@@ -13,10 +13,11 @@ import pulp
 
 def normal_prob_greater(mu1: float, sigma1: float, mu2: float, sigma2: float) -> float:
     """Calculates P(X1 > X2) assuming independent normal distributions using math.erf."""
-    denom = math.sqrt(max(0.1, sigma1 ** 2 + sigma2 ** 2))
+    denom = math.sqrt(max(0.1, sigma1**2 + sigma2**2))
     z = (mu1 - mu2) / denom
     prob = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
     return round(float(prob), 3)
+
 
 class LineupOptimizer:
     def __init__(self):
@@ -27,7 +28,7 @@ class LineupOptimizer:
         squad_df: pd.DataFrame,
         is_triple_captain: bool = False,
         is_bench_boost: bool = False,
-        risk_preference: str = "balanced"
+        risk_preference: str = "balanced",
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
@@ -58,11 +59,12 @@ class LineupOptimizer:
         else:  # balanced
             cap_scores = df["expected_points"] * 0.70 + p90_vals * 0.30
 
-        prob += pulp.lpSum([
-            df.loc[i, "expected_points"] * starter[i] +
-            cap_scores.loc[i] * (cap_multiplier - 1.0) * captain[i]
-            for i in df.index
-        ])
+        prob += pulp.lpSum(
+            [
+                df.loc[i, "expected_points"] * starter[i] + cap_scores.loc[i] * (cap_multiplier - 1.0) * captain[i]
+                for i in df.index
+            ]
+        )
 
         # Constraint 1: Exactly 11 starters
         prob += pulp.lpSum([starter[i] for i in df.index]) == 11
@@ -117,9 +119,7 @@ class LineupOptimizer:
         # Order bench:
         # Bench GK is first bench spot or reserved for GK slot
         bench_gk = bench_df[bench_df["position"] == "GKP"]
-        bench_outfield = bench_df[bench_df["position"] != "GKP"].sort_values(
-            by="expected_points", ascending=False
-        )
+        bench_outfield = bench_df[bench_df["position"] != "GKP"].sort_values(by="expected_points", ascending=False)
         ordered_bench = pd.concat([bench_gk, bench_outfield]).reset_index(drop=True)
 
         # Compute formation string
@@ -184,26 +184,35 @@ class LineupOptimizer:
                     "element": int(safe_pick["element"]),
                     "web_name": safe_pick["web_name"],
                     "floor_p10": round(float(safe_pick.get("p10", 0.0)), 2),
-                    "expected_points": round(float(safe_pick["expected_points"]), 2)
+                    "expected_points": round(float(safe_pick["expected_points"]), 2),
                 },
                 "differential_alternative": {
                     "element": int(ceiling_pick["element"]),
                     "web_name": ceiling_pick["web_name"],
                     "ceiling_p90": round(float(ceiling_pick.get("p90", 0.0)), 2),
-                    "expected_points": round(float(ceiling_pick["expected_points"]), 2)
-                }
+                    "expected_points": round(float(ceiling_pick["expected_points"]), 2),
+                },
             },
             "vice_captain": {
                 "element": int(vice_captain_row["element"]),
                 "web_name": vice_captain_row["web_name"],
                 "expected_points": round(float(vice_captain_row["expected_points"]), 2),
-                "reasoning": f"Activates if {captain_row['web_name']} does not feature. Ranked #2 in expected points ({round(float(vice_captain_row['expected_points']), 2)} xP)."
+                "reasoning": f"Activates if {captain_row['web_name']} does not feature. Ranked #2 in expected points ({round(float(vice_captain_row['expected_points']), 2)} xP).",
             },
-            "captain_rankings": captain_candidates[[c for c in ["element", "web_name", "position", "expected_points", "p10", "p90"] if c in captain_candidates.columns]].to_dict(orient="records"),
+            "captain_rankings": captain_candidates[
+                [
+                    c
+                    for c in ["element", "web_name", "position", "expected_points", "p10", "p90"]
+                    if c in captain_candidates.columns
+                ]
+            ].to_dict(orient="records"),
             "starters_expected_points": round(starters_xp, 2),
             "bench_expected_points": round(bench_xp, 2),
             "total_gameweek_expected_points": round(total_lineup_xp, 2),
-            "bench_risk_starters": bench_risk_starters[[c for c in ["element", "web_name", "chance_of_playing"] if c in bench_risk_starters.columns]].to_dict(orient="records")
+            "bench_risk_starters": bench_risk_starters[
+                [c for c in ["element", "web_name", "chance_of_playing"] if c in bench_risk_starters.columns]
+            ].to_dict(orient="records"),
         }
+
 
 lineup_optimizer = LineupOptimizer()

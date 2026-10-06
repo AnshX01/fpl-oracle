@@ -98,7 +98,9 @@ class SyncPipeline:
             # ------------------------------------------------------------------
             # Stage 1: Upstream API Sync
             # ------------------------------------------------------------------
-            await self._broadcast("sync_upstream", 10, "Fetching live Premier League API bootstrap, fixtures, and event status...")
+            await self._broadcast(
+                "sync_upstream", 10, "Fetching live Premier League API bootstrap, fixtures, and event status..."
+            )
             boot, _ = await fpl_client.get_bootstrap_static(force_refresh=True)
             fixtures, _ = await fpl_client.get_fixtures()
             curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
@@ -112,7 +114,11 @@ class SyncPipeline:
             # ------------------------------------------------------------------
             # Stage 2: Live Rules Verification & Game State
             # ------------------------------------------------------------------
-            await self._broadcast("rules_and_gamestate", 20, "Verifying 2026/27 official rules & calculating GameState deadline countdown...")
+            await self._broadcast(
+                "rules_and_gamestate",
+                20,
+                "Verifying 2026/27 official rules & calculating GameState deadline countdown...",
+            )
             rules_ver = rules_checker.verify(boot)
             game_state = await game_state_manager.get_game_state()
 
@@ -127,19 +133,22 @@ class SyncPipeline:
             # ------------------------------------------------------------------
             # Stage 4: Component ML Inference
             # ------------------------------------------------------------------
-            await self._broadcast("ml_inference", 50, f"Generating calibrated xP, P10 floor & P90 ceiling across GW {target_gw}-{target_gw+horizon-1}...")
+            await self._broadcast(
+                "ml_inference",
+                50,
+                f"Generating calibrated xP, P10 floor & P90 ceiling across GW {target_gw}-{target_gw + horizon - 1}...",
+            )
             projections = projection_engine.predict_multi_gameweeks(
-                start_gw=target_gw,
-                horizon=horizon,
-                bootstrap=boot,
-                fixtures=fixtures
+                start_gw=target_gw, horizon=horizon, bootstrap=boot, fixtures=fixtures
             )
             target_df = projections.get(target_gw)
 
             # ------------------------------------------------------------------
             # Stage 5: Transfer & Lineup Optimization
             # ------------------------------------------------------------------
-            await self._broadcast("optimization", 65, "Solving mathematical MILP for squad, starting XI, and transfer roadmap...")
+            await self._broadcast(
+                "optimization", 65, "Solving mathematical MILP for squad, starting XI, and transfer roadmap..."
+            )
             # Check manager or manual squad
             user_squad_df = None
             bank = 5.0
@@ -155,7 +164,9 @@ class SyncPipeline:
                         bank = picks.entry_history.bank
                     picks_ids = [p.element for p in picks.picks]
                     user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-                    user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, transfers_history, boot)
+                    user_squad_df = transfer_optimizer.compute_squad_selling_prices(
+                        user_squad_df, transfers_history, boot
+                    )
                     auto_ft = transfer_optimizer.calculate_banked_free_transfers(history_obj)
                     if profile.free_transfers is None or profile.free_transfers == 1:
                         free_transfers = auto_ft
@@ -164,7 +175,11 @@ class SyncPipeline:
 
             if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad and target_df is not None:
                 try:
-                    manual_ids = json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+                    manual_ids = (
+                        json.loads(profile.manual_squad)
+                        if isinstance(profile.manual_squad, str)
+                        else profile.manual_squad
+                    )
                     if manual_ids and len(manual_ids) == 15:
                         user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
                         bank = (profile.bank or 0.0) * 10.0
@@ -174,6 +189,7 @@ class SyncPipeline:
 
             if (user_squad_df is None or len(user_squad_df) < 15) and target_df is not None and not target_df.empty:
                 from fpl_oracle.optimise.squad import squad_optimizer
+
                 squad_res = squad_optimizer.solve_best_squad(target_df, budget=1000.0)
                 user_squad_df = squad_res["squad"].copy()
                 user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
@@ -181,7 +197,9 @@ class SyncPipeline:
             opt_res = {}
             lineup_res = {}
             if user_squad_df is not None and len(user_squad_df) == 15 and target_df is not None:
-                lineup_res = lineup_optimizer.select_lineup_and_captain(user_squad_df, risk_preference=profile.risk_preference)
+                lineup_res = lineup_optimizer.select_lineup_and_captain(
+                    user_squad_df, risk_preference=profile.risk_preference
+                )
                 opt_res = transfer_optimizer.evaluate_transfer_options(
                     current_squad_df=user_squad_df,
                     player_pool_df=target_df,
@@ -209,7 +227,9 @@ class SyncPipeline:
             # ------------------------------------------------------------------
             # Stage 7: Mini-League Monte Carlo Simulation
             # ------------------------------------------------------------------
-            await self._broadcast("league", 85, "Simulating mini-league trajectories and rival differential ownership...")
+            await self._broadcast(
+                "league", 85, "Simulating mini-league trajectories and rival differential ownership..."
+            )
             t_league = profile.target_league_id or 314
             league_res = None
             try:
@@ -220,7 +240,7 @@ class SyncPipeline:
                         user_manager_id=profile.manager_id,
                         current_gw=curr_gw or 5,
                         bootstrap=boot,
-                        max_rivals_to_inspect=6
+                        max_rivals_to_inspect=6,
                     )
                     user_pts = 0.0
                     if profile.manager_id:
@@ -234,7 +254,7 @@ class SyncPipeline:
                         user_squad_df=user_squad_df,
                         rival_squads=rivals_res.get("rival_squads", []),
                         projections_df=target_df if target_df is not None else user_squad_df,
-                        horizon_gws=5
+                        horizon_gws=5,
                     )
             except Exception as e:
                 logger.warning("Monte Carlo simulation warning: %s", e)
@@ -242,7 +262,9 @@ class SyncPipeline:
             # ------------------------------------------------------------------
             # Stage 8: News Ingestion & Sentiment Extraction
             # ------------------------------------------------------------------
-            await self._broadcast("news", 95, "Ingesting latest verified football news feeds and extracting injury sentiment...")
+            await self._broadcast(
+                "news", 95, "Ingesting latest verified football news feeds and extracting injury sentiment..."
+            )
             try:
                 analyzed_news = await news_analyzer.get_player_news_signals(boot)
             except Exception as e:
@@ -252,7 +274,9 @@ class SyncPipeline:
             # ------------------------------------------------------------------
             # Stage 9: Weekly Briefing Generation
             # ------------------------------------------------------------------
-            await self._broadcast("briefing", 98, f"Synthesizing Gameweek {target_gw} executive intelligence briefing...")
+            await self._broadcast(
+                "briefing", 98, f"Synthesizing Gameweek {target_gw} executive intelligence briefing..."
+            )
             try:
                 briefing_data = await weekly_briefing_generator.generate_briefing(profile.manager_id)
             except Exception as e:
@@ -274,10 +298,7 @@ class SyncPipeline:
             }
 
             await self._broadcast(
-                "complete",
-                100,
-                f"Full FPL Oracle pipeline completed successfully for Gameweek {target_gw}!",
-                done=True
+                "complete", 100, f"Full FPL Oracle pipeline completed successfully for Gameweek {target_gw}!", done=True
             )
             logger.info(">>> FPL Oracle Orchestration Pipeline Finished Successfully! <<<")
 

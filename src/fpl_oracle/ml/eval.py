@@ -19,6 +19,7 @@ from fpl_oracle.config import REPORTS_DIR
 
 logger = logging.getLogger("fpl_oracle.eval")
 
+
 class ModelEvaluator:
     def __init__(self):
         self.report_path = REPORTS_DIR / "model_eval.md"
@@ -44,11 +45,7 @@ class ModelEvaluator:
         return float(np.round(np.mean(loss), 4))
 
     def evaluate_uncertainty_calibration(
-        self,
-        actual: np.ndarray,
-        p10: np.ndarray,
-        p50: np.ndarray,
-        p90: np.ndarray
+        self, actual: np.ndarray, p10: np.ndarray, p50: np.ndarray, p90: np.ndarray
     ) -> dict[str, Any]:
         """
         Evaluate calibration of P10, P50, and P90 point distributions.
@@ -148,11 +145,40 @@ class ModelEvaluator:
             "rmse_improvement_pct": float(np.round((base_rmse - ml_rmse) / base_rmse * 100, 2)),
             "positions": pos_breakdown,
             "calibration": calibration_metrics,
-            "rolling_origins": rolling_origins or [
-                {"season": "2023-24 (Holdout)", "train_size": 45000, "test_size": 15000, "mae": 0.884, "rmse": 1.812, "spearman": 0.685},
-                {"season": "2024-25 (Holdout)", "train_size": 60000, "test_size": 16000, "mae": 0.879, "rmse": 1.805, "spearman": 0.692},
-                {"season": "2025-26 (Holdout)", "train_size": 76000, "test_size": 11087, "mae": 0.891, "rmse": 1.828, "spearman": 0.697},
-                {"season": "2026-27 (GW 1-5)", "train_size": 87087, "test_size": 2054, "mae": 0.865, "rmse": 1.782, "spearman": 0.704},
+            "rolling_origins": rolling_origins
+            or [
+                {
+                    "season": "2023-24 (Holdout)",
+                    "train_size": 45000,
+                    "test_size": 15000,
+                    "mae": 0.884,
+                    "rmse": 1.812,
+                    "spearman": 0.685,
+                },
+                {
+                    "season": "2024-25 (Holdout)",
+                    "train_size": 60000,
+                    "test_size": 16000,
+                    "mae": 0.879,
+                    "rmse": 1.805,
+                    "spearman": 0.692,
+                },
+                {
+                    "season": "2025-26 (Holdout)",
+                    "train_size": 76000,
+                    "test_size": 11087,
+                    "mae": 0.891,
+                    "rmse": 1.828,
+                    "spearman": 0.697,
+                },
+                {
+                    "season": "2026-27 (GW 1-5)",
+                    "train_size": 87087,
+                    "test_size": 2054,
+                    "mae": 0.865,
+                    "rmse": 1.782,
+                    "spearman": 0.704,
+                },
             ],
         }
 
@@ -176,10 +202,10 @@ This report documents the validation of the FPL Oracle Multi-Component Machine L
 
 | Metric | ML Projection Engine | Heuristic Form Baseline | Relative Improvement |
 |---|---|---|---|
-| **Mean Absolute Error (MAE)** | **{res['ml_mae']}** pts | {res['base_mae']} pts | **+{res['mae_improvement_pct']}%** lower error |
-| **Root Mean Squared Error (RMSE)** | **{res['ml_rmse']}** pts | {res['base_rmse']} pts | **+{res['rmse_improvement_pct']}%** lower error |
-| **Spearman Rank Correlation ($\\rho$)** | **{res['ml_spearman']}** | {res['base_spearman']} | **+{round(res['ml_spearman'] - res['base_spearman'], 3)}** higher rank order |
-| **Pearson Correlation ($r$)** | **{res['ml_pearson']}** | {res['base_pearson']} | **+{round(res['ml_pearson'] - res['base_pearson'], 3)}** higher linear fit |
+| **Mean Absolute Error (MAE)** | **{res["ml_mae"]}** pts | {res["base_mae"]} pts | **+{res["mae_improvement_pct"]}%** lower error |
+| **Root Mean Squared Error (RMSE)** | **{res["ml_rmse"]}** pts | {res["base_rmse"]} pts | **+{res["rmse_improvement_pct"]}%** lower error |
+| **Spearman Rank Correlation ($\\rho$)** | **{res["ml_spearman"]}** | {res["base_spearman"]} | **+{round(res["ml_spearman"] - res["base_spearman"], 3)}** higher rank order |
+| **Pearson Correlation ($r$)** | **{res["ml_pearson"]}** | {res["base_pearson"]} | **+{round(res["ml_pearson"] - res["base_pearson"], 3)}** higher linear fit |
 
 > **Verdict**: The ML Projection Engine outperforms the heuristic baseline across all key metrics (lower MAE, lower RMSE, and substantially higher rank correlation). The rank correlation improvement is critical for FPL transfer and captaincy prioritization.
 
@@ -211,13 +237,13 @@ This report documents the validation of the FPL Oracle Multi-Component Machine L
 
 | Calibration Metric | Observed | Target / Nominal | Calibration Verdict |
 |---|---|---|---|
-| **80% Credible Interval Coverage ($[P_{{10}}, P_{{90}}]$)** | **{cal.get('interval_80_coverage_pct', 80.5)}%** | 80.0% | **WELL-CALIBRATED (±1.5%)** |
-| **Lower Tail Fraction ($Y < P_{{10}}$)** | **{cal.get('below_p10_pct', 10.2)}%** | 10.0% | **UNBIASED FLOOR** |
-| **Upper Tail Fraction ($Y > P_{{90}}$)** | **{cal.get('above_p90_pct', 9.3)}%** | 10.0% | **UNBIASED CEILING** |
-| **Pinball Loss ($q=0.10$)** | **{cal.get('pinball_loss_p10', 0.245)}** | — | Minimized |
-| **Pinball Loss ($q=0.50$, Median)** | **{cal.get('pinball_loss_p50', 0.446)}** | — | Minimized |
-| **Pinball Loss ($q=0.90$)** | **{cal.get('pinball_loss_p90', 0.287)}** | — | Minimized |
-| **Average Interval Width ($P_{{90}} - P_{{10}}$)** | **{cal.get('avg_interval_width', 4.82)}** pts | — | Sharp & Informative |
+| **80% Credible Interval Coverage ($[P_{{10}}, P_{{90}}]$)** | **{cal.get("interval_80_coverage_pct", 80.5)}%** | 80.0% | **WELL-CALIBRATED (±1.5%)** |
+| **Lower Tail Fraction ($Y < P_{{10}}$)** | **{cal.get("below_p10_pct", 10.2)}%** | 10.0% | **UNBIASED FLOOR** |
+| **Upper Tail Fraction ($Y > P_{{90}}$)** | **{cal.get("above_p90_pct", 9.3)}%** | 10.0% | **UNBIASED CEILING** |
+| **Pinball Loss ($q=0.10$)** | **{cal.get("pinball_loss_p10", 0.245)}** | — | Minimized |
+| **Pinball Loss ($q=0.50$, Median)** | **{cal.get("pinball_loss_p50", 0.446)}** | — | Minimized |
+| **Pinball Loss ($q=0.90$)** | **{cal.get("pinball_loss_p90", 0.287)}** | — | Minimized |
+| **Average Interval Width ($P_{{90}} - P_{{10}}$)** | **{cal.get("avg_interval_width", 4.82)}** pts | — | Sharp & Informative |
 
 ### Architectural Insights
 - **Minutes Model**: Isotonic calibration produces calibrated probabilities for starting ($P(\\text{{starts}}))$ and 60+ minutes ($P(\\ge 60)$), reducing appearance error by 18% on rotation-prone squads.
@@ -227,5 +253,6 @@ This report documents the validation of the FPL Oracle Multi-Component Machine L
 """
         self.report_path.write_text(content, encoding="utf-8")
         logger.info(f"Saved evaluation report to {self.report_path}")
+
 
 model_evaluator = ModelEvaluator()

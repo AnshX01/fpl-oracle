@@ -23,6 +23,7 @@ from fpl_oracle.ml.ensemble import scoring_ensemble
 
 logger = logging.getLogger("fpl_oracle.predict")
 
+
 class ProjectionEngine:
     def __init__(self):
         self.models_dir = MODELS_DIR
@@ -62,6 +63,7 @@ class ProjectionEngine:
             self.train(X, Y)
         else:
             from fpl_oracle.ml.train import train_all_models
+
             train_all_models()
             self.load_or_train()
 
@@ -88,12 +90,7 @@ class ProjectionEngine:
         self.is_loaded = True
         logger.info("All component models successfully trained and persisted.")
 
-    def predict_gameweek(
-        self,
-        target_gw: int,
-        bootstrap: BootstrapStatic,
-        fixtures: list[Fixture]
-    ) -> pd.DataFrame:
+    def predict_gameweek(self, target_gw: int, bootstrap: BootstrapStatic, fixtures: list[Fixture]) -> pd.DataFrame:
         """
         Generate expected points for all players for a specific gameweek.
         Handles double gameweeks and blank gameweeks.
@@ -102,9 +99,7 @@ class ProjectionEngine:
             self.load_or_train()
 
         features_df = feature_engineering.extract_live_features_for_upcoming(
-            bootstrap=bootstrap,
-            fixtures=fixtures,
-            target_gw=target_gw
+            bootstrap=bootstrap, fixtures=fixtures, target_gw=target_gw
         )
 
         if features_df.empty:
@@ -121,49 +116,55 @@ class ProjectionEngine:
         bonus_pred = self.bonus_model.predict(X)
         cards_pred = self.cards_saves_model.predict(X)
 
-        components = {
-            **mins_pred,
-            **att_pred,
-            **def_pred,
-            **defcon_pred,
-            **bonus_pred,
-            **cards_pred
-        }
+        components = {**mins_pred, **att_pred, **def_pred, **defcon_pred, **bonus_pred, **cards_pred}
 
         # Aggregate through scoring ensemble
         res_df = scoring_ensemble.aggregate_components(components, X)
 
         # Merge metadata
-        meta_cols = ["element", "web_name", "team", "position", "value", "target_gw", "is_bgw", "is_dgw", "opponent_difficulty", "chance_of_playing"]
+        meta_cols = [
+            "element",
+            "web_name",
+            "team",
+            "position",
+            "value",
+            "target_gw",
+            "is_bgw",
+            "is_dgw",
+            "opponent_difficulty",
+            "chance_of_playing",
+        ]
         for col in meta_cols:
             res_df[col] = features_df[col].values
 
         # If a player has a Double Gameweek (2 fixtures in same GW), sum the expectations
         # Group by element
-        dgw_grouped = res_df.groupby("element", as_index=False).agg({
-            "web_name": "first",
-            "team": "first",
-            "position": "first",
-            "value": "first",
-            "target_gw": "first",
-            "is_bgw": "first",
-            "is_dgw": "max",
-            "opponent_difficulty": "mean",
-            "chance_of_playing": "first",
-            "expected_points": "sum",
-            "p10": "sum",
-            "p50": "sum",
-            "p90": "sum",
-            "variance": "sum",
-            "exp_appearance": "sum",
-            "exp_goals_pts": "sum",
-            "exp_assists_pts": "sum",
-            "exp_cs_pts": "sum",
-            "exp_defcon_pts": "sum",
-            "exp_bonus_pts": "sum",
-            "p_starts": "max",
-            "p_min60": "max"
-        })
+        dgw_grouped = res_df.groupby("element", as_index=False).agg(
+            {
+                "web_name": "first",
+                "team": "first",
+                "position": "first",
+                "value": "first",
+                "target_gw": "first",
+                "is_bgw": "first",
+                "is_dgw": "max",
+                "opponent_difficulty": "mean",
+                "chance_of_playing": "first",
+                "expected_points": "sum",
+                "p10": "sum",
+                "p50": "sum",
+                "p90": "sum",
+                "variance": "sum",
+                "exp_appearance": "sum",
+                "exp_goals_pts": "sum",
+                "exp_assists_pts": "sum",
+                "exp_cs_pts": "sum",
+                "exp_defcon_pts": "sum",
+                "exp_bonus_pts": "sum",
+                "p_starts": "max",
+                "p_min60": "max",
+            }
+        )
 
         # Blank gameweek zeroing
         dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, ["expected_points", "p10", "p50", "p90", "variance"]] = 0.0
@@ -171,11 +172,7 @@ class ProjectionEngine:
         return dgw_grouped
 
     def predict_multi_gameweeks(
-        self,
-        start_gw: int,
-        horizon: int,
-        bootstrap: BootstrapStatic,
-        fixtures: list[Fixture]
+        self, start_gw: int, horizon: int, bootstrap: BootstrapStatic, fixtures: list[Fixture]
     ) -> dict[int, pd.DataFrame]:
         """
         Generate projections across an N-gameweek horizon.
@@ -196,13 +193,14 @@ class ProjectionEngine:
             "defending_model.pkl",
             "defcon_model.pkl",
             "bonus_model.pkl",
-            "cards_saves_model.pkl"
+            "cards_saves_model.pkl",
         ]
         existing = [w for w in weights if (self.models_dir / w).exists()]
         mtimes = [(self.models_dir / w).stat().st_mtime for w in existing]
         latest_mtime = max(mtimes) if mtimes else None
 
         from datetime import datetime
+
         trained_iso = datetime.fromtimestamp(latest_mtime, tz=UTC).isoformat() if latest_mtime else None
 
         return {
@@ -210,7 +208,8 @@ class ProjectionEngine:
             "is_loaded": self.is_loaded,
             "components_ready": f"{len(existing)}/{len(weights)}",
             "all_components_present": len(existing) == len(weights),
-            "last_trained_timestamp": trained_iso
+            "last_trained_timestamp": trained_iso,
         }
+
 
 projection_engine = ProjectionEngine()

@@ -16,11 +16,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Load environment variables
 load_dotenv(BASE_DIR / ".env")
 
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
 
 # Load config files
 CONFIG_DIR = BASE_DIR / "config"
@@ -29,11 +31,14 @@ RULES: dict[str, Any] = _load_yaml(CONFIG_DIR / "rules.yaml")
 SCORING: dict[str, Any] = _load_yaml(CONFIG_DIR / "scoring.yaml")
 NEWS_SOURCES: dict[str, Any] = _load_yaml(CONFIG_DIR / "news_sources.yaml")
 
+
 def load_rules_config() -> dict[str, Any]:
     return _load_yaml(CONFIG_DIR / "rules.yaml")
 
+
 def load_scoring_config() -> dict[str, Any]:
     return _load_yaml(CONFIG_DIR / "scoring.yaml")
+
 
 # Environment keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

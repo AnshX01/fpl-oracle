@@ -16,30 +16,32 @@ from fpl_oracle.data.features import FEATURE_COLUMNS, FeatureEngineering
 def make_synthetic_player_history(name: str = "Talisman Forward", n_matches: int = 10) -> pd.DataFrame:
     rows = []
     for gw in range(1, n_matches + 1):
-        rows.append({
-            "name": name,
-            "season": "2025-26",
-            "round": gw,
-            "position": "FWD",
-            "minutes": 90,
-            "starts": 1,
-            "total_points": 6,
-            "expected_goals": 0.45,
-            "expected_assists": 0.20,
-            "expected_goal_involvements": 0.65,
-            "expected_goals_conceded": 1.10,
-            "goals_scored": 1,
-            "assists": 0,
-            "clean_sheets": 0,
-            "goals_conceded": 1,
-            "saves": 0,
-            "defensive_contribution": 1,
-            "ict_index": 8.5,
-            "bps": 22,
-            "bonus": 1,
-            "was_home": True,
-            "value": 115.0,
-        })
+        rows.append(
+            {
+                "name": name,
+                "season": "2025-26",
+                "round": gw,
+                "position": "FWD",
+                "minutes": 90,
+                "starts": 1,
+                "total_points": 6,
+                "expected_goals": 0.45,
+                "expected_assists": 0.20,
+                "expected_goal_involvements": 0.65,
+                "expected_goals_conceded": 1.10,
+                "goals_scored": 1,
+                "assists": 0,
+                "clean_sheets": 0,
+                "goals_conceded": 1,
+                "saves": 0,
+                "defensive_contribution": 1,
+                "ict_index": 8.5,
+                "bps": 22,
+                "bonus": 1,
+                "was_home": True,
+                "value": 115.0,
+            }
+        )
     return pd.DataFrame(rows)
 
 

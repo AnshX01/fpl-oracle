@@ -25,16 +25,23 @@ from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.llm.agent import expert_agent
 from fpl_oracle.llm.provider import get_llm_status
+from fpl_oracle.ml.model_registry import model_registry
 from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.ingest import news_ingestion
 from fpl_oracle.optimise.contingency import contingency_engine
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
 from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.server.jobs import get_jobs_status, run_job_on_demand
 from fpl_oracle.server.pipeline import sync_pipeline
 from fpl_oracle.server.safe_json import SafeJSONResponse, safe_json_serialize
 
 router = APIRouter(prefix="/api", default_response_class=SafeJSONResponse)
+
+
+class RollbackRequest(BaseModel):
+    target_version: str
+
 
 class ProfileUpdateRequest(BaseModel):
     manager_id: int | None = None
@@ -45,13 +52,16 @@ class ProfileUpdateRequest(BaseModel):
     free_transfers: int | None = None
     manual_squad: list[int] | None = None
 
+
 class MatchSquadRequest(BaseModel):
     raw_text: str
+
 
 class ManualSquadRequest(BaseModel):
     player_ids: list[int]
     bank: float | None = 0.0
     free_transfers: int | None = 1
+
 
 class OptimizeRequest(BaseModel):
     locked_in: list[int] | None = None
@@ -59,13 +69,16 @@ class OptimizeRequest(BaseModel):
     excluded_teams: list[int] | None = None
     custom_budget: float | None = None
 
+
 class PanicRequest(BaseModel):
     query: str | None = None
     ruled_out_ids: list[int] | None = None
 
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = "default"
+
 
 @router.get("/health")
 async def get_health():
@@ -86,7 +99,9 @@ async def get_health():
     return {
         "status": "healthy" if not fpl_client.is_stale_mode else "degraded",
         "api_reachability": not fpl_client.is_stale_mode,
-        "rules_verification": rules_ver.to_dict() if rules_ver else {"verified": True, "rules_source": "cached", "mismatches": []},
+        "rules_verification": rules_ver.to_dict()
+        if rules_ver
+        else {"verified": True, "rules_source": "cached", "mismatches": []},
         "season": game_state.season,
         "current_gameweek": game_state.current_gw,
         "next_gameweek": game_state.next_gw,
@@ -99,7 +114,7 @@ async def get_health():
             "leagues_updated": game_state.leagues_updated,
             "blank_gws": game_state.blank_gws,
             "double_gws": game_state.double_gws,
-            "postponed_fixtures_count": game_state.postponed_fixtures_count
+            "postponed_fixtures_count": game_state.postponed_fixtures_count,
         },
         "cache_age_seconds": cache_ages,
         "model": model_status,
@@ -108,13 +123,15 @@ async def get_health():
         "is_stale": fpl_client.is_stale_mode,
         "stale": fpl_client.is_stale_mode,
         "last_sync": fpl_client.last_sync_time.isoformat() if fpl_client.last_sync_time else None,
-        "data_as_of": game_state.data_as_of
+        "data_as_of": game_state.data_as_of,
     }
+
 
 @router.get("/game-state")
 async def get_game_state_endpoint():
     state = await game_state_manager.get_game_state()
     return safe_json_serialize(state.model_dump())
+
 
 @router.get("/profile")
 def get_profile():
@@ -129,6 +146,7 @@ def get_profile():
         "manual_squad": json.loads(p.manual_squad) if p.manual_squad else None,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
     }
+
 
 @router.post("/profile")
 def update_profile(req: ProfileUpdateRequest):
@@ -151,6 +169,7 @@ def update_profile(req: ProfileUpdateRequest):
     data_store.update_profile(**kwargs)
     return {"status": "success", "profile": get_profile()}
 
+
 @router.get("/sync/stream")
 async def get_sync_stream():
     """
@@ -164,13 +183,15 @@ async def get_sync_stream():
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-        }
+        },
     )
+
 
 @router.get("/sync/status")
 def get_sync_status():
     """Return status and latest summary of the background synchronization pipeline."""
     return sync_pipeline.get_status()
+
 
 @router.get("/squad")
 async def get_squad(manager_id: int | None = None):
@@ -181,7 +202,12 @@ async def get_squad(manager_id: int | None = None):
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures=await fpl_client.get_fixtures()[0] if False else (await fpl_client.get_fixtures())[0])
+    horizon_proj = projection_engine.predict_multi_gameweeks(
+        target_gw,
+        5,
+        boot,
+        fixtures=await fpl_client.get_fixtures()[0] if False else (await fpl_client.get_fixtures())[0],
+    )
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df = None
@@ -222,7 +248,9 @@ async def get_squad(manager_id: int | None = None):
             pass
     if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad:
         try:
-            manual_ids = json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            manual_ids = (
+                json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            )
             if manual_ids and len(manual_ids) == 15:
                 user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
                 team_name = "Custom / Pasted Squad"
@@ -233,6 +261,7 @@ async def get_squad(manager_id: int | None = None):
 
     if user_squad_df is None or len(user_squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
+
         squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
         user_squad_df = squad_res["squad"].copy()
         user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
@@ -250,87 +279,98 @@ async def get_squad(manager_id: int | None = None):
             if f.event and f.event >= target_gw and f.event < target_gw + 5:
                 if f.team_h == team_id:
                     opp = team_map.get(f.team_a)
-                    f_list.append({
-                        "event": f.event,
-                        "opp_short": opp.short_name if opp else "OPP",
-                        "is_home": True,
-                        "difficulty": f.team_h_difficulty or 3
-                    })
+                    f_list.append(
+                        {
+                            "event": f.event,
+                            "opp_short": opp.short_name if opp else "OPP",
+                            "is_home": True,
+                            "difficulty": f.team_h_difficulty or 3,
+                        }
+                    )
                 elif f.team_a == team_id:
                     opp = team_map.get(f.team_h)
-                    f_list.append({
-                        "event": f.event,
-                        "opp_short": opp.short_name if opp else "OPP",
-                        "is_home": False,
-                        "difficulty": f.team_a_difficulty or 3
-                    })
+                    f_list.append(
+                        {
+                            "event": f.event,
+                            "opp_short": opp.short_name if opp else "OPP",
+                            "is_home": False,
+                            "difficulty": f.team_a_difficulty or 3,
+                        }
+                    )
         return f_list[:5]
 
     starters_out = []
     for _, s in lineup_res["starters"].iterrows():
-        starters_out.append({
-            "element": int(s["element"]),
-            "web_name": s["web_name"],
-            "team": int(s["team"]),
-            "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
-            "position": s["position"],
-            "now_cost": round(s["value"] / 10.0, 1),
-            "purchase_price": round(float(s.get("purchase_price", s["value"])) / 10.0, 1),
-            "selling_price": round(float(s.get("selling_price", s["value"])) / 10.0, 1),
-            "expected_points": round(float(s["expected_points"]), 2),
-            "p10": round(float(s.get("p10", 0.0)), 2),
-            "p90": round(float(s.get("p90", 0.0)), 2),
-            "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
-            "is_captain": s["element"] == lineup_res["captain"]["element"],
-            "is_vice_captain": s["element"] == lineup_res["vice_captain"]["element"],
-            "next_fixtures": get_next_fixtures(int(s["team"]))
-        })
+        starters_out.append(
+            {
+                "element": int(s["element"]),
+                "web_name": s["web_name"],
+                "team": int(s["team"]),
+                "team_short": team_map[s["team"]].short_name if s["team"] in team_map else "PL",
+                "position": s["position"],
+                "now_cost": round(s["value"] / 10.0, 1),
+                "purchase_price": round(float(s.get("purchase_price", s["value"])) / 10.0, 1),
+                "selling_price": round(float(s.get("selling_price", s["value"])) / 10.0, 1),
+                "expected_points": round(float(s["expected_points"]), 2),
+                "p10": round(float(s.get("p10", 0.0)), 2),
+                "p90": round(float(s.get("p90", 0.0)), 2),
+                "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
+                "is_captain": s["element"] == lineup_res["captain"]["element"],
+                "is_vice_captain": s["element"] == lineup_res["vice_captain"]["element"],
+                "next_fixtures": get_next_fixtures(int(s["team"])),
+            }
+        )
 
     bench_out = []
     for _, b in lineup_res["bench"].iterrows():
-        bench_out.append({
-            "element": int(b["element"]),
-            "web_name": b["web_name"],
-            "team": int(b["team"]),
-            "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
-            "position": b["position"],
-            "now_cost": round(b["value"] / 10.0, 1),
-            "purchase_price": round(float(b.get("purchase_price", b["value"])) / 10.0, 1),
-            "selling_price": round(float(b.get("selling_price", b["value"])) / 10.0, 1),
-            "expected_points": round(float(b["expected_points"]), 2),
-            "p10": round(float(b.get("p10", 0.0)), 2),
-            "p90": round(float(b.get("p90", 0.0)), 2),
-            "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
-            "next_fixtures": get_next_fixtures(int(b["team"]))
-        })
+        bench_out.append(
+            {
+                "element": int(b["element"]),
+                "web_name": b["web_name"],
+                "team": int(b["team"]),
+                "team_short": team_map[b["team"]].short_name if b["team"] in team_map else "PL",
+                "position": b["position"],
+                "now_cost": round(b["value"] / 10.0, 1),
+                "purchase_price": round(float(b.get("purchase_price", b["value"])) / 10.0, 1),
+                "selling_price": round(float(b.get("selling_price", b["value"])) / 10.0, 1),
+                "expected_points": round(float(b["expected_points"]), 2),
+                "p10": round(float(b.get("p10", 0.0)), 2),
+                "p90": round(float(b.get("p90", 0.0)), 2),
+                "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
+                "next_fixtures": get_next_fixtures(int(b["team"])),
+            }
+        )
     squad_val = round(float(user_squad_df["value"].sum()) / 10.0, 1)
     sell_val = round(float(user_squad_df.get("selling_price", user_squad_df["value"]).sum()) / 10.0, 1)
     bank_m = round(bank / 10.0, 2)
     team_val = round(sell_val + bank_m, 1)
 
-    return safe_json_serialize({
-        "manager_id": m_id,
-        "manager_name": manager_name,
-        "team_name": team_name,
-        "overall_points": overall_points,
-        "overall_rank": overall_rank,
-        "bank_millions": bank_m,
-        "free_transfers": free_transfers,
-        "available_transfers": free_transfers,
-        "total_squad_value": squad_val,
-        "total_selling_value": sell_val,
-        "total_team_value": team_val,
-        "chips_used": chips_used,
-        "formation": lineup_res["formation"],
-        "captain": lineup_res["captain"],
-        "vice_captain": lineup_res["vice_captain"],
-        "starters": starters_out,
-        "bench": bench_out,
-        "total_expected_points": lineup_res["total_gameweek_expected_points"],
-        "stale": is_stale,
-        "is_stale": is_stale,
-        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-    })
+    return safe_json_serialize(
+        {
+            "manager_id": m_id,
+            "manager_name": manager_name,
+            "team_name": team_name,
+            "overall_points": overall_points,
+            "overall_rank": overall_rank,
+            "bank_millions": bank_m,
+            "free_transfers": free_transfers,
+            "available_transfers": free_transfers,
+            "total_squad_value": squad_val,
+            "total_selling_value": sell_val,
+            "total_team_value": team_val,
+            "chips_used": chips_used,
+            "formation": lineup_res["formation"],
+            "captain": lineup_res["captain"],
+            "vice_captain": lineup_res["vice_captain"],
+            "starters": starters_out,
+            "bench": bench_out,
+            "total_expected_points": lineup_res["total_gameweek_expected_points"],
+            "stale": is_stale,
+            "is_stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+        }
+    )
+
 
 @router.post("/squad/match")
 async def match_squad_names(req: MatchSquadRequest):
@@ -338,6 +378,7 @@ async def match_squad_names(req: MatchSquadRequest):
     team_map = {t.id: t.short_name for t in boot.teams}
     res = fuzzy_matcher.parse_and_match_squad(req.raw_text, boot.elements, team_map)
     return safe_json_serialize(res)
+
 
 @router.post("/squad/manual")
 async def save_manual_squad(req: ManualSquadRequest):
@@ -361,23 +402,14 @@ async def save_manual_squad(req: ManualSquadRequest):
     if pos_counts[1] != 2 or pos_counts[2] != 5 or pos_counts[3] != 5 or pos_counts[4] != 3:
         raise HTTPException(status_code=400, detail="Invalid formation! Required: 2 GKP, 5 DEF, 5 MID, 3 FWD.")
 
-    data_store.update_profile(
-        manual_squad=req.player_ids,
-        bank=req.bank,
-        free_transfers=req.free_transfers
+    data_store.update_profile(manual_squad=req.player_ids, bank=req.bank, free_transfers=req.free_transfers)
+    return safe_json_serialize(
+        {"status": "success", "message": "Custom squad saved successfully.", "player_ids": req.player_ids}
     )
-    return safe_json_serialize({
-        "status": "success",
-        "message": "Custom squad saved successfully.",
-        "player_ids": req.player_ids
-    })
+
 
 @router.get("/projections")
-async def get_projections(
-    position: str | None = None,
-    team_id: int | None = None,
-    horizon: int = Query(5, ge=1, le=8)
-):
+async def get_projections(position: str | None = None, team_id: int | None = None, horizon: int = Query(5, ge=1, le=8)):
     boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, _ = await fpl_client.get_fixtures()
     _, next_gw = await fpl_client.get_current_and_next_gw()
@@ -393,26 +425,31 @@ async def get_projections(
 
     results = []
     for _, r in df.sort_values(by="expected_points", ascending=False).head(50).iterrows():
-        results.append({
-            "element": int(r["element"]),
-            "web_name": r["web_name"],
-            "team": int(r["team"]),
-            "position": r["position"],
-            "cost": round(r["value"] / 10.0, 1),
-            "expected_points": round(float(r["expected_points"]), 2),
-            "p10": round(float(r.get("p10", 0.0)), 2),
-            "p90": round(float(r.get("p90", 0.0)), 2),
-            "exp_defcon_pts": round(float(r.get("exp_defcon_pts", 0.0)), 2)
-        })
+        results.append(
+            {
+                "element": int(r["element"]),
+                "web_name": r["web_name"],
+                "team": int(r["team"]),
+                "position": r["position"],
+                "cost": round(r["value"] / 10.0, 1),
+                "expected_points": round(float(r["expected_points"]), 2),
+                "p10": round(float(r.get("p10", 0.0)), 2),
+                "p90": round(float(r.get("p90", 0.0)), 2),
+                "exp_defcon_pts": round(float(r.get("exp_defcon_pts", 0.0)), 2),
+            }
+        )
 
-    return safe_json_serialize({
-        "gameweek": target_gw,
-        "horizon": horizon,
-        "players": results,
-        "stale": is_stale,
-        "is_stale": is_stale,
-        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-    })
+    return safe_json_serialize(
+        {
+            "gameweek": target_gw,
+            "horizon": horizon,
+            "players": results,
+            "stale": is_stale,
+            "is_stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+        }
+    )
+
 
 @router.post("/optimize")
 async def run_optimizer(req: OptimizeRequest | None = None):
@@ -440,7 +477,9 @@ async def run_optimizer(req: OptimizeRequest | None = None):
 
     if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad:
         try:
-            manual_ids = json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            manual_ids = (
+                json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            )
             if manual_ids and len(manual_ids) == 15:
                 user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
                 bank = (profile.bank or 0.0) * 10.0
@@ -450,6 +489,7 @@ async def run_optimizer(req: OptimizeRequest | None = None):
 
     if user_squad_df is None or len(user_squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
+
         user_squad_df = squad_optimizer.solve_best_squad(target_df, budget=1000.0)["squad"].copy()
         user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
 
@@ -467,12 +507,13 @@ async def run_optimizer(req: OptimizeRequest | None = None):
         target_gw=target_gw,
         locked_in_ids=locked_in,
         locked_out_ids=locked_out,
-        excluded_team_ids=excl_teams
+        excluded_team_ids=excl_teams,
     )
     res["stale"] = is_stale
     res["is_stale"] = is_stale
     res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     return safe_json_serialize(res)
+
 
 @router.get("/chips")
 async def get_chip_strategy():
@@ -497,7 +538,9 @@ async def get_chip_strategy():
 
     if (squad_df is None or len(squad_df) < 15) and profile.manual_squad:
         try:
-            manual_ids = json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            manual_ids = (
+                json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            )
             if manual_ids and len(manual_ids) == 15:
                 squad_df = pool_df[pool_df["element"].isin(manual_ids)].copy()
         except Exception:
@@ -505,6 +548,7 @@ async def get_chip_strategy():
 
     if squad_df is None or len(squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
+
         squad_df = squad_optimizer.solve_best_squad(pool_df, budget=1000.0)["squad"]
 
     res = chip_planner.generate_chip_strategy(
@@ -513,59 +557,72 @@ async def get_chip_strategy():
         horizon_projections=horizon_proj,
         fixtures=fixtures,
         bootstrap=boot,
-        manager_history=hist
+        manager_history=hist,
     )
     res["stale"] = is_stale
     res["is_stale"] = is_stale
     res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     return safe_json_serialize(res)
 
+
 @router.get("/league")
 async def get_league_intel(league_id: int | None = None):
     profile = data_store.get_profile()
     l_id = league_id or profile.target_league_id
     if not l_id:
-        return safe_json_serialize({
-            "status": "unconfigured",
-            "message": "No target mini-league ID configured. Enter a mini-league ID to see rival analysis.",
-            "league_name": "None",
-            "total_teams": 0,
-            "standings": [],
-            "template_players": [],
-            "differential_players": [],
-            "simulation": {"user_win_probability_pct": 0.0, "expected_final_rank": 1.0},
-            "strategy": {"mode_title": "Setup Required", "rationale": "Set your mini-league ID in settings to activate rival analysis.", "tactical_recommendations": []},
-            "stale": False,
-            "is_stale": False,
-            "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-        })
+        return safe_json_serialize(
+            {
+                "status": "unconfigured",
+                "message": "No target mini-league ID configured. Enter a mini-league ID to see rival analysis.",
+                "league_name": "None",
+                "total_teams": 0,
+                "standings": [],
+                "template_players": [],
+                "differential_players": [],
+                "simulation": {"user_win_probability_pct": 0.0, "expected_final_rank": 1.0},
+                "strategy": {
+                    "mode_title": "Setup Required",
+                    "rationale": "Set your mini-league ID in settings to activate rival analysis.",
+                    "tactical_recommendations": [],
+                },
+                "stale": False,
+                "is_stale": False,
+                "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+            }
+        )
 
     standings_data = await league_standings_manager.get_league_standings(l_id, max_pages=2)
     boot, is_stale = await fpl_client.get_bootstrap_static()
     curr_gw, _ = await fpl_client.get_current_and_next_gw()
 
     if not standings_data.get("standings"):
-        return safe_json_serialize({
-            "status": "empty",
-            "message": f"No standings found for mini-league {l_id}.",
-            "league_name": standings_data.get("league_name", f"League #{l_id}"),
-            "total_teams": 0,
-            "standings": [],
-            "template_players": [],
-            "differential_players": [],
-            "simulation": {"user_win_probability_pct": 0.0, "expected_final_rank": 1.0},
-            "strategy": {"mode_title": "No Standings", "rationale": "No standings data returned from FPL API for this league.", "tactical_recommendations": []},
-            "stale": is_stale,
-            "is_stale": is_stale,
-            "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-        })
+        return safe_json_serialize(
+            {
+                "status": "empty",
+                "message": f"No standings found for mini-league {l_id}.",
+                "league_name": standings_data.get("league_name", f"League #{l_id}"),
+                "total_teams": 0,
+                "standings": [],
+                "template_players": [],
+                "differential_players": [],
+                "simulation": {"user_win_probability_pct": 0.0, "expected_final_rank": 1.0},
+                "strategy": {
+                    "mode_title": "No Standings",
+                    "rationale": "No standings data returned from FPL API for this league.",
+                    "tactical_recommendations": [],
+                },
+                "stale": is_stale,
+                "is_stale": is_stale,
+                "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+            }
+        )
 
     rivals_res = await rival_analyzer.analyze_rivals(
         standings=standings_data["standings"],
         user_manager_id=profile.manager_id,
         current_gw=curr_gw or 5,
         bootstrap=boot,
-        max_rivals_to_inspect=8
+        max_rivals_to_inspect=8,
     )
 
     user_pts = 0
@@ -587,53 +644,55 @@ async def get_league_intel(league_id: int | None = None):
         user_squad_df=user_squad_mock,
         rival_squads=rivals_res["rival_squads"],
         projections_df=proj_df,
-        horizon_gws=5
+        horizon_gws=5,
     )
 
     strategy = league_strategy_advisor.evaluate_strategy(
-        user_rank=1,
-        user_total_points=user_pts,
-        rivals_analysis=rivals_res,
-        user_squad_df=user_squad_mock
+        user_rank=1, user_total_points=user_pts, rivals_analysis=rivals_res, user_squad_df=user_squad_mock
     )
 
-    return safe_json_serialize({
-        "status": "success",
-        "league_name": standings_data["league_name"],
-        "total_teams": standings_data["total_teams"],
-        "standings": standings_data["standings"],
-        "template_players": rivals_res["template_players"],
-        "differential_players": rivals_res["differential_players"],
-        "simulation": mc_res,
-        "strategy": strategy,
-        "stale": is_stale,
-        "is_stale": is_stale,
-        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-    })
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "league_name": standings_data["league_name"],
+            "total_teams": standings_data["total_teams"],
+            "standings": standings_data["standings"],
+            "template_players": rivals_res["template_players"],
+            "differential_players": rivals_res["differential_players"],
+            "simulation": mc_res,
+            "strategy": strategy,
+            "stale": is_stale,
+            "is_stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+        }
+    )
+
 
 @router.get("/briefing")
 async def get_briefing():
     return await weekly_briefing_generator.generate_briefing()
 
+
 @router.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     ans = await expert_agent.answer(user_message=req.message, session_id=req.session_id or "default")
-    return safe_json_serialize({
-        "response": ans,
-        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-    })
+    return safe_json_serialize({"response": ans, "data_as_of": fpl_client.get_data_as_of("bootstrap-static")})
+
 
 @router.get("/price-changes")
 async def get_price_changes():
     boot, is_stale = await fpl_client.get_bootstrap_static()
     preds = price_change_predictor.analyze_price_changes(boot)
-    return safe_json_serialize({
-        "rises": [p for p in preds if p["direction"] in ["RISE_IMMINENT", "LIKELY_RISE"]][:10],
-        "falls": [p for p in preds if p["direction"] in ["FALL_IMMINENT", "LIKELY_FALL"]][:10],
-        "stale": is_stale,
-        "is_stale": is_stale,
-        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-    })
+    return safe_json_serialize(
+        {
+            "rises": [p for p in preds if p["direction"] in ["RISE_IMMINENT", "LIKELY_RISE"]][:10],
+            "falls": [p for p in preds if p["direction"] in ["FALL_IMMINENT", "LIKELY_FALL"]][:10],
+            "stale": is_stale,
+            "is_stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+        }
+    )
+
 
 async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple[pd.DataFrame, float, int]:
     profile = data_store.get_profile()
@@ -664,7 +723,9 @@ async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple
 
     if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad:
         try:
-            manual_ids = json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            manual_ids = (
+                json.loads(profile.manual_squad) if isinstance(profile.manual_squad, str) else profile.manual_squad
+            )
             if manual_ids and len(manual_ids) == 15:
                 user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
                 bank = float(profile.bank or 0.0) * 10.0
@@ -674,11 +735,13 @@ async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple
 
     if user_squad_df is None or len(user_squad_df) < 15:
         from fpl_oracle.optimise.squad import squad_optimizer
+
         squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
         user_squad_df = squad_res["squad"].copy()
         user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
 
     return user_squad_df, bank, free_transfers
+
 
 @router.get("/contingency/plans")
 async def get_contingency_plans():
@@ -702,12 +765,13 @@ async def get_contingency_plans():
         horizon_projections=horizon_proj,
         current_gw=curr_gw or 5,
         target_gw=target_gw,
-        risk_preference=profile.risk_preference or "balanced"
+        risk_preference=profile.risk_preference or "balanced",
     )
     plans["stale"] = is_stale
     plans["is_stale"] = is_stale
     plans["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     return safe_json_serialize(plans)
+
 
 @router.get("/contingency/matrix")
 async def get_contingency_matrix():
@@ -723,19 +787,18 @@ async def get_contingency_matrix():
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
 
     matrix = contingency_engine.compute_injury_matrix(
-        squad_df=user_squad_df,
-        player_pool_df=target_df,
-        bank=bank,
-        free_transfers=free_transfers,
-        bootstrap=boot
+        squad_df=user_squad_df, player_pool_df=target_df, bank=bank, free_transfers=free_transfers, bootstrap=boot
     )
-    return safe_json_serialize({
-        "gameweek": target_gw,
-        "contingency_matrix": matrix,
-        "stale": is_stale,
-        "is_stale": is_stale,
-        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-    })
+    return safe_json_serialize(
+        {
+            "gameweek": target_gw,
+            "contingency_matrix": matrix,
+            "stale": is_stale,
+            "is_stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+        }
+    )
+
 
 @router.post("/contingency/panic")
 async def post_contingency_panic(req: PanicRequest):
@@ -756,12 +819,13 @@ async def post_contingency_panic(req: PanicRequest):
         player_pool_df=target_df,
         bank=bank,
         free_transfers=free_transfers,
-        ruled_out_ids=req.ruled_out_ids
+        ruled_out_ids=req.ruled_out_ids,
     )
     crisis_res["stale"] = is_stale
     crisis_res["is_stale"] = is_stale
     crisis_res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     return safe_json_serialize(crisis_res)
+
 
 @router.get("/contingency/checklist")
 async def get_pre_deadline_checklist():
@@ -787,22 +851,90 @@ async def get_pre_deadline_checklist():
 
     chips_status = chip_planner.get_remaining_chips(history)
     checklist = contingency_engine.generate_pre_deadline_checklist(
-        squad_df=user_squad_df,
-        bootstrap=boot,
-        game_state_data=game_state.model_dump(),
-        chips_status=chips_status
+        squad_df=user_squad_df, bootstrap=boot, game_state_data=game_state.model_dump(), chips_status=chips_status
     )
-    return safe_json_serialize({
-        "gameweek": target_gw,
-        "seconds_to_deadline": game_state.seconds_to_deadline,
-        "checklist": checklist,
-        "stale": is_stale,
-        "is_stale": is_stale,
-        "data_as_of": fpl_client.get_data_as_of("bootstrap-static")
-    })
+    return safe_json_serialize(
+        {
+            "gameweek": target_gw,
+            "seconds_to_deadline": game_state.seconds_to_deadline,
+            "checklist": checklist,
+            "stale": is_stale,
+            "is_stale": is_stale,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+        }
+    )
+
 
 @router.get("/review")
 async def get_gameweek_review(gameweek: int | None = None):
     """Produces post-gameweek review and performance diagnostics."""
     profile = data_store.get_profile()
     return await post_gameweek_reviewer.generate_gameweek_review(profile.manager_id, gameweek)
+
+
+@router.get("/system/jobs")
+async def get_system_jobs():
+    """Returns execution status and telemetry for all background scheduler jobs."""
+    status = get_jobs_status()
+    return safe_json_serialize(status)
+
+
+@router.post("/system/jobs/{job_id}/run")
+async def trigger_job_run(job_id: str):
+    """Manually triggers immediate execution of a scheduled background job."""
+    res = await run_job_on_demand(job_id)
+    if not res.get("success", False) and "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return safe_json_serialize(res)
+
+
+@router.get("/system/models")
+async def get_model_versions_endpoint():
+    """Returns active model version, metric history, and rollback checkpoints."""
+    active = model_registry.get_active_version()
+    history = model_registry.get_version_history()
+    return safe_json_serialize({"active_version": active, "history": history})
+
+
+@router.post("/system/models/rollback")
+async def rollback_model_endpoint(req: RollbackRequest):
+    """Restores an archived model version checkpoint to active production."""
+    res = model_registry.rollback_to_version(req.target_version)
+    if not res.get("success", False):
+        raise HTTPException(status_code=400, detail=res.get("error", "Rollback failed"))
+    return safe_json_serialize(res)
+
+
+@router.get("/system/status")
+async def get_system_status():
+    """Comprehensive system diagnostic telemetry."""
+    game_state = await game_state_manager.get_game_state()
+    active_model = model_registry.get_active_version()
+    news_stat = news_ingestion.get_news_status()
+    jobs_stat = get_jobs_status()
+    db_runs = data_store.get_job_runs(limit=5)
+    prices = data_store.get_latest_price_snapshots(limit=10)
+
+    return safe_json_serialize(
+        {
+            "game_state": {
+                "phase": game_state.phase.value,
+                "seconds_to_deadline": round(game_state.seconds_to_deadline, 1)
+                if game_state.seconds_to_deadline is not None
+                else None,
+                "current_gw": game_state.current_gw,
+                "next_gw": game_state.next_gw,
+            },
+            "model": {
+                "active_version": active_model.get("version"),
+                "mae": active_model.get("ml_mae"),
+                "spearman": active_model.get("ml_spearman"),
+                "status": active_model.get("status"),
+            },
+            "scheduler": {"running": jobs_stat["scheduler_running"], "total_jobs": jobs_stat["total_jobs"]},
+            "news": news_stat,
+            "price_snapshots_recorded": len(prices),
+            "recent_job_runs": db_runs,
+            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+        }
+    )

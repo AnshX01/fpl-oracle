@@ -20,17 +20,20 @@ class MonteCarloSimulator:
         user_squad_df: pd.DataFrame,
         rival_squads: list[dict[str, Any]],
         projections_df: pd.DataFrame,
-        horizon_gws: int = 5
+        horizon_gws: int = 5,
+        seed: int | None = None,
     ) -> dict[str, Any]:
         """
         Run Monte Carlo simulations across user and rivals over the horizon.
         """
+        if seed is not None:
+            np.random.seed(seed)
         if not rival_squads:
             return {
                 "user_win_probability_pct": 100.0,
                 "user_top3_probability_pct": 100.0,
                 "expected_final_rank": 1.0,
-                "simulations_count": self.n_simulations
+                "simulations_count": self.n_simulations,
             }
 
         # Map player projections
@@ -43,21 +46,23 @@ class MonteCarloSimulator:
             proj_map[elem_id] = (xp, sigma)
 
         # Collect user elements
-        user_elements = [int(e) for e in user_squad_df["element"].tolist()[:11]] # starters
-        user_cap = int(user_squad_df.iloc[0]["element"]) # approximate captain
+        user_elements = [int(e) for e in user_squad_df["element"].tolist()[:11]]  # starters
+        user_cap = int(user_squad_df.iloc[0]["element"])  # approximate captain
 
         # Prepare rival entries
         rival_entries = []
         for r in rival_squads:
             starters = [int(p["element"]) for p in r.get("squad", []) if p.get("is_starter", True)][:11]
             cap = r.get("captain_element") or (starters[0] if starters else None)
-            rival_entries.append({
-                "entry_id": r["entry_id"],
-                "name": r.get("player_name", ""),
-                "current_points": float(r.get("total_points", 0.0)),
-                "starters": starters,
-                "captain": cap
-            })
+            rival_entries.append(
+                {
+                    "entry_id": r["entry_id"],
+                    "name": r.get("player_name", ""),
+                    "current_points": float(r.get("total_points", 0.0)),
+                    "starters": starters,
+                    "captain": cap,
+                }
+            )
 
         # Run simulations
         user_wins = 0
@@ -110,10 +115,8 @@ class MonteCarloSimulator:
             "user_top3_probability_pct": top3_prob,
             "expected_final_rank": avg_rank,
             "simulations_count": self.n_simulations,
-            "rank_distribution": {
-                "rank_1": round(user_wins / self.n_simulations * 100.0, 1),
-                "top_3": top3_prob
-            }
+            "rank_distribution": {"rank_1": round(user_wins / self.n_simulations * 100.0, 1), "top_3": top3_prob},
         }
+
 
 monte_carlo_simulator = MonteCarloSimulator()

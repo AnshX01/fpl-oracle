@@ -28,6 +28,7 @@ from fpl_oracle.optimise.squad import squad_optimizer
 
 logger = logging.getLogger("fpl_oracle.backtest")
 
+
 class BacktestHarness:
     def __init__(self):
         self.report_path = REPORTS_DIR / "backtest.md"
@@ -91,6 +92,7 @@ class BacktestHarness:
             if isinstance(profile.manual_squad, str):
                 try:
                     import json
+
                     user_elem_ids = set(json.loads(profile.manual_squad))
                 except Exception:
                     user_elem_ids = set()
@@ -155,13 +157,15 @@ class BacktestHarness:
                 elem_xp = actual_r[actual_r["element"] == elem_id]["expected_points"].values[0]
                 mult = 2.0 if elem_id == oracle_cap else 1.0
                 actual_pts_oracle += elem_actual * mult
-                starters_breakdown.append({
-                    "name": elem_name,
-                    "pos": elem_pos,
-                    "xP": round(float(elem_xp), 2),
-                    "actual": int(elem_actual),
-                    "is_cap": (elem_id == oracle_cap)
-                })
+                starters_breakdown.append(
+                    {
+                        "name": elem_name,
+                        "pos": elem_pos,
+                        "xP": round(float(elem_xp), 2),
+                        "actual": int(elem_actual),
+                        "is_cap": (elem_id == oracle_cap),
+                    }
+                )
 
             oracle_scores.append(actual_pts_oracle)
 
@@ -226,20 +230,22 @@ class BacktestHarness:
             captain_success_oracle.append(1 if cap_actual_oracle >= 6 else 0)
             captain_success_baseline.append(1 if cap_actual_base >= 6 else 0)
 
-            per_gw_details.append({
-                "gw": r,
-                "oracle": round(actual_pts_oracle, 1),
-                "user": round(user_calibrated, 1),
-                "baseline": round(actual_pts_base, 1),
-                "average": avg_gw_score,
-                "hindsight": round(actual_pts_hind, 1),
-                "captain": cap_name_oracle,
-                "captain_pts": int(cap_actual_oracle),
-                "spearman": round(corr_spearman, 3),
-                "pearson": round(corr_pearson, 3),
-                "mae": round(mae, 2),
-                "starters": starters_breakdown
-            })
+            per_gw_details.append(
+                {
+                    "gw": r,
+                    "oracle": round(actual_pts_oracle, 1),
+                    "user": round(user_calibrated, 1),
+                    "baseline": round(actual_pts_base, 1),
+                    "average": avg_gw_score,
+                    "hindsight": round(actual_pts_hind, 1),
+                    "captain": cap_name_oracle,
+                    "captain_pts": int(cap_actual_oracle),
+                    "spearman": round(corr_spearman, 3),
+                    "pearson": round(corr_pearson, 3),
+                    "mae": round(mae, 2),
+                    "starters": starters_breakdown,
+                }
+            )
 
         total_oracle = sum(oracle_scores)
         total_baseline = sum(baseline_scores)
@@ -261,7 +267,7 @@ class BacktestHarness:
             "mean_spearman": round(float(np.mean(correlations_spearman)), 3),
             "mean_pearson": round(float(np.mean(correlations_pearson)), 3),
             "mean_mae": round(float(np.mean(maes)), 2),
-            "per_gw_results": per_gw_details
+            "per_gw_results": per_gw_details,
         }
 
         self.generate_report(results)
@@ -293,11 +299,11 @@ This report documents the **Elite Out-of-Time Performance** of FPL Oracle across
 
 | Strategy | Total Points | Average Pts/GW | Uplift vs Global Average | Uplift vs Naive Baseline |
 |---|---|---|---|---|
-| **User's Actual Squad** (Top Mini-League Contender) | **{res['user_total']}** pts | **{round(res['user_total']/len(res['rounds_evaluated']), 1)}** pts | **+{round(res['user_total'] - res['average_manager_total'], 1)}** pts | **+{round(res['user_total'] - res['baseline_total'], 1)}** pts |
-| **FPL Oracle Elite Strategy** | **{res['oracle_total']}** pts | **{round(res['oracle_total']/len(res['rounds_evaluated']), 1)}** pts | **{res['oracle_uplift_over_average']:+}** pts | **{res['oracle_uplift_over_baseline']:+}** pts |
-| **Heuristic Form Baseline** | {res['baseline_total']} pts | {round(res['baseline_total']/len(res['rounds_evaluated']), 1)} pts | {round(res['baseline_total'] - res['average_manager_total'], 1):+} pts | Benchmark (0) |
-| **FPL Global Average Manager** | {res['average_manager_total']} pts | {round(res['average_manager_total']/len(res['rounds_evaluated']), 1)} pts | Benchmark (0) | - |
-| **Hindsight Ceiling** (Perfect Foresight) | {res['hindsight_total']} pts | {round(res['hindsight_total']/len(res['rounds_evaluated']), 1)} pts | Theoretical Upper Bound | - |
+| **User's Actual Squad** (Top Mini-League Contender) | **{res["user_total"]}** pts | **{round(res["user_total"] / len(res["rounds_evaluated"]), 1)}** pts | **+{round(res["user_total"] - res["average_manager_total"], 1)}** pts | **+{round(res["user_total"] - res["baseline_total"], 1)}** pts |
+| **FPL Oracle Elite Strategy** | **{res["oracle_total"]}** pts | **{round(res["oracle_total"] / len(res["rounds_evaluated"]), 1)}** pts | **{res["oracle_uplift_over_average"]:+}** pts | **{res["oracle_uplift_over_baseline"]:+}** pts |
+| **Heuristic Form Baseline** | {res["baseline_total"]} pts | {round(res["baseline_total"] / len(res["rounds_evaluated"]), 1)} pts | {round(res["baseline_total"] - res["average_manager_total"], 1):+} pts | Benchmark (0) |
+| **FPL Global Average Manager** | {res["average_manager_total"]} pts | {round(res["average_manager_total"] / len(res["rounds_evaluated"]), 1)} pts | Benchmark (0) | - |
+| **Hindsight Ceiling** (Perfect Foresight) | {res["hindsight_total"]} pts | {round(res["hindsight_total"] / len(res["rounds_evaluated"]), 1)} pts | Theoretical Upper Bound | - |
 
 ---
 
@@ -333,6 +339,7 @@ Achieving **338 points in 5 Gameweeks (~67.6 pts/GW)** places a manager in the e
 """
         self.report_path.write_text(content, encoding="utf-8")
         logger.info(f"Backtest report saved to {self.report_path}")
+
 
 backtest_harness = BacktestHarness()
 

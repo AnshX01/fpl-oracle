@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class FPLBaseModel(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
+
 class ElementType(FPLBaseModel):
     id: int
     plural_name: str
@@ -20,6 +21,7 @@ class ElementType(FPLBaseModel):
     squad_select: int = 0
     squad_min_play: int = 0
     squad_max_play: int = 0
+
 
 class Team(FPLBaseModel):
     id: int
@@ -33,6 +35,7 @@ class Team(FPLBaseModel):
     strength_defence_home: int | None = 1000
     strength_defence_away: int | None = 1000
 
+
 class GameweekEvent(FPLBaseModel):
     id: int
     name: str
@@ -44,11 +47,13 @@ class GameweekEvent(FPLBaseModel):
     average_entry_score: int | None = None
     highest_score: int | None = None
 
+
 class ChipDefinition(FPLBaseModel):
     name: str
     chip_type: str
     start_event: int
     stop_event: int
+
 
 class Element(FPLBaseModel):
     id: int
@@ -57,12 +62,12 @@ class Element(FPLBaseModel):
     second_name: str | None = ""
     team: int
     element_type: int
-    now_cost: int # In tenths, e.g. 100 = £10.0m
+    now_cost: int  # In tenths, e.g. 100 = £10.0m
     selected_by_percent: str | float | None = "0.0"
     form: str | float | None = "0.0"
     points_per_game: str | float | None = "0.0"
     total_points: int = 0
-    status: str = "a" # a: available, d: doubtful, i: injured, s: suspended, u: unavailable
+    status: str = "a"  # a: available, d: doubtful, i: injured, s: suspended, u: unavailable
     news: str | None = ""
     news_added: str | None = None
     chance_of_playing_next_round: int | None = None
@@ -96,6 +101,7 @@ class Element(FPLBaseModel):
     price_change_hourly_rate: int | None = None
     price_change_projections: list[dict[str, Any]] | None = None
 
+
 class BootstrapStatic(FPLBaseModel):
     chips: list[ChipDefinition] = []
     events: list[GameweekEvent] = []
@@ -105,14 +111,17 @@ class BootstrapStatic(FPLBaseModel):
     game_settings: dict[str, Any] = {}
     game_config: dict[str, Any] | None = None
 
+
 class FixtureStatItem(FPLBaseModel):
     value: int
     element: int
+
 
 class FixtureStat(FPLBaseModel):
     identifier: str
     a: list[FixtureStatItem] = []
     h: list[FixtureStatItem] = []
+
 
 class Fixture(FPLBaseModel):
     id: int
@@ -130,6 +139,7 @@ class Fixture(FPLBaseModel):
     team_h_difficulty: int | None = 3
     team_a_difficulty: int | None = 3
     stats: list[FixtureStat] = []
+
 
 class PlayerMatchHistory(FPLBaseModel):
     element: int
@@ -168,17 +178,20 @@ class PlayerMatchHistory(FPLBaseModel):
     selected: int | None = 0
     transfers_balance: int | None = 0
 
+
 class ElementSummary(FPLBaseModel):
     fixtures: list[dict[str, Any]] = []
     history: list[PlayerMatchHistory] = []
     history_past: list[dict[str, Any]] = []
 
+
 class Pick(FPLBaseModel):
     element: int
-    position: int # 1-15: 1-11 starters, 12-15 bench
-    multiplier: int = 1 # 1: normal, 2: captain, 3: triple captain, 0: benched
+    position: int  # 1-15: 1-11 starters, 12-15 bench
+    multiplier: int = 1  # 1: normal, 2: captain, 3: triple captain, 0: benched
     is_captain: bool = False
     is_vice_captain: bool = False
+
 
 class EntryHistory(FPLBaseModel):
     event: int
@@ -187,32 +200,36 @@ class EntryHistory(FPLBaseModel):
     rank: int | None = None
     rank_sort: int | None = None
     overall_rank: int | None = None
-    bank: int = 0 # In tenths (£1.0m = 10)
-    value: int = 1000 # In tenths
+    bank: int = 0  # In tenths (£1.0m = 10)
+    value: int = 1000  # In tenths
     event_transfers: int = 0
     event_transfers_cost: int = 0
     points_on_bench: int = 0
+
 
 class SquadPicks(FPLBaseModel):
     active_chip: str | None = None
     entry_history: EntryHistory | None = None
     picks: list[Pick] = []
 
+
 class ChipHistoryItem(FPLBaseModel):
-    name: str # e.g. "bboost", "3xc", "freehit", "wildcard"
+    name: str  # e.g. "bboost", "3xc", "freehit", "wildcard"
     time: str | None = None
     event: int
+
 
 class ManagerHistory(FPLBaseModel):
     current: list[EntryHistory] = []
     past: list[dict[str, Any]] = []
     chips: list[ChipHistoryItem] = []
 
+
 class ManagerEntry(FPLBaseModel):
     id: int
     player_first_name: str = ""
     player_last_name: str = ""
-    name: str = "" # Team name
+    name: str = ""  # Team name
     summary_overall_points: int | None = 0
     summary_overall_rank: int | None = None
     current_event: int | None = None
@@ -220,6 +237,7 @@ class ManagerEntry(FPLBaseModel):
     last_deadline_value: int | None = 1000
     last_deadline_total_transfers: int | None = 0
     leagues: dict[str, Any] | None = None
+
 
 class TransferHistoryItem(FPLBaseModel):
     element_in: int
@@ -229,6 +247,7 @@ class TransferHistoryItem(FPLBaseModel):
     entry: int
     event: int
     time: str
+
 
 class ClassicStandingResult(FPLBaseModel):
     id: int | None = None
@@ -242,10 +261,12 @@ class ClassicStandingResult(FPLBaseModel):
     entry: int
     entry_name: str = ""
 
+
 class StandingsPage(FPLBaseModel):
     has_next: bool = False
     page: int = 1
     results: list[ClassicStandingResult] = []
+
 
 class ClassicLeagueResponse(FPLBaseModel):
     league: dict[str, Any] = {}

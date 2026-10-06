@@ -11,6 +11,7 @@ from fpl_oracle.api.models import ClassicStandingResult
 
 logger = logging.getLogger("fpl_oracle.league.standings")
 
+
 class LeagueStandingsManager:
     def __init__(self):
         pass
@@ -38,7 +39,8 @@ class LeagueStandingsManager:
             "league_id": league_id,
             "league_name": league_info.get("name", f"League #{league_id}"),
             "total_teams": len(all_results),
-            "standings": [r.model_dump() for r in all_results]
+            "standings": [r.model_dump() for r in all_results],
         }
+
 
 league_standings_manager = LeagueStandingsManager()

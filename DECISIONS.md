@@ -265,9 +265,47 @@ While FPL Oracle is built with rigorous statistical principles and verified 2026
 - **Grounded Anti-Hallucination & Tool Grounding Suite (`tests/test_chat_grounding.py`)**:
   - Proves that LLM chat agent answers cite live database players and prices, accurately respects official 2026/27 chip rules (Set 1 GW19 deadline), reports verified fitness without fabricating injuries for active players, and expresses explicit uncertainty when queried about non-existent players.
 - **Verification Gates**:
-  - All 37 test items across 10 test modules pass 100% green (`pytest`).
-  - All 18 server endpoints and 5 network fault injections pass 100% in `scripts/test_server_live.py`.
+  - All 53 test items across 13 test modules pass 100% green (`pytest`).
+  - All 22 server endpoints and 5 network fault injections pass 100% in `scripts/test_server_live.py`.
   - Zero mock data in production paths. Zero lookahead leakage.
+
+### 6.12 Editorial Magazine UI Rebuild (Phase 5)
+- **Design Philosophy**: Replaced basic prototype tabs with an editorial magazine dashboard inspired by The Athletic, Financial Times, and Bloomberg.
+  - Typography: Newsreader serif headlines, Inter sans-serif UI, JetBrains Mono numbers.
+  - Palette: Deep obsidian dark mode (`#070a13`, `#0d1222`, `#141c33`) with gold amber (`#f59e0b`) and crimson alert accents.
+- **Key UI Capabilities**:
+  - **Pulsing Panic Button**: High-visibility crisis modal supporting freeform queries ("Haaland broken leg out 6 weeks") or single-click player selections, generating instant lineup reshuffle and emergency replacement options.
+  - **1-Click Sync Pipeline & SSE Progress Drawer**: Real-time progress percentage (0–100%) and 9-stage status display powered by `/api/sync/stream`.
+  - **Interactive Pitch Autosub Simulator**: Starter cards feature an interactive "Out?" toggle that dynamically simulates bench promotion and formation legality in real-time on the pitch.
+  - **3-Way Transfer Workbench (Plan A / Plan B / Plan C)**: Toggle between optimal baseline plan, injury/press conference pivot (Plan B), and high-ceiling differential/price hedge (Plan C).
+  - **Chip Roadmap with GW19 Divider**: Bold visual separator marking the hard Set 1 chip expiration deadline, opportunity cost callout, and 8 distinct chip cards.
+  - **Pre-Deadline Checklist Modal**: Visual 5-point audit (Starters Fitness, Vice-Captain Failsafe, Bench Order, Chip Set 1 GW19 Deadline, Deadline Lock).
+  - **Mini-League Monte Carlo Cards**: Visual gauge cards displaying $P(\text{finish 1st})$ and podium odds with strategy mode banners.
+
+### 6.13 APScheduler Automation & Model Versioning with Rollback (Phase 6)
+- **APScheduler Background Jobs (`src/fpl_oracle/server/jobs.py`)**:
+  - **Cadence Refresh Job**: Adapts frequency dynamically (60s during `LIVE` or `BONUS_PENDING`, 10m otherwise).
+  - **News Refresh Job**: Ingests RSS feeds every 20m, tracks dead feeds, and updates confidence weights.
+  - **Hourly Price Snapshot**: Predicts imminent price rises/falls and logs top 40 volatile players to SQLite `price_snapshots`.
+  - **Post-GW Automated Retrain Trigger**: Monitors `event-status` for bonus finalization and triggers automated retrain pipeline when a new round concludes.
+  - **Pre-Deadline Alerts**: Multi-stage alerts at -24h, -3h, and -1h, refreshing data and regenerating weekly briefings.
+- **Model Registry & Metric Rollback Safeguard (`src/fpl_oracle/ml/model_registry.py`)**:
+  - Maintains `data/models/manifest.json` and SQLite `model_versions` table.
+  - Evaluates candidate models against active production weights on holdout validation data.
+  - **Rollback Guard**: If candidate validation MAE degrades by more than tolerance (+0.05 pts), candidate is automatically rejected and stored in `data/models/rejected/`, preserving production weights without service interruption.
+  - Exposes `GET /api/system/jobs`, `POST /api/system/jobs/{job_id}/run`, `GET /api/system/models`, and `POST /api/system/models/rollback`.
+
+### 6.14 Test Suite & GitHub Actions CI Workflow (Phase 7)
+- **Complete Pytest Suite**: 53 tests passing 100% across 13 test modules:
+  - `test_api_parsing.py`, `test_chat_grounding.py`, `test_chips.py`, `test_contingency.py`, `test_fault_injection.py`, `test_fuzzy_and_manual_squad.py`, `test_league_strategy_mc.py`, `test_leakage.py`, `test_offline_fixtures.py`, `test_optimizer.py`, `test_optimizer_properties.py`, `test_rules_checker.py`, `test_safe_json.py`, `test_scheduler.py`.
+- **Offline Recorded Fixtures (`tests/fixtures/`)**: Sanitized JSON snapshots allowing complete test execution offline without external network dependency.
+- **CI Workflow (`.github/workflows/ci.yml`)**: Automated pipeline verifying Ruff linting, Ruff formatting, Mypy static typing (0 errors), Pytest suite, and secret checks.
+
+### 6.15 Acceptance Verification & Final Out-of-Time Backtest (Phase 8)
+- **Automated Verification (`python run.py verify`)**: 100% green across all 5 verification stages.
+- **Live Server Test Suite (`scripts/test_server_live.py`)**: 100% passing across 22 endpoints and 5 fault injection scenarios.
+- **Blind Out-of-Time Backtest (`reports/backtest.md`)**: Verified performance across GW1-5 using only pre-2026/27 historical training data.
+
 
 
 

@@ -1,0 +1,34 @@
+{
+  "league": {
+    "id": 314,
+    "name": "Mini-League Alpha"
+  },
+  "standings": {
+    "results": [
+      {
+        "id": 1,
+        "entry": 100,
+        "entry_name": "FC Leaders",
+        "player_name": "Rival 1",
+        "total": 345,
+        "rank": 1
+      },
+      {
+        "id": 2,
+        "entry": 200,
+        "entry_name": "Challengers",
+        "player_name": "Rival 2",
+        "total": 335,
+        "rank": 2
+      },
+      {
+        "id": 3,
+        "entry": 300,
+        "entry_name": "Oracle FC",
+        "player_name": "User",
+        "total": 338,
+        "rank": 3
+      }
+    ]
+  }
+}

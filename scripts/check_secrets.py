@@ -48,6 +48,7 @@ FORBIDDEN_TRACKED_PATTERNS = [
     r"^.*\.sqlite3$",
 ]
 
+
 def check_git_tracked_files() -> list[str]:
     """Verify that sensitive user data files are not tracked in git."""
     violations = []
@@ -68,6 +69,7 @@ def check_git_tracked_files() -> list[str]:
     except Exception as e:
         print(f"[WARN] Could not run git ls-files: {e}")
     return violations
+
 
 def check_file_contents(file_path: Path) -> list[tuple[int, str, str]]:
     """Scan a single file for secret patterns."""
@@ -90,6 +92,7 @@ def check_file_contents(file_path: Path) -> list[tuple[int, str, str]]:
                 findings.append((line_num, desc, line[:40] + "... [MASKED]"))
     return findings
 
+
 def scan_working_tree() -> list[str]:
     """Scan all tracked and candidate files in repo."""
     findings = []
@@ -108,6 +111,7 @@ def scan_working_tree() -> list[str]:
             findings.append(f"Secret detected in {rel_path}:{line_num} ({desc}) -> {snippet}")
     return findings
 
+
 def main():
     print("🔒 [FPL Oracle Security Audit] Scanning repository for secrets & sensitive data...")
     tracked_violations = check_git_tracked_files()
@@ -124,6 +128,7 @@ def main():
     else:
         print("✅ SECURITY CHECK PASSED! No secrets or forbidden tracked files detected.")
         sys.exit(0)
+
 
 if __name__ == "__main__":
     main()

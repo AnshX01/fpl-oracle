@@ -19,7 +19,7 @@ class Calibrator:
             iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
             iso.fit(y_prob, y_true)
             self.model = iso
-        else: # platt scaling
+        else:  # platt scaling
             lr = LogisticRegression()
             lr.fit(y_prob.reshape(-1, 1), y_true)
             self.model = lr

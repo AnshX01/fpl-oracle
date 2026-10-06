@@ -9,11 +9,11 @@ import pandas as pd
 
 from fpl_oracle.data.features import feature_engineering
 from fpl_oracle.data.historical import historical_manager
-from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.predict import projection_engine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("fpl_oracle.train")
+
 
 def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     logger.info("=== Starting FPL Oracle ML Training Pipeline ===")
@@ -35,41 +35,66 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     logger.info(f"Training split: {len(X_train)} samples. Validation split: {len(X_val)} samples.")
 
-    # 4. Train component models on train split
-    projection_engine.train(X_train, Y_train)
+    from fpl_oracle.ml.components.attacking import AttackingModel
+    from fpl_oracle.ml.components.bonus import BonusModel
+    from fpl_oracle.ml.components.cards_saves import CardsSavesModel
+    from fpl_oracle.ml.components.defcon import DefConModel
+    from fpl_oracle.ml.components.defending import DefendingModel
+    from fpl_oracle.ml.components.minutes import MinutesModel
+    from fpl_oracle.ml.model_registry import model_registry
 
-    # 5. Evaluate on holdout validation split
-    logger.info("Generating predictions on holdout validation split...")
-    mins_p = projection_engine.minutes_model.predict(X_val)
-    att_p = projection_engine.attacking_model.predict(X_val)
-    def_p = projection_engine.defending_model.predict(X_val)
-    defcon_p = projection_engine.defcon_model.predict(X_val)
-    bonus_p = projection_engine.bonus_model.predict(X_val)
-    cards_p = projection_engine.cards_saves_model.predict(X_val)
+    # 4. Train candidate component models on train split
+    logger.info("Training candidate models on training split...")
+    candidate_models = {
+        "minutes_model": MinutesModel(),
+        "attacking_model": AttackingModel(),
+        "defending_model": DefendingModel(),
+        "defcon_model": DefConModel(),
+        "bonus_model": BonusModel(),
+        "cards_saves_model": CardsSavesModel(),
+    }
+    candidate_models["minutes_model"].fit(X_train, Y_train)
+    candidate_models["attacking_model"].fit(X_train, Y_train)
+    candidate_models["defending_model"].fit(X_train, Y_train)
+    candidate_models["defcon_model"].fit(X_train, Y_train)
+    candidate_models["bonus_model"].fit(X_train, Y_train)
+    candidate_models["cards_saves_model"].fit(X_train, Y_train)
 
-    from fpl_oracle.ml.ensemble import scoring_ensemble
-    components = {**mins_p, **att_p, **def_p, **defcon_p, **bonus_p, **cards_p}
-    val_preds_df = scoring_ensemble.aggregate_components(components, X_val)
-    ml_preds = val_preds_df["expected_points"].values
-
-    # Run evaluation and generate reports/model_eval.md
-    metrics = model_evaluator.evaluate_expanding_window(
-        X=X_val,
-        Y=Y_val,
-        ml_preds=ml_preds,
-        p10=val_preds_df["p10"].values,
-        p50=val_preds_df["p50"].values,
-        p90=val_preds_df["p90"].values,
+    # 5. Evaluate candidate models on holdout validation split
+    logger.info("Evaluating candidate models on holdout validation split...")
+    cand_metrics = model_registry.evaluate_model_suite(candidate_models, X_val, Y_val)
+    logger.info(
+        f"Candidate Metrics: MAE={cand_metrics['ml_mae']}, Spearman={cand_metrics['ml_spearman']}, Baseline MAE={cand_metrics['base_mae']}"
     )
-    logger.info(f"Validation MAE: ML={metrics['ml_mae']} vs Baseline={metrics['base_mae']} ({metrics['mae_improvement_pct']}% improvement)")
-    logger.info(f"Validation Spearman Correlation: ML={metrics['ml_spearman']} vs Baseline={metrics['base_spearman']}")
 
-    # 6. Final fit on full dataset so models have latest 2026/27 signals
+    # Check active production model metrics on same validation split
+    active_metrics = model_registry.evaluate_production_weights(X_val, Y_val)
+    if active_metrics:
+        logger.info(
+            f"Active Production Model Metrics: MAE={active_metrics['ml_mae']}, Spearman={active_metrics['ml_spearman']}"
+        )
+
+    # 6. Verify and promote or engage automated rollback
+    promote_res = model_registry.verify_and_promote(
+        candidate_models=candidate_models,
+        candidate_metrics=cand_metrics,
+        active_metrics=active_metrics,
+        tolerance=0.05,
+        notes="Automated retrain pipeline",
+    )
+
+    if not promote_res.get("promoted", True):
+        logger.warning(f"[ModelRollback] Retrain rejected: {promote_res.get('reason')}")
+        logger.info("Retaining existing production models. Aborting full fit.")
+        return X, Y
+
+    # 7. Final fit on full dataset so production models have latest signals
     logger.info("Fitting final production models on full historical dataset...")
     projection_engine.train(X, Y)
 
     logger.info("=== ML Training Pipeline Completed Successfully! ===")
     return X, Y
+
 
 if __name__ == "__main__":
     train_all_models()

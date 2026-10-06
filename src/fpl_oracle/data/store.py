@@ -24,8 +24,10 @@ from fpl_oracle.config import BASE_DIR, DB_PATH
 
 PROFILE_JSON_PATH = BASE_DIR / "data" / "profile.json"
 
+
 class Base(DeclarativeBase):
     pass
+
 
 class APICacheEntry(Base):
     __tablename__ = "api_cache"
@@ -34,12 +36,14 @@ class APICacheEntry(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC))
     expires_at = Column(DateTime, nullable=False)
 
+
 class RawSnapshot(Base):
     __tablename__ = "raw_snapshots"
     id = Column(Integer, primary_key=True, autoincrement=True)
     endpoint = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     payload_json = Column(Text, nullable=False)
+
 
 class UserProfile(Base):
     __tablename__ = "user_profile"
@@ -48,16 +52,17 @@ class UserProfile(Base):
     target_league_id = Column(Integer, nullable=True)
     risk_preference = Column(String(50), default="balanced")
     llm_provider = Column(String(50), default="gemini")
-    bank = Column(Float, default=0.0) # in millions, e.g. 1.5
+    bank = Column(Float, default=0.0)  # in millions, e.g. 1.5
     free_transfers = Column(Integer, default=1)
-    manual_squad = Column(Text, nullable=True) # JSON list of element IDs
+    manual_squad = Column(Text, nullable=True)  # JSON list of element IDs
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
 
 class DecisionRecord(Base):
     __tablename__ = "decision_records"
     id = Column(Integer, primary_key=True, autoincrement=True)
     gameweek = Column(Integer, nullable=False)
-    decision_type = Column(String(50), nullable=False) # transfer, captain, chip, lineup
+    decision_type = Column(String(50), nullable=False)  # transfer, captain, chip, lineup
     recommendation = Column(Text, nullable=False)
     user_choice = Column(Text, nullable=True)
     expected_points = Column(Float, nullable=True)
@@ -65,17 +70,59 @@ class DecisionRecord(Base):
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
+
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String(100), default="default")
-    role = Column(String(20), nullable=False) # user, assistant, system
+    role = Column(String(20), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class PriceSnapshotRecord(Base):
+    __tablename__ = "price_snapshots"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    element_id = Column(Integer, nullable=False, index=True)
+    web_name = Column(String(100), nullable=False)
+    now_cost = Column(Float, nullable=False)
+    net_transfers = Column(Integer, default=0)
+    selected_by_percent = Column(Float, default=0.0)
+    hourly_rate = Column(Float, default=0.0)
+    urgency_score = Column(Float, default=0.0)
+    direction = Column(String(50), default="STABLE")
+    snapshot_time = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
+
+
+class JobRunRecord(Base):
+    __tablename__ = "job_runs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(100), nullable=False, index=True)
+    job_name = Column(String(200), nullable=False)
+    status = Column(String(50), nullable=False)  # SUCCESS, FAILED, RUNNING
+    started_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    completed_at = Column(DateTime, nullable=True)
+    duration_seconds = Column(Float, default=0.0)
+    details = Column(Text, nullable=True)
+
+
+class ModelVersionRecord(Base):
+    __tablename__ = "model_versions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(String(50), nullable=False, unique=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    ml_mae = Column(Float, nullable=False)
+    ml_spearman = Column(Float, nullable=False)
+    base_mae = Column(Float, nullable=False)
+    is_active = Column(Integer, default=0)
+    status = Column(String(50), default="production")  # production, archived, rejected_rollback
+    notes = Column(Text, nullable=True)
+
 
 # Engine and session initialization
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 
 def init_db():
     """Create tables if they do not exist and ensure schema is up to date."""
@@ -87,7 +134,9 @@ def init_db():
         except Exception:
             pass
 
+
 init_db()
+
 
 @dataclass
 class ProfileData:
@@ -100,6 +149,7 @@ class ProfileData:
     free_transfers: int = 1
     manual_squad: str | None = None
     updated_at: datetime | None = None
+
 
 class DataStore:
     def __init__(self):
@@ -169,11 +219,7 @@ class DataStore:
 
     def save_snapshot(self, endpoint: str, data: Any):
         with self.get_session() as session:
-            rec = RawSnapshot(
-                endpoint=endpoint,
-                created_at=datetime.now(UTC),
-                payload_json=json.dumps(data)
-            )
+            rec = RawSnapshot(endpoint=endpoint, created_at=datetime.now(UTC), payload_json=json.dumps(data))
             session.add(rec)
             session.commit()
 
@@ -208,7 +254,7 @@ class DataStore:
                 "bank": profile.bank,
                 "free_transfers": profile.free_transfers,
                 "manual_squad": json.loads(str(profile.manual_squad)) if profile.manual_squad else None,
-                "updated_at": profile.updated_at.isoformat() if profile.updated_at else datetime.now(UTC).isoformat()
+                "updated_at": profile.updated_at.isoformat() if profile.updated_at else datetime.now(UTC).isoformat(),
             }
             with open(PROFILE_JSON_PATH, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
@@ -250,7 +296,7 @@ class DataStore:
                 bank=float(profile.bank or 0.0),
                 free_transfers=int(profile.free_transfers or 1),
                 manual_squad=str(profile.manual_squad) if profile.manual_squad else None,
-                updated_at=profile.updated_at if isinstance(profile.updated_at, datetime) else None
+                updated_at=profile.updated_at if isinstance(profile.updated_at, datetime) else None,
             )
 
     def update_profile(self, **kwargs):
@@ -269,14 +315,16 @@ class DataStore:
             session.refresh(profile)
             self._sync_profile_json(profile)
 
-    def log_decision(self, gameweek: int, decision_type: str, recommendation: str, expected_points: float | None = None):
+    def log_decision(
+        self, gameweek: int, decision_type: str, recommendation: str, expected_points: float | None = None
+    ):
         with self.get_session() as session:
             rec = DecisionRecord(
                 gameweek=gameweek,
                 decision_type=decision_type,
                 recommendation=recommendation,
                 expected_points=expected_points,
-                created_at=datetime.now(UTC)
+                created_at=datetime.now(UTC),
             )
             session.add(rec)
             session.commit()
@@ -297,5 +345,147 @@ class DataStore:
             msg = ChatMessage(session_id=session_id, role=role, content=content, created_at=datetime.now(UTC))
             session.add(msg)
             session.commit()
+
+    def save_price_snapshots(self, snapshots: list[dict[str, Any]]):
+        """Save a batch of player price predictions / urgency records."""
+        with self.get_session() as session:
+            now = datetime.now(UTC)
+            for s in snapshots:
+                rec = PriceSnapshotRecord(
+                    element_id=int(s["element"]),
+                    web_name=str(s["web_name"]),
+                    now_cost=float(s["now_cost"]),
+                    net_transfers=int(s.get("net_transfers_event", 0)),
+                    selected_by_percent=float(s.get("selected_by_percent", 0.0)),
+                    hourly_rate=float(s.get("hourly_rate", 0.0)),
+                    urgency_score=float(s.get("urgency_score", 0.0)),
+                    direction=str(s.get("direction", "STABLE")),
+                    snapshot_time=now,
+                )
+                session.add(rec)
+            session.commit()
+
+    def get_latest_price_snapshots(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.get_session() as session:
+            rows = (
+                session.query(PriceSnapshotRecord).order_by(PriceSnapshotRecord.snapshot_time.desc()).limit(limit).all()
+            )
+            return [
+                {
+                    "element_id": r.element_id,
+                    "web_name": r.web_name,
+                    "now_cost": r.now_cost,
+                    "net_transfers": r.net_transfers,
+                    "selected_by_percent": r.selected_by_percent,
+                    "hourly_rate": r.hourly_rate,
+                    "urgency_score": r.urgency_score,
+                    "direction": r.direction,
+                    "snapshot_time": r.snapshot_time.isoformat() if r.snapshot_time else None,
+                }
+                for r in rows
+            ]
+
+    def record_job_start(self, job_id: str, job_name: str) -> int:
+        with self.get_session() as session:
+            run = JobRunRecord(job_id=job_id, job_name=job_name, status="RUNNING", started_at=datetime.now(UTC))
+            session.add(run)
+            session.commit()
+            return int(run.id)
+
+    def record_job_finish(self, run_id: int, status: str, duration_seconds: float, details: str = ""):
+        with self.get_session() as session:
+            run = session.query(JobRunRecord).filter(JobRunRecord.id == run_id).first()
+            if run:
+                run.status = status  # type: ignore[assignment]
+                run.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+                run.duration_seconds = duration_seconds  # type: ignore[assignment]
+                run.details = details  # type: ignore[assignment]
+                session.commit()
+
+    def get_job_runs(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.get_session() as session:
+            runs = session.query(JobRunRecord).order_by(JobRunRecord.started_at.desc()).limit(limit).all()
+            return [
+                {
+                    "id": r.id,
+                    "job_id": r.job_id,
+                    "job_name": r.job_name,
+                    "status": r.status,
+                    "started_at": r.started_at.isoformat() if r.started_at else None,
+                    "completed_at": r.completed_at.isoformat() if r.completed_at else None,
+                    "duration_seconds": round(float(r.duration_seconds or 0.0), 2),
+                    "details": r.details,
+                }
+                for r in runs
+            ]
+
+    def save_model_version(
+        self,
+        version: str,
+        ml_mae: float,
+        ml_spearman: float,
+        base_mae: float,
+        status: str = "production",
+        is_active: bool = True,
+        notes: str = "",
+    ):
+        with self.get_session() as session:
+            if is_active:
+                session.query(ModelVersionRecord).update({"is_active": 0})
+            existing = session.query(ModelVersionRecord).filter(ModelVersionRecord.version == version).first()
+            if existing:
+                existing.ml_mae = ml_mae  # type: ignore[assignment]
+                existing.ml_spearman = ml_spearman  # type: ignore[assignment]
+                existing.base_mae = base_mae  # type: ignore[assignment]
+                existing.is_active = 1 if is_active else 0  # type: ignore[assignment]
+                existing.status = status  # type: ignore[assignment]
+                existing.notes = notes  # type: ignore[assignment]
+                existing.created_at = datetime.now(UTC)  # type: ignore[assignment]
+            else:
+                rec = ModelVersionRecord(
+                    version=version,
+                    created_at=datetime.now(UTC),
+                    ml_mae=ml_mae,
+                    ml_spearman=ml_spearman,
+                    base_mae=base_mae,
+                    is_active=1 if is_active else 0,
+                    status=status,
+                    notes=notes,
+                )
+                session.add(rec)
+            session.commit()
+
+    def get_model_versions(self) -> list[dict[str, Any]]:
+        with self.get_session() as session:
+            rows = session.query(ModelVersionRecord).order_by(ModelVersionRecord.created_at.desc()).all()
+            return [
+                {
+                    "version": r.version,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "ml_mae": r.ml_mae,
+                    "ml_spearman": r.ml_spearman,
+                    "base_mae": r.base_mae,
+                    "is_active": bool(r.is_active),
+                    "status": r.status,
+                    "notes": r.notes,
+                }
+                for r in rows
+            ]
+
+    def get_active_model_version(self) -> dict[str, Any] | None:
+        with self.get_session() as session:
+            r = session.query(ModelVersionRecord).filter(ModelVersionRecord.is_active == 1).first()
+            if r:
+                return {
+                    "version": r.version,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "ml_mae": r.ml_mae,
+                    "ml_spearman": r.ml_spearman,
+                    "base_mae": r.base_mae,
+                    "status": r.status,
+                    "notes": r.notes,
+                }
+            return None
+
 
 data_store = DataStore()

@@ -111,6 +111,7 @@ class SafeJSONResponse(JSONResponse):
     FastAPI / Starlette Response class that serializes response data safely using safe_json_serialize.
     Guarantees no NaN, Inf, NumPy, or pandas types break JSON rendering.
     """
+
     def render(self, content: Any) -> bytes:
         sanitized = safe_json_serialize(content)
         return json.dumps(

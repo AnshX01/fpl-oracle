@@ -29,6 +29,7 @@ STATIC_DIR = WEB_DIR / "static"
 # Register safe JSON encoders globally
 register_fastapi_safe_encoders()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Start background scheduler
@@ -40,13 +41,15 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
     await fpl_client.aclose()
 
+
 app = FastAPI(
     title="FPL Oracle",
     description="Local ML-driven Fantasy Premier League Expert & Optimization Engine (Season 2026/27)",
     version="1.0.0",
     default_response_class=SafeJSONResponse,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
+
 
 # Global Error Handlers (Never leak raw tracebacks)
 @app.exception_handler(StarletteHTTPException)
@@ -58,9 +61,10 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             "error": str(exc.detail),
             "code": exc.status_code,
             "hint": "Check request parameters or verify resource identifiers.",
-            "fallback_used": False
-        }
+            "fallback_used": False,
+        },
     )
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -71,9 +75,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "error": "Validation error in request parameters",
             "code": 422,
             "hint": [f"{e.get('loc')}: {e.get('msg')}" for e in exc.errors()[:3]],
-            "fallback_used": False
-        }
+            "fallback_used": False,
+        },
     )
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -84,9 +89,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
             "error": "Internal server processing error",
             "code": 500,
             "hint": "An internal error occurred. Safe fallback engaged.",
-            "fallback_used": True
-        }
+            "fallback_used": True,
+        },
     )
+
 
 # CORS
 app.add_middleware(
@@ -103,6 +109,7 @@ app.include_router(api_router)
 # Mount Static Files
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():

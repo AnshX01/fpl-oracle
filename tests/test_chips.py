@@ -16,6 +16,7 @@ def test_chip_rules_config_2026_27():
     assert RULES["chips"]["set_1"]["deadline_event"] == 19
     assert RULES["chips"]["set_2"]["start_event"] == 20
 
+
 def test_remaining_chips_set_boundaries():
     """Verify that played chips are allocated correctly to Set 1 (GW 1-19) vs Set 2 (GW 20-38)."""
     # Manager played Wildcard in GW3, Triple Captain in GW15
@@ -24,8 +25,8 @@ def test_remaining_chips_set_boundaries():
         past=[],
         chips=[
             ChipHistoryItem(name="wildcard", event=3, time="2026-09-01T12:00:00Z"),
-            ChipHistoryItem(name="3xc", event=15, time="2026-11-20T12:00:00Z")
-        ]
+            ChipHistoryItem(name="3xc", event=15, time="2026-11-20T12:00:00Z"),
+        ],
     )
 
     status = chip_planner.get_remaining_chips(hist)
@@ -40,14 +41,25 @@ def test_remaining_chips_set_boundaries():
     assert "wildcard" in status["set_2_remaining"]
     assert "3xc" in status["set_2_remaining"]
 
+
 def test_joint_chip_assignment_no_conflicts():
     """Verify that joint beam search assigns each chip to a distinct gameweek (1 chip per GW rule)."""
     import pandas as pd
+
     positions = ["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3
-    squad_df = pd.DataFrame([
-        {"element": i, "web_name": f"P{i}", "team": (i % 20) + 1, "position": positions[i-1], "value": 70, "expected_points": 5.0}
-        for i in range(1, 16)
-    ])
+    squad_df = pd.DataFrame(
+        [
+            {
+                "element": i,
+                "web_name": f"P{i}",
+                "team": (i % 20) + 1,
+                "position": positions[i - 1],
+                "value": 70,
+                "expected_points": 5.0,
+            }
+            for i in range(1, 16)
+        ]
+    )
     projections = {gw: squad_df for gw in range(6, 20)}
     assign, total_gain, alts = chip_planner.optimize_joint_assignment(
         available_gws=list(range(6, 20)),
@@ -56,7 +68,7 @@ def test_joint_chip_assignment_no_conflicts():
         horizon_projections=projections,
         dgw_gws=[12],
         bgw_gws=[10],
-        budget=1000.0
+        budget=1000.0,
     )
 
     # 4 distinct chips
@@ -69,14 +81,25 @@ def test_joint_chip_assignment_no_conflicts():
     assert total_gain > 0.0
     assert len(alts) > 0
 
+
 def test_chip_set_1_expiry_opportunity_cost():
     """Verify that Set 1 expiry warning includes non-zero opportunity cost for unplayed chips."""
     import pandas as pd
+
     positions = ["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3
-    squad_df = pd.DataFrame([
-        {"element": i, "web_name": f"P{i}", "team": (i % 20) + 1, "position": positions[i-1], "value": 70, "expected_points": 5.0}
-        for i in range(1, 16)
-    ])
+    squad_df = pd.DataFrame(
+        [
+            {
+                "element": i,
+                "web_name": f"P{i}",
+                "team": (i % 20) + 1,
+                "position": positions[i - 1],
+                "value": 70,
+                "expected_points": 5.0,
+            }
+            for i in range(1, 16)
+        ]
+    )
     projections = {gw: squad_df for gw in range(16, 20)}
     res = chip_planner.generate_chip_strategy(
         current_gw=16,
@@ -84,7 +107,7 @@ def test_chip_set_1_expiry_opportunity_cost():
         horizon_projections=projections,
         fixtures=[],
         bootstrap=type("MockBoot", (), {"teams": []})(),
-        manager_history=None
+        manager_history=None,
     )
 
     assert res["set_1_deadline_warning"] is not None
@@ -95,4 +118,3 @@ def test_chip_set_1_expiry_opportunity_cost():
         assert "trigger_conditions" in row
         assert "confidence" in row
         assert "alternative_gw" in row
-

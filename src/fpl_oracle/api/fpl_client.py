@@ -36,6 +36,7 @@ from fpl_oracle.data.store import data_store
 logger = logging.getLogger("fpl_oracle.api")
 logging.basicConfig(level=logging.INFO)
 
+
 class FPLClient:
     def __init__(self):
         fpl_cfg = SETTINGS.get("fpl", {})
@@ -64,10 +65,7 @@ class FPLClient:
         if self._client is None or self._client.is_closed:
             limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
             self._client = httpx.AsyncClient(
-                headers=self.headers,
-                timeout=self.timeout,
-                limits=limits,
-                transport=self._custom_transport
+                headers=self.headers, timeout=self.timeout, limits=limits, transport=self._custom_transport
             )
         return self._client
 
@@ -94,12 +92,7 @@ class FPLClient:
         return dt.isoformat()
 
     async def _fetch_json(
-        self,
-        endpoint: str,
-        cache_key: str,
-        ttl_seconds: int,
-        retries: int = 3,
-        force_refresh: bool = False
+        self, endpoint: str, cache_key: str, ttl_seconds: int, retries: int = 3, force_refresh: bool = False
     ) -> tuple[dict[str, Any], bool]:
         """
         Fetch JSON from endpoint with coalescing, retries with jitter, and stale cache fallback.
@@ -129,11 +122,7 @@ class FPLClient:
             self._in_flight.pop(cache_key, None)
 
     async def _do_fetch_json(
-        self,
-        endpoint: str,
-        cache_key: str,
-        ttl_seconds: int,
-        retries: int
+        self, endpoint: str, cache_key: str, ttl_seconds: int, retries: int
     ) -> tuple[dict[str, Any], bool]:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         backoff = 1.0
@@ -156,7 +145,7 @@ class FPLClient:
                         self.is_stale_mode = False
                         return data, False
                     elif resp.status_code in [429, 500, 502, 503, 504]:
-                        logger.warning(f"FPL API error {resp.status_code} for {url}. Attempt {attempt+1}/{retries}")
+                        logger.warning(f"FPL API error {resp.status_code} for {url}. Attempt {attempt + 1}/{retries}")
                         # Exponential backoff with random jitter (0.8x to 1.2x)
                         jittered_delay = backoff * (0.8 + 0.4 * random.random())
                         await asyncio.sleep(jittered_delay)
@@ -165,7 +154,7 @@ class FPLClient:
                         logger.error(f"FPL API client error {resp.status_code} for {url}: {resp.text[:100]}")
                         break
                 except Exception as e:
-                    logger.warning(f"Network error accessing {url}: {e}. Attempt {attempt+1}/{retries}")
+                    logger.warning(f"Network error accessing {url}: {e}. Attempt {attempt + 1}/{retries}")
                     jittered_delay = backoff * (0.8 + 0.4 * random.random())
                     await asyncio.sleep(jittered_delay)
                     backoff *= 2.0
@@ -211,15 +200,12 @@ class FPLClient:
         return ElementSummary.model_validate(raw), is_stale
 
     async def get_element_summaries_batch(
-        self,
-        element_ids: list[int],
-        batch_size: int = 8,
-        polite_delay: float = 0.05
+        self, element_ids: list[int], batch_size: int = 8, polite_delay: float = 0.05
     ) -> dict[int, tuple[ElementSummary, bool]]:
         """Polite batch fetch of player summaries to prevent rate limits."""
         results: dict[int, tuple[ElementSummary, bool]] = {}
         for i in range(0, len(element_ids), batch_size):
-            chunk = element_ids[i:i + batch_size]
+            chunk = element_ids[i : i + batch_size]
             tasks = [self.get_element_summary(eid) for eid in chunk]
             chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
             for eid, res in zip(chunk, chunk_results, strict=False):
@@ -264,7 +250,9 @@ class FPLClient:
     async def get_classic_league_standings(self, league_id: int, page: int = 1) -> tuple[ClassicLeagueResponse, bool]:
         cache_key = f"league-classic:{league_id}:page:{page}"
         ttl = 600
-        raw, is_stale = await self._fetch_json(f"leagues-classic/{league_id}/standings/?page_standings={page}", cache_key, ttl)
+        raw, is_stale = await self._fetch_json(
+            f"leagues-classic/{league_id}/standings/?page_standings={page}", cache_key, ttl
+        )
         return ClassicLeagueResponse.model_validate(raw), is_stale
 
     async def get_event_status(self) -> tuple[dict[str, Any], bool]:
@@ -295,5 +283,6 @@ class FPLClient:
         if next_gw is None and curr_gw is not None and curr_gw < 38:
             next_gw = curr_gw + 1
         return curr_gw, next_gw
+
 
 fpl_client = FPLClient()

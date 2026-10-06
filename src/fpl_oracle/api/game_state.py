@@ -24,6 +24,7 @@ class GameweekPhase(StrEnum):
     FINISHED = "FINISHED"
     BETWEEN_GWS = "BETWEEN_GWS"
 
+
 class GameState(BaseModel):
     season: str = "2026/27"
     current_gw: int | None = None
@@ -41,20 +42,24 @@ class GameState(BaseModel):
     stale: bool = False
     details: dict[str, Any] = Field(default_factory=dict)
 
+
 class GameStateManager:
     """Derives and caches the shared GameState object."""
+
     def __init__(self):
         self._cached_state: GameState | None = None
         self._cached_at: float | None = None
 
     async def get_game_state(self, force_refresh: bool = False) -> GameState:
         import time
+
         now = time.time()
         # Cache for 60 seconds unless forced
         if not force_refresh and self._cached_state is not None and self._cached_at and (now - self._cached_at < 60):
             return self._cached_state
 
         from fpl_oracle.api.fpl_client import fpl_client
+
         bootstrap, is_stale = await fpl_client.get_bootstrap_static(force_refresh=force_refresh)
         fixtures, fix_stale = await fpl_client.get_fixtures(force_refresh=force_refresh)
 
@@ -175,12 +180,13 @@ class GameStateManager:
             stale=is_stale or fix_stale,
             details={
                 "curr_fixtures_count": len(curr_fixtures),
-                "event_status_leagues": event_status_raw.get("leagues", "Unknown")
-            }
+                "event_status_leagues": event_status_raw.get("leagues", "Unknown"),
+            },
         )
 
         self._cached_state = state
         self._cached_at = now
         return state
+
 
 game_state_manager = GameStateManager()

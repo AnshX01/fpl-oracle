@@ -19,6 +19,7 @@ def strip_accents(text: str) -> str:
     norm = unicodedata.normalize("NFKD", text)
     return "".join(c for c in norm if not unicodedata.combining(c)).replace("ø", "o").replace("Ø", "O")
 
+
 def clean_query(text: str) -> str:
     """Normalize text: remove bullets, numbering, parenthetical club/price/position tags."""
     t = text.strip()
@@ -36,12 +37,10 @@ def clean_query(text: str) -> str:
     t = re.sub(r"\s+", " ", t).strip()
     return t
 
+
 class FuzzyPlayerMatcher:
     def match_single_name(
-        self,
-        query: str,
-        elements: list[Element],
-        team_map: dict[int, str] | None = None
+        self, query: str, elements: list[Element], team_map: dict[int, str] | None = None
     ) -> dict[str, Any]:
         """
         Fuzzy match a single player name string against element candidates.
@@ -78,16 +77,18 @@ class FuzzyPlayerMatcher:
             if score >= 0.40:
                 team_short = team_map.get(elem.team, str(elem.team)) if team_map else str(elem.team)
                 pos_str = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}.get(elem.element_type, "MID")
-                scored_candidates.append({
-                    "element": elem.id,
-                    "web_name": elem.web_name,
-                    "full_name": f"{elem.first_name} {elem.second_name}",
-                    "team": elem.team,
-                    "team_short": team_short,
-                    "position": pos_str,
-                    "cost": round(elem.now_cost / 10.0, 1),
-                    "score": round(score, 2)
-                })
+                scored_candidates.append(
+                    {
+                        "element": elem.id,
+                        "web_name": elem.web_name,
+                        "full_name": f"{elem.first_name} {elem.second_name}",
+                        "team": elem.team,
+                        "team_short": team_short,
+                        "position": pos_str,
+                        "cost": round(elem.now_cost / 10.0, 1),
+                        "score": round(score, 2),
+                    }
+                )
 
         scored_candidates.sort(key=lambda x: float(str(x["score"])), reverse=True)
 
@@ -99,7 +100,7 @@ class FuzzyPlayerMatcher:
                 "cleaned": cleaned,
                 "matched": best,
                 "confidence": best["score"],
-                "alternatives": alts
+                "alternatives": alts,
             }
         else:
             return {
@@ -107,7 +108,7 @@ class FuzzyPlayerMatcher:
                 "cleaned": cleaned,
                 "matched": None,
                 "confidence": 0.0,
-                "alternatives": scored_candidates[:4]
+                "alternatives": scored_candidates[:4],
             }
 
     def extract_names_from_raw(self, raw_input: str | list[Any]) -> list[str]:
@@ -178,10 +179,7 @@ class FuzzyPlayerMatcher:
         return lines
 
     def parse_and_match_squad(
-        self,
-        raw_input: str | list[str],
-        elements: list[Element],
-        team_map: dict[int, str] | None = None
+        self, raw_input: str | list[str], elements: list[Element], team_map: dict[int, str] | None = None
     ) -> dict[str, Any]:
         """
         Parse raw input (plain text, JSON, CSV) and fuzzy match all candidate players.
@@ -216,12 +214,12 @@ class FuzzyPlayerMatcher:
             total_cost += m["cost"]
 
         is_valid_15 = (
-            len(matches) == 15 and
-            pos_counts["GKP"] == 2 and
-            pos_counts["DEF"] == 5 and
-            pos_counts["MID"] == 5 and
-            pos_counts["FWD"] == 3 and
-            all(count <= 3 for count in club_counts.values())
+            len(matches) == 15
+            and pos_counts["GKP"] == 2
+            and pos_counts["DEF"] == 5
+            and pos_counts["MID"] == 5
+            and pos_counts["FWD"] == 3
+            and all(count <= 3 for count in club_counts.values())
         )
 
         return {
@@ -231,7 +229,8 @@ class FuzzyPlayerMatcher:
             "unmatched": unmatched,
             "position_counts": pos_counts,
             "club_counts": club_counts,
-            "total_cost": round(total_cost, 1)
+            "total_cost": round(total_cost, 1),
         }
+
 
 fuzzy_matcher = FuzzyPlayerMatcher()

@@ -35,13 +35,13 @@ class FaultInjectingTransport(httpx.AsyncBaseTransport):
                 status_code=429,
                 headers={"Retry-After": "1"},
                 content=b'{"detail": "Request was throttled. Expected available in 1 second."}',
-                request=request
+                request=request,
             )
         elif self.mode == "503":
             return httpx.Response(
                 status_code=503,
                 content=b'{"detail": "FPL Service Temporarily Unavailable - Updating Game"}',
-                request=request
+                request=request,
             )
         elif self.mode == "timeout":
             raise httpx.ReadTimeout(f"Read timeout connecting to {url_str}")
@@ -68,7 +68,9 @@ async def run_tests():
         print(f"1.  GET /api/health -> Status {res.status_code}")
         assert res.status_code == 200, f"Health check failed: {res.text}"
         data = res.json()
-        print(f"    Season: {data.get('season')}, Current GW: {data.get('current_gameweek')}, Next GW: {data.get('next_gameweek')}")
+        print(
+            f"    Season: {data.get('season')}, Current GW: {data.get('current_gameweek')}, Next GW: {data.get('next_gameweek')}"
+        )
         assert "game_state" in data
         assert "cache_age_seconds" in data
         assert "model" in data
@@ -98,13 +100,17 @@ async def run_tests():
 
         # 3c. Sync Stream SSE GET
         async with client.stream("GET", "/api/sync/stream") as sse_stream:
-            print(f"3c. GET /api/sync/stream -> Status {sse_stream.status_code}, Media: {sse_stream.headers.get('content-type')}")
+            print(
+                f"3c. GET /api/sync/stream -> Status {sse_stream.status_code}, Media: {sse_stream.headers.get('content-type')}"
+            )
             assert sse_stream.status_code == 200
             assert "text/event-stream" in sse_stream.headers.get("content-type", "")
             async for chunk in sse_stream.aiter_lines():
                 if chunk.startswith("data:"):
                     stream_payload = json.loads(chunk[5:].strip())
-                    print(f"    SSE Event received: step={stream_payload.get('step')}, progress={stream_payload.get('progress_pct')}%")
+                    print(
+                        f"    SSE Event received: step={stream_payload.get('step')}, progress={stream_payload.get('progress_pct')}%"
+                    )
                     break
 
         # 4. Profile POST with overrides (Bank & Free Transfers)
@@ -123,7 +129,9 @@ async def run_tests():
         print(f"    Total squad players: {total_players} (Starters: {len(starters)}, Bench: {len(bench)})")
         print(f"    Formation: {squad_data.get('formation')}, Captain: {squad_data.get('captain', {}).get('web_name')}")
         print(f"    Bank: £{squad_data.get('bank_millions')}m, Free Transfers: {squad_data.get('free_transfers')}")
-        print(f"    Squad Val: £{squad_data.get('total_squad_value')}m, Selling Val: £{squad_data.get('total_selling_value')}m, Team Val: £{squad_data.get('total_team_value')}m")
+        print(
+            f"    Squad Val: £{squad_data.get('total_squad_value')}m, Selling Val: £{squad_data.get('total_selling_value')}m, Team Val: £{squad_data.get('total_team_value')}m"
+        )
         print(f"    Data as of: {squad_data.get('data_as_of')}, Stale: {squad_data.get('stale')}")
         assert total_players == 15, f"Expected 15 players, got {total_players}"
         assert squad_data.get("bank_millions") == 1.5
@@ -198,7 +206,9 @@ async def run_tests():
         print(f"13. GET /api/contingency/plans -> Status {res.status_code}")
         assert res.status_code == 200
         contingency_plans = res.json()
-        print(f"    Plans returned: plan_a={bool(contingency_plans.get('plan_a'))}, plan_b={bool(contingency_plans.get('plan_b'))}, plan_c={bool(contingency_plans.get('plan_c'))}")
+        print(
+            f"    Plans returned: plan_a={bool(contingency_plans.get('plan_a'))}, plan_b={bool(contingency_plans.get('plan_b'))}, plan_c={bool(contingency_plans.get('plan_c'))}"
+        )
         assert "plan_a" in contingency_plans
         assert "plan_b" in contingency_plans
         assert "plan_c" in contingency_plans
@@ -217,7 +227,9 @@ async def run_tests():
         print(f"15. POST /api/contingency/panic -> Status {res.status_code}")
         assert res.status_code == 200
         panic_data = res.json()
-        print(f"    Panic response status: {panic_data.get('status')}, Recommendation: {panic_data.get('recommendation', '')[:60]}...")
+        print(
+            f"    Panic response status: {panic_data.get('status')}, Recommendation: {panic_data.get('recommendation', '')[:60]}..."
+        )
         assert panic_data.get("status") == "crisis_resolved"
         assert "lineup_action" in panic_data
 
@@ -234,12 +246,50 @@ async def run_tests():
         print(f"17. GET /api/review -> Status {res.status_code}")
         assert res.status_code == 200
         rev_data = res.json()
-        print(f"    Review target GW: {rev_data.get('target_gameweek')}, Markdown length: {len(rev_data.get('review_markdown', ''))}")
+        print(
+            f"    Review target GW: {rev_data.get('target_gameweek')}, Markdown length: {len(rev_data.get('review_markdown', ''))}"
+        )
         assert len(rev_data.get("review_markdown", "")) > 50
 
-        # 18. Web UI root
+        # 18. System Jobs
+        res = await client.get("/api/system/jobs")
+        print(f"18. GET /api/system/jobs -> Status {res.status_code}")
+        assert res.status_code == 200
+        jobs_data = res.json()
+        print(
+            f"    Jobs registered: {jobs_data.get('total_jobs')}, Scheduler running: {jobs_data.get('scheduler_running')}"
+        )
+        assert jobs_data.get("total_jobs") == 5
+
+        # 19. On-Demand Job Execution
+        res = await client.post("/api/system/jobs/price_snapshot/run")
+        print(f"19. POST /api/system/jobs/price_snapshot/run -> Status {res.status_code}")
+        assert res.status_code == 200
+        assert res.json().get("success") is True
+
+        # 20. System Models & Versioning
+        res = await client.get("/api/system/models")
+        print(f"20. GET /api/system/models -> Status {res.status_code}")
+        assert res.status_code == 200
+        models_data = res.json()
+        print(
+            f"    Active Model: {models_data.get('active_version', {}).get('version')}, History count: {len(models_data.get('history', []))}"
+        )
+        assert "active_version" in models_data
+
+        # 21. System Diagnostic Status
+        res = await client.get("/api/system/status")
+        print(f"21. GET /api/system/status -> Status {res.status_code}")
+        assert res.status_code == 200
+        sys_status = res.json()
+        print(
+            f"    System Phase: {sys_status.get('game_state', {}).get('phase')}, Active Model MAE: {sys_status.get('model', {}).get('mae')}"
+        )
+        assert "scheduler" in sys_status
+
+        # 22. Web UI root
         res = await client.get("/")
-        print(f"18. GET / (Web UI root) -> Status {res.status_code}")
+        print(f"22. GET / (Web UI root) -> Status {res.status_code}")
         assert res.status_code == 200
         assert "<title>FPL Oracle" in res.text
 
@@ -250,7 +300,9 @@ async def run_tests():
         # Fault 1: 429 Rate Limit Fallback
         fpl_client.set_transport(FaultInjectingTransport(mode="429"))
         try:
-            boot, is_stale = await fpl_client._fetch_json("bootstrap-static/", "bootstrap-static", ttl_seconds=1, retries=1, force_refresh=True)
+            boot, is_stale = await fpl_client._fetch_json(
+                "bootstrap-static/", "bootstrap-static", ttl_seconds=1, retries=1, force_refresh=True
+            )
             print(f"F1. 429 Rate Limit Injection -> Stale fallback engaged: {is_stale}")
             assert is_stale is True
         finally:
@@ -299,6 +351,7 @@ async def run_tests():
     print("ALL LIVE ENDPOINTS AND FAULT INJECTION TESTS PASSED 100%!")
     print("========================================================")
     sys.stdout.flush()
+
 
 if __name__ == "__main__":
     asyncio.run(run_tests())

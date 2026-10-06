@@ -30,6 +30,10 @@ data/cache/*
 data/snapshots/*
 !data/cache/.gitkeep
 !data/snapshots/.gitkeep
+data/models/*.pkl
+data/models/versions/
+data/models/rejected/
+
 
 # Logs & monitoring
 logs/

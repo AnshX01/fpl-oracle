@@ -13,18 +13,55 @@ def make_mock_pool():
     rows = []
     # 4 GKP
     for i in range(1, 5):
-        rows.append({"element": i, "web_name": f"GKP_{i}", "position": "GKP", "team": (i % 20) + 1, "value": 50, "expected_points": 4.0 - (i * 0.2)})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"GKP_{i}",
+                "position": "GKP",
+                "team": (i % 20) + 1,
+                "value": 50,
+                "expected_points": 4.0 - (i * 0.2),
+            }
+        )
     # 10 DEF
     for i in range(5, 15):
-        rows.append({"element": i, "web_name": f"DEF_{i}", "position": "DEF", "team": (i % 20) + 1, "value": 50, "expected_points": 5.0 - (i * 0.1)})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"DEF_{i}",
+                "position": "DEF",
+                "team": (i % 20) + 1,
+                "value": 50,
+                "expected_points": 5.0 - (i * 0.1),
+            }
+        )
     # 10 MID
     for i in range(15, 25):
-        rows.append({"element": i, "web_name": f"MID_{i}", "position": "MID", "team": (i % 20) + 1, "value": 65, "expected_points": 6.0 - (i * 0.1)})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"MID_{i}",
+                "position": "MID",
+                "team": (i % 20) + 1,
+                "value": 65,
+                "expected_points": 6.0 - (i * 0.1),
+            }
+        )
     # 6 FWD
     for i in range(25, 31):
-        rows.append({"element": i, "web_name": f"FWD_{i}", "position": "FWD", "team": (i % 20) + 1, "value": 75, "expected_points": 7.0 - (i * 0.1)})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"FWD_{i}",
+                "position": "FWD",
+                "team": (i % 20) + 1,
+                "value": 75,
+                "expected_points": 7.0 - (i * 0.1),
+            }
+        )
 
     return pd.DataFrame(rows)
+
 
 def test_squad_optimizer_constraints():
     pool = make_mock_pool()
@@ -42,6 +79,7 @@ def test_squad_optimizer_constraints():
     team_counts = squad["team"].value_counts()
     assert (team_counts <= 3).all()
 
+
 def test_selling_price_math():
     """Verify selling price formula: purchase_price + floor((now_cost - purchase_price) / 2)."""
     # Case 1: Player bought at 10.0m (100), now 10.4m (104). Rise = 4. Selling price = 100 + 2 = 102 (10.2m)
@@ -55,6 +93,7 @@ def test_selling_price_math():
     # Case 3: Player bought at 10.0m (100), now 9.8m (98). Loss = 2. Sells at current price 98
     p3 = transfer_optimizer.calculate_selling_price(purchase_price=100, now_cost=98)
     assert p3 == 98
+
 
 def test_lineup_and_captain_formation():
     pool = make_mock_pool()
@@ -75,17 +114,23 @@ def test_lineup_and_captain_formation():
     assert lineup["captain"]["element"] != lineup["vice_captain"]["element"]
     assert lineup["captain"]["multiplier"] == 2
 
+
 def test_compute_squad_selling_prices_and_free_transfers():
     """Verify transfer history parsing for selling prices and banked free transfers calculation."""
     # Test squad with 2 players
-    squad_df = pd.DataFrame([
-        {"element": 10, "web_name": "Salah", "value": 128, "cost_change_start": 3}, # rose from 12.5 to 12.8
-        {"element": 20, "web_name": "Haaland", "value": 152, "cost_change_start": 2} # bought at 15.0 via transfer, now 15.2
-    ])
+    squad_df = pd.DataFrame(
+        [
+            {"element": 10, "web_name": "Salah", "value": 128, "cost_change_start": 3},  # rose from 12.5 to 12.8
+            {
+                "element": 20,
+                "web_name": "Haaland",
+                "value": 152,
+                "cost_change_start": 2,
+            },  # bought at 15.0 via transfer, now 15.2
+        ]
+    )
 
-    transfers = [
-        {"element_in": 20, "element_in_cost": 150, "element_out": 99, "event": 2}
-    ]
+    transfers = [{"element_in": 20, "element_in_cost": 150, "element_out": 99, "event": 2}]
 
     priced_df = transfer_optimizer.compute_squad_selling_prices(squad_df, transfer_history=transfers)
     salah_row = priced_df[priced_df["element"] == 10].iloc[0]
@@ -109,9 +154,8 @@ def test_compute_squad_selling_prices_and_free_transfers():
         {"event": 2, "event_transfers": 0},
         {"event": 3, "event_transfers": 1},
         {"event": 4, "event_transfers": 0},
-        {"event": 5, "event_transfers": 0}
+        {"event": 5, "event_transfers": 0},
     ]
     ft = transfer_optimizer.compute_available_free_transfers(entry_history=history, current_gw=5)
     # At end of GW5: GW4 was 4, rolled GW5 -> 5 banked
     assert ft == 5
-

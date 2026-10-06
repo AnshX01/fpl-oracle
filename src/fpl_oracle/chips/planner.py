@@ -18,19 +18,15 @@ from fpl_oracle.chips.simulate import chip_simulator
 from fpl_oracle.config import RULES
 
 ALL_CHIPS = ["wildcard", "freehit", "3xc", "bboost"]
-CHIP_DISPLAY_NAMES = {
-    "wildcard": "Wildcard",
-    "freehit": "Free Hit",
-    "3xc": "Triple Captain",
-    "bboost": "Bench Boost"
-}
+CHIP_DISPLAY_NAMES = {"wildcard": "Wildcard", "freehit": "Free Hit", "3xc": "Triple Captain", "bboost": "Bench Boost"}
 
 TRIGGER_CONDITIONS_DEFAULT = {
     "wildcard": "Squad accumulates 2+ key injuries or major fixture swings across 3+ core clubs.",
     "freehit": "Major blank gameweek (cup postponements) or extreme single-week fixture mismatch.",
     "3xc": "Confirmed Double Gameweek with elite captain asset, or elite home fixture with high P90 ceiling.",
-    "bboost": "All 15 squad players confirmed starting with favorable fixtures (ideally in a Double Gameweek)."
+    "bboost": "All 15 squad players confirmed starting with favorable fixtures (ideally in a Double Gameweek).",
 }
+
 
 class ChipPlanner:
     def __init__(self):
@@ -62,7 +58,7 @@ class ChipPlanner:
             "set_1_remaining": remaining_set_1,
             "set_2_used": list(used_set_2),
             "set_2_remaining": remaining_set_2,
-            "used_history": used_details
+            "used_history": used_details,
         }
 
     def compute_chip_utility(
@@ -73,7 +69,7 @@ class ChipPlanner:
         horizon_projections: dict[int, pd.DataFrame],
         dgw_gws: list[int],
         bgw_gws: list[int],
-        budget: float = 1000.0
+        budget: float = 1000.0,
     ) -> tuple[float, str]:
         """
         Computes expected point gain and confidence for playing a specific chip in gameweek `gw`.
@@ -86,7 +82,7 @@ class ChipPlanner:
             res = chip_simulator.evaluate_triple_captain(gw, current_squad_df if len(current_squad_df) == 15 else gw_df)
             gain = res["expected_gain"]
             if is_dgw:
-                gain += 6.5 # Double gameweek 2nd match expected return
+                gain += 6.5  # Double gameweek 2nd match expected return
                 confidence = "HIGH"
             else:
                 confidence = "HIGH" if gain >= 8.0 else "MEDIUM"
@@ -96,7 +92,7 @@ class ChipPlanner:
             res = chip_simulator.evaluate_bench_boost(gw, current_squad_df, gw_df)
             gain = res["expected_gain"]
             if is_dgw:
-                gain += 8.0 # Bench players play twice
+                gain += 8.0  # Bench players play twice
                 confidence = "HIGH"
             else:
                 confidence = "HIGH" if gain >= 12.0 else "MEDIUM"
@@ -129,7 +125,7 @@ class ChipPlanner:
         dgw_gws: list[int],
         bgw_gws: list[int],
         budget: float = 1000.0,
-        beam_width: int = 50
+        beam_width: int = 50,
     ) -> tuple[dict[str, int], float, list[dict[str, Any]]]:
         """
         Search joint space of chip assignments using Dynamic Programming / Beam Search.
@@ -153,7 +149,7 @@ class ChipPlanner:
                     horizon_projections=horizon_projections,
                     dgw_gws=dgw_gws,
                     bgw_gws=bgw_gws,
-                    budget=budget
+                    budget=budget,
                 )
 
         # Beam Search over chip assignments
@@ -182,7 +178,7 @@ class ChipPlanner:
                         wc_gw = curr_assign["wildcard"]
                         bb_gw = curr_assign["bboost"]
                         if 0 < (bb_gw - wc_gw) <= 3:
-                            tot_gain += 5.0 # Wildcard bench setup synergy bonus
+                            tot_gain += 5.0  # Wildcard bench setup synergy bonus
 
                     candidates.append((tot_gain, curr_assign))
         else:
@@ -208,11 +204,13 @@ class ChipPlanner:
             plan_key = tuple(sorted(plan.items()))
             if plan_key not in seen_plans:
                 seen_plans.add(plan_key)
-                alternatives.append({
-                    "total_expected_gain": round(score, 1),
-                    "assignment": plan,
-                    "delta_vs_best": round(score - best_gain, 1)
-                })
+                alternatives.append(
+                    {
+                        "total_expected_gain": round(score, 1),
+                        "assignment": plan,
+                        "delta_vs_best": round(score - best_gain, 1),
+                    }
+                )
                 if len(alternatives) >= 3:
                     break
 
@@ -226,7 +224,7 @@ class ChipPlanner:
         fixtures: list[Fixture],
         bootstrap: BootstrapStatic,
         manager_history: ManagerHistory | None = None,
-        budget: float = 1000.0
+        budget: float = 1000.0,
     ) -> dict[str, Any]:
         """
         Compute optimal joint chip strategy for both Set 1 (up to GW19) and Set 2 (GW20-38)
@@ -263,7 +261,7 @@ class ChipPlanner:
                 horizon_projections=horizon_projections,
                 dgw_gws=dgw_gws,
                 bgw_gws=bgw_gws,
-                budget=budget
+                budget=budget,
             )
 
             # Check if any chips will expire unused
@@ -271,7 +269,9 @@ class ChipPlanner:
             for c in set_1_remaining:
                 # Opportunity cost is the expected value of deploying that chip
                 gw_chosen = set1_best_assign.get(c, current_gw)
-                util, _ = self.compute_chip_utility(c, gw_chosen, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget)
+                util, _ = self.compute_chip_utility(
+                    c, gw_chosen, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget
+                )
                 set_1_opportunity_cost[c] = util
                 total_opp_cost += util
 
@@ -295,20 +295,24 @@ class ChipPlanner:
                 rec_gw = set1_best_assign.get(c)
                 if rec_gw is not None:
                     joint_schedule[rec_gw] = c
-                    gain, conf = self.compute_chip_utility(c, rec_gw, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget)
+                    gain, conf = self.compute_chip_utility(
+                        c, rec_gw, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget
+                    )
                     alt_gw = alt_assign.get(c, rec_gw + 1 if rec_gw < 19 else rec_gw - 1)
-                    chip_plan_table.append({
-                        "chip": f"{CHIP_DISPLAY_NAMES[c]} (Set 1)",
-                        "code": c,
-                        "set": 1,
-                        "recommended_gw": rec_gw,
-                        "expected_gain": gain,
-                        "confidence": conf,
-                        "alternative_gw": alt_gw,
-                        "trigger_conditions": TRIGGER_CONDITIONS_DEFAULT[c],
-                        "opportunity_cost": set_1_opportunity_cost.get(c, gain),
-                        "reasoning": f"Deploy {CHIP_DISPLAY_NAMES[c]} in GW{rec_gw} to maximize Set 1 returns (+{gain} pts) before the GW19 hard expiry."
-                    })
+                    chip_plan_table.append(
+                        {
+                            "chip": f"{CHIP_DISPLAY_NAMES[c]} (Set 1)",
+                            "code": c,
+                            "set": 1,
+                            "recommended_gw": rec_gw,
+                            "expected_gain": gain,
+                            "confidence": conf,
+                            "alternative_gw": alt_gw,
+                            "trigger_conditions": TRIGGER_CONDITIONS_DEFAULT[c],
+                            "opportunity_cost": set_1_opportunity_cost.get(c, gain),
+                            "reasoning": f"Deploy {CHIP_DISPLAY_NAMES[c]} in GW{rec_gw} to maximize Set 1 returns (+{gain} pts) before the GW19 hard expiry.",
+                        }
+                    )
 
         # ----------------------------------------------------------------------
         # SET 2 PLANNING (GW 20 to 38)
@@ -323,26 +327,32 @@ class ChipPlanner:
             horizon_projections=horizon_projections,
             dgw_gws=dgw_gws,
             bgw_gws=bgw_gws,
-            budget=budget
+            budget=budget,
         )
 
         alt2_assign = set2_alternatives[0]["assignment"] if set2_alternatives else {}
         for c in set_2_remaining:
-            rec_gw = set2_best_assign.get(c, 34 if c == "bboost" else (30 if c == "wildcard" else (29 if c == "freehit" else 37)))
-            gain, conf = self.compute_chip_utility(c, rec_gw, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget)
+            rec_gw = set2_best_assign.get(
+                c, 34 if c == "bboost" else (30 if c == "wildcard" else (29 if c == "freehit" else 37))
+            )
+            gain, conf = self.compute_chip_utility(
+                c, rec_gw, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget
+            )
             alt_gw = alt2_assign.get(c, rec_gw + 1 if rec_gw < 38 else rec_gw - 1)
-            chip_plan_table.append({
-                "chip": f"{CHIP_DISPLAY_NAMES[c]} (Set 2)",
-                "code": c,
-                "set": 2,
-                "recommended_gw": rec_gw,
-                "expected_gain": gain,
-                "confidence": conf,
-                "alternative_gw": alt_gw,
-                "trigger_conditions": TRIGGER_CONDITIONS_DEFAULT[c],
-                "opportunity_cost": gain,
-                "reasoning": f"Deploy {CHIP_DISPLAY_NAMES[c]} in GW{rec_gw} targeting Spring double/blank fixtures (+{gain} pts)."
-            })
+            chip_plan_table.append(
+                {
+                    "chip": f"{CHIP_DISPLAY_NAMES[c]} (Set 2)",
+                    "code": c,
+                    "set": 2,
+                    "recommended_gw": rec_gw,
+                    "expected_gain": gain,
+                    "confidence": conf,
+                    "alternative_gw": alt_gw,
+                    "trigger_conditions": TRIGGER_CONDITIONS_DEFAULT[c],
+                    "opportunity_cost": gain,
+                    "reasoning": f"Deploy {CHIP_DISPLAY_NAMES[c]} in GW{rec_gw} targeting Spring double/blank fixtures (+{gain} pts).",
+                }
+            )
 
         return {
             "chips_status": chips_status,
@@ -355,7 +365,8 @@ class ChipPlanner:
             "set_1_alternative_plans": set1_alternatives,
             "set_2_alternative_plans": set2_alternatives,
             "double_gameweeks_calendar": dgw_list,
-            "blank_gameweeks_calendar": bgw_list
+            "blank_gameweeks_calendar": bgw_list,
         }
+
 
 chip_planner = ChipPlanner()

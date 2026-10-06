@@ -23,6 +23,7 @@ def _safe_team(val: Any) -> Any:
     except (ValueError, TypeError):
         return str(val)
 
+
 class TransferOptimizer:
     def __init__(self):
         self.discount_factor = float(SETTINGS.get("optimizer", {}).get("discount_factor", 0.95))
@@ -67,10 +68,7 @@ class TransferOptimizer:
         return max(1, min(5, banked))
 
     def compute_squad_selling_prices(
-        self,
-        squad_df: pd.DataFrame,
-        transfer_history: list[Any] | None = None,
-        bootstrap: Any | None = None
+        self, squad_df: pd.DataFrame, transfer_history: list[Any] | None = None, bootstrap: Any | None = None
     ) -> pd.DataFrame:
         """
         Calculates exact purchase price and selling price for each player in squad
@@ -92,13 +90,22 @@ class TransferOptimizer:
             purchase_price = None
             if transfer_history:
                 transfers_in = [
-                    t for t in transfer_history
-                    if getattr(t, "element_in", None) == elem_id or (isinstance(t, dict) and t.get("element_in") == elem_id)
+                    t
+                    for t in transfer_history
+                    if getattr(t, "element_in", None) == elem_id
+                    or (isinstance(t, dict) and t.get("element_in") == elem_id)
                 ]
                 if transfers_in:
-                    transfers_in.sort(key=lambda t: getattr(t, "event", 0) if not isinstance(t, dict) else t.get("event", 0), reverse=True)
+                    transfers_in.sort(
+                        key=lambda t: getattr(t, "event", 0) if not isinstance(t, dict) else t.get("event", 0),
+                        reverse=True,
+                    )
                     latest_t = transfers_in[0]
-                    purchase_price = getattr(latest_t, "element_in_cost", None) if not isinstance(latest_t, dict) else latest_t.get("element_in_cost")
+                    purchase_price = (
+                        getattr(latest_t, "element_in_cost", None)
+                        if not isinstance(latest_t, dict)
+                        else latest_t.get("element_in_cost")
+                    )
 
             if purchase_price is None:
                 cost_change = start_cost_map.get(elem_id, row.get("cost_change_start", 0))
@@ -114,10 +121,7 @@ class TransferOptimizer:
         return df
 
     def compute_available_free_transfers(
-        self,
-        entry_history: list[Any] | None = None,
-        transfer_history: list[Any] | None = None,
-        current_gw: int = 5
+        self, entry_history: list[Any] | None = None, transfer_history: list[Any] | None = None, current_gw: int = 5
     ) -> int:
         """
         Calculates exact available free transfers according to verified 2026/27 rules:
@@ -130,10 +134,21 @@ class TransferOptimizer:
 
         banked = 1
         for gw in range(1, current_gw + 1):
-            gw_entry = next((e for e in entry_history if (getattr(e, "event", None) or (isinstance(e, dict) and e.get("event"))) == gw), None)
+            gw_entry = next(
+                (
+                    e
+                    for e in entry_history
+                    if (getattr(e, "event", None) or (isinstance(e, dict) and e.get("event"))) == gw
+                ),
+                None,
+            )
             transfers_made = 0
             if gw_entry:
-                transfers_made = getattr(gw_entry, "event_transfers", 0) if not isinstance(gw_entry, dict) else gw_entry.get("event_transfers", 0)
+                transfers_made = (
+                    getattr(gw_entry, "event_transfers", 0)
+                    if not isinstance(gw_entry, dict)
+                    else gw_entry.get("event_transfers", 0)
+                )
 
             remaining = max(0, banked - transfers_made)
             banked = min(5, remaining + 1)
@@ -144,15 +159,15 @@ class TransferOptimizer:
         self,
         current_squad_df: pd.DataFrame,
         player_pool_df: pd.DataFrame,
-        bank: float, # In tenths (£1.0m = 10)
-        free_transfers: int, # 1 to 5
+        bank: float,  # In tenths (£1.0m = 10)
+        free_transfers: int,  # 1 to 5
         horizon_projections: dict[int, pd.DataFrame],
         current_gw: int,
         target_gw: int,
         locked_in_ids: list[int] | None = None,
         locked_out_ids: list[int] | None = None,
         excluded_team_ids: list[int] | None = None,
-        risk_preference: str = "balanced"
+        risk_preference: str = "balanced",
     ) -> dict[str, Any]:
         """
         Evaluates candidate plans for target_gw:
@@ -191,7 +206,7 @@ class TransferOptimizer:
             "expected_gain": 0.0,
             "lineup": curr_lineup,
             "next_banked_ft": min(5, free_transfers + 1),
-            "recommendation_summary": f"Roll transfer. Bank {min(5, free_transfers + 1)} free transfers for next gameweek."
+            "recommendation_summary": f"Roll transfer. Bank {min(5, free_transfers + 1)} free transfers for next gameweek.",
         }
 
         # Step 2: Best 1 Transfer
@@ -210,30 +225,40 @@ class TransferOptimizer:
             available_funds = sell_val + bank
 
             # Filter potential replacements of same position
-            pos_pool = target_gw_df[
-                (target_gw_df["position"] == sell_pos) &
-                (~target_gw_df["element"].isin(current_elements)) &
-                (~target_gw_df["element"].isin(locked_out)) &
-                (~target_gw_df["team"].isin(excluded_teams)) &
-                (target_gw_df["value"] <= available_funds)
-            ].sort_values(by="expected_points", ascending=False).head(5)
+            pos_pool = (
+                target_gw_df[
+                    (target_gw_df["position"] == sell_pos)
+                    & (~target_gw_df["element"].isin(current_elements))
+                    & (~target_gw_df["element"].isin(locked_out))
+                    & (~target_gw_df["team"].isin(excluded_teams))
+                    & (target_gw_df["value"] <= available_funds)
+                ]
+                .sort_values(by="expected_points", ascending=False)
+                .head(5)
+            )
 
             for _, buy_row in pos_pool.iterrows():
                 buy_id = int(buy_row["element"])
                 # Check 3-per-team constraint
                 new_team = buy_row["team"]
-                team_count = sum(1 for _, r in current_squad_df.iterrows() if int(r["element"]) != sell_id and r["team"] == new_team)
+                team_count = sum(
+                    1 for _, r in current_squad_df.iterrows() if int(r["element"]) != sell_id and r["team"] == new_team
+                )
                 if team_count >= 3:
                     continue
 
                 # Construct trial squad
-                trial_squad = pd.concat([
-                    curr_squad_gw[curr_squad_gw["element"] != sell_id],
-                    target_gw_df[target_gw_df["element"] == buy_id]
-                ]).reset_index(drop=True)
+                trial_squad = pd.concat(
+                    [
+                        curr_squad_gw[curr_squad_gw["element"] != sell_id],
+                        target_gw_df[target_gw_df["element"] == buy_id],
+                    ]
+                ).reset_index(drop=True)
 
                 if len(trial_squad) == 15:
-                    trial_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad, risk_preference=risk_preference)
+                    trial_lineup = lineup_optimizer.select_lineup_and_captain(
+                        trial_squad, risk_preference=risk_preference
+                    )
                     trial_xp = trial_lineup["total_gameweek_expected_points"]
                     gain = trial_xp - base_xp
 
@@ -242,22 +267,26 @@ class TransferOptimizer:
                         best_1_transfer = {
                             "plan_type": "1_TRANSFER",
                             "transfers_count": 1,
-                            "transfers_in": [{
-                                "element": buy_id,
-                                "web_name": buy_row["web_name"],
-                                "team": _safe_team(buy_row["team"]),
-                                "position": buy_row["position"],
-                                "cost": buy_row["value"] / 10.0,
-                                "expected_points": round(float(buy_row["expected_points"]), 2)
-                            }],
-                            "transfers_out": [{
-                                "element": sell_id,
-                                "web_name": sell_row["web_name"],
-                                "team": _safe_team(sell_row["team"]),
-                                "position": sell_row["position"],
-                                "sell_price": sell_val / 10.0,
-                                "expected_points": round(float(sell_row.get("expected_points", 0.0)), 2)
-                            }],
+                            "transfers_in": [
+                                {
+                                    "element": buy_id,
+                                    "web_name": buy_row["web_name"],
+                                    "team": _safe_team(buy_row["team"]),
+                                    "position": buy_row["position"],
+                                    "cost": buy_row["value"] / 10.0,
+                                    "expected_points": round(float(buy_row["expected_points"]), 2),
+                                }
+                            ],
+                            "transfers_out": [
+                                {
+                                    "element": sell_id,
+                                    "web_name": sell_row["web_name"],
+                                    "team": _safe_team(sell_row["team"]),
+                                    "position": sell_row["position"],
+                                    "sell_price": sell_val / 10.0,
+                                    "expected_points": round(float(sell_row.get("expected_points", 0.0)), 2),
+                                }
+                            ],
                             "hits": 0,
                             "hit_cost": 0.0,
                             "gross_expected_points": round(trial_xp, 2),
@@ -266,7 +295,7 @@ class TransferOptimizer:
                             "remaining_bank": round((available_funds - buy_row["value"]) / 10.0, 2),
                             "next_banked_ft": 1,
                             "lineup": trial_lineup,
-                            "recommendation_summary": f"Transfer out {sell_row['web_name']} -> {buy_row['web_name']} (+{round(gain, 2)} xP)"
+                            "recommendation_summary": f"Transfer out {sell_row['web_name']} -> {buy_row['web_name']} (+{round(gain, 2)} xP)",
                         }
 
         # Step 3: Best 2 Transfers
@@ -288,24 +317,36 @@ class TransferOptimizer:
                 sell2_val = int(sell2_row["value"])
                 avail2 = sell2_val + rem_bank
 
-                pos2_pool = target_gw_df[
-                    (target_gw_df["position"] == sell2_pos) &
-                    (~target_gw_df["element"].isin(current_elements)) &
-                    (target_gw_df["element"] != first_in_id) &
-                    (~target_gw_df["element"].isin(locked_out)) &
-                    (target_gw_df["value"] <= avail2)
-                ].sort_values(by="expected_points", ascending=False).head(3)
+                pos2_pool = (
+                    target_gw_df[
+                        (target_gw_df["position"] == sell2_pos)
+                        & (~target_gw_df["element"].isin(current_elements))
+                        & (target_gw_df["element"] != first_in_id)
+                        & (~target_gw_df["element"].isin(locked_out))
+                        & (target_gw_df["value"] <= avail2)
+                    ]
+                    .sort_values(by="expected_points", ascending=False)
+                    .head(3)
+                )
 
                 for _, buy2_row in pos2_pool.iterrows():
                     buy2_id = int(buy2_row["element"])
                     # Construct 2-transfer trial squad
-                    trial_squad_2 = pd.concat([
-                        curr_squad_gw[(curr_squad_gw["element"] != first_out_id) & (curr_squad_gw["element"] != sell2_id)],
-                        target_gw_df[(target_gw_df["element"] == first_in_id) | (target_gw_df["element"] == buy2_id)]
-                    ]).reset_index(drop=True)
+                    trial_squad_2 = pd.concat(
+                        [
+                            curr_squad_gw[
+                                (curr_squad_gw["element"] != first_out_id) & (curr_squad_gw["element"] != sell2_id)
+                            ],
+                            target_gw_df[
+                                (target_gw_df["element"] == first_in_id) | (target_gw_df["element"] == buy2_id)
+                            ],
+                        ]
+                    ).reset_index(drop=True)
 
                     if len(trial_squad_2) == 15:
-                        trial2_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad_2, risk_preference=risk_preference)
+                        trial2_lineup = lineup_optimizer.select_lineup_and_captain(
+                            trial_squad_2, risk_preference=risk_preference
+                        )
                         trial2_xp = trial2_lineup["total_gameweek_expected_points"]
                         gross_gain = trial2_xp - base_xp
                         net_gain = gross_gain - hit_cost_2
@@ -323,8 +364,8 @@ class TransferOptimizer:
                                         "team": _safe_team(buy2_row["team"]),
                                         "position": buy2_row["position"],
                                         "cost": buy2_row["value"] / 10.0,
-                                        "expected_points": round(float(buy2_row["expected_points"]), 2)
-                                    }
+                                        "expected_points": round(float(buy2_row["expected_points"]), 2),
+                                    },
                                 ],
                                 "transfers_out": [
                                     best_1_transfer["transfers_out"][0],
@@ -334,8 +375,8 @@ class TransferOptimizer:
                                         "team": _safe_team(sell2_row["team"]),
                                         "position": sell2_row["position"],
                                         "sell_price": sell2_val / 10.0,
-                                        "expected_points": round(float(sell2_row.get("expected_points", 0.0)), 2)
-                                    }
+                                        "expected_points": round(float(sell2_row.get("expected_points", 0.0)), 2),
+                                    },
                                 ],
                                 "hits": 0 if free_transfers >= 2 else 1,
                                 "hit_cost": hit_cost_2,
@@ -347,9 +388,9 @@ class TransferOptimizer:
                                 "lineup": trial2_lineup,
                                 "recommendation_summary": (
                                     f"Take 2 transfers (Net +{round(net_gain, 2)} xP after {int(hit_cost_2)} pt hit)"
-                                    if hit_cost_2 > 0 else
-                                    f"Take 2 free transfers (Net +{round(net_gain, 2)} xP)"
-                                )
+                                    if hit_cost_2 > 0
+                                    else f"Take 2 free transfers (Net +{round(net_gain, 2)} xP)"
+                                ),
                             }
 
         # Step 4: Multi-Gameweek Transfer Roadmap (Next 4-5 GWs)
@@ -358,7 +399,7 @@ class TransferOptimizer:
             horizon_projections=horizon_projections,
             start_gw=target_gw,
             horizon_length=5,
-            starting_banked_ft=free_transfers
+            starting_banked_ft=free_transfers,
         )
 
         # Step 5: Final Decision & Hit Verdict
@@ -390,7 +431,7 @@ class TransferOptimizer:
             "transfer_roadmap": roadmap,
             "target_gameweek": target_gw,
             "current_bank_millions": bank / 10.0,
-            "available_free_transfers": free_transfers
+            "available_free_transfers": free_transfers,
         }
 
     def _generate_roadmap(
@@ -399,7 +440,7 @@ class TransferOptimizer:
         horizon_projections: dict[int, pd.DataFrame],
         start_gw: int,
         horizon_length: int = 5,
-        starting_banked_ft: int = 1
+        starting_banked_ft: int = 1,
     ) -> list[dict[str, Any]]:
         """
         Generate sequential transfer roadmap for next 4-6 gameweeks with banking and firm vs contingent status.
@@ -429,16 +470,23 @@ class TransferOptimizer:
                 reasoning = "Contingent on injury returns, form trends, and Set 1 GW19 chip preparation."
                 ft_next = min(5, running_ft + 1)
 
-            roadmap_steps.append({
-                "gameweek": gw,
-                "status": firmness,
-                "action": action,
-                "banked_free_transfers_projected": min(5, running_ft),
-                "key_targets": [f"{r['web_name']} ({r['expected_points']} xP)" for _, r in top_performers.iterrows()],
-                "strategic_focus": "Attack favorable fixture swing" if offset % 2 == 1 else "Consolidate core assets & bank FT",
-                "reasoning": reasoning
-            })
+            roadmap_steps.append(
+                {
+                    "gameweek": gw,
+                    "status": firmness,
+                    "action": action,
+                    "banked_free_transfers_projected": min(5, running_ft),
+                    "key_targets": [
+                        f"{r['web_name']} ({r['expected_points']} xP)" for _, r in top_performers.iterrows()
+                    ],
+                    "strategic_focus": "Attack favorable fixture swing"
+                    if offset % 2 == 1
+                    else "Consolidate core assets & bank FT",
+                    "reasoning": reasoning,
+                }
+            )
             running_ft = ft_next
         return roadmap_steps
+
 
 transfer_optimizer = TransferOptimizer()

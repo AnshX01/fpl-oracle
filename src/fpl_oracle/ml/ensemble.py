@@ -37,10 +37,10 @@ class ScoringEnsemble:
 
         # Goals scored points
         goal_pts_multiplier = (
-            pos_gkp * self.scoring["goals_scored"]["GKP"] +
-            pos_def * self.scoring["goals_scored"]["DEF"] +
-            pos_mid * self.scoring["goals_scored"]["MID"] +
-            pos_fwd * self.scoring["goals_scored"]["FWD"]
+            pos_gkp * self.scoring["goals_scored"]["GKP"]
+            + pos_def * self.scoring["goals_scored"]["DEF"]
+            + pos_mid * self.scoring["goals_scored"]["MID"]
+            + pos_fwd * self.scoring["goals_scored"]["FWD"]
         )
         exp_goal_pts = components["expected_goals"] * goal_pts_multiplier
 
@@ -49,17 +49,16 @@ class ScoringEnsemble:
 
         # Clean sheet points (requires >= 60 mins)
         cs_pts_multiplier = (
-            pos_gkp * self.scoring["clean_sheets"]["GKP"] +
-            pos_def * self.scoring["clean_sheets"]["DEF"] +
-            pos_mid * self.scoring["clean_sheets"]["MID"] +
-            pos_fwd * self.scoring["clean_sheets"]["FWD"]
+            pos_gkp * self.scoring["clean_sheets"]["GKP"]
+            + pos_def * self.scoring["clean_sheets"]["DEF"]
+            + pos_mid * self.scoring["clean_sheets"]["MID"]
+            + pos_fwd * self.scoring["clean_sheets"]["FWD"]
         )
         exp_cs_pts = components["p_clean_sheet"] * p_min60 * cs_pts_multiplier
 
         # Goals conceded deductions (-1 pt per 2 goals conceded for DEF/GKP)
-        gc_penalty_multiplier = (
-            pos_gkp * abs(self.scoring["goals_conceded"]["GKP"]) +
-            pos_def * abs(self.scoring["goals_conceded"]["DEF"])
+        gc_penalty_multiplier = pos_gkp * abs(self.scoring["goals_conceded"]["GKP"]) + pos_def * abs(
+            self.scoring["goals_conceded"]["DEF"]
         )
         exp_gc_deduction = (components["expected_goals_conceded"] / 2.0) * gc_penalty_multiplier
 
@@ -79,15 +78,15 @@ class ScoringEnsemble:
 
         # Total Expected Points
         xP = (
-            appearance_pts +
-            exp_goal_pts +
-            exp_assist_pts +
-            exp_cs_pts -
-            exp_gc_deduction +
-            exp_saves_pts +
-            exp_defcon_pts -
-            exp_card_deduction +
-            exp_bonus_pts
+            appearance_pts
+            + exp_goal_pts
+            + exp_assist_pts
+            + exp_cs_pts
+            - exp_gc_deduction
+            + exp_saves_pts
+            + exp_defcon_pts
+            - exp_card_deduction
+            + exp_bonus_pts
         )
         xP = np.clip(xP, 0.0, 25.0)
 
@@ -99,24 +98,27 @@ class ScoringEnsemble:
         p10 = np.clip(xP - 1.28 * sigma, 0.0, None)
         p50 = xP
         p90 = xP + 1.28 * sigma
-        variance = sigma ** 2
+        variance = sigma**2
 
-        res_df = pd.DataFrame({
-            "expected_points": np.round(xP, 2),
-            "p10": np.round(p10, 2),
-            "p50": np.round(p50, 2),
-            "p90": np.round(p90, 2),
-            "variance": np.round(variance, 2),
-            "exp_appearance": np.round(appearance_pts, 2),
-            "exp_goals_pts": np.round(exp_goal_pts, 2),
-            "exp_assists_pts": np.round(exp_assist_pts, 2),
-            "exp_cs_pts": np.round(exp_cs_pts, 2),
-            "exp_defcon_pts": np.round(exp_defcon_pts, 2),
-            "exp_bonus_pts": np.round(exp_bonus_pts, 2),
-            "p_starts": np.round(p_starts, 3),
-            "p_min60": np.round(p_min60, 3)
-        })
+        res_df = pd.DataFrame(
+            {
+                "expected_points": np.round(xP, 2),
+                "p10": np.round(p10, 2),
+                "p50": np.round(p50, 2),
+                "p90": np.round(p90, 2),
+                "variance": np.round(variance, 2),
+                "exp_appearance": np.round(appearance_pts, 2),
+                "exp_goals_pts": np.round(exp_goal_pts, 2),
+                "exp_assists_pts": np.round(exp_assist_pts, 2),
+                "exp_cs_pts": np.round(exp_cs_pts, 2),
+                "exp_defcon_pts": np.round(exp_defcon_pts, 2),
+                "exp_bonus_pts": np.round(exp_bonus_pts, 2),
+                "p_starts": np.round(p_starts, 3),
+                "p_min60": np.round(p_min60, 3),
+            }
+        )
 
         return res_df
+
 
 scoring_ensemble = ScoringEnsemble()

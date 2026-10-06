@@ -3,7 +3,6 @@ Defensive Contribution (DefCon) component model for 2026/27 rules.
 Predicts the probability that an outfield player achieves the 2-point DefCon reward.
 """
 
-
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -16,11 +15,7 @@ class DefConModel(BaseComponent):
     def __init__(self):
         super().__init__("defcon_model")
         self.clf = lgb.LGBMClassifier(
-            n_estimators=100,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1
+            n_estimators=100, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
         )
         self.calibrator = Calibrator("isotonic")
 
@@ -48,6 +43,4 @@ class DefConModel(BaseComponent):
         if "pos_GKP" in X.columns:
             p_defcon = p_defcon * (1.0 - X["pos_GKP"].values)
 
-        return {
-            "p_defcon": p_defcon
-        }
+        return {"p_defcon": p_defcon}

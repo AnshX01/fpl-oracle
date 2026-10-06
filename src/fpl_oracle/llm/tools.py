@@ -27,10 +27,8 @@ TOOL_DEFINITIONS = [
         "description": "Fetch current squad, bank, overall points, and chip history for user.",
         "parameters": {
             "type": "object",
-            "properties": {
-                "manager_id": {"type": "integer", "description": "Optional manager ID"}
-            }
-        }
+            "properties": {"manager_id": {"type": "integer", "description": "Optional manager ID"}},
+        },
     },
     {
         "name": "get_projections",
@@ -39,9 +37,9 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Player name or position filter"},
-                "horizon": {"type": "integer", "description": "Number of upcoming gameweeks (1-8)"}
-            }
-        }
+                "horizon": {"type": "integer", "description": "Number of upcoming gameweeks (1-8)"},
+            },
+        },
     },
     {
         "name": "optimise_transfers",
@@ -50,45 +48,35 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "locked_in": {"type": "array", "items": {"type": "integer"}, "description": "Player IDs to force keep"},
-                "locked_out": {"type": "array", "items": {"type": "integer"}, "description": "Player IDs to never buy"}
-            }
-        }
+                "locked_out": {"type": "array", "items": {"type": "integer"}, "description": "Player IDs to never buy"},
+            },
+        },
     },
     {
         "name": "plan_chips",
         "description": "Run Joint Chip Strategy Planner evaluating optimal gameweeks for Wildcard, Free Hit, Triple Captain, and Bench Boost across both Set 1 (GW1-19) and Set 2 (GW20-38).",
-        "parameters": {
-            "type": "object",
-            "properties": {}
-        }
+        "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "captain_options",
         "description": "Rank captaincy options for target gameweek with ceiling, floor, and safe vs differential picks.",
         "parameters": {
             "type": "object",
-            "properties": {
-                "gameweek": {"type": "integer", "description": "Target gameweek"}
-            }
-        }
+            "properties": {"gameweek": {"type": "integer", "description": "Target gameweek"}},
+        },
     },
     {
         "name": "league_analysis",
         "description": "Analyze mini-league standings, rival squads, template vs differential ownership, and win probability.",
         "parameters": {
             "type": "object",
-            "properties": {
-                "league_id": {"type": "integer", "description": "Target mini-league ID"}
-            }
-        }
+            "properties": {"league_id": {"type": "integer", "description": "Target mini-league ID"}},
+        },
     },
     {
         "name": "price_change_watch",
         "description": "Check imminent price rises and falls tonight based on net transfers, hourly rate, and market momentum.",
-        "parameters": {
-            "type": "object",
-            "properties": {}
-        }
+        "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "compare_players",
@@ -96,21 +84,23 @@ TOOL_DEFINITIONS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "player_names": {"type": "array", "items": {"type": "string"}, "description": "List of player names to compare"}
+                "player_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of player names to compare",
+                }
             },
-            "required": ["player_names"]
-        }
+            "required": ["player_names"],
+        },
     },
     {
         "name": "get_news",
         "description": "Fetch official injury, availability, and press conference signals for a specific player.",
         "parameters": {
             "type": "object",
-            "properties": {
-                "player_name": {"type": "string", "description": "Player name or web_name"}
-            },
-            "required": ["player_name"]
-        }
+            "properties": {"player_name": {"type": "string", "description": "Player name or web_name"}},
+            "required": ["player_name"],
+        },
     },
     {
         "name": "get_fixtures",
@@ -119,11 +109,12 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "team_id": {"type": "integer", "description": "Team ID"},
-                "gameweek": {"type": "integer", "description": "Gameweek number"}
-            }
-        }
-    }
+                "gameweek": {"type": "integer", "description": "Gameweek number"},
+            },
+        },
+    },
 ]
+
 
 class ToolExecutor:
     def __init__(self):
@@ -162,7 +153,10 @@ class ToolExecutor:
         profile = data_store.get_profile()
         m_id = args.get("manager_id") or profile.manager_id
         if not m_id:
-            return {"status": "no_manager_id", "message": "No manager ID configured. Please set in profile or pass manager_id."}
+            return {
+                "status": "no_manager_id",
+                "message": "No manager ID configured. Please set in profile or pass manager_id.",
+            }
 
         boot, _ = await fpl_client.get_bootstrap_static()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
@@ -176,15 +170,17 @@ class ToolExecutor:
         squad = []
         for p in picks.picks:
             elem = elem_map.get(p.element)
-            squad.append({
-                "element": p.element,
-                "web_name": elem.web_name if elem else f"Player {p.element}",
-                "team": elem.team if elem else 0,
-                "cost": (elem.now_cost / 10.0) if elem else 0.0,
-                "is_captain": p.is_captain,
-                "is_vice_captain": p.is_vice_captain,
-                "multiplier": p.multiplier
-            })
+            squad.append(
+                {
+                    "element": p.element,
+                    "web_name": elem.web_name if elem else f"Player {p.element}",
+                    "team": elem.team if elem else 0,
+                    "cost": (elem.now_cost / 10.0) if elem else 0.0,
+                    "is_captain": p.is_captain,
+                    "is_vice_captain": p.is_vice_captain,
+                    "multiplier": p.multiplier,
+                }
+            )
 
         bank_m = (picks.entry_history.bank / 10.0) if picks.entry_history else 0.0
         return {
@@ -194,7 +190,7 @@ class ToolExecutor:
             "overall_rank": entry.summary_overall_rank,
             "bank_millions": bank_m,
             "chips_used": [c.name for c in history.chips],
-            "squad": squad
+            "squad": squad,
         }
 
     async def _tool_get_projections(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -211,24 +207,25 @@ class ToolExecutor:
 
         if query:
             filtered = df_target[
-                df_target["web_name"].str.lower().str.contains(query) |
-                (df_target["position"].str.lower() == query)
+                df_target["web_name"].str.lower().str.contains(query) | (df_target["position"].str.lower() == query)
             ]
         else:
             filtered = df_target.head(15)
 
         results = []
         for _, row in filtered.head(15).iterrows():
-            results.append({
-                "web_name": row["web_name"],
-                "team": int(row["team"]),
-                "position": row["position"],
-                "cost": row["value"] / 10.0,
-                "expected_points_gw": round(float(row["expected_points"]), 2),
-                "p10_floor": round(float(row["p10"]), 2),
-                "p90_ceiling": round(float(row["p90"]), 2),
-                "exp_defcon_points": round(float(row["exp_defcon_pts"]), 2)
-            })
+            results.append(
+                {
+                    "web_name": row["web_name"],
+                    "team": int(row["team"]),
+                    "position": row["position"],
+                    "cost": row["value"] / 10.0,
+                    "expected_points_gw": round(float(row["expected_points"]), 2),
+                    "p10_floor": round(float(row["p10"]), 2),
+                    "p90_ceiling": round(float(row["p90"]), 2),
+                    "exp_defcon_points": round(float(row["exp_defcon_pts"]), 2),
+                }
+            )
 
         return {"gameweek": target_gw, "horizon": horizon, "players": results}
 
@@ -245,7 +242,7 @@ class ToolExecutor:
         # Load user squad or generate standard template if not loaded
         m_id = profile.manager_id
         current_squad_df = None
-        bank = 5.0 # default £0.5m
+        bank = 5.0  # default £0.5m
         ft = profile.free_transfers or 1
 
         if m_id:
@@ -272,7 +269,7 @@ class ToolExecutor:
             current_gw=curr_gw or 5,
             target_gw=target_gw,
             locked_in_ids=args.get("locked_in"),
-            locked_out_ids=args.get("locked_out")
+            locked_out_ids=args.get("locked_out"),
         )
         return {
             "decision": opt_res["recommended_plan"]["recommendation_summary"],
@@ -283,11 +280,11 @@ class ToolExecutor:
                     "summary": p["recommendation_summary"],
                     "net_xp": p["net_expected_points"],
                     "gain": p["expected_gain"],
-                    "hits": p["hits"]
+                    "hits": p["hits"],
                 }
                 for p in opt_res["candidate_plans"]
             ],
-            "roadmap": opt_res["transfer_roadmap"]
+            "roadmap": opt_res["transfer_roadmap"],
         }
 
     async def _tool_plan_chips(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -313,12 +310,9 @@ class ToolExecutor:
             horizon_projections=horizon_proj,
             fixtures=fixtures,
             bootstrap=boot,
-            manager_history=hist
+            manager_history=hist,
         )
-        return {
-            "set_1_warning": chip_res["set_1_deadline_warning"],
-            "chip_table": chip_res["chip_plan_table"]
-        }
+        return {"set_1_warning": chip_res["set_1_deadline_warning"], "chip_table": chip_res["chip_plan_table"]}
 
     async def _tool_captain_options(self, args: dict[str, Any]) -> dict[str, Any]:
         boot, _ = await fpl_client.get_bootstrap_static()
@@ -332,7 +326,9 @@ class ToolExecutor:
             "gameweek": gw,
             "safe_captain": top5.iloc[0]["web_name"],
             "differential_captain": top5.iloc[1]["web_name"] if len(top5) > 1 else top5.iloc[0]["web_name"],
-            "candidates": top5[["web_name", "position", "team", "expected_points", "p10", "p90"]].to_dict(orient="records")
+            "candidates": top5[["web_name", "position", "team", "expected_points", "p10", "p90"]].to_dict(
+                orient="records"
+            ),
         }
 
     async def _tool_league_analysis(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -350,7 +346,7 @@ class ToolExecutor:
             user_manager_id=profile.manager_id,
             current_gw=curr_gw or 5,
             bootstrap=boot,
-            max_rivals_to_inspect=6
+            max_rivals_to_inspect=6,
         )
 
         return {
@@ -363,10 +359,10 @@ class ToolExecutor:
                     "rank": r["rank"],
                     "name": r["player_name"],
                     "total_points": r["total_points"],
-                    "chips_used": r["chips_used"]
+                    "chips_used": r["chips_used"],
                 }
                 for r in rivals_res["rival_squads"][:5]
-            ]
+            ],
         }
 
     async def _tool_price_change_watch(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -374,10 +370,7 @@ class ToolExecutor:
         predictions = price_change_predictor.analyze_price_changes(boot)
         rises = [p for p in predictions if p["direction"] in ["RISE_IMMINENT", "LIKELY_RISE"]][:5]
         falls = [p for p in predictions if p["direction"] in ["FALL_IMMINENT", "LIKELY_FALL"]][:5]
-        return {
-            "imminent_rises": rises,
-            "imminent_falls": falls
-        }
+        return {"imminent_rises": rises, "imminent_falls": falls}
 
     async def _tool_compare_players(self, args: dict[str, Any]) -> dict[str, Any]:
         boot, _ = await fpl_client.get_bootstrap_static()
@@ -392,15 +385,17 @@ class ToolExecutor:
             sub = gw_df[gw_df["web_name"].str.lower().str.contains(name)]
             if not sub.empty:
                 r = sub.iloc[0]
-                matches.append({
-                    "web_name": r["web_name"],
-                    "position": r["position"],
-                    "cost": r["value"] / 10.0,
-                    "expected_points": round(float(r["expected_points"]), 2),
-                    "p10": round(float(r["p10"]), 2),
-                    "p90": round(float(r["p90"]), 2),
-                    "defcon_pts": round(float(r["exp_defcon_pts"]), 2)
-                })
+                matches.append(
+                    {
+                        "web_name": r["web_name"],
+                        "position": r["position"],
+                        "cost": r["value"] / 10.0,
+                        "expected_points": round(float(r["expected_points"]), 2),
+                        "p10": round(float(r["p10"]), 2),
+                        "p90": round(float(r["p90"]), 2),
+                        "defcon_pts": round(float(r["exp_defcon_pts"]), 2),
+                    }
+                )
 
         return {"gameweek": next_gw or 6, "comparisons": matches}
 
@@ -410,9 +405,9 @@ class ToolExecutor:
         team_map = {t.id: t.name for t in boot.teams}
 
         matching = [
-            e for e in boot.elements
-            if player_query in e.web_name.lower() or
-            player_query in f"{e.first_name} {e.second_name}".lower()
+            e
+            for e in boot.elements
+            if player_query in e.web_name.lower() or player_query in f"{e.first_name} {e.second_name}".lower()
         ]
         if not matching:
             return {"status": "not_found", "message": f"No player matching '{player_query}' found in database."}
@@ -426,10 +421,12 @@ class ToolExecutor:
             "team": team_map.get(p.team, "Unknown"),
             "is_fit": is_fit,
             "availability_status": p.status,
-            "chance_of_playing": p.chance_of_playing_next_round if p.chance_of_playing_next_round is not None else (100 if is_fit else 0),
+            "chance_of_playing": p.chance_of_playing_next_round
+            if p.chance_of_playing_next_round is not None
+            else (100 if is_fit else 0),
             "news": p.news or "No current injury or suspension news reported.",
             "source": "Official Premier League / FPL API",
-            "confidence": 1.0
+            "confidence": 1.0,
         }
 
     async def _tool_get_fixtures(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -445,14 +442,17 @@ class ToolExecutor:
                 continue
             if team_id and f.team_h != team_id and f.team_a != team_id:
                 continue
-            res.append({
-                "event": f.event,
-                "home_team": team_map.get(f.team_h, f"Team {f.team_h}"),
-                "away_team": team_map.get(f.team_a, f"Team {f.team_a}"),
-                "difficulty_home": f.team_h_difficulty,
-                "difficulty_away": f.team_a_difficulty,
-                "kickoff_time": f.kickoff_time
-            })
+            res.append(
+                {
+                    "event": f.event,
+                    "home_team": team_map.get(f.team_h, f"Team {f.team_h}"),
+                    "away_team": team_map.get(f.team_a, f"Team {f.team_a}"),
+                    "difficulty_home": f.team_h_difficulty,
+                    "difficulty_away": f.team_a_difficulty,
+                    "kickoff_time": f.kickoff_time,
+                }
+            )
         return {"fixtures": res[:10]}
+
 
 tool_executor = ToolExecutor()

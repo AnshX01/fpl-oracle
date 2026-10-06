@@ -3,7 +3,6 @@ Attacking component model.
 Predicts expected goals (xG) and expected assists (xA).
 """
 
-
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -21,7 +20,7 @@ class AttackingModel(BaseComponent):
             learning_rate=0.05,
             num_leaves=31,
             random_state=42,
-            verbosity=-1
+            verbosity=-1,
         )
         self.reg_assists = lgb.LGBMRegressor(
             objective="tweedie",
@@ -30,7 +29,7 @@ class AttackingModel(BaseComponent):
             learning_rate=0.05,
             num_leaves=31,
             random_state=42,
-            verbosity=-1
+            verbosity=-1,
         )
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
@@ -51,7 +50,4 @@ class AttackingModel(BaseComponent):
             exp_goals = exp_goals * (1.0 - is_gkp * 0.98)
             exp_assists = exp_assists * (1.0 - is_gkp * 0.95)
 
-        return {
-            "expected_goals": exp_goals,
-            "expected_assists": exp_assists
-        }
+        return {"expected_goals": exp_goals, "expected_assists": exp_assists}

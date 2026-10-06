@@ -11,6 +11,7 @@ from fpl_oracle.llm.tools import TOOL_DEFINITIONS, tool_executor
 
 logger = logging.getLogger("fpl_oracle.llm.anthropic")
 
+
 class AnthropicProvider:
     def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022"):
         self.api_key = api_key
@@ -19,11 +20,7 @@ class AnthropicProvider:
 
     async def chat(self, messages: list[dict[str, Any]], system_prompt: str) -> str:
         formatted_tools = [
-            {
-                "name": t["name"],
-                "description": t["description"],
-                "input_schema": t["parameters"]
-            }
+            {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
             for t in TOOL_DEFINITIONS
         ]
 
@@ -33,14 +30,10 @@ class AnthropicProvider:
             "messages": messages,
             "tools": formatted_tools,
             "max_tokens": 2048,
-            "temperature": 0.2
+            "temperature": 0.2,
         }
 
-        headers = {
-            "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        }
+        headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
 
         async with httpx.AsyncClient(timeout=45.0) as client:
             resp = await client.post(self.url, json=payload, headers=headers)
@@ -58,21 +51,27 @@ class AnthropicProvider:
                     tool_res = await tool_executor.execute(fn_name, fn_args)
 
                     import json
+
                     followup_messages = list(messages)
                     followup_messages.append({"role": "assistant", "content": content})
-                    followup_messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": block["id"],
-                            "content": json.dumps(tool_res)
-                        }]
-                    })
+                    followup_messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(tool_res)}
+                            ],
+                        }
+                    )
 
                     resp2 = await client.post(
                         self.url,
-                        json={"model": self.model, "system": system_prompt, "messages": followup_messages, "max_tokens": 2048},
-                        headers=headers
+                        json={
+                            "model": self.model,
+                            "system": system_prompt,
+                            "messages": followup_messages,
+                            "max_tokens": 2048,
+                        },
+                        headers=headers,
                     )
                     if resp2.status_code == 200:
                         res2 = resp2.json()

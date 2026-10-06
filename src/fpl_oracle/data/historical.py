@@ -28,7 +28,7 @@ POSITION_MAP = {
     "GK": "GKP",
     "DEF": "DEF",
     "MID": "MID",
-    "FWD": "FWD"
+    "FWD": "FWD",
 }
 
 STANDARD_COLUMNS = [
@@ -65,8 +65,9 @@ STANDARD_COLUMNS = [
     "expected_goals_conceded",
     "defensive_contribution",
     "value",
-    "total_points"
+    "total_points",
 ]
+
 
 class HistoricalDataManager:
     def __init__(self):
@@ -188,7 +189,7 @@ class HistoricalDataManager:
                             "expected_goals_conceded": h.expected_goals_conceded,
                             "defensive_contribution": h.defensive_contribution or 0,
                             "value": h.value,
-                            "total_points": h.total_points
+                            "total_points": h.total_points,
                         }
                         records.append(rec)
                 except Exception as ex:
@@ -213,12 +214,32 @@ class HistoricalDataManager:
 
         # Numeric conversions
         numeric_cols = [
-            "round", "minutes", "goals_scored", "assists", "clean_sheets",
-            "goals_conceded", "own_goals", "penalties_saved", "penalties_missed",
-            "yellow_cards", "red_cards", "saves", "bonus", "bps",
-            "influence", "creativity", "threat", "ict_index", "starts",
-            "expected_goals", "expected_assists", "expected_goal_involvements",
-            "expected_goals_conceded", "defensive_contribution", "value", "total_points"
+            "round",
+            "minutes",
+            "goals_scored",
+            "assists",
+            "clean_sheets",
+            "goals_conceded",
+            "own_goals",
+            "penalties_saved",
+            "penalties_missed",
+            "yellow_cards",
+            "red_cards",
+            "saves",
+            "bonus",
+            "bps",
+            "influence",
+            "creativity",
+            "threat",
+            "ict_index",
+            "starts",
+            "expected_goals",
+            "expected_assists",
+            "expected_goal_involvements",
+            "expected_goals_conceded",
+            "defensive_contribution",
+            "value",
+            "total_points",
         ]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
@@ -231,5 +252,6 @@ class HistoricalDataManager:
         # Sort chronologically by season and round
         df = df.sort_values(by=["season", "round", "element"]).reset_index(drop=True)
         return df
+
 
 historical_manager = HistoricalDataManager()

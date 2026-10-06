@@ -59,9 +59,7 @@ def test_rules_checker_valid(valid_bootstrap: BootstrapStatic):
 def test_rules_checker_detects_assistant_manager(valid_bootstrap: BootstrapStatic):
     checker = LiveRulesChecker()
     # Add assistant manager chip
-    valid_bootstrap.chips.append(
-        ChipDefinition(name="manager", chip_type="team", start_event=1, stop_event=38)
-    )
+    valid_bootstrap.chips.append(ChipDefinition(name="manager", chip_type="team", start_event=1, stop_event=38))
     res = checker.verify(valid_bootstrap)
     assert res.verified is False
     assert any("Assistant Manager" in m or "chips mismatch" in m for m in res.mismatches)

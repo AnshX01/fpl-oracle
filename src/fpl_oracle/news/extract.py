@@ -17,4 +17,5 @@ class TextExtractor:
         text = re.sub(r"\s+", " ", text).strip()
         return text
 
+
 text_extractor = TextExtractor()

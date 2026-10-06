@@ -55,18 +55,20 @@ def make_mock_squad_df() -> pd.DataFrame:
     e_id = 1
     for pos, count in roles:
         for _ in range(count):
-            elements.append({
-                "element": e_id,
-                "web_name": f"Player_{e_id}",
-                "position": pos,
-                "team": (e_id % 10) + 1,
-                "now_cost": 50 + (e_id % 40),
-                "selling_price": 50 + (e_id % 40),
-                "expected_points": round(float(np.random.uniform(1.0, 9.0)), 2),
-                "p10_points": 1.0,
-                "p90_points": 12.0,
-                "chance_of_playing": 100.0,
-            })
+            elements.append(
+                {
+                    "element": e_id,
+                    "web_name": f"Player_{e_id}",
+                    "position": pos,
+                    "team": (e_id % 10) + 1,
+                    "now_cost": 50 + (e_id % 40),
+                    "selling_price": 50 + (e_id % 40),
+                    "expected_points": round(float(np.random.uniform(1.0, 9.0)), 2),
+                    "p10_points": 1.0,
+                    "p90_points": 12.0,
+                    "chance_of_playing": 100.0,
+                }
+            )
             e_id += 1
     return pd.DataFrame(elements)
 
@@ -122,18 +124,20 @@ def test_squad_optimizer_budget_and_quota_invariants(budget_tenths: int):
     for pos, count in [("GKP", 6), ("DEF", 20), ("MID", 20), ("FWD", 14)]:
         for i in range(count):
             team_id = (i % 20) + 1
-            cost = 40 + (i % 30) # £4.0m to £7.0m
-            pool.append({
-                "element": e_id,
-                "web_name": f"P_{e_id}",
-                "position": pos,
-                "team": team_id,
-                "now_cost": cost,
-                "value": cost,
-                "expected_points": 2.5 + (cost / 15.0),
-                "p10_points": 1.0,
-                "p90_points": 8.0,
-            })
+            cost = 40 + (i % 30)  # £4.0m to £7.0m
+            pool.append(
+                {
+                    "element": e_id,
+                    "web_name": f"P_{e_id}",
+                    "position": pos,
+                    "team": team_id,
+                    "now_cost": cost,
+                    "value": cost,
+                    "expected_points": 2.5 + (cost / 15.0),
+                    "p10_points": 1.0,
+                    "p90_points": 8.0,
+                }
+            )
             e_id += 1
 
     pool_df = pd.DataFrame(pool)

@@ -19,9 +19,7 @@ class PostGameweekReviewer:
         pass
 
     async def generate_gameweek_review(
-        self,
-        manager_id: int | None = None,
-        gameweek: int | None = None
+        self, manager_id: int | None = None, gameweek: int | None = None
     ) -> dict[str, Any]:
         """
         Generate diagnostic review of a completed gameweek.
@@ -53,14 +51,16 @@ class PostGameweekReviewer:
 
                 for p in picks.picks:
                     e = elem_map.get(p.element)
-                    picks_data.append({
-                        "element": p.element,
-                        "web_name": e.web_name if e else f"Player {p.element}",
-                        "position": p.position,
-                        "multiplier": p.multiplier,
-                        "is_captain": p.is_captain,
-                        "is_vice_captain": p.is_vice_captain
-                    })
+                    picks_data.append(
+                        {
+                            "element": p.element,
+                            "web_name": e.web_name if e else f"Player {p.element}",
+                            "position": p.position,
+                            "multiplier": p.multiplier,
+                            "is_captain": p.is_captain,
+                            "is_vice_captain": p.is_vice_captain,
+                        }
+                    )
             except Exception as ex:
                 logger.warning("Error fetching manager picks for GW review: %s", ex)
 
@@ -75,7 +75,7 @@ class PostGameweekReviewer:
         learnings = [
             f"Gameweek {target_gw} actual score of {actual_points} pts recorded against competitive mini-league.",
             "Autosub and bench hierarchy operated as contingency failsafe.",
-            "Variance remains within calibrated [P10, P90] confidence bands."
+            "Variance remains within calibrated [P10, P90] confidence bands.",
         ]
         for kl in learnings:
             md_lines.append(f"- {kl}")
@@ -96,7 +96,7 @@ class PostGameweekReviewer:
             "key_learnings": learnings,
             "contingency_assessment": "Lineup decisions executed within pre-deadline risk thresholds.",
             "review_markdown": review_md,
-            "data_as_of": datetime.now(UTC).isoformat()
+            "data_as_of": datetime.now(UTC).isoformat(),
         }
 
 

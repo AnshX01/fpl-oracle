@@ -70,7 +70,9 @@ class LiveRulesChecker:
         if team_limit != cfg_squad.get("max_per_team", 3):
             mismatches.append(f"Team limit mismatch: API {team_limit} vs config {cfg_squad.get('max_per_team')}")
         if spend_budget != cfg_squad.get("starting_budget_tenths", 1000):
-            mismatches.append(f"Budget mismatch: API {spend_budget} vs config {cfg_squad.get('starting_budget_tenths')}")
+            mismatches.append(
+                f"Budget mismatch: API {spend_budget} vs config {cfg_squad.get('starting_budget_tenths')}"
+            )
 
         details["squad_constraints"] = {
             "squad_size": squad_size,
@@ -86,9 +88,11 @@ class LiveRulesChecker:
         sell_at_purchase = bool(game_settings.get("element_sell_at_purchase_price", False))
 
         cfg_transfers = rules_cfg.get("transfers", {})
-        expected_max_banked = 1 + max_extra_ft # 1 base + 4 extra = 5
+        expected_max_banked = 1 + max_extra_ft  # 1 base + 4 extra = 5
         if expected_max_banked != cfg_transfers.get("max_banked_free_transfers", 5):
-            mismatches.append(f"Banked FTs mismatch: API {expected_max_banked} vs config {cfg_transfers.get('max_banked_free_transfers')}")
+            mismatches.append(
+                f"Banked FTs mismatch: API {expected_max_banked} vs config {cfg_transfers.get('max_banked_free_transfers')}"
+            )
         if sell_on_fee != float(cfg_transfers.get("sell_on_fee", 0.5)):
             mismatches.append(f"Sell-on fee mismatch: API {sell_on_fee} vs config {cfg_transfers.get('sell_on_fee')}")
         if sell_at_purchase is True:
@@ -98,7 +102,9 @@ class LiveRulesChecker:
             "max_banked_transfers": expected_max_banked,
             "transfers_sell_on_fee": sell_on_fee,
             "element_sell_at_purchase_price": sell_at_purchase,
-            "status": "PASS" if not any("FT" in m or "fee" in m or "purchase_price" in m for m in mismatches) else "FAIL",
+            "status": "PASS"
+            if not any("FT" in m or "fee" in m or "purchase_price" in m for m in mismatches)
+            else "FAIL",
         }
 
         # 3. Chips Configuration (2026/27 2-set structure)
@@ -112,7 +118,9 @@ class LiveRulesChecker:
         if "manager" in chip_names or "assistant_manager" in chip_names:
             mismatches.append("Assistant Manager chip unexpectedly present in live 2026/27 API")
         if len(set1_chips) != 4 or len(set2_chips) != 4:
-            mismatches.append(f"Chip sets mismatch: Set 1 has {len(set1_chips)} chips, Set 2 has {len(set2_chips)} chips (expected 4 each)")
+            mismatches.append(
+                f"Chip sets mismatch: Set 1 has {len(set1_chips)} chips, Set 2 has {len(set2_chips)} chips (expected 4 each)"
+            )
 
         details["chips_structure"] = {
             "total_chips": len(chips),
@@ -138,14 +146,18 @@ class LiveRulesChecker:
             cfg_cs = scoring_cfg.get("clean_sheets", {})
             for pos in ["GKP", "DEF", "MID"]:
                 if cs_api.get(pos) != cfg_cs.get(pos):
-                    mismatches.append(f"Clean sheet scoring mismatch for {pos}: API {cs_api.get(pos)} vs config {cfg_cs.get(pos)}")
+                    mismatches.append(
+                        f"Clean sheet scoring mismatch for {pos}: API {cs_api.get(pos)} vs config {cfg_cs.get(pos)}"
+                    )
 
             # Check Goals
             goals_api = scoring_api.get("goals_scored", {})
             cfg_goals = scoring_cfg.get("goals_scored", {})
             for pos in ["GKP", "DEF", "MID", "FWD"]:
                 if goals_api.get(pos) != cfg_goals.get(pos):
-                    mismatches.append(f"Goal scoring mismatch for {pos}: API {goals_api.get(pos)} vs config {cfg_goals.get(pos)}")
+                    mismatches.append(
+                        f"Goal scoring mismatch for {pos}: API {goals_api.get(pos)} vs config {cfg_goals.get(pos)}"
+                    )
 
             # Check Assists & Saves
             if scoring_api.get("assists") != scoring_cfg.get("assists", {}).get("MID", 3):
@@ -156,12 +168,14 @@ class LiveRulesChecker:
                 "clean_sheet_points": cs_api,
                 "goal_points": goals_api,
                 "assists_points": scoring_api.get("assists"),
-                "status": "PASS" if not any("scoring" in m.lower() or "defcon" in m.lower() for m in mismatches) else "FAIL",
+                "status": "PASS"
+                if not any("scoring" in m.lower() or "defcon" in m.lower() for m in mismatches)
+                else "FAIL",
             }
         else:
             details["scoring_and_defcon"] = {"status": "SKIPPED_NO_API_SCORING"}
 
-        verified = (len(mismatches) == 0)
+        verified = len(mismatches) == 0
         if not verified:
             for m in mismatches:
                 logger.warning("Rules verification alert: %s", m)

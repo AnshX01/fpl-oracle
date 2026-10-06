@@ -25,21 +25,42 @@ Scoring standard:
 Never invent news or fixtures. Always cite data and sources.
 """
 
+
 class OfflineExpertProvider:
     """
     Offline data-grounded expert analyst that executes live tools
     and generates structured FPL Oracle recommendations without external API keys.
     """
+
     async def chat(self, messages: list[dict[str, str]], system_prompt: str) -> str:
         last_raw = messages[-1]["content"] if messages else ""
         last_msg = last_raw.lower()
         import re
+
         tokens = set(re.findall(r"\w+", last_msg))
 
         # 1. Comparison questions (e.g., "Explain why you picked Saka over Palmer", "compare Saka vs Palmer")
-        if "compare" in tokens or "vs" in tokens or ("over" in tokens and any(p in tokens for p in ["saka", "palmer", "haaland", "watkins", "foden", "salah"])):
+        if (
+            "compare" in tokens
+            or "vs" in tokens
+            or (
+                "over" in tokens
+                and any(p in tokens for p in ["saka", "palmer", "haaland", "watkins", "foden", "salah"])
+            )
+        ):
             players_to_compare = []
-            known_stars = ["saka", "palmer", "haaland", "watkins", "foden", "salah", "fernandes", "mbeumo", "diaz", "son"]
+            known_stars = [
+                "saka",
+                "palmer",
+                "haaland",
+                "watkins",
+                "foden",
+                "salah",
+                "fernandes",
+                "mbeumo",
+                "diaz",
+                "son",
+            ]
             for star in known_stars:
                 if star in tokens:
                     players_to_compare.append(star.capitalize())
@@ -70,7 +91,9 @@ class OfflineExpertProvider:
             roadmap = res.get("roadmap", [])
             rows = []
             for step in roadmap:
-                rows.append(f"| **GW {step['gameweek']}** | {step['status']} | {step['action']} | Banked FT: {step.get('banked_free_transfers_projected', 1)} | {', '.join(step.get('key_targets', [])[:2])} |")
+                rows.append(
+                    f"| **GW {step['gameweek']}** | {step['status']} | {step['action']} | Banked FT: {step.get('banked_free_transfers_projected', 1)} | {', '.join(step.get('key_targets', [])[:2])} |"
+                )
             roadmap_table = "\n".join(rows)
             return (
                 f"### 🗺️ Multi-Gameweek Transfer Roadmap (Next 5 GWs)\n"
@@ -82,8 +105,12 @@ class OfflineExpertProvider:
             )
 
         # 3. Differentials under budget questions (e.g., "best differential midfielder under 6.5")
-        if "differential" in tokens or ("under" in tokens and any(pos in tokens for pos in ["midfielder", "mid", "defender", "forward"])):
-            pos_filter = "MID" if any(w in tokens for w in ["midfielder", "mid"]) else ("DEF" if "defender" in tokens else "FWD")
+        if "differential" in tokens or (
+            "under" in tokens and any(pos in tokens for pos in ["midfielder", "mid", "defender", "forward"])
+        ):
+            pos_filter = (
+                "MID" if any(w in tokens for w in ["midfielder", "mid"]) else ("DEF" if "defender" in tokens else "FWD")
+            )
             proj = await tool_executor.execute("get_projections", {"query": pos_filter, "horizon": 3})
             players = proj.get("players", [])
             # Filter players <= 6.5m
@@ -91,7 +118,10 @@ class OfflineExpertProvider:
             if not budget_cands:
                 budget_cands = players[:3]
             top3 = budget_cands[:3]
-            c_lines = [f"- **{c['web_name']}** (£{c.get('cost', 6.0)}m): {c['expected_points_gw']} xP (DefCon: +{c.get('exp_defcon_points', 0.0)})" for c in top3]
+            c_lines = [
+                f"- **{c['web_name']}** (£{c.get('cost', 6.0)}m): {c['expected_points_gw']} xP (DefCon: +{c.get('exp_defcon_points', 0.0)})"
+                for c in top3
+            ]
             best_diff = top3[0]["web_name"] if top3 else "Rogers"
             return (
                 f"### 🚀 Top Differential {pos_filter}s (Under £6.5m)\n"
@@ -109,7 +139,9 @@ class OfflineExpertProvider:
             warning = res.get("set_1_warning", "")
             table_rows = []
             for row in res.get("chip_table", [])[:4]:
-                table_rows.append(f"| **{row['chip']}** | GW {row['recommended_gw']} | +{row['expected_gain']} pts | {row['confidence']} | {row['reasoning']} |")
+                table_rows.append(
+                    f"| **{row['chip']}** | GW {row['recommended_gw']} | +{row['expected_gain']} pts | {row['confidence']} | {row['reasoning']} |"
+                )
 
             table_str = "\n".join(table_rows)
             return (
@@ -128,7 +160,10 @@ class OfflineExpertProvider:
             safe = res["safe_captain"]
             diff = res["differential_captain"]
             cands = res["candidates"]
-            lines = [f"- **{c['web_name']}**: {c['expected_points']} xP (Floor: {c['p10']}, Ceiling: {c['p90']})" for c in cands[:3]]
+            lines = [
+                f"- **{c['web_name']}**: {c['expected_points']} xP (Floor: {c['p10']}, Ceiling: {c['p90']})"
+                for c in cands[:3]
+            ]
             return (
                 f"### 🎯 Captaincy Recommendation for Gameweek {res['gameweek']}\n"
                 f"**The Decision:** Captain **{safe}** (Safe/Template) or **{diff}** (High-Variance Differential).\n\n"
@@ -139,8 +174,41 @@ class OfflineExpertProvider:
             )
 
         # 6. Injury & Availability questions
-        if any(w in tokens for w in ["injury", "injuries", "injured", "fit", "fitness", "available", "availability", "doubt", "doubtful", "knock"]):
-            ignore_words = {"is", "are", "the", "for", "upcoming", "match", "game", "gameweek", "gw", "injured", "injury", "fit", "available", "out", "doubtful", "playing", "next", "round"}
+        if any(
+            w in tokens
+            for w in [
+                "injury",
+                "injuries",
+                "injured",
+                "fit",
+                "fitness",
+                "available",
+                "availability",
+                "doubt",
+                "doubtful",
+                "knock",
+            ]
+        ):
+            ignore_words = {
+                "is",
+                "are",
+                "the",
+                "for",
+                "upcoming",
+                "match",
+                "game",
+                "gameweek",
+                "gw",
+                "injured",
+                "injury",
+                "fit",
+                "available",
+                "out",
+                "doubtful",
+                "playing",
+                "next",
+                "round",
+            }
             cand_tokens = [w for w in tokens if w not in ignore_words and len(w) > 2]
             player_cand = cand_tokens[0] if cand_tokens else last_msg
             news_res = await tool_executor.execute("get_news", {"query": player_cand})
@@ -181,22 +249,28 @@ class OfflineExpertProvider:
             )
 
         # 7. Specific entity / player projection lookup and unknown player handling
+        # Match full player name/token after a preposition
         entity_match = re.search(r"(?:for|about|is|on)\s+([a-zA-Z0-9_\-]+)", last_raw, re.IGNORECASE)
         if ("projected" in tokens or "points" in tokens or "xp" in tokens) and entity_match:
             entity = entity_match.group(1).strip()
-            proj_res = await tool_executor.execute("get_projections", {"query": entity})
-            players = proj_res.get("players", [])
-            exact_or_close = [
-                p for p in players
-                if entity.lower() in p["web_name"].lower() or p["web_name"].lower() in entity.lower()
-            ]
+            # Short-circuit: obviously fictitious/unknown entity names (contain digits mixed with letters)
+            is_obviously_unknown = any(c.isdigit() for c in entity) or len(entity) > 30
+            if not is_obviously_unknown:
+                proj_res = await tool_executor.execute("get_projections", {"query": entity})
+                players = proj_res.get("players", [])
+                exact_or_close = [
+                    p for p in players
+                    if entity.lower() in p["web_name"].lower() or p["web_name"].lower() in entity.lower()
+                ]
+            else:
+                exact_or_close = []
             if exact_or_close:
                 p = exact_or_close[0]
                 return (
                     f"### 📊 Player Profile & Projections: **{p['web_name']}**\n"
                     f"- **Position:** {p['position']} | **Cost:** £{p.get('cost', 5.0)}m\n"
                     f"- **Gameweek {proj_res.get('gameweek')} Projected Points:** **{p['expected_points_gw']} xP**\n"
-                    f"- **Uncertainty:** Floor P10: {p['p10']}, Ceiling P90: {p['p90']}\n"
+                    f"- **Uncertainty:** Floor P10: {p.get('p10_floor', p.get('p10', '?'))}, Ceiling P90: {p.get('p90_ceiling', p.get('p90', '?'))}\n"
                     f"- **Defensive Contribution:** +{p.get('exp_defcon_points', 0.0)} pts\n\n"
                     f"**Source:** Sourced directly from live 2026/27 ML component inference."
                 )
@@ -204,11 +278,14 @@ class OfflineExpertProvider:
                 return (
                     f"### 🔍 Player Lookup: Not Found\n"
                     f"I could not find any active Premier League player matching **'{entity}'** in the official 2026/27 database. "
-                    f"Unable to locate data or player records."
+                    f"This player is unknown or not registered in the current season. Unable to locate data or player records.\n"
+                    f"Please verify the spelling or confirm the player is registered in FPL 2026/27."
                 )
 
         # 8. Price changes
-        if any(w in tokens for w in ["rise", "rises", "fall", "falls", "drop", "drops"]) or ("price" in tokens and any(w in tokens for w in ["change", "changes", "tonight", "watch", "imminent"])):
+        if any(w in tokens for w in ["rise", "rises", "fall", "falls", "drop", "drops"]) or (
+            "price" in tokens and any(w in tokens for w in ["change", "changes", "tonight", "watch", "imminent"])
+        ):
             res = await tool_executor.execute("price_change_watch", {})
             rises = [f"**{p['web_name']}** ({p['urgency_message']})" for p in res.get("imminent_rises", [])[:3]]
             falls = [f"**{p['web_name']}** ({p['urgency_message']})" for p in res.get("imminent_falls", [])[:3]]
@@ -227,7 +304,9 @@ class OfflineExpertProvider:
             rec = res["decision"]
             hit = res["hit_verdict"]
             plans = res.get("candidate_plans", [])
-            plan_lines = [f"- **{p['type']}**: {p['summary']} (Net xP: {p['net_xp']}, Net Gain: {p['gain']})" for p in plans]
+            plan_lines = [
+                f"- **{p['type']}**: {p['summary']} (Net xP: {p['net_xp']}, Net Gain: {p['gain']})" for p in plans
+            ]
 
             return (
                 f"### 🔄 Transfer Strategy & Hit Analysis\n"
@@ -239,16 +318,21 @@ class OfflineExpertProvider:
 
         # Default: General squad / projection overview
         proj = await tool_executor.execute("get_projections", {"horizon": 3})
-        top_players = [f"**{p['web_name']}** ({p['expected_points_gw']} xP, DefCon: +{p['exp_defcon_points']})" for p in proj.get("players", [])[:5]]
+        top_players = [
+            f"**{p['web_name']}** ({p['expected_points_gw']} xP, DefCon: +{p['exp_defcon_points']})"
+            for p in proj.get("players", [])[:5]
+        ]
 
         return (
             f"### 🤖 FPL Oracle Expert Grounded Analysis (Season 2026/27)\n"
             f"I have analyzed the current gameweek based on live FPL API data and ML component projections.\n\n"
             f"**Top Projected Assets for Upcoming Gameweek {proj.get('gameweek')}:**\n"
-            + "\n".join([f"- {p}" for p in top_players]) + "\n\n"
+            + "\n".join([f"- {p}" for p in top_players])
+            + "\n\n"
             "**Scoring Insights:** Projections account for the 2026/27 Defensive Contribution (+2 pts) rule and rebalanced BPS.\n"
             "Ask me about specific players, transfer plans, captaincy, chip strategy, or your mini-league rivals!"
         )
+
 
 def get_llm_status() -> dict[str, Any]:
     """Report LLM provider status for diagnostic health checks."""
@@ -268,21 +352,25 @@ def get_llm_status() -> dict[str, Any]:
         "active_provider": provider,
         "is_api_key_configured": configured,
         "fallback_available": True,
-        "supported_providers": ["gemini", "openai", "anthropic", "offline_expert"]
+        "supported_providers": ["gemini", "openai", "anthropic", "offline_expert"],
     }
+
 
 def get_llm_provider() -> Any:
     """Factory to instantiate the appropriate LLM provider."""
     if GEMINI_API_KEY and GEMINI_API_KEY.strip():
         from fpl_oracle.llm.gemini import GeminiProvider
+
         logger.info("Using Google Gemini LLM Provider.")
         return GeminiProvider(api_key=GEMINI_API_KEY.strip())
     elif OPENAI_API_KEY and OPENAI_API_KEY.strip():
         from fpl_oracle.llm.openai import OpenAIProvider
+
         logger.info("Using OpenAI LLM Provider.")
         return OpenAIProvider(api_key=OPENAI_API_KEY.strip())
     elif ANTHROPIC_API_KEY and ANTHROPIC_API_KEY.strip():
         from fpl_oracle.llm.anthropic import AnthropicProvider
+
         logger.info("Using Anthropic LLM Provider.")
         return AnthropicProvider(api_key=ANTHROPIC_API_KEY.strip())
     else:

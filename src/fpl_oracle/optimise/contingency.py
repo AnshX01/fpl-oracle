@@ -41,7 +41,7 @@ class ContingencyEngine:
         horizon_projections: dict[int, pd.DataFrame],
         current_gw: int,
         target_gw: int,
-        risk_preference: str = "balanced"
+        risk_preference: str = "balanced",
     ) -> dict[str, Any]:
         """
         Precomputes Plan A (Primary), Plan B (Injury/Press Conf Pivot), and Plan C (Differential/Price Pivot).
@@ -56,7 +56,7 @@ class ContingencyEngine:
             horizon_projections=horizon_projections,
             current_gw=current_gw,
             target_gw=target_gw,
-            risk_preference=risk_preference
+            risk_preference=risk_preference,
         )
 
         plan_a_raw = base_res.get("recommended_plan", {})
@@ -74,7 +74,7 @@ class ContingencyEngine:
             "net_expected_points": plan_a_xp,
             "delta_vs_plan_a": 0.0,
             "trigger_condition": "Standard baseline execution (no late injuries or unexpected price swings).",
-            "action_summary": plan_a_raw.get("recommendation_summary", "Roll transfer")
+            "action_summary": plan_a_raw.get("recommendation_summary", "Roll transfer"),
         }
 
         # Step 2: Plan B (Injury / Press Conference Contingency Pivot)
@@ -97,7 +97,7 @@ class ContingencyEngine:
                 current_gw=current_gw,
                 target_gw=target_gw,
                 locked_out_ids=locked_out_backup,
-                risk_preference=risk_preference
+                risk_preference=risk_preference,
             )
             backup_plan = backup_res.get("recommended_plan", {})
             backup_xp = float(backup_plan.get("net_expected_points", plan_a_xp))
@@ -115,7 +115,7 @@ class ContingencyEngine:
                 "net_expected_points": backup_xp,
                 "delta_vs_plan_a": delta_b,
                 "trigger_condition": f"Press conference confirms {transferred_in_name} is doubtful (<75%) or ruled out.",
-                "action_summary": f"Pivot target: buy {backup_in_names} instead of {transferred_in_name} (net impact: {delta_b:+.2f} xP)."
+                "action_summary": f"Pivot target: buy {backup_in_names} instead of {transferred_in_name} (net impact: {delta_b:+.2f} xP).",
             }
             # Plan A was to roll. Plan B evaluates the best 1 transfer if an existing squad member is ruled out.
             cand_plans = base_res.get("candidate_plans", [])
@@ -136,7 +136,7 @@ class ContingencyEngine:
                     "net_expected_points": top_xp,
                     "delta_vs_plan_a": delta_b,
                     "trigger_condition": f"Squad regular ({out_name}) suffers training setback or is confirmed benched.",
-                    "action_summary": f"Burn 1 banked FT immediately for {in_name} ({delta_b:+.2f} xP vs rolling)."
+                    "action_summary": f"Burn 1 banked FT immediately for {in_name} ({delta_b:+.2f} xP vs rolling).",
                 }
 
         if plan_b is None:
@@ -151,15 +151,16 @@ class ContingencyEngine:
                 "net_expected_points": plan_a_xp,
                 "delta_vs_plan_a": 0.0,
                 "trigger_condition": "Late uncertainty across multiple fixture press conferences.",
-                "action_summary": "Roll transfer and bank additional FT for double gameweek flexibility."
+                "action_summary": "Roll transfer and bank additional FT for double gameweek flexibility.",
             }
 
         # Step 3: Plan C (Differential / Price Rise Contingency)
         # Search for high-ceiling aggressive differential pick (P90 maximization)
-        high_ceiling_candidates = target_gw_df[
-            (~target_gw_df["element"].isin(current_elements)) &
-            (target_gw_df["value"] <= (bank + 80.0))
-        ].sort_values(by="p90", ascending=False).head(1)
+        high_ceiling_candidates = (
+            target_gw_df[(~target_gw_df["element"].isin(current_elements)) & (target_gw_df["value"] <= (bank + 80.0))]
+            .sort_values(by="p90", ascending=False)
+            .head(1)
+        )
 
         if not high_ceiling_candidates.empty:
             diff_cand = high_ceiling_candidates.iloc[0]
@@ -169,15 +170,17 @@ class ContingencyEngine:
                 "title": f"Plan C (Differential Ceiling): Target {diff_cand['web_name']}",
                 "plan_type": "AGGRESSIVE_DIFFERENTIAL",
                 "transfers_count": 1,
-                "transfers_in": [{
-                    "element": int(diff_cand["element"]),
-                    "web_name": diff_cand["web_name"],
-                    "team": int(diff_cand["team"]),
-                    "position": diff_cand["position"],
-                    "cost": diff_cand["value"] / 10.0,
-                    "expected_points": diff_xp,
-                    "p90": diff_p90
-                }],
+                "transfers_in": [
+                    {
+                        "element": int(diff_cand["element"]),
+                        "web_name": diff_cand["web_name"],
+                        "team": int(diff_cand["team"]),
+                        "position": diff_cand["position"],
+                        "cost": diff_cand["value"] / 10.0,
+                        "expected_points": diff_xp,
+                        "p90": diff_p90,
+                    }
+                ],
                 "transfers_out": plan_a_raw.get("transfers_out", []),
                 "hits": 0 if free_transfers >= 1 else 4,
                 "hit_cost": 0.0 if free_transfers >= 1 else 4.0,
@@ -185,7 +188,7 @@ class ContingencyEngine:
                 "delta_vs_plan_a": -0.5,
                 "p90_ceiling": diff_p90,
                 "trigger_condition": "Trailing in mini-league (chasing mode) or primary target undergoes sudden price rise before buy.",
-                "action_summary": f"High-ceiling play: {diff_cand['web_name']} brings P90 ceiling of {diff_p90} pts for mini-league chase."
+                "action_summary": f"High-ceiling play: {diff_cand['web_name']} brings P90 ceiling of {diff_p90} pts for mini-league chase.",
             }
         else:
             plan_c = {
@@ -199,7 +202,7 @@ class ContingencyEngine:
                 "net_expected_points": plan_a_xp,
                 "delta_vs_plan_a": 0.0,
                 "trigger_condition": "Target player transfer velocity indicates imminent price rise tonight.",
-                "action_summary": "Execute transfer 24 hours early to protect squad value before price inflation."
+                "action_summary": "Execute transfer 24 hours early to protect squad value before price inflation.",
             }
 
         return {
@@ -208,7 +211,7 @@ class ContingencyEngine:
             "plan_c": plan_c,
             "target_gameweek": target_gw,
             "free_transfers_available": free_transfers,
-            "bank_millions": round(bank / 10.0, 2)
+            "bank_millions": round(bank / 10.0, 2),
         }
 
     def compute_injury_matrix(
@@ -266,10 +269,10 @@ class ContingencyEngine:
             sell_price = float(starter_row.get("selling_price", starter_row["value"]))
             avail_budget = sell_price + bank
             candidates = player_pool_df[
-                (player_pool_df["position"] == pos) &
-                (player_pool_df["element"] != elem_id) &
-                (~player_pool_df["element"].isin(squad_df["element"])) &
-                (player_pool_df["value"] <= avail_budget)
+                (player_pool_df["position"] == pos)
+                & (player_pool_df["element"] != elem_id)
+                & (~player_pool_df["element"].isin(squad_df["element"]))
+                & (player_pool_df["value"] <= avail_budget)
             ].sort_values(by="expected_points", ascending=False)
 
             best_rep = candidates.iloc[0] if not candidates.empty else None
@@ -284,7 +287,9 @@ class ContingencyEngine:
             # Action verdict
             if transfer_gain_vs_bench >= 2.0:
                 verdict = "EXECUTE_TRANSFER"
-                verdict_reason = f"Emergency transfer to {rep_name} nets {transfer_gain_vs_bench:+.2f} xP over bench after hit."
+                verdict_reason = (
+                    f"Emergency transfer to {rep_name} nets {transfer_gain_vs_bench:+.2f} xP over bench after hit."
+                )
             elif autosub_delta >= -1.0 or transfer_gain_vs_bench < 0.5:
                 verdict = "TRUST_BENCH"
                 verdict_reason = f"Bench coverage ({sub_name}) is strong ({sub_xp} xP). Save free transfer / hit."
@@ -292,25 +297,27 @@ class ContingencyEngine:
                 verdict = "MONITOR_PRESS_CONFERENCE"
                 verdict_reason = f"Marginal call ({transfer_gain_vs_bench:+.2f} xP). Wait for final press conference."
 
-            matrix.append({
-                "element": elem_id,
-                "web_name": elem_name,
-                "position": pos,
-                "current_status": status,
-                "chance_of_playing": chance if chance is not None else (0 if status == "i" else 100),
-                "news": news_str,
-                "expected_points": st_xp,
-                "autosub_player": sub_name,
-                "autosub_expected_points": sub_xp,
-                "autosub_points_delta": autosub_delta,
-                "emergency_replacement": rep_name,
-                "emergency_cost": round((best_rep["value"] / 10.0), 1) if best_rep is not None else 0.0,
-                "emergency_expected_points": rep_xp,
-                "transfer_gain_vs_bench": transfer_gain_vs_bench,
-                "action_verdict": verdict,
-                "verdict_reason": verdict_reason,
-                "wait_vs_commit": "Commit transfer early only if target faces imminent price rise tonight; otherwise wait for Friday press conferences."
-            })
+            matrix.append(
+                {
+                    "element": elem_id,
+                    "web_name": elem_name,
+                    "position": pos,
+                    "current_status": status,
+                    "chance_of_playing": chance if chance is not None else (0 if status == "i" else 100),
+                    "news": news_str,
+                    "expected_points": st_xp,
+                    "autosub_player": sub_name,
+                    "autosub_expected_points": sub_xp,
+                    "autosub_points_delta": autosub_delta,
+                    "emergency_replacement": rep_name,
+                    "emergency_cost": round((best_rep["value"] / 10.0), 1) if best_rep is not None else 0.0,
+                    "emergency_expected_points": rep_xp,
+                    "transfer_gain_vs_bench": transfer_gain_vs_bench,
+                    "action_verdict": verdict,
+                    "verdict_reason": verdict_reason,
+                    "wait_vs_commit": "Commit transfer early only if target faces imminent price rise tonight; otherwise wait for Friday press conferences.",
+                }
+            )
 
         return matrix
 
@@ -321,7 +328,7 @@ class ContingencyEngine:
         player_pool_df: pd.DataFrame,
         bank: float,
         free_transfers: int,
-        ruled_out_ids: list[int] | None = None
+        ruled_out_ids: list[int] | None = None,
     ) -> dict[str, Any]:
         """
         Emergency 1-click crisis solver for breaking team news (e.g. 'Saka ruled out 6 weeks').
@@ -367,7 +374,7 @@ class ContingencyEngine:
                 "element": int(p_row["element"]),
                 "web_name": p_row["web_name"],
                 "position": p_row["position"],
-                "expected_points": round(float(p_row["expected_points"]), 2)
+                "expected_points": round(float(p_row["expected_points"]), 2),
             }
 
         # 2. Emergency 1-transfer market solution
@@ -377,10 +384,10 @@ class ContingencyEngine:
         avail_cash = sell_val + bank
 
         candidates = player_pool_df[
-            (player_pool_df["position"] == ruled_out_row["position"]) &
-            (player_pool_df["element"] != ruled_out_id) &
-            (~player_pool_df["element"].isin(squad_df["element"])) &
-            (player_pool_df["value"] <= avail_cash)
+            (player_pool_df["position"] == ruled_out_row["position"])
+            & (player_pool_df["element"] != ruled_out_id)
+            & (~player_pool_df["element"].isin(squad_df["element"]))
+            & (player_pool_df["value"] <= avail_cash)
         ].sort_values(by="expected_points", ascending=False)
 
         best_market_rep = None
@@ -395,7 +402,7 @@ class ContingencyEngine:
                 "cost": round(bm["value"] / 10.0, 1),
                 "expected_points": round(float(bm["expected_points"]), 2),
                 "net_expected_points": round(float(bm["expected_points"]) - hit, 2),
-                "hit_cost": hit
+                "hit_cost": hit,
             }
 
         return {
@@ -405,7 +412,9 @@ class ContingencyEngine:
                 "element": ruled_out_id,
                 "web_name": ruled_out_row["web_name"],
                 "position": ruled_out_row["position"],
-                "lost_expected_points": round(float(squad_df[squad_df["element"] == ruled_out_id]["expected_points"].iloc[0]), 2)
+                "lost_expected_points": round(
+                    float(squad_df[squad_df["element"] == ruled_out_id]["expected_points"].iloc[0]), 2
+                ),
             },
             "lineup_action": {
                 "summary": f"Bench {ruled_out_row['web_name']}. Auto-promote {promoted_player['web_name'] if promoted_player else 'first reserve'}.",
@@ -413,7 +422,7 @@ class ContingencyEngine:
                 "new_formation": new_lineup["formation"],
                 "captain": new_lineup["captain"],
                 "vice_captain": new_lineup["vice_captain"],
-                "total_gameweek_expected_points": new_lineup["total_gameweek_expected_points"]
+                "total_gameweek_expected_points": new_lineup["total_gameweek_expected_points"],
             },
             "emergency_transfer": best_market_rep,
             "recommendation": (
@@ -421,7 +430,7 @@ class ContingencyEngine:
                 f"start {promoted_player['web_name'] if promoted_player else 'bench'} ({promoted_player['expected_points'] if promoted_player else 0} xP). "
                 f"Alternatively, transfer {ruled_out_row['web_name']} -> {best_market_rep['web_name'] if best_market_rep else 'Replacement'} "
                 f"for {best_market_rep['net_expected_points'] if best_market_rep else 0} net xP."
-            )
+            ),
         }
 
     def generate_pre_deadline_checklist(
@@ -429,7 +438,7 @@ class ContingencyEngine:
         squad_df: pd.DataFrame,
         bootstrap: BootstrapStatic,
         game_state_data: dict[str, Any],
-        chips_status: dict[str, Any]
+        chips_status: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """
         Generates 5-point operational pre-deadline audit.
@@ -442,78 +451,96 @@ class ContingencyEngine:
         doubtful = []
         for _, s in lineup["starters"].iterrows():
             e = elem_meta.get(int(s["element"]))
-            if e and (e.status != "a" or (e.chance_of_playing_next_round is not None and e.chance_of_playing_next_round < 100)):
+            if e and (
+                e.status != "a" or (e.chance_of_playing_next_round is not None and e.chance_of_playing_next_round < 100)
+            ):
                 doubtful.append(f"{s['web_name']} ({e.chance_of_playing_next_round or 0}% - {e.news or 'Doubt'})")
 
         if not doubtful:
-            checklist.append({
-                "item": "Starting XI Fitness & Availability",
-                "status": "PASS",
-                "badge": "Fit",
-                "detail": "All 11 starters are 100% available with zero injury or suspension flags."
-            })
+            checklist.append(
+                {
+                    "item": "Starting XI Fitness & Availability",
+                    "status": "PASS",
+                    "badge": "Fit",
+                    "detail": "All 11 starters are 100% available with zero injury or suspension flags.",
+                }
+            )
         else:
-            checklist.append({
-                "item": "Starting XI Fitness & Availability",
-                "status": "WARNING",
-                "badge": "Doubtful Starters",
-                "detail": f"Doubtful players detected: {', '.join(doubtful)}. Check Friday press conference quotes."
-            })
+            checklist.append(
+                {
+                    "item": "Starting XI Fitness & Availability",
+                    "status": "WARNING",
+                    "badge": "Doubtful Starters",
+                    "detail": f"Doubtful players detected: {', '.join(doubtful)}. Check Friday press conference quotes.",
+                }
+            )
 
         # 2. Vice-Captain Reliability
         vc = lineup["vice_captain"]
         cap = lineup["captain"]
-        checklist.append({
-            "item": "Vice-Captain Failsafe",
-            "status": "PASS",
-            "badge": "Active",
-            "detail": f"Vice-Captain assigned to {vc['web_name']} ({vc['expected_points']} xP). Activates if {cap['web_name']} does not feature."
-        })
+        checklist.append(
+            {
+                "item": "Vice-Captain Failsafe",
+                "status": "PASS",
+                "badge": "Active",
+                "detail": f"Vice-Captain assigned to {vc['web_name']} ({vc['expected_points']} xP). Activates if {cap['web_name']} does not feature.",
+            }
+        )
 
         # 3. Bench Autosub Hierarchy
         b1 = lineup["bench"].iloc[1] if len(lineup["bench"]) > 1 else lineup["bench"].iloc[0]
-        checklist.append({
-            "item": "Autosub Hierarchy Order",
-            "status": "PASS",
-            "badge": f"1st Sub: {b1['web_name']}",
-            "detail": f"Highest projected outfield sub {b1['web_name']} ({round(float(b1['expected_points']), 2)} xP) occupies position 1 on the bench."
-        })
+        checklist.append(
+            {
+                "item": "Autosub Hierarchy Order",
+                "status": "PASS",
+                "badge": f"1st Sub: {b1['web_name']}",
+                "detail": f"Highest projected outfield sub {b1['web_name']} ({round(float(b1['expected_points']), 2)} xP) occupies position 1 on the bench.",
+            }
+        )
 
         # 4. Chip Set 1 Expiry Horizon
         curr_gw = game_state_data.get("current_gameweek", 5)
         rem_set_1 = chips_status.get("set_1_remaining", [])
         gws_to_19 = max(0, 19 - curr_gw)
         if len(rem_set_1) > gws_to_19:
-            checklist.append({
-                "item": "Chip Set 1 Expiry Deadline",
-                "status": "ACTION_REQUIRED",
-                "badge": "CRITICAL CONGESTION",
-                "detail": f"You have {len(rem_set_1)} Set 1 chips left with only {gws_to_19} gameweeks before GW19! Play a chip now or forfeit it."
-            })
+            checklist.append(
+                {
+                    "item": "Chip Set 1 Expiry Deadline",
+                    "status": "ACTION_REQUIRED",
+                    "badge": "CRITICAL CONGESTION",
+                    "detail": f"You have {len(rem_set_1)} Set 1 chips left with only {gws_to_19} gameweeks before GW19! Play a chip now or forfeit it.",
+                }
+            )
         elif rem_set_1:
-            checklist.append({
-                "item": "Chip Set 1 Expiry Deadline",
-                "status": "INFO",
-                "badge": f"{len(rem_set_1)} Chips / {gws_to_19} GWs",
-                "detail": f"Set 1 chips remaining: {', '.join(rem_set_1)}. Hard cutoff at GW19 deadline (January 2, 2027)."
-            })
+            checklist.append(
+                {
+                    "item": "Chip Set 1 Expiry Deadline",
+                    "status": "INFO",
+                    "badge": f"{len(rem_set_1)} Chips / {gws_to_19} GWs",
+                    "detail": f"Set 1 chips remaining: {', '.join(rem_set_1)}. Hard cutoff at GW19 deadline (January 2, 2027).",
+                }
+            )
         else:
-            checklist.append({
-                "item": "Chip Set 1 Expiry Deadline",
-                "status": "PASS",
-                "badge": "Set 1 Complete",
-                "detail": "All Set 1 chips executed or planned on schedule."
-            })
+            checklist.append(
+                {
+                    "item": "Chip Set 1 Expiry Deadline",
+                    "status": "PASS",
+                    "badge": "Set 1 Complete",
+                    "detail": "All Set 1 chips executed or planned on schedule.",
+                }
+            )
 
         # 5. Deadline Countdown
         secs = game_state_data.get("seconds_to_deadline", 0.0)
         hours = round(secs / 3600.0, 1)
-        checklist.append({
-            "item": "Pre-Deadline Lock Time",
-            "status": "PASS" if hours > 12 else "WARNING",
-            "badge": f"{hours}h Remaining",
-            "detail": f"Deadline locks in {hours} hours. Finalize transfers and captaincy before official server freeze."
-        })
+        checklist.append(
+            {
+                "item": "Pre-Deadline Lock Time",
+                "status": "PASS" if hours > 12 else "WARNING",
+                "badge": f"{hours}h Remaining",
+                "detail": f"Deadline locks in {hours} hours. Finalize transfers and captaincy before official server freeze.",
+            }
+        )
 
         return checklist
 

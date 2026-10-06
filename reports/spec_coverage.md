@@ -20,11 +20,13 @@ This report provides a section-by-section audit of the FPL Oracle codebase again
 | **4.6** | Captaincy, Lineup & P10/P90 Distributions | **DONE** | `src/fpl_oracle/optimise/lineup.py` |
 | **4.7** | Mini-League Intelligence & Monte Carlo | **DONE** | `src/fpl_oracle/league/standings.py`, `rivals.py`, `montecarlo.py`, `strategy.py` |
 | **4.8** | Conversational Expert Chat & Tool Calling | **DONE** | `src/fpl_oracle/llm/provider.py`, `agent.py`, `tools.py`, `cli.py` |
-| **4.9** | Weekly Gameweek Briefing & Automation | **DONE** | `src/fpl_oracle/briefing/weekly.py`, `review.py`, `notify.py` |
+| **4.9** | Weekly Gameweek Briefing & Automation | **DONE** | `src/fpl_oracle/briefing/weekly.py`, `review.py`, `notify.py`, `server/jobs.py` |
+| **4.10** | Contingency Engine & Panic Button | **DONE** | `src/fpl_oracle/optimise/contingency.py`, `briefing/review.py` |
 | **5.0** | Backtesting & Validation Harness | **DONE** | `src/fpl_oracle/backtest.py`, `verify.py`, `reports/backtest.md` |
 | **6.0** | Architecture, Packaging & Tech Stack | **DONE** | `pyproject.toml`, `run.py`, `Makefile`, `config/*.yaml` |
 | **7.0** | Reasoning & Explanation Standards | **DONE** | `src/fpl_oracle/optimise/transfers.py`, `chips/planner.py`, `llm/provider.py` |
 | **8.0** | Security, Ethics & Localhost Execution | **DONE** | `src/fpl_oracle/server/main.py`, `.env.example`, `SETUP.md` |
+| **9.0** | Background Automation & Rollback Guard | **DONE** | `src/fpl_oracle/server/jobs.py`, `ml/model_registry.py`, `.github/workflows/ci.yml` |
 
 ---
 

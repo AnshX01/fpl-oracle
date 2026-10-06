@@ -41,33 +41,35 @@ class FixtureCalendar:
             for t_id in team_names:
                 count = len(team_gw_fixtures[(gw, t_id)])
                 if count > 1:
-                    dgw_teams.append({
-                        "team_id": t_id,
-                        "team_name": team_names[t_id],
-                        "team_short": team_short[t_id],
-                        "fixture_count": count
-                    })
+                    dgw_teams.append(
+                        {
+                            "team_id": t_id,
+                            "team_name": team_names[t_id],
+                            "team_short": team_short[t_id],
+                            "fixture_count": count,
+                        }
+                    )
                 elif count == 0:
-                    bgw_teams.append({
-                        "team_id": t_id,
-                        "team_name": team_names[t_id],
-                        "team_short": team_short[t_id]
-                    })
+                    bgw_teams.append({"team_id": t_id, "team_name": team_names[t_id], "team_short": team_short[t_id]})
 
             if dgw_teams:
-                double_gameweeks.append({
-                    "gameweek": gw,
-                    "type": "DOUBLE_GAMEWEEK",
-                    "teams_with_doubles": dgw_teams,
-                    "description": f"Double Gameweek {gw}: {len(dgw_teams)} teams playing twice."
-                })
+                double_gameweeks.append(
+                    {
+                        "gameweek": gw,
+                        "type": "DOUBLE_GAMEWEEK",
+                        "teams_with_doubles": dgw_teams,
+                        "description": f"Double Gameweek {gw}: {len(dgw_teams)} teams playing twice.",
+                    }
+                )
             elif bgw_teams:
-                blank_gameweeks.append({
-                    "gameweek": gw,
-                    "type": "BLANK_GAMEWEEK",
-                    "blanking_teams": bgw_teams,
-                    "description": f"Blank Gameweek {gw}: {len(bgw_teams)} teams have no fixture."
-                })
+                blank_gameweeks.append(
+                    {
+                        "gameweek": gw,
+                        "type": "BLANK_GAMEWEEK",
+                        "blanking_teams": bgw_teams,
+                        "description": f"Blank Gameweek {gw}: {len(bgw_teams)} teams have no fixture.",
+                    }
+                )
             else:
                 regular_gameweeks.append(gw)
 
@@ -75,7 +77,8 @@ class FixtureCalendar:
             "blank_gameweeks": blank_gameweeks,
             "double_gameweeks": double_gameweeks,
             "regular_gameweeks_count": len(regular_gameweeks),
-            "total_fixtures": len(fixtures)
+            "total_fixtures": len(fixtures),
         }
+
 
 fixture_calendar = FixtureCalendar()

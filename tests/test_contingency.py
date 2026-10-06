@@ -7,10 +7,12 @@ Verifies:
 4. Pre-deadline operational checklist generator.
 """
 
-import pytest
 import pandas as pd
+import pytest
+
+from fpl_oracle.api.models import BootstrapStatic, Element, GameweekEvent, Team
 from fpl_oracle.optimise.contingency import contingency_engine
-from fpl_oracle.api.models import BootstrapStatic, Element, Team, GameweekEvent
+
 
 @pytest.fixture
 def dummy_bootstrap() -> BootstrapStatic:
@@ -29,7 +31,18 @@ def dummy_bootstrap() -> BootstrapStatic:
     elements.append(Element(id=4, web_name="Saliba", element_type=2, team=1, now_cost=60, status="a"))
     elements.append(Element(id=5, web_name="Van Dijk", element_type=2, team=3, now_cost=60, status="a"))
     elements.append(Element(id=6, web_name="Konsa", element_type=2, team=2, now_cost=45, status="a"))
-    elements.append(Element(id=7, web_name="Lewis", element_type=2, team=4, now_cost=48, status="d", chance_of_playing_next_round=50, news="Knock"))
+    elements.append(
+        Element(
+            id=7,
+            web_name="Lewis",
+            element_type=2,
+            team=4,
+            now_cost=48,
+            status="d",
+            chance_of_playing_next_round=50,
+            news="Knock",
+        )
+    )
     # 5 MIDs
     elements.append(Element(id=8, web_name="Saka", element_type=3, team=1, now_cost=100, status="a"))
     elements.append(Element(id=9, web_name="Salah", element_type=3, team=3, now_cost=125, status="a"))
@@ -49,49 +62,67 @@ def dummy_bootstrap() -> BootstrapStatic:
     ]
     return BootstrapStatic(events=events, teams=teams, elements=elements)
 
+
 @pytest.fixture
 def mock_squad_and_pool(dummy_bootstrap):
     elem_dict = {e.id: e for e in dummy_bootstrap.elements}
     pos_map = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
     xp_map = {
-        1: 4.5, 2: 4.0, 3: 4.8, 4: 4.6, 5: 4.4, 6: 3.5, 7: 2.5,
-        8: 7.5, 9: 8.5, 10: 6.5, 11: 4.5, 12: 5.5,
-        13: 9.5, 14: 6.8, 15: 5.8,
-        16: 6.2, 17: 5.0
+        1: 4.5,
+        2: 4.0,
+        3: 4.8,
+        4: 4.6,
+        5: 4.4,
+        6: 3.5,
+        7: 2.5,
+        8: 7.5,
+        9: 8.5,
+        10: 6.5,
+        11: 4.5,
+        12: 5.5,
+        13: 9.5,
+        14: 6.8,
+        15: 5.8,
+        16: 6.2,
+        17: 5.0,
     }
 
     squad_rows = []
     for elem_id in range(1, 16):
         e = elem_dict[elem_id]
-        squad_rows.append({
-            "element": e.id,
-            "web_name": e.web_name,
-            "team": e.team,
-            "position": pos_map[e.element_type],
-            "value": e.now_cost,
-            "purchase_price": e.now_cost,
-            "selling_price": e.now_cost,
-            "expected_points": xp_map[e.id],
-            "p10": xp_map[e.id] * 0.4,
-            "p90": xp_map[e.id] * 1.6
-        })
+        squad_rows.append(
+            {
+                "element": e.id,
+                "web_name": e.web_name,
+                "team": e.team,
+                "position": pos_map[e.element_type],
+                "value": e.now_cost,
+                "purchase_price": e.now_cost,
+                "selling_price": e.now_cost,
+                "expected_points": xp_map[e.id],
+                "p10": xp_map[e.id] * 0.4,
+                "p90": xp_map[e.id] * 1.6,
+            }
+        )
     squad_df = pd.DataFrame(squad_rows)
 
     pool_rows = list(squad_rows)
     for elem_id in [16, 17]:
         e = elem_dict[elem_id]
-        pool_rows.append({
-            "element": e.id,
-            "web_name": e.web_name,
-            "team": e.team,
-            "position": pos_map[e.element_type],
-            "value": e.now_cost,
-            "purchase_price": e.now_cost,
-            "selling_price": e.now_cost,
-            "expected_points": xp_map[e.id],
-            "p10": xp_map[e.id] * 0.4,
-            "p90": xp_map[e.id] * 1.6
-        })
+        pool_rows.append(
+            {
+                "element": e.id,
+                "web_name": e.web_name,
+                "team": e.team,
+                "position": pos_map[e.element_type],
+                "value": e.now_cost,
+                "purchase_price": e.now_cost,
+                "selling_price": e.now_cost,
+                "expected_points": xp_map[e.id],
+                "p10": xp_map[e.id] * 0.4,
+                "p90": xp_map[e.id] * 1.6,
+            }
+        )
     pool_df = pd.DataFrame(pool_rows)
 
     return squad_df, pool_df
@@ -109,7 +140,7 @@ def test_contingency_plans_precomputation(mock_squad_and_pool):
         horizon_projections=horizon_proj,
         current_gw=5,
         target_gw=6,
-        risk_preference="balanced"
+        risk_preference="balanced",
     )
 
     assert "plan_a" in plans
@@ -125,14 +156,10 @@ def test_contingency_plans_precomputation(mock_squad_and_pool):
 def test_injury_contingency_matrix(mock_squad_and_pool, dummy_bootstrap):
     squad_df, pool_df = mock_squad_and_pool
     matrix = contingency_engine.compute_injury_matrix(
-        squad_df=squad_df,
-        player_pool_df=pool_df,
-        bank=5.0,
-        free_transfers=1,
-        bootstrap=dummy_bootstrap
+        squad_df=squad_df, player_pool_df=pool_df, bank=5.0, free_transfers=1, bootstrap=dummy_bootstrap
     )
 
-    assert len(matrix) == 11 # All 11 starters analyzed
+    assert len(matrix) == 11  # All 11 starters analyzed
     for row in matrix:
         assert "web_name" in row
         assert "autosub_player" in row
@@ -146,11 +173,7 @@ def test_panic_button_reoptimize(mock_squad_and_pool):
     squad_df, pool_df = mock_squad_and_pool
     # Test query-based panic: "Haaland broken foot out 8 weeks"
     panic_res = contingency_engine.panic_button_reoptimize(
-        query="Haaland broken foot out 8 weeks",
-        squad_df=squad_df,
-        player_pool_df=pool_df,
-        bank=10.0,
-        free_transfers=1
+        query="Haaland broken foot out 8 weeks", squad_df=squad_df, player_pool_df=pool_df, bank=10.0, free_transfers=1
     )
 
     assert panic_res["status"] == "crisis_resolved"
@@ -162,22 +185,15 @@ def test_panic_button_reoptimize(mock_squad_and_pool):
 
 def test_pre_deadline_checklist(mock_squad_and_pool, dummy_bootstrap):
     squad_df, _ = mock_squad_and_pool
-    game_state_data = {
-        "current_gameweek": 5,
-        "seconds_to_deadline": 72000.0,
-        "phase": "BETWEEN_GWS"
-    }
+    game_state_data = {"current_gameweek": 5, "seconds_to_deadline": 72000.0, "phase": "BETWEEN_GWS"}
     chips_status = {
         "set_1_remaining": ["wildcard", "freehit", "3xc", "bboost"],
         "set_1_used": [],
-        "set_2_remaining": ["wildcard", "freehit", "3xc", "bboost"]
+        "set_2_remaining": ["wildcard", "freehit", "3xc", "bboost"],
     }
 
     checklist = contingency_engine.generate_pre_deadline_checklist(
-        squad_df=squad_df,
-        bootstrap=dummy_bootstrap,
-        game_state_data=game_state_data,
-        chips_status=chips_status
+        squad_df=squad_df, bootstrap=dummy_bootstrap, game_state_data=game_state_data, chips_status=chips_status
     )
 
     assert len(checklist) == 5
