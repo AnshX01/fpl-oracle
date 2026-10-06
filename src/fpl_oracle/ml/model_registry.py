@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 
-from fpl_oracle.config import MODELS_DIR
+from fpl_oracle.config import MODELS_DIR, REPORTS_DIR
 from fpl_oracle.data.store import data_store
 from fpl_oracle.ml.components.attacking import AttackingModel
 from fpl_oracle.ml.components.bonus import BonusModel
@@ -142,6 +142,9 @@ class ModelRegistry:
         rolling_origins: list[dict[str, Any]] | None = None,
         ablation_metrics: dict[str, Any] | None = None,
         upcoming_projections: list[dict[str, Any]] | None = None,
+        save_reports: bool = True,
+        custom_json_path: Any = None,
+        custom_md_path: Any = None,
     ) -> dict[str, float]:
         """Generate holdout predictions and compute validation metrics."""
         mins_p = models_dict["minutes_model"].predict(X_val)
@@ -165,6 +168,9 @@ class ModelRegistry:
             rolling_origins=rolling_origins,
             ablation_metrics=ablation_metrics,
             upcoming_projections=upcoming_projections,
+            save_reports=save_reports,
+            custom_json_path=custom_json_path,
+            custom_md_path=custom_md_path,
         )
         return {
             "ml_mae": float(metrics["ml_mae"]),
@@ -189,7 +195,15 @@ class ModelRegistry:
             except Exception as e:
                 logger.warning(f"Error loading production model {filename}: {e}")
         try:
-            return self.evaluate_model_suite(models, X_val, Y_val, rolling_origins=rolling_origins)
+            return self.evaluate_model_suite(
+                models,
+                X_val,
+                Y_val,
+                rolling_origins=rolling_origins,
+                save_reports=True,
+                custom_json_path=REPORTS_DIR / "active_model_eval.json",
+                custom_md_path=REPORTS_DIR / "active_model_eval.md",
+            )
         except Exception as e:
             logger.warning(f"Existing production weights evaluation failed ({e}); treating as schema upgrade.")
             return None
@@ -213,7 +227,32 @@ class ModelRegistry:
         active_mae = active_metrics["ml_mae"] if active_metrics else active.get("ml_mae", 1.48)
         active_ver_name = active.get("version", "v1.0.0")
 
-        # Rollback check
+        # Baseline-superiority gate: candidate must beat transparent heuristic baseline within tolerance
+        base_mae = candidate_metrics.get("base_mae")
+        if base_mae is not None and cand_mae > (base_mae + tolerance):
+            rej_tag = f"rej_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
+            rej_dir = self.rejected_dir / rej_tag
+            rej_dir.mkdir(parents=True, exist_ok=True)
+            for name, filename, _ in COMPONENT_WEIGHTS:
+                if name in candidate_models:
+                    candidate_models[name].save(rej_dir / filename)
+            reason = (
+                f"Candidate MAE ({cand_mae:.3f}) failed baseline superiority gate vs baseline "
+                f"({base_mae:.3f} + {tolerance}). Automatic rollback engaged."
+            )
+            logger.warning(f"[ModelRollback] {reason}")
+            data_store.save_model_version(
+                version=rej_tag,
+                ml_mae=cand_mae,
+                ml_spearman=candidate_metrics["ml_spearman"],
+                base_mae=base_mae,
+                status="rejected_inferior_to_baseline",
+                is_active=False,
+                notes=reason,
+            )
+            return {"promoted": False, "reason": reason, "version": rej_tag}
+
+        # Rollback check vs active production model
         if active_mae is not None and cand_mae > (active_mae + tolerance):
             degradation = cand_mae - active_mae
             rej_tag = f"rej_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
@@ -288,6 +327,14 @@ class ModelRegistry:
                 candidate_models[name].save(self.models_dir / filename)
                 # Save to version archive
                 candidate_models[name].save(new_ver_dir / filename)
+
+        # 3. Synchronize candidate evaluation report to active model_eval report
+        cand_json = REPORTS_DIR / "candidate_model_eval.json"
+        if cand_json.exists():
+            shutil.copy2(cand_json, REPORTS_DIR / "model_eval.json")
+        cand_md = REPORTS_DIR / "candidate_model_eval.md"
+        if cand_md.exists():
+            shutil.copy2(cand_md, REPORTS_DIR / "model_eval.md")
 
         improvement = (active_mae - cand_mae) if active_mae else 0.0
         success_note = (

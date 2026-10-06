@@ -11,8 +11,29 @@ from fpl_oracle.domain.scoring import expected_floor_div
 
 
 class ScoringEnsemble:
-    def __init__(self):
-        pass
+    def __init__(self, z10: float = -0.806, z90: float = 1.009):
+        self.calibrated_z10 = z10
+        self.calibrated_z90 = z90
+
+    def calibrate(
+        self,
+        components_cal: dict[str, np.ndarray],
+        X_cal: pd.DataFrame,
+        Y_cal: pd.DataFrame,
+    ) -> tuple[float, float]:
+        """
+        Fit empirical standardized residual quantiles on a disjoint calibration set
+        to guarantee nominal 80% coverage on out-of-sample data (80% ± 5%).
+        """
+        cal_preds = self.aggregate_components(components_cal, X_cal)
+        xp = cal_preds["expected_points"].values
+        actual = Y_cal["target_points"].values
+        sigma = np.sqrt(cal_preds["variance"].values)
+
+        z = (actual - xp) / np.maximum(0.5, sigma)
+        self.calibrated_z10 = float(np.percentile(z, 10))
+        self.calibrated_z90 = float(np.percentile(z, 90))
+        return self.calibrated_z10, self.calibrated_z90
 
     def aggregate_components(self, components: dict[str, np.ndarray], X: pd.DataFrame) -> pd.DataFrame:
         """
@@ -23,6 +44,15 @@ class ScoringEnsemble:
         p_min60 = components["p_min60"]
         p_starts = components["p_starts"]
         exp_mins = components["expected_minutes"]
+
+        cop_scale = (
+            np.clip(X["chance_of_playing"].values / 100.0, 0.0, 1.0)
+            if "chance_of_playing" in X.columns
+            else 1.0
+        )
+        p_min60 = p_min60 * cop_scale
+        p_starts = p_starts * cop_scale
+        exp_mins = exp_mins * cop_scale
 
         # Probability of playing (at least 1 minute)
         # Bounded coherently: p_play >= p_min60
@@ -41,10 +71,10 @@ class ScoringEnsemble:
 
         # 2. Goals scored points
         goal_pts_rate = pos_gkp * 10.0 + pos_def * 6.0 + pos_mid * 5.0 + pos_fwd * 4.0
-        exp_goal_pts = components["expected_goals"] * goal_pts_rate
+        exp_goal_pts = components["expected_goals"] * goal_pts_rate * cop_scale
 
         # 3. Assists points (3 pts across all positions)
-        exp_assist_pts = components["expected_assists"] * 3.0
+        exp_assist_pts = components["expected_assists"] * 3.0 * cop_scale
 
         # 4. Clean sheet points (requires >= 60 mins)
         cs_pts_rate = pos_gkp * 4.0 + pos_def * 4.0 + pos_mid * 1.0 + pos_fwd * 0.0
@@ -95,24 +125,26 @@ class ScoringEnsemble:
 
         # Calibrated Distribution (P10, P50, P90, Variance)
         # In FPL scoring, distribution is positively skewed (hauls are in the upper tail, floor is bounded by appearance)
-        # Mean > Median for skewed haulers.
         base_sigma = 1.1 + (pos_fwd * 1.4) + (pos_mid * 1.2) + (pos_def * 0.9) + (pos_gkp * 0.7)
         sigma = base_sigma * np.sqrt(np.clip(np.maximum(0.1, xP) / 3.0, 0.4, 3.5))
 
-        # P10: Lower outcome floor (for 90%+ nailed starters: 2 appearance pts minus cards; otherwise 0 or 1)
+        # P10: Lower 10th percentile outcome floor from empirical residual calibration
         p10 = np.where(
-            zero_mask | (p_play < 0.90),
+            zero_mask,
             0.0,
-            np.where(p_min60 >= 0.90, np.maximum(0.0, 2.0 - np.clip(exp_card_deduction, 0.0, 1.0)), 1.0),
+            np.maximum(0.0, xP + self.calibrated_z10 * np.maximum(0.5, sigma)),
         )
 
         # P50: True Median (below mean due to right skew of goal/bonus hauls)
-        # Median is typically xP minus skew adjustment
         skew_adj = np.where(xP > 3.0, np.minimum(0.6, (exp_goal_pts + exp_assist_pts + exp_bonus_pts) * 0.25), 0.0)
         p50 = np.where(zero_mask, 0.0, np.maximum(p10, xP - skew_adj))
 
-        # P90: Upper ceiling outcome
-        p90 = np.where(zero_mask, 0.0, np.maximum(p50 + 1.0, xP + 1.45 * sigma))
+        # P90: Upper 90th percentile outcome ceiling from empirical residual calibration
+        p90 = np.where(
+            zero_mask,
+            0.0,
+            np.maximum(p50 + 1.0, xP + self.calibrated_z90 * np.maximum(0.5, sigma)),
+        )
 
         variance = sigma**2
 

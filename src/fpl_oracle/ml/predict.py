@@ -90,7 +90,13 @@ class ProjectionEngine:
         self.is_loaded = True
         logger.info("All component models successfully trained and persisted.")
 
-    def predict_gameweek(self, target_gw: int, bootstrap: BootstrapStatic, fixtures: list[Fixture]) -> pd.DataFrame:
+    def predict_gameweek(
+        self,
+        target_gw: int,
+        bootstrap: BootstrapStatic,
+        fixtures: list[Fixture],
+        reconciled_availabilities: dict[int, float] | None = None,
+    ) -> pd.DataFrame:
         """
         Generate expected points for all players for a specific gameweek.
         Handles double gameweeks and blank gameweeks.
@@ -99,7 +105,10 @@ class ProjectionEngine:
             self.load_or_train()
 
         features_df = feature_engineering.extract_live_features_for_upcoming(
-            bootstrap=bootstrap, fixtures=fixtures, target_gw=target_gw
+            bootstrap=bootstrap,
+            fixtures=fixtures,
+            target_gw=target_gw,
+            reconciled_availabilities=reconciled_availabilities,
         )
 
         if features_df.empty:
@@ -118,8 +127,11 @@ class ProjectionEngine:
 
         components = {**mins_pred, **att_pred, **def_pred, **defcon_pred, **bonus_pred, **cards_pred}
 
-        # Aggregate through scoring ensemble
-        res_df = scoring_ensemble.aggregate_components(components, X)
+        # Aggregate through scoring ensemble (passes chance_of_playing for availability scaling)
+        X_agg = X.copy()
+        if "chance_of_playing" in features_df.columns:
+            X_agg["chance_of_playing"] = features_df["chance_of_playing"].values
+        res_df = scoring_ensemble.aggregate_components(components, X_agg)
 
         # Merge metadata
         meta_cols = [
@@ -172,7 +184,12 @@ class ProjectionEngine:
         return dgw_grouped
 
     def predict_multi_gameweeks(
-        self, start_gw: int, horizon: int, bootstrap: BootstrapStatic, fixtures: list[Fixture]
+        self,
+        start_gw: int,
+        horizon: int,
+        bootstrap: BootstrapStatic,
+        fixtures: list[Fixture],
+        reconciled_availabilities: dict[int, float] | None = None,
     ) -> dict[int, pd.DataFrame]:
         """
         Generate projections across an N-gameweek horizon.
@@ -181,7 +198,9 @@ class ProjectionEngine:
         for gw in range(start_gw, start_gw + horizon):
             if gw > 38:
                 break
-            gw_df = self.predict_gameweek(gw, bootstrap, fixtures)
+            gw_df = self.predict_gameweek(
+                gw, bootstrap, fixtures, reconciled_availabilities=reconciled_availabilities
+            )
             multi_projections[gw] = gw_df
         return multi_projections
 

@@ -8,6 +8,7 @@ Generates machine-readable reports/model_eval.json and reports/model_eval.md.
 import json
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -162,6 +163,9 @@ class ModelEvaluator:
         rolling_origins: list[dict[str, Any]] | None = None,
         ablation_metrics: dict[str, Any] | None = None,
         upcoming_projections: list[dict[str, Any]] | None = None,
+        save_reports: bool = True,
+        custom_json_path: Path | None = None,
+        custom_md_path: Path | None = None,
     ) -> dict[str, Any]:
         """
         Evaluate ML model predictions vs 3 transparent baselines against ground truth targets.
@@ -265,10 +269,13 @@ class ModelEvaluator:
             "upcoming_projections": upcoming_projections or [],
         }
 
-        self.save_reports(results)
+        if save_reports:
+            self.save_reports(results, json_path=custom_json_path, md_path=custom_md_path)
         return results
 
-    def save_reports(self, res: dict[str, Any]):
+    def save_reports(self, res: dict[str, Any], json_path: Path | None = None, md_path: Path | None = None):
+        target_json = json_path or self.json_path
+        target_md = md_path or self.report_path
         cal = res.get("calibration", {})
         pdp = res.get("partial_dependence", {})
         abl = res.get("ablation", {})
@@ -276,10 +283,10 @@ class ModelEvaluator:
 
         # Save machine-readable JSON
         try:
-            self.json_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.json_path, "w", encoding="utf-8") as f:
+            target_json.parent.mkdir(parents=True, exist_ok=True)
+            with open(target_json, "w", encoding="utf-8") as f:
                 json.dump(res, f, indent=2)
-            logger.info(f"Saved machine-readable metrics to {self.json_path}")
+            logger.info(f"Saved machine-readable metrics to {target_json}")
         except Exception as e:
             logger.warning(f"Could not save JSON evaluation report: {e}")
 
@@ -392,8 +399,9 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 3. **Uncapped Predictions**: Projections emerge purely from continuous gradient boosted feature learning without manual bounds or hardcoded constraints.
 """
         try:
-            self.report_path.write_text(content, encoding="utf-8")
-            logger.info(f"Saved evaluation markdown report to {self.report_path}")
+            target_md.parent.mkdir(parents=True, exist_ok=True)
+            target_md.write_text(content, encoding="utf-8")
+            logger.info(f"Saved evaluation markdown report to {target_md}")
         except Exception as e:
             logger.warning(f"Could not save markdown evaluation report: {e}")
 
