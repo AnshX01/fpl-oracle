@@ -1,0 +1,101 @@
+{
+  "evaluation_type": "true_retraining_ablation",
+  "description": "Models retrained from scratch without each feature group on identical temporal split",
+  "timestamp": "2026-10-06T14:22:52.834553+00:00",
+  "train_size": 57330,
+  "test_size": 29757,
+  "full_model": {
+    "mae": 0.9401,
+    "rmse": 1.9867,
+    "spearman": 0.7067,
+    "feature_count": 62
+  },
+  "groups": [
+    {
+      "group_name": "fixture_difficulty_and_context",
+      "features_removed": [
+        "was_home",
+        "team_strength_attack",
+        "opp_strength_defence",
+        "net_strength_diff",
+        "opponent_difficulty",
+        "days_rest",
+        "implied_team_xG",
+        "implied_team_cs_prob"
+      ],
+      "feature_count_removed": 8,
+      "ablated_mae": 0.9489,
+      "ablated_rmse": 1.9782,
+      "ablated_spearman": 0.7066,
+      "mae_delta_vs_full": 0.0088,
+      "mae_gain_pct": 0.93,
+      "ci_95": [
+        0.0058,
+        0.0119
+      ]
+    },
+    {
+      "group_name": "player_underlying_metrics",
+      "features_removed": [
+        "roll_xG_3",
+        "roll_xG_5",
+        "roll_xG_8",
+        "roll_xA_3",
+        "roll_xA_5",
+        "roll_xA_8",
+        "roll_xGI_5",
+        "roll_xGC_5"
+      ],
+      "feature_count_removed": 8,
+      "ablated_mae": 0.9418,
+      "ablated_rmse": 1.9872,
+      "ablated_spearman": 0.7071,
+      "mae_delta_vs_full": 0.0017,
+      "mae_gain_pct": 0.18,
+      "ci_95": [
+        0.0002,
+        0.003
+      ]
+    },
+    {
+      "group_name": "minutes_and_starts",
+      "features_removed": [
+        "roll_minutes_3",
+        "roll_minutes_5",
+        "roll_minutes_8",
+        "roll_starts_ratio_5",
+        "roll_min60_ratio_5",
+        "std_minutes_per_gw"
+      ],
+      "feature_count_removed": 6,
+      "ablated_mae": 0.96,
+      "ablated_rmse": 1.9865,
+      "ablated_spearman": 0.7003,
+      "mae_delta_vs_full": 0.0199,
+      "mae_gain_pct": 2.07,
+      "ci_95": [
+        0.0166,
+        0.0231
+      ]
+    },
+    {
+      "group_name": "disciplinary_and_rare",
+      "features_removed": [
+        "roll_cards_5",
+        "roll_own_goals_5",
+        "roll_penalties_missed_5",
+        "roll_penalties_saved_5"
+      ],
+      "feature_count_removed": 4,
+      "ablated_mae": 0.9405,
+      "ablated_rmse": 1.9866,
+      "ablated_spearman": 0.7064,
+      "mae_delta_vs_full": 0.0004,
+      "mae_gain_pct": 0.04,
+      "ci_95": [
+        -0.0003,
+        0.0009
+      ]
+    }
+  ]
+}

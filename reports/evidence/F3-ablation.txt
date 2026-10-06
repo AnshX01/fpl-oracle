@@ -1,0 +1,29 @@
+INFO:fpl_oracle.historical:Loading existing historical dataset from C:\Users\anshw\Documents\fpl-expert\data\historical\master_history.csv
+======================================================================
+F3 TRUE RETRAINING FEATURE ABLATION EXPERIMENT
+======================================================================
+Dataset: Train 57330 rows (2023-24, 2024-25) -> Test 29757 rows (2025-26)
+
+[1/6] Training FULL model with all features...
+FULL Model: MAE=0.9401, RMSE=1.9867, Spearman=0.7067
+
+[2/6] Retraining WITHOUT group 'fixture_difficulty_and_context' (dropping 8 features)...
+  Ablated MAE: 0.9489 (Delta vs Full: +0.0088, Gain: +0.93%)
+  95% Bootstrap CI on Delta: [+0.0058, +0.0119]
+
+[3/6] Retraining WITHOUT group 'player_underlying_metrics' (dropping 8 features)...
+  Ablated MAE: 0.9418 (Delta vs Full: +0.0017, Gain: +0.18%)
+  95% Bootstrap CI on Delta: [+0.0002, +0.0030]
+
+[4/6] Retraining WITHOUT group 'minutes_and_starts' (dropping 6 features)...
+  Ablated MAE: 0.9600 (Delta vs Full: +0.0199, Gain: +2.07%)
+  95% Bootstrap CI on Delta: [+0.0166, +0.0231]
+
+[5/6] Retraining WITHOUT group 'disciplinary_and_rare' (dropping 4 features)...
+  Ablated MAE: 0.9405 (Delta vs Full: +0.0004, Gain: +0.04%)
+  95% Bootstrap CI on Delta: [-0.0003, +0.0009]
+
+Saved single authoritative ablation artifact: C:\Users\anshw\Documents\fpl-expert\reports\ablation.json
+======================================================================
+F3 ABLATION COMPLETED SUCCESSFULLY
+======================================================================
