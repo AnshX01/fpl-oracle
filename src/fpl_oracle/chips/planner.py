@@ -470,5 +470,44 @@ class ChipPlanner:
             "blank_gameweeks_calendar": bgw_list,
         }
 
+    def evaluate_joint_plan(
+        self,
+        current_squad_df: pd.DataFrame,
+        player_pool_df: pd.DataFrame,
+        bank: float,
+        free_transfers: int,
+        horizon_projections: dict[int, pd.DataFrame],
+        current_gw: int,
+        target_gw: int,
+        manager_history: ManagerHistory | None = None,
+        rivals_analysis: dict[str, Any] | None = None,
+        chip_retention_values: dict[str, float] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Coordinates stateful joint transfer and chip trajectory optimization.
+        Filters available chips according to Set 1 (GW 1-19) / Set 2 (GW 20-38) rules.
+        """
+        from fpl_oracle.optimise.transfers import transfer_optimizer
+
+        chips_status = self.get_remaining_chips(manager_history)
+        available = (
+            chips_status["set_1_remaining"]
+            if target_gw <= 19
+            else chips_status["set_2_remaining"]
+        )
+
+        return transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
+            current_squad_df=current_squad_df,
+            player_pool_df=player_pool_df,
+            bank=bank,
+            free_transfers=free_transfers,
+            horizon_projections=horizon_projections,
+            current_gw=current_gw,
+            target_gw=target_gw,
+            available_chips=available,
+            chip_retention_values=chip_retention_values,
+        )
+
 
 chip_planner = ChipPlanner()
+

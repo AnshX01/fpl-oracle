@@ -1117,6 +1117,270 @@ class TransferOptimizer:
             "include_price_gain": include_price_gain,
         }
 
+    def evaluate_joint_transfer_and_chip_plan(
+        self,
+        current_squad_df: pd.DataFrame,
+        player_pool_df: pd.DataFrame,
+        bank: float,
+        free_transfers: int,
+        horizon_projections: dict[int, pd.DataFrame],
+        current_gw: int,
+        target_gw: int,
+        available_chips: list[str] | None = None,
+        chip_retention_values: dict[str, float] | None = None,
+        locked_in_ids: list[int] | None = None,
+        locked_out_ids: list[int] | None = None,
+        excluded_team_ids: list[int] | None = None,
+        risk_preference: str = "balanced",
+        include_price_gain: bool = False,
+        stability_threshold: float = 0.3,
+        num_mc_scenarios: int = 50,
+    ) -> dict[str, Any]:
+        """
+        Evaluates joint dynamic trajectory search combining multi-GW transfer planning
+        and chip deployment options (Hold vs 3xC vs Bench Boost vs Free Hit vs Wildcard).
+        Incorporates explicit chip retention opportunity cost to ensure chips are only
+        deployed when their marginal gain exceeds their option retention value.
+        """
+        # 1. Base transfer optimization (HOLD case)
+        base_res = self.evaluate_transfer_options(
+            current_squad_df=current_squad_df,
+            player_pool_df=player_pool_df,
+            bank=bank,
+            free_transfers=free_transfers,
+            horizon_projections=horizon_projections,
+            current_gw=current_gw,
+            target_gw=target_gw,
+            locked_in_ids=locked_in_ids,
+            locked_out_ids=locked_out_ids,
+            excluded_team_ids=excluded_team_ids,
+            risk_preference=risk_preference,
+            include_price_gain=include_price_gain,
+            stability_threshold=stability_threshold,
+            num_mc_scenarios=num_mc_scenarios,
+        )
+        hold_plan = dict(base_res["recommended_plan"])
+        hold_discounted_score = float(
+            hold_plan.get("accumulated_discounted_net_xp")
+            or hold_plan.get("horizon_net_xp", 0.0)
+        )
+
+        # 2. Chip retention opportunity cost definitions
+        default_retention = {
+            "3xc": 6.0,       # Opportunity cost of burning TC outside a Double Gameweek
+            "bboost": 10.0,   # Opportunity cost of burning BB outside a full-squad DGW
+            "freehit": 10.0,  # Opportunity cost of burning FH outside a major blank/double GW
+            "wildcard": 8.0,  # Opportunity cost of burning WC outside an emergency/major swing
+        }
+        retention_costs = dict(default_retention)
+        if chip_retention_values:
+            retention_costs.update(chip_retention_values)
+
+        active_chips = list(available_chips or [])
+
+        # 3. Evaluate candidate trajectories
+        candidates: list[dict[str, Any]] = [
+            {
+                "chip": "HOLD",
+                "chip_code": None,
+                "action": "HOLD",
+                "gross_gain_vs_hold": 0.0,
+                "opportunity_cost": 0.0,
+                "net_gain_vs_hold": 0.0,
+                "effective_trajectory_score": round(hold_discounted_score, 2),
+                "plan": hold_plan,
+                "reason": "Hold chips for higher expected value windows (e.g. Double Gameweeks).",
+            }
+        ]
+
+        if "selling_price" in current_squad_df.columns:
+            squad_selling_total = float(current_squad_df["selling_price"].sum())
+        elif "value" in current_squad_df.columns:
+            squad_selling_total = float(current_squad_df["value"].sum())
+        else:
+            squad_selling_total = 1000.0
+        total_budget = bank + squad_selling_total
+
+        # Evaluate 3xc
+        if "3xc" in active_chips:
+            cap_info = hold_plan.get("lineup", {}).get("captain", {})
+            cap_xp = float(cap_info.get("expected_points", 0.0)) if isinstance(cap_info, dict) else float(getattr(cap_info, "expected_points", 0.0))
+            gross_tc = round(cap_xp, 2)
+            cost_tc = round(retention_costs.get("3xc", 6.0), 2)
+            net_tc = round(gross_tc - cost_tc, 2)
+            score_tc = round(hold_discounted_score + net_tc, 2)
+
+            tc_plan = dict(hold_plan)
+            tc_plan["chip_applied"] = "3xc"
+            tc_plan["gross_expected_points"] = round(hold_plan["gross_expected_points"] + gross_tc, 2)
+            tc_plan["net_expected_points"] = round(hold_plan["net_expected_points"] + gross_tc, 2)
+
+            cap_name = cap_info.get("web_name", "Captain") if isinstance(cap_info, dict) else getattr(cap_info, "web_name", "Captain")
+            candidates.append({
+                "chip": "3xc",
+                "chip_code": "3xc",
+                "action": "DEPLOY",
+                "gross_gain_vs_hold": gross_tc,
+                "opportunity_cost": cost_tc,
+                "net_gain_vs_hold": net_tc,
+                "effective_trajectory_score": score_tc,
+                "plan": tc_plan,
+                "reason": f"Triple Captain on {cap_name} gains +{gross_tc} xP (retention cost: {cost_tc} xP, net: {net_tc:+} xP).",
+            })
+
+        # Evaluate Bench Boost
+        if "bboost" in active_chips:
+            bench_obj = hold_plan.get("lineup", {}).get("bench")
+            if isinstance(bench_obj, pd.DataFrame):
+                bench_xp = float(bench_obj["expected_points"].sum()) if not bench_obj.empty and "expected_points" in bench_obj.columns else 0.0
+            elif isinstance(bench_obj, list):
+                bench_xp = sum(float(b.get("expected_points", 0.0)) for b in bench_obj)
+            else:
+                bench_xp = 0.0
+            gross_bb = round(bench_xp, 2)
+            cost_bb = round(retention_costs.get("bboost", 10.0), 2)
+            net_bb = round(gross_bb - cost_bb, 2)
+            score_bb = round(hold_discounted_score + net_bb, 2)
+
+            bb_plan = dict(hold_plan)
+            bb_plan["chip_applied"] = "bboost"
+            bb_plan["gross_expected_points"] = round(hold_plan["gross_expected_points"] + gross_bb, 2)
+            bb_plan["net_expected_points"] = round(hold_plan["net_expected_points"] + gross_bb, 2)
+
+            candidates.append({
+                "chip": "bboost",
+                "chip_code": "bboost",
+                "action": "DEPLOY",
+                "gross_gain_vs_hold": gross_bb,
+                "opportunity_cost": cost_bb,
+                "net_gain_vs_hold": net_bb,
+                "effective_trajectory_score": score_bb,
+                "plan": bb_plan,
+                "reason": f"Bench Boost contributes bench points (+{gross_bb} xP, retention cost: {cost_bb} xP, net: {net_bb:+} xP).",
+            })
+
+        # Evaluate Free Hit
+        if "freehit" in active_chips:
+            try:
+                from fpl_oracle.optimise.squad import squad_optimizer
+                fh_solve = squad_optimizer.solve_best_squad(
+                    player_pool_df=player_pool_df,
+                    budget=total_budget,
+                    metric_col="expected_points",
+                )
+                fh_squad = fh_solve["squad"]
+                fh_lineup = lineup_optimizer.select_lineup_and_captain(fh_squad, risk_preference=risk_preference)
+                fh_gross = float(fh_lineup["total_gameweek_expected_points"])
+                hold_gross = float(hold_plan["gross_expected_points"])
+                gross_fh = round(max(0.0, fh_gross - hold_gross), 2)
+                cost_fh = round(retention_costs.get("freehit", 10.0), 2)
+                net_fh = round(gross_fh - cost_fh, 2)
+                score_fh = round(hold_discounted_score + net_fh, 2)
+
+                fh_plan = dict(hold_plan)
+                fh_plan["chip_applied"] = "freehit"
+                fh_plan["plan_type"] = "FREE_HIT"
+                fh_plan["lineup"] = fh_lineup
+                fh_plan["gross_expected_points"] = round(fh_gross, 2)
+                fh_plan["net_expected_points"] = round(fh_gross, 2)
+                fh_plan["hits"] = 0
+                fh_plan["hit_cost"] = 0.0
+
+                candidates.append({
+                    "chip": "freehit",
+                    "chip_code": "freehit",
+                    "action": "DEPLOY",
+                    "gross_gain_vs_hold": gross_fh,
+                    "opportunity_cost": cost_fh,
+                    "net_gain_vs_hold": net_fh,
+                    "effective_trajectory_score": score_fh,
+                    "plan": fh_plan,
+                    "reason": f"Free Hit single-gameweek restructure yields +{gross_fh} xP (retention cost: {cost_fh} xP, net: {net_fh:+} xP).",
+                })
+            except Exception:
+                pass
+
+        # Evaluate Wildcard
+        if "wildcard" in active_chips:
+            try:
+                from fpl_oracle.optimise.squad import squad_optimizer
+                wc_solve = squad_optimizer.solve_best_squad(
+                    player_pool_df=player_pool_df,
+                    budget=total_budget,
+                    metric_col="expected_points",
+                )
+                wc_squad = wc_solve["squad"]
+                wc_lineup = lineup_optimizer.select_lineup_and_captain(wc_squad, risk_preference=risk_preference)
+                wc_step0_gross = float(wc_lineup["total_gameweek_expected_points"])
+
+                horizon_gws = [target_gw + offset for offset in range(5) if target_gw + offset <= 38]
+                wc_multi_net = 0.0
+                for idx, h_gw in enumerate(horizon_gws):
+                    disc = self.discount_factor ** idx
+                    gw_df = horizon_projections.get(h_gw, player_pool_df)
+                    sub_df = gw_df[gw_df["element"].isin(wc_squad["element"])].copy()
+                    if len(sub_df) < 15:
+                        sub_df = wc_squad.copy()
+                    sub_lineup = lineup_optimizer.select_lineup_and_captain(sub_df, risk_preference=risk_preference)
+                    wc_multi_net += disc * float(sub_lineup["total_gameweek_expected_points"])
+
+                gross_wc = round(max(0.0, wc_multi_net - hold_discounted_score), 2)
+                cost_wc = round(retention_costs.get("wildcard", 8.0), 2)
+                net_wc = round(gross_wc - cost_wc, 2)
+                score_wc = round(hold_discounted_score + net_wc, 2)
+
+                wc_plan = dict(hold_plan)
+                wc_plan["chip_applied"] = "wildcard"
+                wc_plan["plan_type"] = "WILDCARD"
+                wc_plan["lineup"] = wc_lineup
+                wc_plan["gross_expected_points"] = round(wc_step0_gross, 2)
+                wc_plan["net_expected_points"] = round(wc_step0_gross, 2)
+                wc_plan["hits"] = 0
+                wc_plan["hit_cost"] = 0.0
+
+                candidates.append({
+                    "chip": "wildcard",
+                    "chip_code": "wildcard",
+                    "action": "DEPLOY",
+                    "gross_gain_vs_hold": gross_wc,
+                    "opportunity_cost": cost_wc,
+                    "net_gain_vs_hold": net_wc,
+                    "effective_trajectory_score": score_wc,
+                    "plan": wc_plan,
+                    "reason": f"Wildcard multi-GW restructure yields +{gross_wc} trajectory xP (retention cost: {cost_wc} xP, net: {net_wc:+} xP).",
+                })
+            except Exception:
+                pass
+
+        # 4. Rank candidates by net gain vs hold
+        candidates.sort(key=lambda c: c["net_gain_vs_hold"], reverse=True)
+        best_cand = candidates[0]
+
+        if best_cand["chip"] != "HOLD" and best_cand["net_gain_vs_hold"] > 0.0:
+            recommended_chip = best_cand["chip"]
+            recommended_action = "DEPLOY"
+            recommended_plan = best_cand["plan"]
+            for c in candidates:
+                c["is_recommended"] = bool(c["chip"] == recommended_chip)
+        else:
+            recommended_chip = None
+            recommended_action = "HOLD"
+            recommended_plan = hold_plan
+            for c in candidates:
+                c["is_recommended"] = bool(c["chip"] == "HOLD")
+
+        return {
+            "recommended_chip": recommended_chip,
+            "chip_action": recommended_action,
+            "recommended_plan": recommended_plan,
+            "hold_plan": hold_plan,
+            "chip_comparison_table": candidates,
+            "best_candidate": best_cand,
+            "opportunity_costs_applied": retention_costs,
+            "transfer_roadmap": base_res.get("transfer_roadmap", []),
+            "hit_verdict": base_res.get("hit_verdict", ""),
+        }
+
     def _generate_dynamic_roadmap(
         self,
         trajectory: list[dict[str, Any]],
