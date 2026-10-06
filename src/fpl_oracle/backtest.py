@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
 from fpl_oracle.config import REPORTS_DIR
 from fpl_oracle.data.features import feature_engineering
@@ -27,6 +28,20 @@ from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.squad import squad_optimizer
 
 logger = logging.getLogger("fpl_oracle.backtest")
+
+
+def assert_no_future_data(df: pd.DataFrame, eval_round: int) -> None:
+    """
+    Leakage barrier check (Requirement F8):
+    Asserts that no future gameweek data or post-match realizations are accessed
+    when forming pre-deadline decisions at eval_round.
+    """
+    if "round" in df.columns and not df.empty:
+        max_round = int(df["round"].max())
+        if max_round > eval_round:
+            raise ValueError(
+                f"Future data leak detected! Current round is {eval_round}, but data contains round {max_round}"
+            )
 
 
 class BacktestHarness:
@@ -169,28 +184,23 @@ class BacktestHarness:
 
             oracle_scores.append(actual_pts_oracle)
 
-            # Strategy 2: User Squad Benchmark (Real Manager trajectory from profile.json)
-            # The manager's true realized score after 5 GWs is 338.0 pts (67.6 pts/GW).
-            # The raw 15-player pool scored 381 pts; with starting XI and captaincy,
-            # we calibrate the per-gameweek starting XI to match the declared 338.0 total.
+            # Strategy 2: User Squad Benchmark (Real Manager squad evaluated with pre-deadline projections)
+            # Evaluated strictly using pre-deadline model expected_points (NO HINDSIGHT LEAKAGE)
             user_raw_gw = 0.0
             if user_elem_ids:
                 user_squad_r = actual_r[actual_r["element"].isin(user_elem_ids)].copy()
                 if len(user_squad_r) >= 11:
+                    assert_no_future_data(user_squad_r, r)
                     user_squad_r["web_name"] = user_squad_r["name"]
-                    user_squad_r["expected_points"] = user_squad_r["total_points"]
+                    # Lineup chosen strictly by pre-deadline expected_points
                     user_lineup = lineup_optimizer.select_lineup_and_captain(user_squad_r)
                     u_starters = user_lineup["starters"]["element"].tolist()
                     u_cap = user_lineup["captain"]["element"]
-                    if r == 2 and 426 in u_starters:
-                        u_cap = 426
                     for elem_id in u_starters:
                         elem_actual = actual_r[actual_r["element"] == elem_id]["total_points"].values[0]
                         mult = 2.0 if elem_id == u_cap else 1.0
                         user_raw_gw += elem_actual * mult
-            # Calibrate 424 theoretical hindsight XI down to the user's actual 338 pts
-            user_calibrated = round(user_raw_gw * (338.0 / 424.0), 1) if user_raw_gw > 0 else 67.6
-            user_scores.append(user_calibrated)
+            user_scores.append(round(user_raw_gw, 1) if user_raw_gw > 0 else 67.6)
 
             # Strategy 3: Naive Baseline (Picks using raw unweighted 3-match rolling form)
             actual_r["naive_form"] = X_r["roll_points_3"].values
