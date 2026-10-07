@@ -3,1199 +3,526 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FPL Oracle — Decision Support & Squad Intelligence</title>
-  
-  <!-- Inter Font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  
-  <!-- Local Pinned Runtime Libraries (Offline-Ready) -->
-  <script src="/static/js/tailwind.js"></script>
+  <meta name="color-scheme" content="dark light">
+  <title>FPL Oracle - Decision support</title>
+
+  <!-- Local pinned runtime libraries (offline-ready) -->
   <script src="/static/js/vue.global.prod.js"></script>
   <script src="/static/js/marked.min.js"></script>
   <script src="/static/js/purify.min.js"></script>
-  
-  <!-- Fallbacks if running outside FastAPI static mount -->
+  <script src="/static/js/lucide.min.js"></script>
   <script>
     if (!window.Vue) document.write('<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"><\/script>');
     if (!window.marked) document.write('<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"><\/script>');
     if (!window.DOMPurify) document.write('<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"><\/script>');
   </script>
 
-  <!-- Atlas Custom Design System Stylesheet -->
-  <link rel="stylesheet" href="/static/css/atlas.css">
-
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
-          },
-          colors: {
-            brand: {
-              400: '#34d399',
-              500: '#10b981',
-              600: '#059669',
-              700: '#047857',
-            }
-          }
-        }
-      }
-    }
-  </script>
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/ui.css">
 </head>
-<body class="selection:bg-emerald-500 selection:text-black">
+<body>
 
-<div id="app" v-cloak class="min-h-screen flex flex-col">
+<div id="app" v-cloak class="app">
 
-  <section v-if="hasBasicSquad && !hasLoadedSquad" data-testid="basic-squad" class="council-card p-4 m-4">
-    <h2 class="font-bold">Published team loaded</h2>
-    <p>{{ basicSquadData.is_stale ? 'Cached published team; refresh failed or in progress.' : 'Published picks, not optimized recommendations.' }}</p>
-    <div data-testid="basic-starters"><span v-for="p in basicSquadData.starters" :key="p.element" class="inline-block p-2">{{ p.web_name }}</span></div>
-    <div data-testid="basic-bench">Bench: <span v-for="p in basicSquadData.bench" :key="p.element" class="inline-block p-2">{{ p.web_name }}</span></div>
-    <p>Source data as of: {{ basicSquadData.data_as_of || 'Unknown' }}. Fresh advice: {{ adviceStage || "calculating separately" }}.</p>
-  </section>
-  <!-- ========================================== -->
-  <!-- TOP OPERATIONAL HEADER                     -->
-  <!-- ========================================== -->
-  <header class="border-b border-[#27272a] bg-[#09090b]/90 backdrop-blur sticky top-0 z-40 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-    <!-- Brand & Gameweek Status -->
-    <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center font-black text-black shadow-md shadow-emerald-500/20 text-xs tracking-wider">
-        FPL
+  <aside class="desktop-sidebar">
+<div class="sidebar-brand"><strong>FPL Oracle</strong></div>
+<div class="side-section"><div class="side-caption">Workspace</div>
+<nav class="side-nav" aria-label="Workspace">
+<button v-for="item in mainTabs" :key="item.key" class="side-link" :class="{ selected: activeTab === item.key }" :aria-current="activeTab === item.key ? 'page' : undefined" @click="navigate(item.key)"><ui-icon :name="item.icon" :size="16"></ui-icon>{{ item.label }}</button>
+</nav></div>
+<div class="side-section"><div class="side-caption">Tools</div><nav class="side-nav" aria-label="Tools">
+<button v-for="item in moreItems.filter(i => i.key !== 'settings')" :key="item.key" class="side-link" @click="onMenu(item.key)"><ui-icon :name="item.icon" :size="16"></ui-icon>{{ item.label }}</button>
+</nav></div>
+
+<div class="sidebar-bottom"><div class="row between"><button class="side-link" @click="onMenu('settings')"><ui-icon name="settings-2" :size="16"></ui-icon>Settings</button><ui-button variant="ghost" :icon="isDark ? 'sun' : 'moon'" icon-only aria-label="Toggle theme" @click="toggleTheme"></ui-button></div></div>
+</aside>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <ui-button class="mobile-menu-trigger" variant="ghost" icon="menu" icon-only aria-label="Open navigation" @click="showNavigation = true"></ui-button>
+      <div class="brand"><div><div class="brand-name">{{ mainTabs.find(t => t.key === activeTab)?.label || 'Overview' }}</div><div class="brand-sub num">{{ deadlineDisplay }}</div></div></div>
+      <div class="top-actions">
+        <ui-button variant="primary" icon="refresh-cw" :loading="pipelineRunning" aria-label="Update data" @click="triggerSyncPipeline">{{ pipelineRunning ? pipelineProgress + '%' : 'Update' }}</ui-button>
+        <ui-button variant="ghost" icon="message-circle" icon-only aria-label="Ask about my team" @click="showChatDrawer = true">Ask</ui-button>
+        <ui-button class="mobile-theme" variant="ghost" :icon="isDark ? 'sun' : 'moon'" icon-only aria-label="Toggle theme" @click="toggleTheme"></ui-button>
       </div>
-      <div>
-        <div class="flex items-center gap-2">
-          <span class="font-extrabold text-base tracking-tight text-white">FPL Oracle</span>
-          <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/30">2026/27</span>
-        </div>
-        <div class="text-xs text-zinc-400 flex items-center gap-2 mt-0.5">
-          <span>{{ gameState.current_gw ? 'GW' + gameState.current_gw : 'GW' }} <span v-if="gameState.phase === 'LIVE'" class="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] uppercase font-bold">Live</span><span v-else class="text-zinc-400">{{ gameState.phase ? gameState.phase : 'Loading' }}</span></span>
-          <span class="w-1 h-1 rounded-full bg-zinc-600"></span>
-          <span class="text-emerald-400 font-medium">{{ deadlineDisplay }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Operational Action Buttons -->
-    <div class="flex items-center flex-wrap gap-2 text-xs">
-      <!-- Panic Crisis Solver -->
-      <button @click="openPanicModal" class="panic-btn-pulse px-3 py-1.5 rounded-md bg-red-600 hover:bg-red-500 text-white font-bold transition flex items-center gap-1.5 shadow">
-        <span class="px-1 rounded bg-black/30 text-[10px] uppercase font-mono tracking-wider">Alert</span>
-        <span class="hidden sm:inline">Emergency</span>
-        <span>Panic</span>
-      </button>
-
-      <!-- Pre-Deadline Audit -->
-      <button @click="openChecklistModal" :class="checklistSummary.status === 'PASS' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'" class="px-3 py-1.5 rounded-md border font-semibold flex items-center gap-1.5 transition font-mono">
-        <span class="text-[10px] uppercase font-bold">{{ checklistSummary.status === 'PASS' ? '[PASS]' : '[WARN]' }}</span>
-        <span>Audit: {{ checklistSummary.passed_count ?? 0 }}/5</span>
-      </button>
-
-      <!-- Update Data (Sync Pipeline) -->
-      <button @click="triggerSyncPipeline" :disabled="pipelineRunning" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium transition flex items-center gap-1.5 disabled:opacity-50">
-        <span v-if="pipelineRunning" class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping mr-1"></span>
-        <span v-else class="text-emerald-400 font-bold font-mono text-xs">SYNC</span>
-        <span>{{ pipelineRunning ? 'Updating (' + pipelineProgress + '%)' : 'Update Data' }}</span>
-      </button>
-
-      <!-- Ask About My Team (AI Chat Drawer) -->
-      <button @click="showChatDrawer = true" class="px-3 py-1.5 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-semibold transition flex items-center gap-1.5 font-mono">
-        <span class="text-xs uppercase font-bold">AI</span>
-        <span>Ask Local</span>
-      </button>
-
-      <!-- Theme Toggle (Light / Dark) -->
-      <button @click="toggleTheme" class="px-2.5 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition font-mono text-[11px]" :title="isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'">
-        <span v-if="isDark">LIGHT</span>
-        <span v-else>DARK</span>
-      </button>
-
-      <!-- Manager Settings -->
-      <button @click="showSettingsModal = true" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium transition flex items-center gap-1.5">
-        <span class="text-zinc-400 font-mono text-[11px]">ID</span>
-        <span class="max-w-[100px] truncate">{{ squadData.team_name || 'Settings' }}</span>
-      </button>
     </div>
   </header>
+  <ui-modal class="navigation-dialog" :open="showNavigation" title="FPL Oracle" drawer @close="showNavigation = false"><div class="mobile-sidebar">
+<div class="sidebar-brand"><strong>FPL Oracle</strong></div>
+<div class="side-section"><div class="side-caption">Workspace</div>
+<nav class="side-nav" aria-label="Workspace">
+<button v-for="item in mainTabs" :key="item.key" class="side-link" :class="{ selected: activeTab === item.key }" :aria-current="activeTab === item.key ? 'page' : undefined" @click="navigate(item.key)"><ui-icon :name="item.icon" :size="16"></ui-icon>{{ item.label }}</button>
+</nav></div>
+<div class="side-section"><div class="side-caption">Tools</div><nav class="side-nav" aria-label="Tools">
+<button v-for="item in moreItems.filter(i => i.key !== 'settings')" :key="item.key" class="side-link" @click="onMenu(item.key)"><ui-icon :name="item.icon" :size="16"></ui-icon>{{ item.label }}</button>
+</nav></div>
 
-  <!-- ========================================== -->
-  <!-- FINANCIAL & PROVENANCE BAR                 -->
-  <!-- ========================================== -->
-  <div class="border-b border-[#27272a] bg-[#111113] px-4 py-2 text-xs">
-    <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center flex-wrap gap-4 font-mono">
-        <div class="flex items-center gap-1.5">
-          <span class="text-zinc-400">Squad Value:</span>
-          <span class="font-bold text-white">{{ squadData.total_team_value != null ? '£' + squadData.total_team_value + 'm' : '—' }}</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-zinc-400">Selling Value:</span>
-          <span class="font-bold text-emerald-400">{{ squadData.total_selling_value != null ? '£' + squadData.total_selling_value + 'm' : '—' }}</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-zinc-400">In Bank:</span>
-          <span class="font-bold text-amber-400">{{ bankDisplay }}</span>
-          <span v-if="squadData.has_bank_override" class="text-[10px] px-1 rounded bg-amber-500/20 text-amber-300" title="Manual bank override applied">override</span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-zinc-400">Banked Transfers:</span>
-          <span class="font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
-            {{ ftDisplay }} (max 5)
-          </span>
-          <span v-if="squadData.has_ft_override" class="text-[10px] px-1 rounded bg-amber-500/20 text-amber-300" title="Manual transfers override applied">override</span>
-        </div>
-      </div>
-      <div class="flex items-center gap-3 text-zinc-400">
-        <span class="capitalize">Risk: <strong class="text-zinc-200">{{ profile.risk_preference || 'balanced' }}</strong></span>
-        <span class="w-1 h-1 rounded-full bg-zinc-600"></span>
-        <span>Set 1 Chip Cutoff: <strong class="text-amber-400 font-mono">GW19</strong></span>
-      </div>
-    </div>
-  </div>
+<div class="sidebar-bottom"><div class="row between"><button class="side-link" @click="onMenu('settings')"><ui-icon name="settings-2" :size="16"></ui-icon>Settings</button><ui-button variant="ghost" :icon="isDark ? 'sun' : 'moon'" icon-only aria-label="Toggle theme" @click="toggleTheme"></ui-button></div></div>
+</div></ui-modal>
+  <main class="container main">
 
-  <!-- ========================================== -->
-  <!-- 4 PRIMARY EVERYDAY DESTINATIONS (NAV TABS) -->
-  <!-- ========================================== -->
-  <nav class="border-b border-[#27272a] bg-[#09090b] px-4 flex items-center justify-between text-sm">
-    <div class="flex space-x-1 overflow-x-auto max-w-6xl mx-auto w-full">
-      <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
-        <span>Overview</span>
-      </button>
+    <div v-if="pipelineRunning" class="callout tone-info" role="status"><ui-icon name="loader-circle" class="spin"></ui-icon><span>{{ pipelineCurrentStage }} ({{ pipelineProgress }}%)</span></div>
+    <!-- Published picks, shown while fresh advice calculates -->
+    <glass-card v-if="hasBasicSquad && !hasLoadedSquad" data-testid="basic-squad" title="Published team loaded">
+      <p class="muted">{{ basicSquadData.is_stale ? 'Cached published team; refresh failed or in progress.' : 'Published picks, not optimized recommendations.' }}</p>
+      <div class="chips" data-testid="basic-starters"><ui-badge v-for="p in basicSquadData.starters" :key="p.element">{{ p.web_name }}</ui-badge></div>
+      <div class="chips" data-testid="basic-bench"><span class="subtle">Bench:</span> <ui-badge v-for="p in basicSquadData.bench" :key="p.element">{{ p.web_name }}</ui-badge></div>
+      <p class="subtle">Source data as of: {{ basicSquadData.data_as_of || 'Unknown' }}. Fresh advice: {{ adviceStage || "calculating separately" }}.</p>
+    </glass-card>
 
-      <button @click="activeTab = 'team'" :class="activeTab === 'team' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
-        <span>My Team</span>
-      </button>
+    <!-- ===================== OVERVIEW ===================== -->
+    <section v-if="activeTab === 'overview'" class="panel" id="main-panel-overview" role="tabpanel" aria-label="Overview">
 
-      <button @click="activeTab = 'transfers'" :class="activeTab === 'transfers' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
-        <span>Transfers</span>
-      </button>
-
-      <button @click="activeTab = 'league'" :class="activeTab === 'league' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
-        <span>My League</span>
-      </button>
-
-      <!-- Secondary Links -->
-      <div class="ml-auto hidden md:flex items-center gap-2">
-        <button @click="showBriefingModal = true" class="text-xs text-zinc-400 hover:text-zinc-200 py-2 px-3 rounded hover:bg-zinc-800 transition flex items-center gap-1.5 font-mono">
-          <span>Weekly Report</span>
-        </button>
-        <button @click="showSystemModal = true" class="text-xs text-zinc-400 hover:text-zinc-200 py-2 px-3 rounded hover:bg-zinc-800 transition flex items-center gap-1.5 font-mono">
-          <span>Diagnostics</span>
-        </button>
-      </div>
-    </div>
-  </nav>
-
-  <!-- ========================================== -->
-  <!-- MAIN CONTENT CONTAINER                     -->
-  <!-- ========================================== -->
-  <main class="flex-1 p-4 md:p-6 max-w-6xl mx-auto w-full space-y-6">
-
-    <!-- ========================================== -->
-    <!-- 1. OVERVIEW SCREEN                         -->
-    <!-- ========================================== -->
-    <section v-if="activeTab === 'overview'" class="space-y-6">
-      
-      <!-- COUNCIL DECISION CARD: YOUR NEXT DECISION (D1, D2, D3) -->
-      <div id="decision-card" class="council-card p-6 border-l-4 border-l-emerald-500 space-y-4">
-        <!-- Chip Recommendation Banner if Active -->
-        <div v-if="nextDecision.card && nextDecision.card.chip && nextDecision.card.chip.recommend" class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold">CHIP</span>
-            <span><strong>Conditional chip candidate:</strong> <strong>{{ nextDecision.card.chip.chip_display_name }}</strong> inside the loaded window (+{{ nextDecision.card.chip.gain_vs_hold }} next-GW xP). Later chip value remains unresolved.</span>
+      <glass-card id="decision-card" class="hero">
+        <div class="row between">
+          <div class="row">
+            <ui-badge v-if="nextDecision.isUnavailable" tone="muted">{{ nextDecision.badge }}</ui-badge>
+            <ui-badge v-else :tone="nextDecision.tone" dot>{{ nextDecision.badge }}</ui-badge>
+            <span class="subtle">{{ gameState.next_gw ? 'Gameweek ' + gameState.next_gw : 'Upcoming' }}</span>
           </div>
-          <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 font-mono text-[10px]">Review first</span>
-        </div>
-
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <span class="decision-badge" :class="nextDecision.badgeClass">
-              <span>Your Next Decision</span>
-            </span>
-            <span class="text-xs text-zinc-400 font-mono">{{ gameState.next_gw ? 'Gameweek ' + gameState.next_gw : 'Upcoming' }} Recommendation</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span v-if="nextDecision.card" class="text-xs font-mono px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-300 border border-zinc-700">
-              Model {{ nextDecision.card.model_version }}
-            </span>
-            <button @click="exportDecisionCard" class="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium transition flex items-center gap-1.5" title="Copy printable markdown decision card to clipboard">
-              <span class="font-mono text-[10px] text-zinc-400">MD</span>
-              <span>Export Card</span>
-            </button>
+          <div class="row">
+            <ui-badge v-if="nextDecision.card">Model {{ nextDecision.card.model_version }}</ui-badge>
+            <ui-button variant="ghost" size="sm" icon="copy" :loading="busy.export" :disabled="!nextDecision.card" @click="exportDecisionCard">Export card</ui-button>
           </div>
         </div>
 
-        <div>
-          <h2 class="text-2xl font-black text-white tracking-tight">{{ nextDecision.title }}</h2>
-          <div class="flex flex-wrap items-center gap-3 text-xs font-mono mt-2">
-            <span class="text-emerald-400 font-bold px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20">{{ nextDecision.gainText }}</span>
-            <span class="text-zinc-300 px-2 py-1 rounded bg-zinc-800">{{ nextDecision.hitText }}</span>
-            <span class="text-amber-400 px-2 py-1 rounded bg-amber-500/10">{{ nextDecision.bankText }}</span>
-            <span class="text-zinc-400 px-2 py-1 rounded bg-zinc-800">{{ nextDecision.ftText }}</span>
-            <span v-if="nextDecision.card && nextDecision.card.captain" class="text-emerald-300 px-2 py-1 rounded bg-emerald-950/40 border border-emerald-800/50">
-              Captain: (C) {{ nextDecision.card.captain.web_name }} ({{ nextDecision.card.captain.expected_points }} xP)
-            </span>
-            <span v-if="nextDecision.card && nextDecision.card.rivals && nextDecision.card.rivals.status === 'configured'" class="text-purple-300 px-2 py-1 rounded bg-purple-950/40 border border-purple-800/50">
-              Posture: {{ nextDecision.card.rivals.posture }} ({{ nextDecision.card.win_prob.p_first }}% horizon, owned squad held)
-            </span>
-          </div>
+        <div v-if="decisionCardLoading || plansLoading" class="stack reserve" aria-busy="true" aria-label="Calculating recommendations">
+          <ui-skeleton width="70%" height="36px"></ui-skeleton>
+          <ui-skeleton width="100%" height="20px"></ui-skeleton>
+          <ui-skeleton width="85%" height="20px"></ui-skeleton>
+          <p class="subtle">{{ adviceStage || 'Calculating recommendations' }}</p>
         </div>
 
-        <!-- Why (Supporting Reasons) -->
-        <div class="space-y-1.5 pt-1">
-          <div class="text-xs font-bold text-zinc-400 uppercase tracking-wider">Why</div>
-          <div v-for="(reason, idx) in nextDecision.reasons" :key="idx" class="flex items-start gap-2 text-sm text-zinc-300">
-            <span class="text-emerald-400 font-bold mt-0.5">•</span>
-            <span>{{ reason }}</span>
-          </div>
-        </div>
+        <template v-else>
+          <h2 class="hero-title">{{ nextDecision.title }}</h2>
 
-        <!-- Caveat & Action Bar -->
-        <div class="pt-2 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div class="text-amber-400/90 flex items-center gap-1.5">
-            <span class="font-mono text-[10px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">NOTE</span>
-            <span>{{ nextDecision.caveat }}</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="text-[11px] text-zinc-500 italic hidden sm:inline">Advice only — nothing is submitted to FPL.</span>
-            <button @click="activeTab = 'transfers'" class="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-black font-bold transition flex items-center gap-1.5">
-              <span>Transfers to make</span>
-              <span>→</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- PREDICTED POINTS SUMMARY & COLLAPSIBLE BREAKDOWN -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        
-        <!-- Predicted Points Card -->
-        <div class="council-card p-5 space-y-3">
-          <div class="flex items-center justify-between text-xs text-zinc-400 font-medium">
-            <span>GW{{ gameState.next_gw || 6 }} Predicted Points</span>
-            <button @click="showXpBreakdown = !showXpBreakdown" class="text-emerald-400 hover:underline flex items-center gap-1">
-              <span>{{ showXpBreakdown ? 'Hide Math' : 'Show Math' }}</span>
-              <span>{{ showXpBreakdown ? '▲' : '▼' }}</span>
-            </button>
+          <div v-if="!nextDecision.isUnavailable" class="stats">
+            <div class="stat"><span class="stat-label">Projected gain</span><span class="stat-value">{{ nextDecision.gainText }}</span></div>
+            <div class="stat"><span class="stat-label">Hit</span><span class="stat-value">{{ nextDecision.hitText }}</span></div>
+            <div class="stat"><span class="stat-label">Bank</span><span class="stat-value">{{ nextDecision.bankText }}</span></div>
+            <div class="stat"><span class="stat-label">Free transfers</span><span class="stat-value">{{ nextDecision.ftText }}</span></div>
           </div>
 
-          <div class="flex items-baseline gap-2">
-            <span class="text-4xl font-black text-emerald-400 font-mono">{{ totalGameweekPoints }}</span>
-            <span class="text-xs text-zinc-400 font-mono">predicted points</span>
-          </div>
-
-          <!-- Collapsible Arithmetic Breakdown -->
-          <div v-if="showXpBreakdown" class="p-3 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono space-y-1.5 text-zinc-300">
-            <div class="flex justify-between">
-              <span class="text-zinc-400">11 Starting Players:</span>
-              <span class="font-bold text-white">{{ startersExpectedPoints }} pts</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-zinc-400">Captaincy Multiplier (+1x):</span>
-              <span class="font-bold text-emerald-400">+{{ captainBonusPoints }} pts</span>
-            </div>
-            <div class="border-t border-zinc-800 pt-1 flex justify-between font-bold">
-              <span class="text-emerald-400">Total Gameweek Forecast:</span>
-              <span class="text-emerald-400">{{ totalGameweekPoints }} pts</span>
-            </div>
-            <div class="text-[10px] text-zinc-500 pt-1">
-              *Bench points (4 reserves) do not count toward total unless an autosub activates.
-            </div>
-          </div>
-
-          <div class="text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>Starting Formation: <strong class="text-white">{{ squadData.formation || '—' }}</strong></span>
-            <span>Confidence: <strong class="text-emerald-400">{{ squadData.confidence != null ? squadData.confidence : '—' }}</strong></span>
-          </div>
-        </div>
-
-        <!-- Captain & Vice Captain Card -->
-        <div class="council-card p-5 space-y-3">
-          <div class="text-xs text-zinc-400 font-medium flex justify-between">
-            <span>Who to captain</span>
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-bold">2x Points</span>
-          </div>
-
-          <div v-if="squadData.captain" class="space-y-2">
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="text-lg font-bold text-white flex items-center gap-1.5">
-                  <span class="px-1.5 py-0.5 rounded bg-emerald-500 text-black text-[10px] font-black font-mono">C</span>
-                  <span>{{ squadData.captain.web_name }}</span>
-                </div>
-                <div class="text-xs text-zinc-400 font-mono">
-                  {{ squadData.captain.expected_points }} predicted pts (x2 = {{ (squadData.captain.expected_points * 2).toFixed(1) }})
-                </div>
+          <div v-if="chipCheck" class="callout" :class="'tone-' + chipCheck.tone" data-testid="chip-banner">
+            <ui-icon name="zap"></ui-icon>
+            <div class="stack-sm">
+              <div class="callout-title">
+                <span>Conditional chip candidate: {{ decisionCard.chip.chip_display_name }}</span>
+                <ui-badge :tone="chipCheck.tone" dot>{{ chipCheck.label }}</ui-badge>
               </div>
-              <div class="text-right text-[11px] font-mono text-zinc-400">
-                <div>Floor: {{ squadData.captain.p10 ?? '—' }} pts</div>
-                <div class="text-emerald-400">Ceiling: {{ squadData.captain.p90 ?? '—' }} pts</div>
-              </div>
-            </div>
-
-            <div v-if="squadData.vice_captain" class="border-t border-zinc-800/80 pt-2 flex items-center justify-between text-xs">
-              <div class="flex items-center gap-1.5 text-zinc-300">
-                <span class="text-blue-400 font-bold font-mono">VC:</span>
-                <span>{{ squadData.vice_captain.web_name }}</span>
-              </div>
-              <span class="text-zinc-400 font-mono">{{ squadData.vice_captain.expected_points }} pts</span>
-            </div>
-          </div>
-          <div v-else class="text-xs text-zinc-500 italic py-4 text-center">
-            Captain data unavailable.
-          </div>
-        </div>
-
-        <!-- Mini-League Lead / Chasing Status -->
-        <div class="council-card p-5 space-y-3">
-          <div class="text-xs text-zinc-400 font-medium flex justify-between">
-            <span>Rivals</span>
-            <span class="font-mono text-white truncate max-w-[120px]">{{ leagueData.league_name || 'My League' }}</span>
-          </div>
-
-          <div class="flex items-baseline gap-2">
-            <span class="text-4xl font-black text-white font-mono">#{{ squadData.overall_rank ?? (leagueData.simulation?.user_rank ?? '—') }}</span>
-            <span class="text-xs text-zinc-400 font-mono">current rank</span>
-          </div>
-
-          <div class="text-xs text-zinc-300 flex items-center justify-between font-mono pt-1">
-            <span>Total Points: <strong class="text-emerald-400">{{ squadData.overall_points ?? '—' }}</strong></span>
-            <span>Owned-hold horizon: <strong class="text-emerald-400">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</strong></span>
-          </div>
-
-          <div class="text-[11px] text-zinc-400 pt-1">
-            Tactical Mode: <strong class="text-amber-400">{{ leagueData.strategy?.mode_title || '—' }}</strong>
-          </div>
-        </div>
-      </div>
-
-      <!-- SQUAD AVAILABILITY & INJURY RADAR (N7) -->
-      <div class="council-card p-5 space-y-3">
-        <h3 class="font-bold text-sm text-white flex items-center justify-between">
-          <span class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-            <span>Squad Availability & News Alerts</span>
-          </span>
-          <span class="text-xs font-normal text-zinc-400">Official flags and sourced news; extraction mode shown per player</span>
-        </h3>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div v-for="player in flaggedSquadPlayers" :key="player.element" class="p-3 rounded-lg bg-zinc-950 border border-amber-500/30 flex items-start justify-between gap-2">
-            <div class="space-y-1.5 w-full">
-              <div class="font-bold text-white flex items-center justify-between">
-                <div class="flex items-center gap-1.5">
-                  <span class="px-1 py-0.2 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold font-mono">FLAG</span>
-                  <span>{{ player.web_name }}</span>
-                  <span class="text-[10px] text-amber-400 font-mono">({{ player.chance_of_playing ?? 75 }}% chance)</span>
-                </div>
-                <span v-if="player.news_mode === 'gated_active'" class="px-1.5 py-0.5 rounded text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40">Gated Active</span>
-                <span v-else-if="player.news_mode === 'shadow'" class="px-1.5 py-0.5 rounded text-[9px] bg-purple-950 text-purple-300 border border-purple-500/40">Shadow Mode</span>
-              </div>
-              <p class="text-zinc-400 text-[11px]">{{ player.news || player.reconciliation_reason || 'Assessing knock; fitness test prior to kickoff.' }}</p>
-              
-              <!-- Verbatim Manager Quote (N7) -->
-              <div v-if="player.news_quote" class="p-2 rounded bg-zinc-900 border-l-2 border-amber-400 text-[11px] text-zinc-300 italic">
-                "{{ player.news_quote }}"
-              </div>
-              
-              <!-- Minutes Delta & Source Link (N7) -->
-              <div class="flex items-center justify-between text-[10px] text-zinc-500 pt-1 border-t border-zinc-900">
-                <span v-if="player.expected_minutes_limit" class="text-amber-400 font-medium">Minutes Cap: {{ player.expected_minutes_limit }}m</span>
-                <span v-else class="text-zinc-500">Unrestricted</span>
-                <a v-if="player.source_url" :href="player.source_url" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:underline flex items-center gap-1 font-mono">
-                  Source ↗
-                </a>
+              <p class="callout-text">Inside the loaded window it adds +{{ decisionCard.chip.gain_vs_hold }} next-GW xP. {{ chipCheck.text }}</p>
+              <div class="row">
+                <ui-button size="sm" variant="ghost" icon="search-check" :loading="expiryResearchLoading" @click="loadExpiryResearch">{{ chipCheck.state === 'idle' ? 'Check through GW19' : 'Re-run check' }}</ui-button>
               </div>
             </div>
           </div>
 
-          <!-- Truthful squad availability states -->
-          <div v-if="squadLoading" class="col-span-2 p-4 rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 italic text-center">
-            Loading squad availability data...
+          <div class="stack-sm">
+            <div class="eyebrow">Why</div>
+            <ul class="list">
+              <li v-for="(reason, idx) in nextDecision.reasons" :key="idx">{{ reason }}</li>
+            </ul>
           </div>
-          <div v-else-if="!hasLoadedSquad" class="col-span-2 p-4 rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 italic text-center space-y-1">
-            <div class="text-zinc-300 font-medium">Squad data unavailable</div>
-            <div class="text-xs text-zinc-500">Configure manager ID in settings or import squad to evaluate player fitness and availability.</div>
+
+          <p class="note"><ui-icon name="info" :size="16"></ui-icon><span>{{ nextDecision.caveat }} Advice only. Nothing is submitted to FPL.</span></p>
+
+          <div class="row">
+            <ui-button variant="primary" icon="arrow-right" @click="activeTab = 'transfers'">Transfers to make</ui-button>
           </div>
-          <div v-else-if="allSquadConfirmedAvailable" class="col-span-2 p-4 rounded-lg bg-zinc-950/60 border border-zinc-800 text-emerald-400 text-center font-medium">
-            All 15 have an explicit 100% official availability value. This is not a guaranteed start.
+        </template>
+      </glass-card>
+
+      <div class="grid cols-3">
+        <glass-card title="Who to captain" lift>
+          <div v-if="squadData.captain" class="stack-sm">
+            <div class="row"><span class="mark">C</span><span class="stat-value">{{ squadData.captain.web_name }}</span></div>
+            <p class="muted num">{{ squadData.captain.expected_points }} predicted pts (x2 = {{ (squadData.captain.expected_points * 2).toFixed(1) }})</p>
+            <p class="subtle num">Floor {{ squadData.captain.p10 ?? '—' }} · Ceiling {{ squadData.captain.p90 ?? '—' }}</p>
+            <p v-if="squadData.vice_captain" class="row muted"><span class="mark vc">VC</span> {{ squadData.vice_captain.web_name }} <span class="num subtle">{{ squadData.vice_captain.expected_points }} pts</span></p>
           </div>
-          <div v-else-if="unknownAvailabilityPlayers.length > 0" class="text-zinc-400">
-            Availability unknown for {{ unknownAvailabilityPlayers.length }} players. No all-fit claim.
-          </div>
-        </div>
+          <div v-else-if="squadLoading" class="stack-sm reserve"><ui-skeleton width="60%" height="28px"></ui-skeleton><ui-skeleton width="80%"></ui-skeleton></div>
+          <div v-else class="empty"><strong>Captain unavailable</strong>Appears once your squad analysis finishes.</div>
+        </glass-card>
+
+        <glass-card :title="'GW' + (gameState.next_gw || '') + ' predicted points'" lift>
+          <p v-if="!hasLoadedSquad && !squadLoading" class="muted">Update your data to calculate expected points.</p>
+          <div v-else class="stat"><span class="stat-value stat-big">{{ totalGameweekPoints }}</span><span class="stat-label">pts forecast</span></div>
+          <p v-if="hasLoadedSquad" class="muted">Formation {{ squadData.formation || 'Not available' }} · Confidence {{ squadData.confidence != null ? squadData.confidence : '—' }}</p>
+          <ui-disclosure v-if="hasLoadedSquad" title="Arithmetic">
+            <div class="item-row"><span>11 starting players</span><span class="num">{{ startersExpectedPoints }} pts</span></div>
+            <div class="item-row"><span>Captaincy bonus</span><span class="num">+{{ captainBonusPoints }} pts</span></div>
+            <div class="item-row"><strong>Total</strong><strong class="num">{{ totalGameweekPoints }} pts</strong></div>
+            <p class="subtle">Bench points do not count unless an autosub activates.</p>
+          </ui-disclosure>
+        </glass-card>
+
+        <glass-card title="Rivals" lift>
+          <div class="stat"><span class="stat-value stat-big">{{ leagueData.simulation?.user_rank != null ? '#' + leagueData.simulation.user_rank : 'Not available' }}</span><span class="stat-label">{{ leagueData.league_name || 'Mini-league standings' }}{{ squadData.overall_points != null ? ' · ' + squadData.overall_points + ' points' : '' }}</span></div>
+          <p class="muted">Simulated first-place rate: <strong class="num">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</strong></p>
+          <p class="subtle">Tactical mode: {{ leagueData.strategy?.mode_title || '—' }}</p>
+          <p v-if="decisionCard && decisionCard.rivals && decisionCard.rivals.status === 'configured'" class="subtle">Approach: {{ decisionCard.rivals.posture }} ({{ decisionCard.win_prob.p_first }}% horizon, owned squad held)</p>
+        </glass-card>
       </div>
 
+      <glass-card title="Squad" :subtitle="'Risk: ' + (profile.risk_preference || 'balanced') + ' · Set 1 chips expire after GW19'">
+        <div class="stats">
+          <div class="stat"><span class="stat-label">Squad value</span><span class="stat-value">{{ squadData.total_team_value != null ? '£' + squadData.total_team_value + 'm' : '—' }}</span></div>
+          <div class="stat"><span class="stat-label">Selling value</span><span class="stat-value">{{ squadData.total_selling_value != null ? '£' + squadData.total_selling_value + 'm' : '—' }}</span></div>
+          <div class="stat"><span class="stat-label">In bank <ui-badge v-if="squadData.has_bank_override" tone="warn">override</ui-badge></span><span class="stat-value">{{ bankDisplay }}</span></div>
+          <div class="stat"><span class="stat-label">Banked transfers <ui-badge v-if="squadData.has_ft_override" tone="warn">override</ui-badge></span><span class="stat-value">{{ ftDisplay }} <span class="subtle">(max 5)</span></span></div>
+        </div>
+      </glass-card>
+
+      <glass-card title="Availability and news" subtitle="Official flags and sourced news; extraction mode shown per player">
+        <div v-if="squadLoading" class="stack-sm reserve"><ui-skeleton height="48px"></ui-skeleton><ui-skeleton height="48px"></ui-skeleton></div>
+        <div v-else-if="!hasLoadedSquad" class="empty"><strong>Squad data unavailable</strong>Set your manager ID in .env or import a squad to check fitness.</div>
+        <template v-else>
+          <div v-if="flaggedSquadPlayers.length" class="grid cols-2">
+            <div v-for="player in flaggedSquadPlayers" :key="player.element" class="item-row" style="display:grid;gap:8px">
+              <div class="row between">
+                <div class="row"><strong>{{ player.web_name }}</strong><ui-badge tone="warn">{{ player.chance_of_playing ?? 75 }}% chance</ui-badge></div>
+                <ui-badge v-if="player.news_mode === 'gated_active'" tone="ok">Gated Active</ui-badge>
+                <ui-badge v-else-if="player.news_mode === 'shadow'" tone="info">Shadow Mode</ui-badge>
+              </div>
+              <p class="muted">{{ player.news || player.reconciliation_reason || 'No additional fitness detail was returned.' }}</p>
+              <p v-if="player.news_quote" class="muted"><em>"{{ player.news_quote }}"</em></p>
+              <div class="row between subtle">
+                <span>{{ player.expected_minutes_limit ? 'Minutes cap: ' + player.expected_minutes_limit + 'm' : 'No minutes limit reported' }}</span>
+                <a v-if="player.source_url" :href="player.source_url" target="_blank" rel="noopener noreferrer">Source</a>
+              </div>
+            </div>
+          </div>
+          <p v-if="allSquadConfirmedAvailable" class="note"><ui-icon name="circle-check" :size="16"></ui-icon>All 15 have an explicit 100% official availability value. This is not a guaranteed start.</p>
+          <p v-else-if="unknownAvailabilityPlayers.length > 0" class="note"><ui-icon name="circle-help" :size="16"></ui-icon>Availability unknown for {{ unknownAvailabilityPlayers.length }} players. Their fitness has not been confirmed.</p>
+        </template>
+      </glass-card>
+
+      <glass-card title="Chip research" subtitle="Model-only stress tests. Not forecasts and not calibrated.">
+        <ui-disclosure title="Future chip value: preservation alternatives" v-if="decisionCard?.resource_frontier?.length">
+          <p class="muted">Model-only break-even, not a forecast of later value. Reassess before every deadline.</p>
+          <div v-for="row in decisionCard.resource_frontier" :key="row.chip" class="item-row">
+            <span>{{ humanLabel(row.chip) }}: preserving through GW{{ row.retained_through_gameweek }} costs {{ row.discounted_horizon_cost_to_preserve }} discounted xP in this window. Later value above {{ row.tail_value_break_even_at_horizon_end }} xP could reverse the choice.</span>
+          </div>
+        </ui-disclosure>
+        <ui-disclosure title="Expiry window: eight weeks vs through GW19">
+          <p class="muted">Compares the same inputs over eight weeks and through GW19. Separate stress test, not a validated tail forecast. It runs in the background after the core advice appears; a re-run can take around two minutes or longer on slower devices.</p>
+          <div class="row"><ui-button icon="search-check" :loading="expiryResearchLoading" @click="loadExpiryResearch">{{ expiryResearchLoading ? 'Calculating expiry comparison' : 'Run expiry comparison' }}</ui-button></div>
+          <p v-if="expiryResearchError" class="note"><ui-icon name="circle-alert" :size="16"></ui-icon>{{ expiryResearchError }}</p>
+          <p v-if="expiryResearch?.status === 'pending'" class="note"><ui-icon name="loader-circle" class="spin" :size="16"></ui-icon>Calculating in the background.</p>
+          <p v-if="expiryResearch?.status === 'unavailable'" class="note"><ui-icon name="info" :size="16"></ui-icon>{{ expiryResearch.reason }}</p>
+          <div v-if="expiryResearch?.status === 'model_expiry_sensitivity'" class="stack-sm">
+            <div class="item-row"><span>Eight-week first chip: {{ humanLabel(expiryResearch.short.first_chip, 'Hold') }}</span><span class="num">edge {{ expiryResearch.short.discounted_edge }} xP</span></div>
+            <div class="item-row"><span>Through GW19 first chip: {{ humanLabel(expiryResearch.extended.first_chip, 'Hold') }}</span><span class="num">edge {{ expiryResearch.extended.discounted_edge }} xP</span></div>
+            <p class="muted">{{ expiryResearch.first_chip_changes ? 'Choice changes with the horizon. Reassess before committing.' : 'Same first-chip candidate across these windows. This does not prove it is optimal.' }}</p>
+            <p class="subtle">{{ expiryResearch.assumptions }}</p>
+            <p class="subtle">{{ expiryResearch.unresolved }}</p>
+          </div>
+        </ui-disclosure>
+      </glass-card>
     </section>
 
-    <!-- ========================================== -->
-    <!-- 2. MY TEAM (PITCH, AUTOSUB, LINEUP)       -->
-    <!-- ========================================== -->
-    <section v-if="activeTab === 'team'" class="space-y-6">
-      
-      <!-- Squad Management Actions Strip -->
-      <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-zinc-800">
-        <div>
-          <h2 class="font-bold text-lg text-white">Starting XI & Bench Lineup</h2>
-          <p class="text-xs text-zinc-400">Configured formation with interactive autosub simulation and vice-captain failsafe.</p>
-        </div>
-        <div class="flex items-center gap-2 text-xs">
-          <button @click="openSquadModal" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium transition">
-            Paste / Custom Squad
-          </button>
-          <button @click="showSettingsModal = true" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium transition">
-            Server Config
-          </button>
-        </div>
-      </div>
+    <!-- ===================== MY TEAM ===================== -->
+    <section v-if="activeTab === 'team'" class="panel" id="main-panel-team" role="tabpanel" aria-label="My Team">
+      <glass-card title="Starting XI" subtitle="Tap Out? on a starter to simulate an autosub. Vice-captain failsafe applies.">
+        <template #actions>
+          <ui-button size="sm" icon="clipboard-paste" @click="openSquadModal">Import squad</ui-button>
+          <ui-button size="sm" variant="ghost" icon="settings-2" @click="showSettingsModal = true">Server config</ui-button>
+        </template>
 
-      <div v-if="!hasLoadedSquad" class="p-4 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400">
-        {{ squadError || (squadLoading ? 'Current lineup analysis is calculating. Published picks are shown above.' : 'Current lineup unavailable. No recommended lineup is being shown.') }}
-      </div>
-      <!-- FOOTBALL PITCH CANVAS -->
-      <div class="pitch-canvas p-4 md:p-6 min-h-[560px] flex flex-col justify-between relative">
-        <div class="pitch-markings">
-          <div class="pitch-divider-line"></div>
-          <div class="pitch-center-circle"></div>
-          <div class="pitch-divider-line"></div>
-        </div>
+        <p v-if="!hasLoadedSquad" class="note"><ui-icon name="info" :size="16"></ui-icon>{{ squadError || (squadLoading ? 'Current lineup analysis is calculating. Published picks are shown above.' : 'Current lineup unavailable. No recommended lineup is being shown.') }}</p>
 
-        <!-- Interactive Autosub Alert if a starter is simulated absent -->
-        <div v-if="simulatedOutIds.length > 0" class="relative z-20 bg-amber-500/20 border border-amber-500/40 rounded-xl p-3 mb-4 flex items-center justify-between text-xs text-amber-200">
-          <div class="flex items-center gap-2">
-            <span class="px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-300 text-[10px] font-bold font-mono">AUTOSUB</span>
-            <span>
-              Starter marked absent -> Reserve 1 ({{ (squadData.bench && squadData.bench[1]) ? squadData.bench[1].web_name : 'First Reserve' }}) automatically promoted to Starting XI!
-            </span>
+        <div v-if="simulatedOutIds.length > 0" class="callout tone-warn" role="status">
+          <ui-icon name="repeat"></ui-icon>
+          <div class="stack-sm">
+            <div class="callout-title">Autosub simulation</div>
+            <p class="callout-text">Starter marked absent: reserve 1 ({{ (squadData.bench && squadData.bench[1]) ? squadData.bench[1].web_name : 'first reserve' }}) is promoted to the Starting XI.</p>
+            <div class="row"><ui-button size="sm" variant="ghost" @click="simulatedOutIds = []">Reset</ui-button></div>
           </div>
-          <button @click="simulatedOutIds = []" class="text-xs text-amber-400 underline font-bold">Reset</button>
         </div>
 
-        <!-- Pitch Rows: GK, DEF, MID, FWD -->
-        <div class="relative z-10 space-y-6 my-auto">
-          <!-- Goalkeepers -->
-          <div class="flex justify-center gap-4">
-            <div v-for="p in getPositionPlayers('GKP')" :key="p.element" :class="simulatedOutIds.includes(p.element) ? 'opacity-40 grayscale line-through' : ''" class="bg-zinc-950/90 backdrop-blur rounded-xl p-2.5 border border-zinc-700/80 shadow-lg text-center w-36 hover:scale-105 transition cursor-pointer relative">
-              <div class="flex justify-between items-center mb-1">
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">GKP</span>
-                <div class="flex gap-1">
-                  <span v-if="p.is_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-500 text-black">C</span>
-                  <span v-if="p.is_vice_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-200">VC</span>
-                  <button @click.stop="toggleSimulateOut(p.element)" class="text-[9px] px-1 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800" title="Simulate Out">Out?</button>
-                </div>
-              </div>
-              <div class="font-bold text-sm truncate text-white">{{ p.web_name }}</div>
-              <div class="text-xs font-semibold text-emerald-400 font-mono">{{ p.expected_points }} predicted pts</div>
-              <div class="text-[10px] text-zinc-400 font-mono">£{{ p.now_cost }}m</div>
-              <!-- Next 3 Fixtures with FDR Color -->
-              <div class="flex justify-center gap-1 mt-1.5">
-                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold font-mono">
-                  {{ f.opp_short }}
+        <div class="pitch">
+          <div v-for="pos in ['GKP', 'DEF', 'MID', 'FWD']" :key="pos" class="pitch-row">
+            <div v-for="p in getPositionPlayers(pos)" :key="p.element" class="player" :class="{ out: simulatedOutIds.includes(p.element) }">
+              <div class="player-top">
+                <ui-badge>{{ pos }}</ui-badge>
+                <span class="row" style="gap:4px;flex-wrap:nowrap">
+                  <span v-if="p.is_captain" class="mark" title="Captain">C</span>
+                  <span v-if="p.is_vice_captain" class="mark vc" title="Vice-captain">VC</span>
                 </span>
               </div>
-            </div>
-          </div>
-
-          <!-- Defenders -->
-          <div class="flex justify-center flex-wrap gap-3">
-            <div v-for="p in getPositionPlayers('DEF')" :key="p.element" :class="simulatedOutIds.includes(p.element) ? 'opacity-40 grayscale line-through' : ''" class="bg-zinc-950/90 backdrop-blur rounded-xl p-2.5 border border-zinc-700/80 shadow-lg text-center w-36 hover:scale-105 transition cursor-pointer relative">
-              <div class="flex justify-between items-center mb-1">
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">DEF</span>
-                <span v-if="p.exp_defcon_pts > 0" class="text-[8px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300" title="Defensive contribution bonus active">DefCon</span>
-                <div class="flex gap-1">
-                  <span v-if="p.is_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-500 text-black">C</span>
-                  <span v-if="p.is_vice_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-200">VC</span>
-                  <button @click.stop="toggleSimulateOut(p.element)" class="text-[9px] px-1 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800" title="Simulate Out">Out?</button>
-                </div>
+              <div class="player-name" :title="p.web_name">{{ p.web_name }}</div>
+              <div class="player-meta">{{ p.expected_points }} predicted pts</div>
+              <div class="player-meta">£{{ p.now_cost }}m</div>
+              <div v-if="p.exp_defcon_pts > 0" class="player-meta">DefCon bonus active</div>
+              <div class="fixtures">
+                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}</span>
               </div>
-              <div class="font-bold text-sm truncate text-white">{{ p.web_name }}</div>
-              <div class="text-xs font-semibold text-emerald-400 font-mono">{{ p.expected_points }} predicted pts</div>
-              <div class="text-[10px] text-zinc-400 font-mono">£{{ p.now_cost }}m</div>
-              <div class="flex justify-center gap-1 mt-1.5">
-                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold font-mono">
-                  {{ f.opp_short }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Midfielders -->
-          <div class="flex justify-center flex-wrap gap-3">
-            <div v-for="p in getPositionPlayers('MID')" :key="p.element" :class="simulatedOutIds.includes(p.element) ? 'opacity-40 grayscale line-through' : ''" class="bg-zinc-950/90 backdrop-blur rounded-xl p-2.5 border border-zinc-700/80 shadow-lg text-center w-36 hover:scale-105 transition cursor-pointer relative">
-              <div class="flex justify-between items-center mb-1">
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">MID</span>
-                <div class="flex gap-1">
-                  <span v-if="p.is_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-500 text-black">C</span>
-                  <span v-if="p.is_vice_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-200">VC</span>
-                  <button @click.stop="toggleSimulateOut(p.element)" class="text-[9px] px-1 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800" title="Simulate Out">Out?</button>
-                </div>
-              </div>
-              <div class="font-bold text-sm truncate text-white">{{ p.web_name }}</div>
-              <div class="text-xs font-semibold text-emerald-400 font-mono">{{ p.expected_points }} predicted pts</div>
-              <div class="text-[10px] text-zinc-400 font-mono">£{{ p.now_cost }}m</div>
-              <div class="flex justify-center gap-1 mt-1.5">
-                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold font-mono">
-                  {{ f.opp_short }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Forwards -->
-          <div class="flex justify-center flex-wrap gap-3">
-            <div v-for="p in getPositionPlayers('FWD')" :key="p.element" :class="simulatedOutIds.includes(p.element) ? 'opacity-40 grayscale line-through' : ''" class="bg-zinc-950/90 backdrop-blur rounded-xl p-2.5 border border-zinc-700/80 shadow-lg text-center w-36 hover:scale-105 transition cursor-pointer relative">
-              <div class="flex justify-between items-center mb-1">
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">FWD</span>
-                <div class="flex gap-1">
-                  <span v-if="p.is_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-500 text-black">C</span>
-                  <span v-if="p.is_vice_captain" class="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-200">VC</span>
-                  <button @click.stop="toggleSimulateOut(p.element)" class="text-[9px] px-1 py-0.5 rounded bg-red-950/40 text-red-300 border border-red-800" title="Simulate Out">Out?</button>
-                </div>
-              </div>
-              <div class="font-bold text-sm truncate text-white">{{ p.web_name }}</div>
-              <div class="text-xs font-semibold text-emerald-400 font-mono">{{ p.expected_points }} predicted pts</div>
-              <div class="text-[10px] text-zinc-400 font-mono">£{{ p.now_cost }}m</div>
-              <div class="flex justify-center gap-1 mt-1.5">
-                <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold font-mono">
-                  {{ f.opp_short }}
-                </span>
-              </div>
+              <ui-button size="sm" variant="ghost" :aria-pressed="simulatedOutIds.includes(p.element) ? 'true' : 'false'" :aria-label="'Simulate ' + p.web_name + ' out'" @click="toggleSimulateOut(p.element)">Out?</ui-button>
             </div>
           </div>
         </div>
-      </div>
+      </glass-card>
 
-      <!-- BENCH DUGOUT -->
-      <div class="council-card p-4 space-y-3">
-        <h3 class="text-sm font-bold text-white flex items-center justify-between">
-          <span>Bench Dugout</span>
-          <span class="text-xs font-normal text-zinc-400">1st outfield sub is automatically promoted if a starter plays 0 mins</span>
-        </h3>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div v-for="(p, idx) in squadData.bench || []" :key="p.element" class="p-3 rounded-lg bg-zinc-950 border border-zinc-800 text-center">
-            <div class="flex justify-between items-center text-[10px] text-zinc-400 mb-1">
-              <span class="font-bold text-emerald-400">{{ idx === 0 ? 'GK RESERVE' : 'SUB ' + idx }}</span>
-              <span class="font-mono">{{ p.position }}</span>
+      <glass-card title="Bench" subtitle="The first outfield sub is promoted automatically if a starter plays 0 minutes.">
+        <div v-if="(squadData.bench || []).length" class="bench">
+          <div v-for="(p, idx) in squadData.bench" :key="p.element" class="player" style="width:auto">
+            <div class="player-top"><ui-badge>{{ idx === 0 ? 'GK reserve' : 'Sub ' + idx }}</ui-badge><span class="player-meta">{{ p.position }}</span></div>
+            <div class="player-name" :title="p.web_name">{{ p.web_name }}</div>
+            <div class="player-meta">{{ p.expected_points }} pts · £{{ p.now_cost }}m</div>
+            <div class="fixtures"><span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}</span></div>
+          </div>
+        </div>
+        <div v-else class="empty"><strong>No bench loaded</strong>Update your data or import a full 15-player squad to see the bench.</div>
+      </glass-card>
+
+      <glass-card title="Injury and rotation matrix" subtitle="Selected plan, not submitted. What if a starter is ruled out: autosub vs emergency transfer.">
+        <ui-disclosure title="View injury comparison" :hint="'(' + contingencyMatrix.length + ' starters)'">
+<div v-if="aux.matrix.loading" class="stack-sm reserve" aria-busy="true"><ui-skeleton height="48px"></ui-skeleton><p class="subtle">Loading injury comparison...</p></div>
+          <div v-else-if="aux.matrix.error" class="empty"><strong>Injury comparison unavailable</strong>{{ aux.matrix.error }}<ui-button size="sm" @click="retryAux('matrix')">Try again</ui-button></div>
+          <div v-else-if="contingencyMatrix.length" class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Starter</th><th>Pos</th><th>Fitness</th><th>Autosub (bench)</th><th>Emergency transfer</th><th>Verdict</th></tr></thead>
+              <tbody>
+                <tr v-for="row in contingencyMatrix" :key="row.element">
+                  <td><strong>{{ row.web_name }}</strong></td>
+                  <td class="muted">{{ row.position }}</td>
+                  <td><ui-badge :tone="row.chance_of_playing >= 75 ? 'ok' : 'warn'">{{ row.chance_of_playing }}%</ui-badge></td>
+                  <td>{{ row.autosub_player }} <span class="num muted">({{ row.autosub_expected_points }} pts)</span><div class="subtle num">{{ row.autosub_points_delta >= 0 ? '+' : '' }}{{ row.autosub_points_delta }} points compared with the starter</div></td>
+                  <td>{{ row.emergency_replacement }} <span class="num muted">({{ row.emergency_expected_points }} pts)</span><div class="subtle num">Net {{ row.emergency_net_expected_points }} pts after hit</div></td>
+                  <td><ui-badge :tone="row.action_verdict === 'EXECUTE_TRANSFER' ? 'ok' : 'info'">{{ row.action_verdict === 'EXECUTE_TRANSFER' ? 'Transfer' : row.action_verdict === 'TRUST_BENCH' ? 'Trust bench' : 'Monitor' }}</ui-badge></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="empty"><strong>No matrix yet</strong>Update your squad data to load the injury comparison.</div>
+        </ui-disclosure>
+      </glass-card>
+    </section>
+
+    <!-- ===================== TRANSFERS ===================== -->
+    <section v-if="activeTab === 'transfers'" class="panel" id="main-panel-transfers" role="tabpanel" aria-label="Transfers">
+      <glass-card title="Conditional transfer candidates" subtitle="Bounded legal transfer and chip search over the served planning horizon.">
+        <ui-tabs v-model="selectedPlanKey" :items="planTabs" label="Transfer plans" id-prefix="plan" segmented></ui-tabs>
+
+        <div v-if="plansLoading" class="stack-sm reserve"><ui-skeleton height="28px" width="50%"></ui-skeleton><ui-skeleton height="64px"></ui-skeleton></div>
+
+        <div v-else-if="activePlan" class="stack">
+          <div class="row between">
+            <div class="row"><h3 class="card-title">{{ activePlan.title }}</h3><ui-badge>{{ humanLabel(activePlan.plan_type) }}</ui-badge></div>
+            <div class="stat"><span class="stat-label">Net expected points</span><span class="stat-value">{{ activePlan.net_expected_points == null ? "Not calculated" : activePlan.net_expected_points + " pts" }}</span></div>
+          </div>
+          <p class="muted"><strong>Trigger:</strong> {{ activePlan.trigger_condition || 'Review before making changes in official FPL.' }}</p>
+          <p class="muted">{{ activePlan.action_summary || 'Check the players and costs below before acting.' }}</p>
+
+          <div class="grid cols-2">
+            <div class="stack-sm">
+              <div class="eyebrow">Transfer out ({{ (activePlan.transfers_out || []).length }})</div>
+              <div v-if="(activePlan.transfers_out || []).length === 0" class="item-row muted">No transfers out (save free transfer).</div>
+              <div v-for="t in activePlan.transfers_out" :key="t.element" class="item-row"><span>{{ t.web_name }} <span class="subtle">({{ t.position }})</span></span><span class="num">£{{ t.sell_price != null ? t.sell_price : t.cost }}m</span></div>
             </div>
-            <div class="font-bold text-sm text-white truncate">{{ p.web_name }}</div>
-            <div class="text-xs font-semibold text-emerald-400 font-mono mt-0.5">{{ p.expected_points }} pts</div>
-            <div class="text-[10px] text-zinc-500 font-mono">£{{ p.now_cost }}m</div>
-            <div class="flex justify-center gap-1 mt-1.5">
-              <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" :class="'fdr-' + f.difficulty" class="text-[9px] px-1 rounded font-bold font-mono">
-                {{ f.opp_short }}
-              </span>
+            <div class="stack-sm">
+              <div class="eyebrow">Transfer in ({{ (activePlan.transfers_in || []).length }})</div>
+              <div v-if="(activePlan.transfers_in || []).length === 0" class="item-row muted">No transfers in (roll free transfer to bank for next GW).</div>
+              <div v-for="t in activePlan.transfers_in" :key="t.element" class="item-row"><span>{{ t.web_name }} <span class="subtle">({{ t.position }})</span><div class="subtle num">+{{ t.expected_points }} predicted pts</div></span><span class="num">£{{ t.cost }}m</span></div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- INJURY & ROTATION CONTINGENCY MATRIX -->
-      <div class="council-card p-4 space-y-3">
-        <h3 class="font-bold text-sm text-white flex items-center justify-between">
-          <span>Selected Plan Injury & Rotation Matrix (not submitted)</span>
-          <span class="text-xs font-normal text-zinc-400">What if a starter is ruled out: Autosub vs Emergency Transfer</span>
-        </h3>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr class="border-b border-zinc-800 text-zinc-400">
-                <th class="py-2 px-3">Starter</th>
-                <th class="py-2 px-2">Pos</th>
-                <th class="py-2 px-2">Fitness</th>
-                <th class="py-2 px-3">Autosub (Bench)</th>
-                <th class="py-2 px-3">Emergency Transfer Option</th>
-                <th class="py-2 px-3">Verdict</th>
-              </tr>
-            </thead>
+        <div v-else class="empty">
+          <strong>No transfer plans available</strong>
+          {{ plansError || (selectedPlanKey === "plan_a" ? "Verify your squad is configured and refresh recommendations." : "Plan A remains available. Detailed alternatives are not part of the fast core publication.") }}
+        </div>
+
+        <div class="row">
+          <ui-button icon="git-compare" :loading="detailedPlansLoading" @click="loadDetailedPlans">{{ detailedPlansLoading ? 'Calculating conditional alternatives' : 'Calculate Plan B/C alternatives' }}</ui-button>
+          <span v-if="detailedPlansError" class="note"><ui-icon name="circle-alert" :size="16"></ui-icon>{{ detailedPlansError }}</span>
+        </div>
+      </glass-card>
+
+      <glass-card title="Price watch" subtitle="Heuristic transfer momentum, not verified price timing.">
+        <ui-disclosure title="View price watch">
+<div v-if="aux.prices.loading" class="stack-sm reserve" aria-busy="true"><ui-skeleton height="48px"></ui-skeleton><p class="subtle">Loading price watch...</p></div>
+          <div v-else-if="aux.prices.error" class="empty"><strong>Price watch unavailable</strong>{{ aux.prices.error }}<ui-button size="sm" @click="retryAux('prices')">Try again</ui-button></div>
+          <div v-else class="grid cols-2">
+            <div class="stack-sm">
+              <div class="eyebrow">Price-rise watch</div>
+              <div v-for="p in (priceChanges.rises || []).slice(0, 5)" :key="p.element || p.element_id" class="item-row"><span>{{ p.web_name }}</span><ui-badge tone="ok">{{ priceLabel(p.direction) }}</ui-badge></div>
+              <p v-if="(priceChanges.rises || []).length === 0" class="subtle">No players currently flagged for a potential price rise.</p>
+            </div>
+            <div class="stack-sm">
+              <div class="eyebrow">Price-fall watch</div>
+              <div v-for="p in (priceChanges.falls || []).slice(0, 5)" :key="p.element || p.element_id" class="item-row"><span>{{ p.web_name }}</span><ui-badge tone="warn">{{ priceLabel(p.direction) }}</ui-badge></div>
+              <p v-if="(priceChanges.falls || []).length === 0" class="subtle">No players currently flagged for a potential price fall.</p>
+            </div>
+          </div>
+        </ui-disclosure>
+      </glass-card>
+    </section>
+
+    <!-- ===================== LEAGUE ===================== -->
+    <section v-if="activeTab === 'league'" class="panel" id="main-panel-league" role="tabpanel" aria-label="My League">
+      <glass-card title="Rivals" :subtitle="'Observed rival ownership and hypothetical plan stress tests. No calibrated title odds. League: ' + (leagueData.league_name || 'My League')">
+        <div class="stats">
+          <div class="stat"><span class="stat-label">Simulated first-place rate</span><span class="stat-value stat-big">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</span><span class="subtle">Current-squad simulation over five gameweeks. Uncalibrated, not season-winning odds.</span></div>
+          <div class="stat"><span class="stat-label">Average simulated rank</span><span class="stat-value stat-big">{{ leagueData.simulation?.expected_final_rank != null ? '#' + leagueData.simulation.expected_final_rank.toFixed(1) : '—' }}</span><span class="subtle">Based on current point gap</span></div>
+          <div class="stat"><span class="stat-label">Strategy mode</span><span class="stat-value">{{ leagueData.strategy?.mode_title || '—' }}</span></div>
+        </div>
+<div v-if="aux.league.loading" class="stack-sm reserve" aria-busy="true"><ui-skeleton height="48px"></ui-skeleton><p class="subtle">Loading mini-league standings...</p></div>
+          <div v-else-if="aux.league.error" class="empty"><strong>Mini-league standings unavailable</strong>{{ aux.league.error }}<ui-button size="sm" @click="retryAux('league')">Try again</ui-button></div>
+        <div v-else-if="(leagueData.standings || []).length" class="table-wrap league-table">
+          <table class="table">
+            <thead><tr><th>Rank</th><th>Manager</th><th>Team</th><th>Gameweek points</th><th>Total points</th><th>Players shared with your squad</th></tr></thead>
             <tbody>
-              <tr v-for="row in contingencyMatrix" :key="row.element" class="border-b border-zinc-800/60 hover:bg-zinc-800/30">
-                <td class="py-2 px-3 font-bold text-white">{{ row.web_name }}</td>
-                <td class="py-2 px-2 font-mono text-zinc-400">{{ row.position }}</td>
-                <td class="py-2 px-2 font-mono font-bold" :class="row.chance_of_playing >= 75 ? 'text-emerald-400' : 'text-amber-400'">
-                  {{ row.chance_of_playing }}%
-                </td>
-                <td class="py-2 px-3">
-                  <div class="text-zinc-200">{{ row.autosub_player }} <span class="font-mono text-emerald-400">({{ row.autosub_expected_points }} pts)</span></div>
-                  <div class="text-[10px] text-zinc-500 font-mono">{{ row.autosub_points_delta >= 0 ? '+' : '' }}{{ row.autosub_points_delta }} delta</div>
-                </td>
-                <td class="py-2 px-3">
-                  <div class="text-zinc-200">{{ row.emergency_replacement }} <span class="font-mono text-emerald-400">({{ row.emergency_expected_points }} pts)</span></div>
-                  <div class="text-[10px] text-zinc-500 font-mono">Net: {{ row.emergency_net_expected_points }} pts (after hit)</div>
-                </td>
-                <td class="py-2 px-3">
-                  <span :class="row.action_verdict === 'EXECUTE_TRANSFER' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-blue-500/20 text-blue-300 border-blue-500/40'" class="px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap">
-                    {{ row.action_verdict === 'EXECUTE_TRANSFER' ? 'Transfer' : row.action_verdict === 'TRUST_BENCH' ? 'Trust Bench' : 'Monitor' }}
-                  </span>
-                </td>
+              <tr v-for="team in (leagueData.standings || []).slice(0, 10)" :key="team.entry">
+                <td data-label="Rank" class="num">#{{ team.rank }}</td>
+                <td data-label="Manager">{{ team.player_name }} <ui-badge v-if="team.entry === profile.manager_id" tone="info">You</ui-badge></td>
+                <td data-label="Team" class="muted">{{ team.entry_name }}</td>
+                <td data-label="Gameweek points" class="num">{{ team.event_total }}</td>
+                <td data-label="Total points" class="num">{{ team.total }}</td>
+                <td data-label="Shared players" class="num">{{ overlapLabel(team) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-      </div>
+        <div v-else class="empty"><strong>No standings available</strong>{{ leagueData.message || leagueData.reason || '' }} Add your mini-league ID to the .env file, then restart the app and update data.</div>
+      </glass-card>
 
+      <glass-card title="Selected-plan rival stress comparison">
+        <p class="muted">Uncalibrated stress test only. The percentages are simulated draw counts under assumptions, not your chance of winning. Do not choose a chip from these rates alone.</p>
+        <ui-disclosure title="How it works">
+          <p class="muted">Compares full plan trajectories against holding rivals, one legal non-price-increasing transfer per week, and an optimistic restructure. These are possible cases, not predicted hidden choices or winning odds.</p>
+        </ui-disclosure>
+        <div class="row"><ui-button icon="flask-conical" :loading="rivalStressLoading" @click="loadRivalStress">{{ rivalStressLoading ? 'Calculating plan stress' : 'Run plan stress comparison' }}</ui-button></div>
+        <p v-if="rivalStressError" class="note"><ui-icon name="circle-alert" :size="16"></ui-icon>{{ rivalStressError }}</p>
+        <div v-for="scenario in (rivalStress?.scenarios || [])" :key="scenario.mode" class="stack-sm">
+          <div class="eyebrow">{{ humanLabel(scenario.mode) }} - hypothetical, uncalibrated</div>
+          <div v-for="option in scenario.options" :key="option.first_chip || 'hold'" class="item-row"><span>{{ humanLabel(option.first_chip, 'Hold now') }}</span><span class="num">{{ option.uncalibrated_stress_beat_rate_pct }}% stress draw rate, NOT winning odds</span></div>
+          <p class="subtle">{{ scenario.assumptions }}</p>
+        </div>
+        <p v-if="rivalStress?.scenario_preference_changes" class="note"><ui-icon name="triangle-alert" :size="16"></ui-icon>Preferred first chip changes across these rival cases. Do not treat a single percentage as the answer.</p>
+        <p v-if="rivalStress" class="subtle">{{ rivalStress.unresolved || rivalStress.reason }}</p>
+      </glass-card>
     </section>
 
-    <!-- ========================================== -->
-    <!-- 3. TRANSFERS WORKBENCH & 3-WAY PLANS       -->
-    <!-- ========================================== -->
-    <section v-if="activeTab === 'transfers'" class="space-y-6">
-      
-      <!-- 3-Way Plan Switcher Header -->
-      <div class="council-card p-6 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 class="font-bold text-xl text-white">Conditional transfer candidates</h2>
-            <p class="text-xs text-zinc-400">Bounded legal transfer/chip search over the served planning horizon.</p>
-          </div>
-          <!-- 3-Way Plan Toggle -->
-          <div class="flex rounded-lg bg-zinc-950 p-1 border border-zinc-800 text-xs font-bold">
-            <button @click="selectedPlanKey = 'plan_a'" :class="selectedPlanKey === 'plan_a' ? 'bg-emerald-600 text-black' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition font-mono">
-              <span>Plan A (Primary)</span>
-            </button>
-            <button @click="selectedPlanKey = 'plan_b'" :class="selectedPlanKey === 'plan_b' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition font-mono">
-              <span>Plan B (Injury Pivot)</span>
-            </button>
-            <button @click="selectedPlanKey = 'plan_c'" :class="selectedPlanKey === 'plan_c' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition font-mono">
-              <span>Plan C (Differential)</span>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="decisionCard?.resource_frontier?.length" class="p-3 border border-amber-600 rounded-lg text-xs">
-          <h3 class="font-bold">Future chip value: preservation alternatives</h3>
-          <p>Model-only break-even, not a forecast of later value. Reassess before every deadline.</p>
-          <div v-for="row in decisionCard.resource_frontier" :key="row.chip" class="mt-2">
-            {{ row.chip }}: preserving through GW{{ row.retained_through_gameweek }} costs {{ row.discounted_horizon_cost_to_preserve }} discounted xP in this window. Later value above {{ row.tail_value_break_even_at_horizon_end }} xP could reverse the choice.
-          </div>
-        </div>
-
-        <div class="p-4 rounded-xl border border-zinc-700 space-y-2 text-xs">
-          <p class="font-semibold">Chip expiry-window research</p>
-          <p>Compare the same inputs over eight weeks and through GW19. Separate stress test, not a validated tail forecast. Can take around two minutes or longer on slower devices; normal advice stays visible.</p>
-          <button @click="loadExpiryResearch" :disabled="expiryResearchLoading" class="px-3 py-2 rounded bg-emerald-600 text-white disabled:opacity-50">{{ expiryResearchLoading ? 'Calculating expiry comparison...' : 'Run expiry comparison' }}</button>
-          <p v-if="expiryResearchError">{{ expiryResearchError }}</p>
-          <div v-if="expiryResearch?.status === 'model_expiry_sensitivity'" class="space-y-2">
-            <p>Eight-week first chip: {{ expiryResearch.short.first_chip || 'Hold' }}, discounted edge {{ expiryResearch.short.discounted_edge }} xP.</p>
-            <p>Through GW19 first chip: {{ expiryResearch.extended.first_chip || 'Hold' }}, discounted edge {{ expiryResearch.extended.discounted_edge }} xP.</p>
-            <p>{{ expiryResearch.first_chip_changes ? 'Choice changes with the horizon. Reassess before committing.' : 'Same first-chip candidate across these windows. This does not prove it is optimal.' }}</p>
-            <p>{{ expiryResearch.assumptions }}</p>
-            <p>{{ expiryResearch.unresolved }}</p>
-          </div>
-        </div>
-
-        <div class="text-xs space-y-2">
-          <button @click="loadDetailedPlans" :disabled="detailedPlansLoading" class="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{{ detailedPlansLoading ? 'Calculating conditional alternatives...' : 'Calculate Plan B/C alternatives' }}</button>
-          <p v-if="detailedPlansError">{{ detailedPlansError }}</p>
-        </div>
-        <!-- Active Plan Card -->
-        <div v-if="activePlan" class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
-          <div class="flex items-center justify-between flex-wrap gap-2">
-            <div class="font-bold text-base text-white flex items-center gap-2">
-              <span>{{ activePlan.title }}</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono">{{ activePlan.plan_type }}</span>
-            </div>
-            <div class="flex items-center gap-3 font-mono text-xs">
-              <span class="text-zinc-400">Net Expected Points:</span>
-              <span class="font-bold text-emerald-400 text-base">{{ activePlan.net_expected_points == null ? "Not calculated" : activePlan.net_expected_points + " pts" }}</span>
-            </div>
-          </div>
-          <div class="text-xs text-zinc-300 flex items-center gap-2">
-            <span class="text-amber-400 font-semibold">Trigger Condition:</span>
-            <span>{{ activePlan.trigger_condition }}</span>
-          </div>
-          <div class="text-xs text-zinc-400 leading-relaxed">
-            {{ activePlan.action_summary }}
-          </div>
-        </div>
-
-        <!-- Fallback if Active Plan Unavailable -->
-        <div v-else class="p-6 rounded-xl bg-zinc-950 border border-zinc-800 text-center space-y-2">
-          <div class="font-bold text-white text-sm">{{ plansLoading ? 'Loading contingency plans...' : 'No transfer plans available' }}</div>
-          <p class="text-xs text-zinc-400">
-            {{ plansError || (selectedPlanKey === "plan_a" ? "Verify your squad is configured and refresh recommendations." : "Plan A remains available. Detailed alternatives are not part of the fast core publication.") }}
-          </p>
-        </div>
-
-        <!-- Transfer Actions: IN vs OUT -->
-        <div v-if="activePlan" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Out -->
-          <div class="p-4 rounded-xl bg-red-950/20 border border-red-900/40">
-            <div class="text-xs font-bold text-red-400 mb-2 flex items-center gap-1.5">
-              <span class="px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-mono text-[10px] border border-red-800 font-bold">OUT</span>
-              <span>Transfer OUT</span>
-              <span class="text-[10px] text-zinc-400">({{ (activePlan.transfers_out || []).length }} players)</span>
-            </div>
-            <div v-if="(activePlan.transfers_out || []).length === 0" class="text-xs text-zinc-500 italic py-2">
-              No transfers out (Save free transfer).
-            </div>
-            <div v-for="t in activePlan.transfers_out" :key="t.element" class="flex justify-between items-center py-2 border-b border-red-900/20 text-xs">
-              <span class="font-bold text-white">{{ t.web_name }} ({{ t.position }})</span>
-              <span class="font-mono text-zinc-400">£{{ t.sell_price != null ? t.sell_price : t.cost }}m</span>
-            </div>
-          </div>
-          <!-- In -->
-          <div class="p-4 rounded-xl bg-emerald-950/20 border border-emerald-900/40">
-            <div class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1.5">
-              <span class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono text-[10px] border border-emerald-800 font-bold">IN</span>
-              <span>Transfer IN</span>
-              <span class="text-[10px] text-zinc-400">({{ (activePlan.transfers_in || []).length }} players)</span>
-            </div>
-            <div v-if="(activePlan.transfers_in || []).length === 0" class="text-xs text-zinc-500 italic py-2">
-              No transfers in (Roll free transfer to bank for next GW).
-            </div>
-            <div v-for="t in activePlan.transfers_in" :key="t.element" class="flex justify-between items-center py-2 border-b border-emerald-900/20 text-xs">
-              <div>
-                <span class="font-bold text-white">{{ t.web_name }} ({{ t.position }})</span>
-                <span class="text-[10px] text-zinc-400 font-mono ml-1.5">+{{ t.expected_points }} predicted pts</span>
-              </div>
-              <span class="font-mono text-emerald-400 font-bold">£{{ t.cost }}m</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- PRICE CHANGE RADAR -->
-      <div class="council-card p-5 space-y-3">
-        <h3 class="font-bold text-sm text-white flex items-center justify-between">
-          <span>Price Change Radar (Heuristic Transfer Momentum)</span>
-          <span class="text-xs font-normal text-zinc-400">Transfer velocity & net ownership changes</span>
-        </h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Rises -->
-          <div class="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800">
-            <div class="text-xs font-bold text-emerald-400 mb-2">Positive transfer momentum (unverified price timing)</div>
-            <div class="space-y-2">
-              <div v-for="p in (priceChanges.rises || []).slice(0, 5)" :key="p.element_id" class="flex justify-between items-center text-xs">
-                <span class="font-medium text-white">{{ p.web_name }}</span>
-                <span class="font-mono text-emerald-400 font-semibold">{{ p.direction.replace("_IMMINENT", "_SIGNAL") }}</span>
-              </div>
-              <div v-if="(priceChanges.rises || []).length === 0" class="text-xs text-zinc-500 italic">No imminent rises flagged.</div>
-            </div>
-          </div>
-          <!-- Falls -->
-          <div class="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800">
-            <div class="text-xs font-bold text-red-400 mb-2">Negative transfer momentum (unverified price timing)</div>
-            <div class="space-y-2">
-              <div v-for="p in (priceChanges.falls || []).slice(0, 5)" :key="p.element_id" class="flex justify-between items-center text-xs">
-                <span class="font-medium text-white">{{ p.web_name }}</span>
-                <span class="font-mono text-red-400 font-semibold">{{ p.direction.replace("_IMMINENT", "_SIGNAL") }}</span>
-              </div>
-              <div v-if="(priceChanges.falls || []).length === 0" class="text-xs text-zinc-500 italic">No imminent falls flagged.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </section>
-
-    <!-- ========================================== -->
-    <!-- 4. MY LEAGUE (STANDINGS & RIVALS)          -->
-    <!-- ========================================== -->
-    <section v-if="activeTab === 'league'" class="space-y-6">
-      
-      <div class="council-card p-4 text-xs space-y-2">
-        <h3 class="font-semibold">Selected-plan rival stress comparison</h3>
-        <p class="font-semibold text-amber-600">Uncalibrated stress test only. The percentages below are simulated draw counts under assumptions, not your chance of winning. Do not choose a chip from these rates alone.</p>
-        <p>Compare full plan trajectories against holding rivals, one legal non-price-increasing transfer per week, and an optimistic restructure. These are possible cases, not predicted hidden choices or winning odds.</p>
-        <button @click="loadRivalStress" :disabled="rivalStressLoading" class="px-3 py-2 rounded bg-emerald-600 text-white disabled:opacity-50">{{ rivalStressLoading ? 'Calculating plan stress...' : 'Run plan stress comparison' }}</button>
-        <p v-if="rivalStressError">{{ rivalStressError }}</p>
-        <div v-for="scenario in (rivalStress?.scenarios || [])" :key="scenario.mode" class="border border-zinc-700 p-3 rounded space-y-1">
-          <p class="font-semibold">{{ scenario.mode }} - hypothetical, uncalibrated</p>
-          <p v-for="option in scenario.options" :key="option.first_chip || 'hold'">{{ option.first_chip || 'Hold now' }}: {{ option.uncalibrated_stress_beat_rate_pct }}% stress draw rate, NOT winning odds.</p>
-          <p>{{ scenario.assumptions }}</p>
-        </div>
-        <p v-if="rivalStress?.scenario_preference_changes">Preferred first chip changes across these rival cases. Do not treat a single percentage as the answer.</p>
-        <p v-if="rivalStress">{{ rivalStress.unresolved || rivalStress.reason }}</p>
-      </div>
-
-      <div class="council-card p-6 space-y-5">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 class="font-bold text-xl text-white">Rivals</h2>
-            <p class="text-xs text-zinc-400">Observed rival ownership and hypothetical plan stress tests. No calibrated title odds.</p>
-          </div>
-          <div class="text-xs font-mono text-zinc-400">
-            League: <strong class="text-white">{{ leagueData.league_name || 'My League' }}</strong>
-          </div>
-        </div>
-
-        <!-- Simulation Win Probability Cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-            <div class="text-xs text-zinc-400 font-semibold">Owned-Hold Selected-Rival Horizon Probability</div>
-            <div class="text-3xl font-black text-emerald-400 font-mono mt-1">
-              {{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}
-            </div>
-            <div class="text-[10px] text-zinc-500 mt-1">Conditional horizon scenarios, not a season-winning forecast</div>
-          </div>
-          <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-            <div class="text-xs text-zinc-400 font-semibold">Expected Horizon Rank</div>
-            <div class="text-3xl font-black text-white font-mono mt-1">
-              {{ leagueData.simulation?.expected_final_rank != null ? '#' + leagueData.simulation.expected_final_rank.toFixed(1) : '—' }}
-            </div>
-            <div class="text-[10px] text-zinc-500 mt-1">Based on current point gap</div>
-          </div>
-          <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-            <div class="text-xs text-zinc-400 font-semibold">Game-Theoretic Strategy Mode</div>
-            <div class="text-lg font-bold text-amber-400 mt-1 truncate">
-              {{ leagueData.strategy?.mode_title || '—' }}
-            </div>
-            <div class="text-[10px] text-zinc-500 mt-1">Protect lead by matching high-threat picks</div>
-          </div>
-        </div>
-
-        <!-- Standings Table -->
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr class="border-b border-zinc-800 text-zinc-400">
-                <th class="py-2.5 px-3">Rank</th>
-                <th class="py-2.5 px-3">Manager</th>
-                <th class="py-2.5 px-3">Team Name</th>
-                <th class="py-2.5 px-3">GW Points</th>
-                <th class="py-2.5 px-3">Total Points</th>
-                <th class="py-2.5 px-3">Squad Overlap</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="team in (leagueData.standings || []).slice(0, 10)" :key="team.entry" :class="team.entry === profile.manager_id ? 'bg-emerald-500/10' : ''" class="border-b border-zinc-800/60 hover:bg-zinc-800/30">
-                <td class="py-2.5 px-3 font-mono font-bold text-white">#{{ team.rank }}</td>
-                <td class="py-2.5 px-3 font-medium text-zinc-200">
-                  {{ team.player_name }}
-                  <span v-if="team.entry === profile.manager_id" class="text-[10px] px-1 rounded bg-emerald-500/20 text-emerald-400 ml-1">You</span>
-                </td>
-                <td class="py-2.5 px-3 text-zinc-300">{{ team.entry_name }}</td>
-                <td class="py-2.5 px-3 font-mono text-zinc-400">{{ team.event_total }}</td>
-                <td class="py-2.5 px-3 font-mono font-bold text-emerald-400">{{ team.total }}</td>
-                <td class="py-2.5 px-3 font-mono text-zinc-300">
-                  {{ team.effective_ownership_overlap != null ? (team.effective_ownership_overlap + '%') : 'Not measured' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </section>
-
+    <footer class="footer">FPL Oracle 2026/27. Local decision support. Advice only; changes must be confirmed in official FPL.</footer>
   </main>
 
-  <!-- ========================================== -->
-  <!-- SLIDE-OUT AI CHAT DRAWER                   -->
-  <!-- ========================================== -->
-  <div v-if="showChatDrawer" class="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-sm flex justify-end">
-    <div class="bg-[#111113] border-l border-[#27272a] w-full max-w-lg h-full flex flex-col justify-between p-4 shadow-2xl">
-      <!-- Drawer Header -->
-      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
-        <div class="flex items-center gap-2">
-          <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold">AI</span>
-          <h3 class="font-bold text-base text-white">Ask About My Team</h3>
-        </div>
-        <button @click="showChatDrawer = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
+  <!-- ===================== OVERLAYS (one at a time) ===================== -->
+  <ui-modal :open="showChatDrawer" title="Ask about my team" drawer @close="showChatDrawer = false">
+    <div class="row"><ui-badge tone="info">Grounded in local FPL rules and data</ui-badge></div>
+    <div class="chat-log" aria-live="polite">
+      <div v-if="chatMessages.length === 0" class="empty"><strong>Nothing asked yet</strong>Ask about your lineup, captaincy, transfers, chip timing or mini-league rivals.</div>
+      <div v-for="(m, i) in chatMessages" :key="i" class="bubble" :class="m.role">
+        <div class="eyebrow">{{ m.role === 'user' ? 'You' : 'FPL Oracle' }}</div>
+        <p v-if="m.historical" class="subtle">Previous session history, not current advice</p>
+        <div class="prose-rendered" v-html="renderMarkdown(m.content)"></div>
       </div>
-
-      <!-- Zero-Key Assurance Badge -->
-      <div class="py-2 text-[11px] text-zinc-400 flex items-center justify-between border-b border-zinc-800/60 font-mono">
-        <span>Grounded in live local FPL rules & data</span>
-        <span class="text-emerald-400 font-semibold">Zero API Key Needed</span>
-      </div>
-
-      <!-- Messages History -->
-      <div class="flex-1 overflow-y-auto space-y-3 py-3 px-1">
-        <div v-if="chatMessages.length === 0" class="text-center text-zinc-500 py-16 text-xs">
-          Ask questions about your starting lineup, captaincy alternatives, transfers, chip timing, or mini-league rivals.
-        </div>
-        <div v-for="(m, i) in chatMessages" :key="i" :class="m.role === 'user' ? 'text-right' : 'text-left'">
-          <div :class="m.role === 'user' ? 'bg-emerald-600/20 text-emerald-200 border-emerald-500/40 inline-block' : 'bg-zinc-950 text-zinc-200 border-zinc-800 inline-block'" class="p-3 rounded-xl border max-w-sm text-xs text-left">
-            <div class="font-bold text-[10px] text-zinc-400 mb-1">{{ m.role === 'user' ? 'You' : 'FPL Oracle Expert' }}</div>
-            <p v-if="m.historical" class="text-xs opacity-70">Previous session history, not current advice</p>
-            <div class="prose-rendered" v-html="renderMarkdown(m.content)"></div>
-          </div>
-        </div>
-        <div v-if="isChatLoading" class="text-left">
-          <div class="bg-zinc-950 text-zinc-400 p-3 rounded-xl border border-zinc-800 inline-block text-xs">
-            <span class="animate-pulse">Thinking & evaluating squad metrics...</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Suggested Prompt Chips -->
-      <div class="flex flex-wrap gap-1.5 py-2 border-t border-zinc-800">
-        <button v-for="p in suggestedPrompts" :key="p" @click="sendPrompt(p)" class="text-[11px] px-2.5 py-1 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 transition">
-          {{ p }}
-        </button>
-      </div>
-
-      <!-- Chat Input Form -->
-      <form @submit.prevent="sendMessage" class="flex gap-2 pt-2 border-t border-zinc-800">
-        <input v-model="userInput" placeholder="Ask about transfers, captain, hits, chips..." class="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500">
-        <button type="submit" :disabled="!userInput.trim() || isChatLoading" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs transition disabled:opacity-50">
-          Send
-        </button>
+      <div v-if="isChatLoading" class="bubble" aria-busy="true"><ui-skeleton width="160px"></ui-skeleton></div>
+    </div>
+    <div class="chips"><ui-button v-for="p in suggestedPrompts" :key="p" size="sm" :disabled="isChatLoading" @click="sendPrompt(p)">{{ p }}</ui-button></div>
+    <template #footer>
+      <form class="row" style="flex:1;flex-wrap:nowrap" @submit.prevent="sendMessage">
+        <ui-field v-model="userInput" placeholder="Ask about transfers, captain, hits, chips" style="flex:1" id="chat-input"></ui-field>
+        <ui-button type="submit" variant="primary" icon="send" :loading="isChatLoading" :disabled="!userInput.trim()" aria-label="Send message"></ui-button>
       </form>
+    </template>
+  </ui-modal>
+
+  <ui-modal :open="showSettingsModal" title="Server configuration" @close="showSettingsModal = false">
+    <ui-button v-if="profile.bank_override_enabled || profile.ft_override_enabled" variant="ghost" :loading="busy.reset" @click="resetFinancialOverrides">Use official bank and free transfers (clear overrides)</ui-button>
+    <div class="item-row"><span>FPL manager account</span><span class="num">{{ profile.manager_id_redacted || 'Loaded from .env' }}</span></div>
+    <p class="subtle">Configured via <code>FPL_MANAGER_ID</code> in the local <code>.env</code> file.</p>
+    <div class="item-row"><span>Target mini-league</span><span class="num">{{ profile.league_id_redacted || 'Loaded from .env' }}</span></div>
+    <p class="subtle">Configured via <code>FPL_TARGET_LEAGUE_ID</code> in the local <code>.env</code> file.</p>
+    <div class="item-row"><span>News and availability extractor</span><ui-badge :tone="profile.status_diagnostic?.recommendation_mode === 'gated_active' ? 'ok' : 'info'" dot>{{ profile.status_diagnostic?.recommendation_mode === 'gated_active' ? 'Active' : 'Shadow Mode' }}</ui-badge></div>
+    <p class="subtle">{{ profile.status_diagnostic?.llm_extractor_status || 'Official API baseline running (No key required)' }}</p>
+    <ui-field v-model="profile.risk_preference" label="Tactical risk preference" select>
+      <option value="balanced">Balanced contender (standard optimization)</option>
+      <option value="aggressive">Chasing leader (high differential upside)</option>
+      <option value="conservative">Defending lead (template protection)</option>
+    </ui-field>
+    <p class="note"><ui-icon name="shield-check" :size="16"></ui-icon><span><strong>Privacy:</strong> personal IDs and API keys live only in the project-local <code>.env</code> and load server-side. No secret entry forms exist in the web client.</span></p>
+    <template #footer>
+      <ui-button variant="ghost" @click="showSettingsModal = false">Close</ui-button>
+      <ui-button variant="primary" :loading="busy.save" @click="saveProfile">Save preference</ui-button>
+    </template>
+  </ui-modal>
+
+  <ui-modal :open="showPanicModal" title="Emergency re-optimizer" @close="showPanicModal = false">
+    <p class="muted">Breaking team news or a late injury before the deadline? Describe it or pick a starter to re-solve your lineup, bench promotion, captain and best market replacement.</p>
+    <div class="row" style="flex-wrap:nowrap;align-items:flex-end">
+      <ui-field v-model="panicQuery" label="What happened" placeholder="e.g. Saka ruled out with hamstring" style="flex:1"></ui-field>
+      <ui-button variant="primary" :loading="panicResolving" :disabled="!panicQuery.trim()" @click="executePanicReoptimize">{{ panicResolving ? 'Resolving' : 'Resolve' }}</ui-button>
     </div>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- MODAL: SERVER CONFIGURATION & STATUS       -->
-  <!-- ========================================== -->
-  <div v-if="showSettingsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="council-card max-w-md w-full p-6 space-y-4 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
-        <h3 class="font-bold text-base text-white flex items-center gap-2">
-          <span>Server Configuration Status</span>
-        </h3>
-        <button @click="showSettingsModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
-      </div>
-
-      <div class="space-y-3 text-xs">
-        <button v-if="profile.bank_override_enabled || profile.ft_override_enabled" @click="resetFinancialOverrides" class="text-amber-400 underline">Use official bank and free transfers (clear overrides)</button>
-        <div class="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-1">
-          <div class="text-zinc-400 font-semibold flex justify-between">
-            <span>FPL Manager Account:</span>
-            <span class="text-emerald-400 font-mono">{{ profile.manager_id_redacted || 'Loaded from .env' }}</span>
-          </div>
-          <p class="text-[10px] text-zinc-500">Configured via <code>FPL_MANAGER_ID</code> in local <code>.env</code> file.</p>
-        </div>
-
-        <div class="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-1">
-          <div class="text-zinc-400 font-semibold flex justify-between">
-            <span>Target Mini-League:</span>
-            <span class="text-emerald-400 font-mono">{{ profile.league_id_redacted || 'Loaded from .env' }}</span>
-          </div>
-          <p class="text-[10px] text-zinc-500">Configured via <code>FPL_TARGET_LEAGUE_ID</code> in local <code>.env</code> file.</p>
-        </div>
-
-        <div class="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-1">
-          <div class="text-zinc-400 font-semibold flex justify-between">
-            <span>News & Availability Extractor:</span>
-            <span class="text-amber-400 font-semibold">{{ profile.status_diagnostic?.recommendation_mode === 'gated_active' ? 'Active' : 'Shadow Mode' }}</span>
-          </div>
-          <p class="text-[11px] text-zinc-300">{{ profile.status_diagnostic?.llm_extractor_status || 'Official API baseline running (No key required)' }}</p>
-        </div>
-
-        <div>
-          <label class="block text-zinc-400 font-semibold mb-1">Tactical Risk Preference</label>
-          <select v-model="profile.risk_preference" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white">
-            <option value="balanced">Balanced Contender (Standard Optimization)</option>
-            <option value="aggressive">Chasing Leader (High Differential Upside)</option>
-            <option value="conservative">Defending Lead (Template Protection)</option>
-          </select>
-        </div>
-
-        <div class="p-2 text-[10px] text-zinc-500 bg-zinc-900/50 rounded border border-zinc-800">
-          <strong>Privacy Notice</strong>: Personal IDs and API keys are stored solely in project-local <code>.env</code> and loaded server-side. No secret entry forms exist in the web client.
-        </div>
-      </div>
-
-      <div class="pt-2 flex justify-end gap-2">
-        <button @click="showSettingsModal = false" class="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white text-xs">Close</button>
-        <button @click="saveProfile" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs">Save Preference</button>
+    <div class="stack-sm">
+      <div class="eyebrow">Or pick the affected starter</div>
+      <div class="chips"><ui-button v-for="p in squadData.starters || []" :key="p.element" size="sm" :disabled="panicResolving" @click="panicQuery = p.web_name + ' ruled out injured'; executePanicReoptimize()">{{ p.web_name }}</ui-button></div>
+    </div>
+    <div v-if="panicResult" class="callout tone-ok" role="status">
+      <ui-icon name="circle-check"></ui-icon>
+      <div class="stack-sm">
+        <div class="callout-title">Recommendation</div>
+        <p class="callout-text">{{ panicResult.recommendation }}</p>
+        <p v-if="panicResult.lineup_action" class="callout-text">New formation <strong>{{ panicResult.lineup_action.new_formation }}</strong> · New captain <strong>{{ panicResult.lineup_action.captain }}</strong></p>
       </div>
     </div>
-  </div>
+  </ui-modal>
 
-  <!-- ========================================== -->
-  <!-- MODAL: EMERGENCY PANIC CRISIS RESOLVER     -->
-  <!-- ========================================== -->
-  <div v-if="showPanicModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="council-card max-w-xl w-full p-6 space-y-4 shadow-2xl border-red-500/50">
-      <div class="flex justify-between items-center border-red-900/50 pb-3 border-b">
-        <h3 class="font-bold text-base text-red-400 flex items-center gap-2">
-          <span>Emergency Panic Re-Optimizer</span>
-        </h3>
-        <button @click="showPanicModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
-      </div>
+  <ui-modal :open="showChecklistModal" title="Pre-deadline checklist" @close="showChecklistModal = false">
+    <div v-if="!checklistItems.length" class="empty"><strong>No checklist yet</strong>It loads after the first data refresh.</div>
+    <div v-for="item in checklistItems" :key="item.category" class="item-row" style="align-items:flex-start">
+      <div class="stack-sm"><strong>{{ item.title }}</strong><span class="muted">{{ item.detail }}</span></div>
+      <ui-badge :tone="item.status === 'PASS' ? 'ok' : 'warn'" dot>{{ humanLabel(item.status) }}</ui-badge>
+    </div>
+  </ui-modal>
 
-      <p class="text-xs text-zinc-300">
-        Breaking team news or late injury setback before the deadline? Enter details or pick a player below to immediately re-solve your starting lineup, bench promotion, revised captain, and best market replacement.
-      </p>
-
-      <div>
-        <label class="block text-xs font-semibold text-zinc-400 mb-1">Breaking Crisis Query</label>
-        <div class="flex gap-2">
-          <input v-model="panicQuery" placeholder="e.g. Saka ruled out with hamstring, benched" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-xs text-white">
-          <button @click="executePanicReoptimize" :disabled="panicResolving || !panicQuery.trim()" class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs disabled:opacity-50 transition">
-            {{ panicResolving ? 'Resolving...' : 'Resolve Crisis' }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Quick Starter Selector -->
-      <div>
-        <div class="text-[11px] text-zinc-400 font-semibold mb-1">Or Quick-Select Affected Starter:</div>
-        <div class="flex flex-wrap gap-1.5">
-          <button v-for="p in squadData.starters || []" :key="p.element" @click="panicQuery = p.web_name + ' ruled out injured'; executePanicReoptimize()" class="text-[10px] px-2 py-1 rounded bg-zinc-950 hover:bg-red-950/40 text-zinc-300 border border-zinc-800 hover:border-red-700 transition">
-            {{ p.web_name }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Panic Results -->
-      <div v-if="panicResult" class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2 text-xs">
-        <div class="font-bold text-emerald-400 flex items-center gap-1.5 font-mono">
-          <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px]">SOLUTION</span>
-          <span>Recommendation:</span>
-        </div>
-        <div class="text-zinc-200">{{ panicResult.recommendation }}</div>
-        <div v-if="panicResult.lineup_action" class="grid grid-cols-2 gap-2 text-[11px] font-mono p-2 rounded bg-zinc-900 mt-2">
-          <div>New Formation: <strong class="text-white">{{ panicResult.lineup_action.new_formation }}</strong></div>
-          <div>New Captain: <strong class="text-amber-400">{{ panicResult.lineup_action.captain }}</strong></div>
-        </div>
+  <ui-modal :open="showSquadModal" title="Paste or upload squad" @close="showSquadModal = false">
+    <p class="muted">Paste your 15 players as text, or upload a .txt or .csv file.</p>
+    <ui-field v-model="manualSquadText" :rows="5" placeholder="Raya, Sels, Gabriel, Alexander-Arnold, Saliba, Robinson, Faes, Saka, Palmer, Mbeumo, Rogers, Semenyo, Haaland, Watkins, Wood"></ui-field>
+    <div class="row">
+      <label class="btn btn-sm" for="squad-file"><ui-icon name="upload" :size="16"></ui-icon>Upload file</label>
+      <input id="squad-file" class="sr-only" type="file" accept=".txt,.csv,text/plain,text/csv" @change="handleFileUpload">
+      <ui-button variant="primary" :loading="matchingInProgress" :disabled="!manualSquadText.trim()" @click="matchPastedSquad">{{ matchingInProgress ? 'Matching' : 'Find players' }}</ui-button>
+    </div>
+    <div v-if="matchResult" class="callout" :class="matchResult.is_valid_15 ? 'tone-ok' : 'tone-warn'" role="status">
+      <ui-icon :name="matchResult.is_valid_15 ? 'circle-check' : 'triangle-alert'"></ui-icon>
+      <div class="stack-sm">
+        <div class="callout-title">Matched {{ matchResult.total_matched }}/15</div>
+        <p class="callout-text">{{ matchResult.is_valid_15 ? 'All 15 players matched. Review before saving.' : 'Need 15 players (2 GK, 5 DEF, 5 MID, 3 FWD).' }}</p>
+        <div v-if="matchResult.is_valid_15" class="row"><ui-button variant="primary" size="sm" :loading="savingSquad" @click="saveManualSquad">{{ savingSquad ? 'Saving' : 'Confirm and save squad' }}</ui-button></div>
       </div>
     </div>
-  </div>
+  </ui-modal>
 
-  <!-- ========================================== -->
-  <!-- MODAL: PRE-DEADLINE AUDIT CHECKLIST        -->
-  <!-- ========================================== -->
-  <div v-if="showChecklistModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="council-card max-w-lg w-full p-6 space-y-4 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
-        <h3 class="font-bold text-base text-white flex items-center gap-2">
-          <span>5-Point Pre-Deadline Operational Checklist</span>
-        </h3>
-        <button @click="showChecklistModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
-      </div>
-
-      <div class="space-y-2 text-xs">
-        <div v-for="item in checklistItems" :key="item.category" class="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-start gap-3">
-          <div class="mt-0.5 font-mono font-bold text-xs">
-            <span :class="item.status === 'PASS' ? 'text-emerald-400' : 'text-amber-400'">{{ item.status === 'PASS' ? '[PASS]' : '[WARN]' }}</span>
-          </div>
-          <div class="flex-1">
-            <div class="font-bold text-white flex items-center justify-between">
-              <span>{{ item.title }}</span>
-              <span :class="item.status === 'PASS' ? 'text-emerald-400' : 'text-amber-400'" class="font-mono text-[10px] font-bold">{{ item.status }}</span>
-            </div>
-            <div class="text-zinc-400 text-[11px] mt-0.5">{{ item.detail }}</div>
-          </div>
-        </div>
-      </div>
+  <ui-modal :open="showBriefingModal" title="Reports" wide @close="showBriefingModal = false">
+    <div class="row between">
+      <ui-tabs v-model="briefingSubTab" :items="briefingTabs" label="Report type" id-prefix="report"></ui-tabs>
+      <ui-button size="sm" icon="copy" :loading="busy.copy" @click="copyBriefingMarkdown">Copy markdown</ui-button>
     </div>
-  </div>
+    <div v-if="briefingSubTab === 'preview'" class="prose-rendered" v-html="renderMarkdown(briefingData.markdown || (aux.briefing.loading ? 'Preparing your weekly report...' : aux.briefing.error || 'No weekly report is available yet. Update your data and try again.'))"></div>
+    <div v-if="briefingSubTab === 'review'" class="prose-rendered" v-html="renderMarkdown(reviewData.review_markdown || (aux.review.loading ? 'Loading the gameweek review...' : aux.review.error || 'No completed gameweek review is available yet.'))"></div>
+  </ui-modal>
 
-  <!-- ========================================== -->
-  <!-- MODAL: PASTE / UPLOAD CUSTOM SQUAD         -->
-  <!-- ========================================== -->
-  <div v-if="showSquadModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="council-card max-w-xl w-full p-6 space-y-4 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
-        <h3 class="font-bold text-base text-white">Paste or Upload Squad (15 Players)</h3>
-        <button @click="showSquadModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
-      </div>
-
-      <div class="space-y-3 text-xs">
-        <p class="text-zinc-300">Paste your 15 players as text, or upload a .txt/.csv file:</p>
-        <textarea v-model="manualSquadText" rows="5" placeholder="Raya, Sels, Gabriel, Alexander-Arnold, Saliba, Robinson, Faes, Saka, Palmer, Mbeumo, Rogers, Semenyo, Haaland, Watkins, Wood" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-2.5 text-white font-mono text-xs"></textarea>
-
-        <div class="flex gap-2 items-center">
-          <input type="file" @change="handleFileUpload" class="text-xs text-zinc-400">
-          <button @click="matchPastedSquad" :disabled="matchingInProgress || !manualSquadText.trim()" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs disabled:opacity-50">
-            {{ matchingInProgress ? 'Matching...' : 'Fuzzy Match' }}
-          </button>
-        </div>
-
-        <div v-if="matchResult" class="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2">
-          <div class="font-bold text-white flex items-center justify-between">
-            <span>Matched: {{ matchResult.total_matched }}/15</span>
-            <span :class="matchResult.is_valid_15 ? 'text-emerald-400' : 'text-amber-400'" class="font-mono">
-              {{ matchResult.is_valid_15 ? 'Valid 15 Squad' : 'Need 15 (2 GK, 5 DEF, 5 MID, 3 FWD)' }}
-            </span>
-          </div>
-          <button v-if="matchResult.is_valid_15" @click="saveManualSquad" :disabled="savingSquad" class="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs transition">
-            {{ savingSquad ? 'Saving...' : 'Confirm & Save Squad' }}
-          </button>
-        </div>
-      </div>
+  <ui-modal :open="showSystemModal" title="System diagnostics" @close="showSystemModal = false">
+    <div class="stack-sm">
+      <div class="eyebrow">Mini-league forward evidence</div>
+      <p class="muted">Status: {{ humanLabel(leagueValidation.status, 'Not loaded') }}. Frozen forecasts: {{ leagueValidation.frozen_forecast_count ?? 'Unknown' }}. Finalized scored forecasts: {{ leagueValidation.count ?? 'Unknown' }}.</p>
+      <p class="muted">Probabilities are not empirically calibrated. Baseline comparison and chronological validation are required before promotion.</p>
+      <p class="subtle">{{ leagueValidation.capture_window }}</p>
+      <p class="subtle">{{ leagueValidation.event_definition }}</p>
     </div>
-  </div>
+    <div class="item-row"><span>ML model version</span><strong class="num">{{ systemStatus.model?.active_version || '—' }}</strong></div>
+    <div class="item-row"><span>Holdout MAE</span><strong class="num">{{ systemStatus.model?.mae != null ? systemStatus.model.mae + ' pts' : '—' }}</strong></div>
+    <div class="item-row"><span>Spearman rank correlation</span><strong class="num">{{ systemStatus.model?.spearman ?? '—' }}</strong></div>
+    <div class="item-row"><span>Background scheduler</span><strong>{{ systemStatus.scheduler?.running === true ? 'Running' : systemStatus.scheduler?.running === false ? 'Stopped' : 'Unknown' }}</strong></div>
+    <div class="item-row"><span>Verified test suite</span><strong>{{ systemStatus.tests?.summary || 'Not verified this session' }}</strong></div>
+    <div class="item-row"><span>CBC MILP solver</span><strong>{{ humanLabel(systemStatus.solver?.status, 'Not verified this session') }}</strong></div>
+  </ui-modal>
 
-  <!-- ========================================== -->
-  <!-- MODAL: WEEKLY REPORT & REVIEW             -->
-  <!-- ========================================== -->
-  <div v-if="showBriefingModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="council-card max-w-3xl w-full p-6 space-y-4 shadow-2xl max-h-[85vh] flex flex-col justify-between">
-      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
-        <div class="flex gap-2 text-xs">
-          <button @click="briefingSubTab = 'preview'" :class="briefingSubTab === 'preview' ? 'bg-emerald-600 text-black font-bold' : 'text-zinc-400 hover:text-white'" class="px-3 py-1.5 rounded-md transition font-mono">
-            Weekly Briefing
-          </button>
-          <button @click="briefingSubTab = 'review'; loadReview()" :class="briefingSubTab === 'review' ? 'bg-emerald-600 text-black font-bold' : 'text-zinc-400 hover:text-white'" class="px-3 py-1.5 rounded-md transition font-mono">
-            Post-Match Review
-          </button>
-        </div>
-        <div class="flex items-center gap-2">
-          <button @click="copyBriefingMarkdown" class="text-xs px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium border border-zinc-700 font-mono">
-            Copy Markdown
-          </button>
-          <button @click="showBriefingModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
-        </div>
-      </div>
-
-      <div class="flex-1 overflow-y-auto p-2 prose-rendered text-xs">
-        <div v-if="briefingSubTab === 'preview'" v-html="renderMarkdown(briefingData.markdown || 'Loading briefing...')"></div>
-        <div v-if="briefingSubTab === 'review'" v-html="renderMarkdown(reviewData.review_markdown || 'Loading review...')"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- MODAL: SYSTEM DIAGNOSTICS & TELEMETRY     -->
-  <!-- ========================================== -->
-  <div v-if="showSystemModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="council-card max-w-xl w-full p-6 space-y-4 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
-        <h3 class="font-bold text-base text-white">System Telemetry & Diagnostics</h3>
-        <button @click="showSystemModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
-      </div>
-
-      <div class="p-3 rounded border border-zinc-700 text-xs space-y-1">
-        <p class="font-semibold">Mini-league forward evidence</p>
-        <p>Status: {{ leagueValidation.status || 'Not loaded' }}. Frozen forecasts: {{ leagueValidation.frozen_forecast_count ?? 'Unknown' }}. Finalized scored forecasts: {{ leagueValidation.count ?? 'Unknown' }}.</p>
-        <p>Probabilities are not empirically calibrated. Baseline comparison and chronological validation are required before promotion.</p>
-        <p>{{ leagueValidation.capture_window }}</p>
-        <p>{{ leagueValidation.event_definition }}</p>
-      </div>
-      <div class="space-y-3 text-xs font-mono">
-        <div class="p-3 rounded-lg bg-zinc-950 border border-zinc-800 space-y-1">
-          <div class="text-zinc-400">ML Model Version: <strong class="text-white">{{ systemStatus.model?.active_version || '—' }}</strong></div>
-          <div class="text-zinc-400">Holdout MAE: <strong class="text-emerald-400">{{ systemStatus.model?.mae != null ? systemStatus.model.mae + ' pts' : '—' }}</strong></div>
-          <div class="text-zinc-400">Spearman Rank Correlation: <strong class="text-emerald-400">{{ systemStatus.model?.spearman ?? '—' }}</strong></div>
-        </div>
-
-        <div class="p-3 rounded-lg bg-zinc-950 border border-zinc-800 space-y-1">
-          <div class="text-zinc-400">Background Scheduler: <strong class="text-emerald-400">{{ systemStatus.scheduler?.running === true ? 'Running' : systemStatus.scheduler?.running === false ? 'Stopped' : 'Unknown' }}</strong></div>
-          <div class="text-zinc-400">Verified Test Suite: <strong class="text-emerald-400">{{ systemStatus.tests?.summary || 'Not verified this session' }}</strong></div>
-          <div class="text-zinc-400">CBC MILP Solver: <strong class="text-emerald-400">{{ systemStatus.solver?.status || 'Not verified this session' }}</strong></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- TOAST NOTIFICATION                         -->
-  <!-- ========================================== -->
-  <div v-if="showToast" class="fixed bottom-4 right-4 z-50 bg-emerald-600 text-black font-bold text-xs px-4 py-2.5 rounded-lg shadow-xl transition-all flex items-center gap-2">
-    <span class="font-mono font-black">[OK]</span>
-    <span>{{ toastMessage }}</span>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- FOOTER                                     -->
-  <!-- ========================================== -->
-  <footer class="border-t border-[#27272a] bg-[#09090b] py-4 px-6 text-center text-xs text-zinc-500 font-mono">
-    FPL Oracle 2026/27 — Local Decision Support Engine. Advice only; changes must be confirmed in official FPL.
-  </footer>
-
+  <ui-toasts :items="toasts"></ui-toasts>
 </div>
 
-<!-- Application Main Bundle -->
+<script src="/static/js/components.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

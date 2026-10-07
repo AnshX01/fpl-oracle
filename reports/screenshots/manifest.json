@@ -1,10 +1,10 @@
 {
   "source_kind": "deterministic_http_fixtures",
-  "code_head": "0effb5bde195aec4e7146a1502c5ab210f86c244",
+  "code_head": "4cb6224652574ce677f6b54b1955e0747cb9fb43",
   "captures": [
     {
       "file": "dark_1920_populated.png",
-      "sha256": "06235e5039ae5eb5e9d851a300b02f37d249696a89941f008735386ce55a9a0a",
+      "sha256": "2b2c1ed6c0af33808e750afbeebadf7e9a56c8bd8a29c05aa467fa25aa2b6795",
       "state": "populated",
       "theme": "dark",
       "viewport": [
@@ -16,7 +16,7 @@
     },
     {
       "file": "dark_1920_failed_after_success.png",
-      "sha256": "7334f059908e133843d29bdf7461469a62652dc5fa38201a88470ab093c37d26",
+      "sha256": "24411dfcf335ab2deb493c2c5b607e1f7aea39e635880eef34fe053d753d8bc9",
       "state": "failed_after_success",
       "theme": "dark",
       "viewport": [
@@ -28,7 +28,7 @@
     },
     {
       "file": "dark_1920_missing.png",
-      "sha256": "cd63b89570155b1beb72297386f179781061516423d08ca2531f6ca8ef829b13",
+      "sha256": "d732c228f9c1ad77e691bc87cefcc20954f0a660f00da8bb714d6fa304e97d2c",
       "state": "missing",
       "theme": "dark",
       "viewport": [
@@ -40,7 +40,7 @@
     },
     {
       "file": "dark_390_populated.png",
-      "sha256": "67eefc9d9306b6efbdea584ed533618987c65cba9d4b9d926ddaeb52857840f2",
+      "sha256": "7ef511834cb3a4c9114de2558cc26a9100829dc18415370de492dca51c2ac2c8",
       "state": "populated",
       "theme": "dark",
       "viewport": [
@@ -52,7 +52,7 @@
     },
     {
       "file": "dark_390_failed_after_success.png",
-      "sha256": "4f07f08457aa4300928c6da058cfa161932f3e982fa7043beb5f271b01b7cb95",
+      "sha256": "edf25151315c574d8bec51acd2c6287ba962e73e5f4faf92bca8815f97ad2ee6",
       "state": "failed_after_success",
       "theme": "dark",
       "viewport": [
@@ -64,7 +64,7 @@
     },
     {
       "file": "dark_390_missing.png",
-      "sha256": "a10c5b8df83405414cfc801ecf36b88ead332bafa84af18f195af5a5b2e8343a",
+      "sha256": "63d79f318f052f38c91d5f10401749795073a6fdeff97b403482224fa884f136",
       "state": "missing",
       "theme": "dark",
       "viewport": [
@@ -76,7 +76,7 @@
     },
     {
       "file": "light_1920_populated.png",
-      "sha256": "1e050efc58c97386b362dfdf22361131e82c928d73ab77381ccc7cee3e840d16",
+      "sha256": "d165f988651c5c645d849ade0bc1791d2d3c286c375e5f32400731eb5db8809c",
       "state": "populated",
       "theme": "light",
       "viewport": [
@@ -88,7 +88,7 @@
     },
     {
       "file": "light_1920_failed_after_success.png",
-      "sha256": "170b18a437460cbda2b6ab12f19ac0aaa3199ca21c4ccf6faa65598042acd34f",
+      "sha256": "929e9383623f73dce45c3d8f189afd03d1a9d8695fd36697308f1b0c762a0446",
       "state": "failed_after_success",
       "theme": "light",
       "viewport": [
@@ -100,7 +100,7 @@
     },
     {
       "file": "light_1920_missing.png",
-      "sha256": "ff10dc851d2d8bd4563adc33673299a9ae86b9e51ce547e1532e648aee92f4f9",
+      "sha256": "38e28080eff90048a824cded41c906b6d3ac7e47637f4dca6ec5be8f33605dbd",
       "state": "missing",
       "theme": "light",
       "viewport": [
@@ -112,7 +112,7 @@
     },
     {
       "file": "light_390_populated.png",
-      "sha256": "e4e627baf8361708c42cea017bb942014afca2e2edbfd7eec3438bcc465bf237",
+      "sha256": "d89ca22d54086107151acf6ad88164876394db30cbeac5d73b6b1d74ce89abb9",
       "state": "populated",
       "theme": "light",
       "viewport": [
@@ -124,7 +124,7 @@
     },
     {
       "file": "light_390_failed_after_success.png",
-      "sha256": "c3f3b51454fcd1377c4466bfbf5fd8be3390abc06bdca0b47686d9b298529703",
+      "sha256": "854a9eb974bbab1d91fc741efa7f8e19df5042d7bfbf61a109a1a8abfadacb0f",
       "state": "failed_after_success",
       "theme": "light",
       "viewport": [
@@ -136,7 +136,7 @@
     },
     {
       "file": "light_390_missing.png",
-      "sha256": "83654b970f2c478fdcab2a4731a0143646e2867f2931e58d20e4e1e4cdbde669",
+      "sha256": "1c1e554df1f6d257769c9079824b8d716dac8e60391b2c6f6bc8c2bf32c1a2b4",
       "state": "missing",
       "theme": "light",
       "viewport": [

@@ -756,6 +756,14 @@ async def get_league_intel(league_id: int | None = None):
         bootstrap=boot,
     )
 
+    from fpl_oracle.league.rivals import attach_squad_overlap
+
+    standings_data["standings"] = attach_squad_overlap(
+        standings_data["standings"],
+        rivals_res["rival_squads"],
+        effective_state.squad,
+    )
+
     user_pts = effective_state.overall_points
     # Find user's rank in this mini-league if present, otherwise fallback to overall_rank or 1
     user_mini_rank = None

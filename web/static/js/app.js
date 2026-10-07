@@ -11,6 +11,7 @@ const app = createApp({
     return {
       // Theme
       theme: 'dark',
+      showNavigation: false,
       servedRevisions: [],
       snapshotBuffer: null,
       snapshotGeneration: 0,
@@ -31,8 +32,25 @@ const app = createApp({
       showSquadModal: false,
       showBriefingModal: false,
       showSystemModal: false,
-      showToast: false,
-      toastMessage: '',
+      toasts: [],
+      toastSeq: 0,
+      busy: {},
+      aux: Object.fromEntries(['matrix','prices','league','briefing','review'].map(k => [k, {loading:false,error:null}])),
+      mainTabs: [
+        { key: 'overview', label: 'Overview', icon: 'layout-dashboard' },
+        { key: 'team', label: 'My Team', icon: 'users' },
+        { key: 'transfers', label: 'Transfers', icon: 'arrow-left-right' },
+        { key: 'league', label: 'My League', icon: 'trophy' }
+      ],
+      planTabs: [
+        { key: 'plan_a', label: 'Plan A' },
+        { key: 'plan_b', label: 'Plan B' },
+        { key: 'plan_c', label: 'Plan C' }
+      ],
+      briefingTabs: [
+        { key: 'preview', label: 'Weekly briefing' },
+        { key: 'review', label: 'Post-match review' }
+      ],
 
       // Telemetry & Game State
       health: {},
@@ -116,7 +134,7 @@ const app = createApp({
         "Who is the safest captain pick this week?",
         "Should I roll my free transfer or buy Gabriel?",
         "When is the best week for Bench Boost?",
-        "What is my probability of winning my mini-league?"
+        "What do the mini-league simulations show, and what are their limits?"
       ],
 
       // Background Sync Pipeline
@@ -129,6 +147,39 @@ const app = createApp({
   },
 
   computed: {
+    moreItems() {
+      return [
+        { key: 'panic', label: 'Emergency re-optimizer', icon: 'siren' },
+        { key: 'audit', label: 'Pre-deadline checklist', icon: 'list-checks',
+          badge: `${this.checklistSummary.passed_count ?? 0}/5`, tone: this.checklistSummary.status === 'PASS' ? 'ok' : 'warn' },
+        { key: 'report', label: 'Weekly report', icon: 'file-text' },
+        { key: 'squad', label: 'Import squad', icon: 'clipboard-paste' },
+        { key: 'settings', label: 'Settings', icon: 'settings-2' },
+        { key: 'system', label: 'Diagnostics', icon: 'activity' }
+      ];
+    },
+
+    chipCheck() {
+      const chip = this.decisionCard && this.decisionCard.chip;
+      if (!chip || !chip.recommend || this.decisionCardLoading || this.plansLoading) return null;
+      const r = this.expiryResearch;
+      const noForecast = 'Model-based, not calibrated; nothing beyond loaded data is forecast.';
+      if (!r) return { state: 'idle', tone: 'muted', label: 'Not checked to GW19',
+        text: 'The normal search covers eight weeks and Set 1 chips run to GW19, so later chip value remains unresolved until the longer check runs. ' + noForecast };
+      if (r.status === 'pending' || this.expiryResearchLoading) return { state: 'pending', tone: 'info', label: 'Checking to GW19',
+        text: 'Running the search through the GW19 chip expiry in the background. Until it finishes, later chip value remains unresolved.' };
+      if (r.status === 'model_expiry_sensitivity' && r.short && r.extended) {
+        if (!r.short.first_chip) return { state: 'unavailable', tone: 'muted', label: 'Check inconclusive',
+          text: 'The through-GW19 check did not reproduce this candidate, so later chip value remains unresolved. ' + noForecast };
+        if (!r.first_chip_changes) return { state: 'holds', tone: 'ok', label: 'Holds to GW19',
+          text: `The search through GW19 also puts this chip first (edge ${r.short.discounted_edge} xP over eight weeks, ${r.extended.discounted_edge} xP to GW19). A model comparison, not proof it is optimal. ${noForecast}` };
+        return { state: 'changed', tone: 'warn', label: 'Changes by GW19',
+          text: `The search through GW19 puts ${String(r.extended.first_chip || 'no chip now').replace(/_/g, ' ')} first instead. Reassess before committing; the eight-week candidate is not final.` };
+      }
+      return { state: 'unavailable', tone: 'muted', label: 'GW19 check unavailable',
+        text: `${r.reason || 'The through-GW19 check could not run.'} Later chip value remains unresolved.` };
+    },
+
     isDark() {
       return this.theme === 'dark';
     },
@@ -186,7 +237,7 @@ const app = createApp({
     nextDecision() {
       if (this.decisionCardLoading || this.plansLoading || this.decisionCardError || this.plansError || this.squadError || this.decisionCard?.is_stale) {
         return {title: (this.decisionCardLoading || this.plansLoading) ? "Calculating recommendations..." : "Transfer recommendations unavailable",
-          badge: "Unavailable", badgeClass: "text-zinc-400", gainText: "Unavailable", hitText: "Unavailable",
+          badge: "Unavailable", tone: "muted", gainText: "Unavailable", hitText: "Unavailable",
           bankText: this.bankDisplay, ftText: this.ftDisplay,
           reasons: [this.decisionCardError || this.plansError || this.squadError || "Waiting for current analysis."],
           caveat: "No current advice until analysis succeeds.", card: null, isUnavailable: true};
@@ -196,7 +247,7 @@ const app = createApp({
           return {
             title: "Loading recommendations...",
             badge: "Loading",
-            badgeClass: "bg-zinc-800 text-zinc-400 border border-zinc-700",
+            tone: "muted",
             gainText: "Evaluating",
             hitText: "--",
             bankText: "Bank unavailable",
@@ -213,7 +264,7 @@ const app = createApp({
         return {
           title: "Transfer recommendations unavailable",
           badge: "Unavailable",
-          badgeClass: "bg-zinc-900 text-zinc-400 border border-zinc-700",
+          tone: "muted",
           gainText: "Unavailable",
           hitText: "Unavailable",
           bankText: "Bank unavailable",
@@ -239,22 +290,22 @@ const app = createApp({
 
         let title = "";
         let badge = "";
-        let badgeClass = "";
+        let tone = "muted";
 
         if (chip.recommend) {
-          title = `Conditional Chip Candidate: ${chip.chip_display_name || 'Active Chip'}`;
+          title = `Chip to consider: ${chip.chip_display_name || 'Active chip'}`;
           badge = "Chip Deployment";
-          badgeClass = "bg-amber-500/20 text-amber-400 border border-amber-500/40";
+          tone = "warn";
         } else if (isRoll) {
           title = `Roll Free Transfer (Bank to ${t.ft_next_gw ?? "unavailable"} FTs)`;
           badge = "Hold & Roll";
-          badgeClass = "bg-blue-500/20 text-blue-400 border border-blue-500/40";
+          tone = "info";
         } else {
           const inNames = (t.in || []).map(p => p.web_name).join(', ') || 'Target';
           const outNames = (t.out || []).map(p => p.web_name).join(', ') || 'Outgoing';
           title = `Transfer ${outNames} → ${inNames}`;
           badge = t.no_regret_flag ? "No-Regret Move" : "Recommended Move";
-          badgeClass = "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
+          tone = "ok";
         }
 
         const reasons = [
@@ -265,7 +316,7 @@ const app = createApp({
         return {
           title: title,
           badge: badge,
-          badgeClass: badgeClass,
+          tone: tone,
           gainText: `+${(t.net_gain_vs_roll || 0.0).toFixed(1)} pts (${card.decision_scope?.horizon_gameweeks?.length ?? "unknown"}-GW)`,
           hitText: `${t.hit_cost ? '-' + t.hit_cost : '0'} hit pts`,
           bankText: Number.isFinite(t.bank_after) ? `£${t.bank_after.toFixed(1)}m in bank` : "Bank unavailable",
@@ -283,7 +334,7 @@ const app = createApp({
           return {
             title: "Loading transfer recommendations...",
             badge: "Loading",
-            badgeClass: "bg-zinc-800 text-zinc-400 border border-zinc-700",
+            tone: "muted",
             gainText: "Evaluating",
             hitText: "--",
             bankText: (this.squadData && this.squadData.bank_millions !== undefined) ? `£${this.squadData.bank_millions}m in bank` : "Bank unavailable",
@@ -301,7 +352,7 @@ const app = createApp({
         return {
           title: "Transfer recommendations unavailable",
           badge: "Unavailable",
-          badgeClass: "bg-zinc-900 text-zinc-400 border border-zinc-700",
+          tone: "muted",
           gainText: "Unavailable",
           hitText: "Unavailable",
           bankText: (this.squadData && this.squadData.bank_millions !== undefined) ? `£${this.squadData.bank_millions}m in bank` : "Bank unavailable",
@@ -326,7 +377,7 @@ const app = createApp({
         return {
           title: `Transfer ${outNames} → ${inNames}`,
           badge: "Recommended Move",
-          badgeClass: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40",
+          tone: "ok",
           gainText: `+${Math.abs(delta).toFixed(1)} pts projected gain`,
           hitText: `${plan.hits ? '-' + (plan.hits * 4) : '0'} hit pts`,
           bankText: Number.isFinite(plan.bank_after) ? `£${(plan.bank_after / 10).toFixed(1)}m in bank` : "Bank unavailable",
@@ -342,7 +393,7 @@ const app = createApp({
           return {
             title: "Transfer recommendations unavailable",
             badge: "Unavailable",
-            badgeClass: "bg-zinc-900 text-zinc-400 border border-zinc-700",
+            tone: "muted",
             gainText: "Unavailable",
             hitText: "Unavailable",
             bankText: "Bank unavailable",
@@ -358,7 +409,7 @@ const app = createApp({
         return {
           title: "Save your free transfer",
           badge: "Roll Free Transfer",
-          badgeClass: "bg-blue-500/20 text-blue-400 border border-blue-500/40",
+          tone: "info",
           gainText: "0.0 pts (Roll)",
           hitText: "0 hit pts",
           bankText: `£${(this.squadData.bank_millions !== undefined ? this.squadData.bank_millions : 0.0).toFixed(1)}m in bank`,
@@ -401,11 +452,75 @@ const app = createApp({
   },
 
   watch: {
-    activeTab() { this.saveSessionHistory(); },
+    showNavigation(v) { if (v) this.closeOverlaysExcept('showNavigation'); },
+    showChatDrawer(v) { if (v) this.closeOverlaysExcept('showChatDrawer'); },
+    showSettingsModal(v) { if (v) this.closeOverlaysExcept('showSettingsModal'); },
+    showPanicModal(v) { if (v) this.closeOverlaysExcept('showPanicModal'); },
+    showChecklistModal(v) { if (v) this.closeOverlaysExcept('showChecklistModal'); },
+    showSquadModal(v) { if (v) this.closeOverlaysExcept('showSquadModal'); },
+    showBriefingModal(v) { if (v) this.closeOverlaysExcept('showBriefingModal'); },
+    showSystemModal(v) { if (v) this.closeOverlaysExcept('showSystemModal'); },
+    briefingSubTab(value) { if (value === 'review') this.loadReview(); },
+    activeTab(value) { this.saveSessionHistory(); if (location.hash !== '#' + value) location.hash = value; },
     chatMessages: { deep: true, handler() { this.saveSessionHistory(); } }
   },
 
   methods: {
+    closeOverlaysExcept(keep) {
+      for (const key of ['showNavigation', 'showChatDrawer', 'showSettingsModal', 'showPanicModal', 'showChecklistModal',
+        'showSquadModal', 'showBriefingModal', 'showSystemModal']) {
+        if (key !== keep && this[key]) this[key] = false;
+      }
+    },
+    restoreRoute() {
+      const key = location.hash.slice(1);
+      if (['overview','team','transfers','league'].includes(key)) this.activeTab = key;
+      else if (key) { this.activeTab = 'overview'; history.replaceState(null, '', '#overview'); }
+    },
+    humanLabel(value, fallback = 'Not available') {
+      if (value == null || value === '') return fallback;
+      const names = {ROLL_TRANSFER:'Save free transfer',WILDCARD:'Wildcard',FREE_HIT:'Free Hit',BENCH_BOOST:'Bench Boost',TRIPLE_CAPTAIN:'Triple Captain',PASS:'Passed',WARN:'Needs review',FAIL:'Failed',PENDING:'Pending',api_only:'Official data only'};
+      if (names[value] || names[String(value).toUpperCase()]) return names[value] || names[String(value).toUpperCase()];
+      return String(value).replace(/[_-]+/g,' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    },
+    priceLabel(direction) {
+      return {RISE_IMMINENT:'Strong rise momentum',LIKELY_RISE:'Rising transfer demand',FALL_IMMINENT:'Strong fall momentum',LIKELY_FALL:'Falling transfer demand'}[direction] || 'Price change unconfirmed';
+    },
+    overlapLabel(team) {
+      if (team.squad_overlap_pct == null) return 'Not measured';
+      return `${Number(team.squad_overlap_pct).toFixed(0)}% (${team.shared_players}/${team.compared_squad_size} players, GW${team.overlap_gameweek})`;
+    },
+    navigate(key) { this.activeTab = key; this.showNavigation = false; },
+    onMenu(key) {
+      this.showNavigation = false;
+      if (key === 'panic') this.openPanicModal();
+      else if (key === 'audit') this.openChecklistModal();
+      else if (key === 'report') this.showBriefingModal = true;
+      else if (key === 'squad') this.openSquadModal();
+      else if (key === 'settings') this.showSettingsModal = true;
+      else if (key === 'system') this.showSystemModal = true;
+    },
+    async guard(key, fn) {
+      if (this.busy[key]) return;
+      this.busy = { ...this.busy, [key]: true };
+      try { return await fn(); } finally { this.busy = { ...this.busy, [key]: false }; }
+    },
+    async watchExpiry(jobId, generation) {
+      // Core advice is already visible; the long-horizon check is attached later.
+      for (let i = 0; i < 240; i++) {
+        if (generation !== this.snapshotGeneration) return;
+        if (!this.expiryResearch || this.expiryResearch.status !== 'pending') return;
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        if (generation !== this.snapshotGeneration) return;
+        try {
+          const response = await fetch(`/api/advice/status/${jobId}`);
+          if (!response.ok) return;
+          const job = await response.json();
+          if (generation !== this.snapshotGeneration) return;
+          if (job.result && job.result.expiryResearch) this.expiryResearch = job.result.expiryResearch;
+        } catch (error) { return; }
+      }
+    },
     async loadDetailedPlans() {
       if(this.detailedPlansLoading)return;
       const generation=this.snapshotGeneration;
@@ -482,8 +597,6 @@ const app = createApp({
       const saved = localStorage.getItem('fpl_oracle_theme');
       if (saved === 'light' || saved === 'dark') {
         this.theme = saved;
-      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-        this.theme = 'light';
       } else {
         this.theme = 'dark';
       }
@@ -507,12 +620,10 @@ const app = createApp({
       }
     },
 
-    triggerToast(msg) {
-      this.toastMessage = msg;
-      this.showToast = true;
-      setTimeout(() => {
-        this.showToast = false;
-      }, 3500);
+    triggerToast(msg, tone = 'ok') {
+      const id = ++this.toastSeq;
+      this.toasts = [...this.toasts.slice(-2), { id, message: msg, tone }];
+      setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 3800);
     },
 
     formatDeadline(seconds, deadlineTime) {
@@ -577,6 +688,7 @@ const app = createApp({
 
     // Background Synchronization Pipeline
     async triggerSyncPipeline() {
+      if (this.pipelineRunning) return;
       this.squadData = {}; this.decisionCard = null; this.contingencyPlans = {};
       this.chipData = {}; this.leagueData = {}; this.briefingData = {};
       this.pipelineRunning = true;
@@ -585,9 +697,10 @@ const app = createApp({
 
       try {
         const res = await fetch('/api/sync/trigger', { method: 'POST' });
-        const init = await res.json();
-        this.triggerToast(`Updating data (Run #${init.run_id})`);
-      } catch (e) {}
+        if (!res.ok) throw new Error('Update could not start');
+        await res.json();
+        this.triggerToast('Updating your data...');
+      } catch (e) { this.pipelineRunning = false; this.triggerToast('Update could not start. Check your connection and try again.', 'danger'); return; }
 
       if (this.eventSource) this.eventSource.close();
       this.eventSource = new EventSource('/api/sync/stream');
@@ -596,7 +709,7 @@ const app = createApp({
         try {
           const data = JSON.parse(event.data);
           this.pipelineProgress = data.progress_pct || 0;
-          this.pipelineCurrentStage = `${data.step}: ${data.message || ''}`;
+          this.pipelineCurrentStage = `${this.humanLabel(data.step)}: ${data.message || ''}`;
           if (data.done) {
             this.pipelineRunning = false;
             this.eventSource.close();
@@ -609,6 +722,7 @@ const app = createApp({
       this.eventSource.onerror = () => {
         this.pipelineRunning = false;
         if (this.eventSource) this.eventSource.close();
+        this.triggerToast('Update connection lost. Try again to refresh your data.', 'warn');
       };
     },
 
@@ -619,7 +733,7 @@ const app = createApp({
     },
 
     async executePanicReoptimize() {
-      if (!this.panicQuery.trim()) return;
+      if (!this.panicQuery.trim() || this.panicResolving) return;
       this.panicResolving = true;
       try {
         const res = await fetch('/api/contingency/panic', {
@@ -687,6 +801,9 @@ const app = createApp({
     },
 
     async resetFinancialOverrides() {
+      return this.guard('reset', () => this._resetFinancialOverrides());
+    },
+    async _resetFinancialOverrides() {
       const res = await fetch('/api/profile', { method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({bank: null, free_transfers: null}) });
       if (!res.ok) { this.triggerToast('Could not reset overrides.'); return; }
@@ -695,6 +812,9 @@ const app = createApp({
     },
 
     async saveProfile() {
+      return this.guard('save', () => this._saveProfile());
+    },
+    async _saveProfile() {
       try {
         const res = await fetch('/api/profile', {
           method: 'POST',
@@ -706,7 +826,7 @@ const app = createApp({
         this.triggerToast("Settings saved. Refreshing analysis...");
         await this.refreshAll();
       } catch (e) {
-        alert("Failed to save profile settings.");
+        this.triggerToast("Failed to save profile settings.", "danger");
       }
     },
 
@@ -760,23 +880,30 @@ const app = createApp({
       }
     },
 
-    async loadContingencyMatrix() {
+    async loadAux(key, path, field, transform = x => x) {
+      const generation = this.snapshotGeneration;
+      const state = this.aux[key];
+      state.loading = true; state.error = null;
       try {
-        const generation = this.snapshotGeneration;
-        const res = await this.fetchSnapshot('/api/contingency/matrix', generation);
-        if (res.ok) {
-          const data = await res.json();
-          this.publishSnapshot('contingencyMatrix', data.contingency_matrix || [], generation);
-        }
-      } catch (e) {}
+        const res = await fetch(path, {signal: AbortSignal.timeout(180000)});
+        if (!res.ok) throw new Error('Source request failed');
+        const data = await res.json();
+        if (generation !== this.snapshotGeneration) return;
+        this.publishSnapshot(field, transform(data), generation);
+      } catch (error) {
+        if (generation !== this.snapshotGeneration) return;
+        this[field] = field === 'contingencyMatrix' ? [] : {};
+        state.error = 'The data source did not respond. Check your connection and try again.';
+      } finally {
+        if (generation === this.snapshotGeneration) state.loading = false;
+      }
     },
-
-    async loadPriceChanges() {
-      try {
-        const res = await fetch('/api/price-changes');
-        if (res.ok) this.priceChanges = await res.json();
-      } catch (e) {}
+    retryAux(key) {
+      const routes = {matrix:'loadContingencyMatrix',prices:'loadPriceChanges',league:'loadLeague',briefing:'loadBriefing',review:'loadReview'};
+      if (routes[key] && !this.aux[key].loading) return this[routes[key]]();
     },
+    loadContingencyMatrix() { return this.loadAux('matrix','/api/contingency/matrix','contingencyMatrix', x => x.contingency_matrix || []); },
+    loadPriceChanges() { return this.loadAux('prices','/api/price-changes','priceChanges'); },
 
     async loadChips() {
       const generation = this.snapshotGeneration;
@@ -787,14 +914,7 @@ const app = createApp({
         if (generation !== this.snapshotGeneration) return;}
     },
 
-    async loadLeague() {
-      const generation = this.snapshotGeneration;
-      try {
-        const res = await this.fetchSnapshot('/api/league', generation);
-        if (res.ok) this.publishSnapshot('leagueData', await res.json(), generation);
-      } catch (e) {
-        if (generation !== this.snapshotGeneration) return;}
-    },
+    loadLeague() { return this.loadAux('league','/api/league','leagueData'); },
 
     async loadDecisionCard() {
       const generation = this.snapshotGeneration;
@@ -820,6 +940,9 @@ const app = createApp({
     },
 
     async exportDecisionCard() {
+      return this.guard('export', () => this._exportDecisionCard());
+    },
+    async _exportDecisionCard() {
       try {
         const res = await fetch('/api/decision-card/export');
         if (res.ok) {
@@ -827,29 +950,16 @@ const app = createApp({
           await navigator.clipboard.writeText(text);
           this.triggerToast("Decision Card (Markdown) copied to clipboard!");
         } else {
-          alert("Failed to export decision card.");
+          this.triggerToast("Failed to export decision card.", "danger");
         }
       } catch (e) {
         console.error("Export error:", e);
-        alert("Could not copy decision card to clipboard.");
+        this.triggerToast("Could not copy decision card to clipboard.", "danger");
       }
     },
 
-    async loadBriefing() {
-      const generation = this.snapshotGeneration;
-      try {
-        const res = await this.fetchSnapshot('/api/briefing', generation);
-        if (res.ok) this.publishSnapshot('briefingData', await res.json(), generation);
-      } catch (e) {
-        if (generation !== this.snapshotGeneration) return;}
-    },
-
-    async loadReview() {
-      try {
-        const res = await fetch('/api/review');
-        if (res.ok) this.reviewData = await res.json();
-      } catch (e) {}
-    },
+    loadBriefing() { return this.loadAux('briefing','/api/briefing','briefingData'); },
+    loadReview() { return this.loadAux('review','/api/review','reviewData'); },
 
     // Chat Agent
     async sendMessage() {
@@ -883,9 +993,14 @@ const app = createApp({
     },
 
     copyBriefingMarkdown() {
+      return this.guard('copy', async () => {
+        await this._copyBriefingMarkdown();
+      });
+    },
+    async _copyBriefingMarkdown() {
       const text = this.briefingSubTab === 'preview' ? (this.briefingData.markdown || '') : (this.reviewData.review_markdown || '');
-      navigator.clipboard.writeText(text);
-      this.triggerToast("Weekly briefing markdown copied!");
+      try { await navigator.clipboard.writeText(text); this.triggerToast('Report markdown copied.'); }
+      catch (e) { this.triggerToast('Could not copy to clipboard.', 'danger'); }
     },
 
     // Manual Squad
@@ -906,7 +1021,7 @@ const app = createApp({
     },
 
     async matchPastedSquad() {
-      if (!this.manualSquadText.trim()) return;
+      if (!this.manualSquadText.trim() || this.matchingInProgress) return;
       this.matchingInProgress = true;
       try {
         const res = await fetch('/api/squad/match', {
@@ -914,14 +1029,16 @@ const app = createApp({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ raw_text: this.manualSquadText })
         });
+        if (!res.ok) throw new Error('Matching request failed');
         this.matchResult = await res.json();
+      } catch (error) { this.triggerToast('Could not match players. Check your connection and try again.', 'danger');
       } finally {
         this.matchingInProgress = false;
       }
     },
 
     async saveManualSquad() {
-      if (!this.matchResult || !this.matchResult.is_valid_15) return;
+      if (!this.matchResult || !this.matchResult.is_valid_15 || this.savingSquad) return;
       this.savingSquad = true;
       try {
         const playerIds = this.matchResult.matches.map(m => m.element);
@@ -938,7 +1055,8 @@ const app = createApp({
           this.showSquadModal = false;
           this.triggerToast("Custom squad confirmed and saved!");
           await this.refreshAll();
-        }
+        } else throw new Error('Squad save failed');
+      } catch (error) { this.triggerToast('Could not save the squad. Nothing was confirmed. Try again.', 'danger');
       } finally {
         this.savingSquad = false;
       }
@@ -970,6 +1088,7 @@ const app = createApp({
       this.squadData = {};
       this.decisionCard = null;
       this.contingencyPlans = {};
+      this.expiryResearch = null;
       this.chipData = {};
       this.leagueData = {};
       this.briefingData = {};
@@ -1001,6 +1120,8 @@ const app = createApp({
         if (job.status !== 'ready' || !job.result) throw new Error(job.error || 'Advice calculation stopped');
         Object.assign(this, {squadData:job.result.squadData, decisionCard:job.result.decisionCard,
           contingencyPlans:job.result.contingencyPlans});
+        this.expiryResearch = job.result.expiryResearch || null;
+        if (this.expiryResearch && this.expiryResearch.status === 'pending') void this.watchExpiry(job.id, generation);
       } catch (error) {
         if (generation !== this.snapshotGeneration) return;
         this.squadError = 'Current advice unavailable. Published team is still visible.';
@@ -1016,13 +1137,18 @@ const app = createApp({
     }
   },
 
+  beforeUnmount() { if (this.routeListener) window.removeEventListener('hashchange', this.routeListener); },
   mounted() {
     this.initTheme();
     this.restoreSessionHistory();
+    this.restoreRoute();
+    this.routeListener = () => { this.closeOverlaysExcept(''); this.restoreRoute(); };
+    window.addEventListener('hashchange', this.routeListener);
     this.refreshAll(true);
   }
 });
 
+if (window.FPLUI) window.FPLUI.register(app);
 const vm = app.mount('#app');
 window.__fpl_vm__ = vm;
 

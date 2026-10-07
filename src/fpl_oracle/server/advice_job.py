@@ -14,6 +14,8 @@ class AdvicePublisher:
     def __init__(self):
         self.current = None
         self.task = None
+        self.expiry_task = None
+        self.expiry_cache = {}
 
     def start(self, profile_key):
         if self.task and not self.task.done():
@@ -28,6 +30,8 @@ class AdvicePublisher:
             and self.sources_unchanged()
         ):
             return self.public()
+        if self.expiry_task and not self.expiry_task.done():
+            self.expiry_task.cancel()
         self.current = dict(
             id=uuid.uuid4().hex,
             status="calculating",
@@ -112,6 +116,7 @@ class AdvicePublisher:
             result = await asyncio.wait_for(work(), timeout=600)
             from fpl_oracle.ml.model_registry import model_registry
 
+            result["expiryResearch"] = dict(status="pending")
             self.current.update(
                 status="ready",
                 stage="Published coherent core",
@@ -119,10 +124,43 @@ class AdvicePublisher:
                 sources={k: v[0] for k, v in (read_context.get() or {}).items()},
                 model_version=model_registry.get_active_version(),
             )
+            publication = self.current
+            cache_key = json.dumps(
+                [original_key, result.get("snapshot_id"), str(model_before), str(manifest_before)], default=str
+            )
+            if cache_key in self.expiry_cache:
+                result["expiryResearch"] = self.expiry_cache[cache_key]
+            else:
+                self.expiry_task = asyncio.create_task(self.run_expiry(publication, cache_key))
         except Exception as error:
             self.current.update(status="failed", stage="Calculation stopped", error=str(error), result=None)
         finally:
             read_context.reset(token)
+
+    async def run_expiry(self, publication, cache_key):
+        """Attach model-only research after core publication, never delay ready advice."""
+        from fpl_oracle.data.store import data_store
+        from fpl_oracle.server.analysis import analysis_service
+
+        try:
+            result = await analysis_service.expiry_sensitivity()
+            if self.current is not publication:
+                return
+            if profile_key(data_store.get_profile()) != publication["profile_key"] or not self.sources_unchanged():
+                publication["result"]["expiryResearch"] = dict(
+                    status="unavailable", reason="Sources changed; refresh advice"
+                )
+                return
+            publication["result"]["expiryResearch"] = result
+            if result.get("status") == "model_expiry_sensitivity":
+                self.expiry_cache[cache_key] = result
+                if len(self.expiry_cache) > 4:
+                    self.expiry_cache.pop(next(iter(self.expiry_cache)))
+        except asyncio.CancelledError:
+            return
+        except Exception as error:
+            if self.current is publication:
+                publication["result"]["expiryResearch"] = dict(status="unavailable", reason=str(error))
 
 
 def profile_key(profile):

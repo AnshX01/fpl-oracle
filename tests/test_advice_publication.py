@@ -93,3 +93,47 @@ def test_matching_captain_but_different_xi_is_rejected(monkeypatch):
         assert "Lineup mismatch" in publisher.public()["error"]
 
     asyncio.run(run())
+
+
+def test_expiry_research_runs_in_background_after_core_ready(monkeypatch):
+    async def run():
+        from fpl_oracle.briefing.decision_card import decision_card_generator
+        from fpl_oracle.data.store import data_store
+        from fpl_oracle.server.analysis import analysis_service
+        from fpl_oracle.server.routes import api
+
+        profile = SimpleNamespace(manager_id=1, target_league_id=2)
+        monkeypatch.setattr(data_store, "get_profile", lambda: profile)
+        monkeypatch.setattr(
+            api,
+            "get_squad",
+            AsyncMock(return_value=dict(captain=dict(element=12), starters=[dict(element=12)])),
+        )
+        monkeypatch.setattr(
+            decision_card_generator,
+            "generate_decision_card",
+            AsyncMock(return_value=dict(captain=dict(element=12), xi=[dict(element=12)])),
+        )
+        monkeypatch.setattr(api, "get_contingency_plans", AsyncMock(return_value=dict(plan_a=dict(title="p"))))
+        release = asyncio.Event()
+        calls = []
+
+        async def slow_expiry():
+            calls.append(1)
+            await release.wait()
+            return dict(status="model_expiry_sensitivity", first_chip_changes=False)
+
+        monkeypatch.setattr(analysis_service, "expiry_sensitivity", slow_expiry)
+        publisher = AdvicePublisher()
+        publisher.start(profile_key(profile))
+        await publisher.task
+        # Core advice is ready while the long-horizon check is still pending.
+        state = publisher.public()
+        assert state["status"] == "ready"
+        assert state["result"]["expiryResearch"]["status"] == "pending"
+        release.set()
+        await publisher.expiry_task
+        assert publisher.public()["result"]["expiryResearch"]["status"] == "model_expiry_sensitivity"
+        assert len(calls) == 1
+
+    asyncio.run(run())

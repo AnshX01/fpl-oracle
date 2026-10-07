@@ -81,6 +81,27 @@ def get_rival_set(
     return selected, "PROXIMITY_WINDOW", user_rank
 
 
+def attach_squad_overlap(standings, rivals, user_squad):
+    """Observed released squad similarity, not multiplier-weighted effective ownership."""
+    by_id = {r["entry_id"]: r for r in rivals}
+    owned = {p.element for p in user_squad}
+    rows = []
+    for original in standings:
+        row = dict(original)
+        rival = by_id.get(row.get("entry"))
+        observed = {p["element"] for p in rival.get("squad", [])} if rival else set()
+        if len(owned) == 15 and len(observed) == 15:
+            shared = len(owned & observed)
+            row.update(
+                squad_overlap_pct=round(shared / 15 * 100, 1),
+                shared_players=shared,
+                compared_squad_size=15,
+                overlap_gameweek=rival.get("observed_gameweek"),
+            )
+        rows.append(row)
+    return rows
+
+
 class RivalAnalyzer:
     def __init__(self):
         pass

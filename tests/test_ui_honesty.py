@@ -147,3 +147,54 @@ def test_absent_plan_truthfulness_in_app_js():
     # Distinguishes unavailable points from 0.0
     assert "totalGameweekPoints()" in content
     assert "return '—'" in content or 'return "—"' in content
+
+
+def test_chip_banner_is_computed_and_keeps_caveats():
+    """The chip callout reads the through-GW19 check instead of fixed text."""
+    js = APP_JS.read_text(encoding="utf-8")
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    for state in ("pending", "holds", "changed", "unavailable", "idle"):
+        assert f"state: '{state}'" in js
+    assert "later chip value remains unresolved" in js
+    assert "chipCheck" in html
+    assert "not proof it is optimal" in js
+
+
+def test_design_tokens_live_in_one_css_file():
+    css = ROOT / "web" / "static" / "css"
+    tokens = (css / "tokens.css").read_text(encoding="utf-8")
+    for name in ("--blur", "--r-lg", "--shadow-md", "--s-2", "--ease-out", "--accent", "--font-sans"):
+        assert name in tokens
+    assert "html.light" in tokens
+    assert "prefers-reduced-motion" in (css / "ui.css").read_text(encoding="utf-8")
+    assert not (ROOT / "web" / "static" / "js" / "tailwind.js").exists()
+
+
+def test_council_reference_monochrome_shell():
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+    tokens = (ROOT / "web/static/css/tokens.css").read_text(encoding="utf-8")
+    css = (ROOT / "web/static/css/ui.css").read_text(encoding="utf-8")
+    assert 'class="desktop-sidebar"' in html
+    assert 'aria-label="Open navigation"' in html
+    assert 'class="navigation-dialog"' in html
+    assert "--sidebar-width: 220px" in tokens
+    assert "--bg-base: #000000" in tokens
+    assert "--accent: #e4e4e7" in tokens
+    assert ".glass { border: none; box-shadow: none; }" in css
+    assert "this.showNavigation = false" in js
+
+
+def test_polished_sidebar_copy_and_data_states():
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+    assert "engine-section" not in html
+    assert "council-mark" not in html
+    assert ">LOCAL<" not in html
+    assert "side-deadline" not in html
+    assert "brand-sub num" in html
+    assert "priceLabel(p.direction)" in html
+    assert "overlapLabel(team)" in html
+    assert "aux.prices.error" in html
+    assert "aux.league.loading" in html
+    assert "window.addEventListener('hashchange'" in js

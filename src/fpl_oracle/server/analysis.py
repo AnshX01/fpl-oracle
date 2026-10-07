@@ -26,6 +26,7 @@ class AnalysisService:
         self._chip_tasks = {}
         self._chip_plans = {}
         self._league_context_cache = {}
+        self._expiry_task = None
 
     async def invalidate(self):
         """Wait for existing inference to finish, then drop dependent served caches."""
@@ -257,6 +258,11 @@ class AnalysisService:
         return await asyncio.to_thread(compare_plan_scenarios, states, context, maps)
 
     async def expiry_sensitivity(self):
+        if self._expiry_task is None or self._expiry_task.done():
+            self._expiry_task = asyncio.create_task(self._isolated_expiry_sensitivity())
+        return await asyncio.shield(self._expiry_task)
+
+    async def _isolated_expiry_sensitivity(self):
         from fpl_oracle.api.read_context import read_context
 
         token = read_context.set({})
