@@ -1,0 +1,3 @@
+# Manifest records the original Windows calibration artifact bytes.
+# Preserve those bytes on fresh clones regardless of core.autocrlf.
+data/models/calibration.json text eol=crlf
