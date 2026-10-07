@@ -44,7 +44,8 @@ class WeeklyBriefingGenerator:
             }
 
         boot, is_stale = await fpl_client.get_bootstrap_static()
-        fixtures, _ = await fpl_client.get_fixtures()
+        fixtures, fixtures_stale = await fpl_client.get_fixtures()
+        is_stale = is_stale or fixtures_stale
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
         effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)

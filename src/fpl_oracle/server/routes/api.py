@@ -263,7 +263,8 @@ async def get_squad(manager_id: int | None = None):
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
 
-    fixtures_list, _ = await fpl_client.get_fixtures()
+    fixtures_list, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     team_map = {t.id: t for t in boot.teams}
 
     horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures=fixtures_list)
@@ -497,7 +498,8 @@ async def save_manual_squad(req: ManualSquadRequest):
 @router.get("/projections")
 async def get_projections(position: str | None = None, team_id: int | None = None, horizon: int = Query(5, ge=1, le=8)):
     boot, is_stale = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
+    fixtures, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     _, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
@@ -542,7 +544,8 @@ async def get_projections(position: str | None = None, team_id: int | None = Non
 async def run_optimizer(req: OptimizeRequest | None = None):
     effective_state = await manager_state_service.get_current_state()
     boot, is_stale = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
+    fixtures, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
 
@@ -602,7 +605,8 @@ async def run_optimizer(req: OptimizeRequest | None = None):
 async def get_chip_strategy():
     effective_state = await manager_state_service.get_current_state()
     boot, is_stale = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
+    fixtures, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
     target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
@@ -726,7 +730,8 @@ async def get_league_intel(league_id: int | None = None):
     )
 
     # Monte Carlo simulation
-    fixtures, _ = await fpl_client.get_fixtures()
+    fixtures, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     sim_target_gw = (curr_gw + 1) if curr_gw else 2
     projections_horizon = await analysis_service.projections(sim_target_gw, 5, boot, fixtures)
     proj_df = projections_horizon.get(sim_target_gw)
@@ -856,7 +861,8 @@ async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple
 async def get_contingency_plans():
     """Returns precomputed Plan A, Plan B (injury pivot), and Plan C (differential/price pivot)."""
     boot, is_stale = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
+    fixtures, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
@@ -901,7 +907,8 @@ async def get_contingency_plans():
 async def get_contingency_matrix():
     """Returns 'What if Player X is ruled out' matrix comparing auto-sub vs emergency transfer."""
     boot, is_stale = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
+    fixtures, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
@@ -933,7 +940,8 @@ async def get_contingency_matrix():
 async def post_contingency_panic(req: PanicRequest):
     """Emergency 1-click crisis solver for breaking team news (e.g. 'Saka ruled out 6 weeks')."""
     boot, is_stale = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
+    fixtures, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
@@ -961,7 +969,8 @@ async def post_contingency_panic(req: PanicRequest):
 async def get_pre_deadline_checklist():
     """Generates 5-point operational pre-deadline audit."""
     boot, is_stale = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
+    fixtures, fixtures_stale = await fpl_client.get_fixtures()
+    is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 

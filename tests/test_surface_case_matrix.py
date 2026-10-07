@@ -308,3 +308,76 @@ def test_chat_captain_other_gw_and_missing_squad_are_explicit(configured_advisor
         assert text.startswith("Captain advice unavailable:")
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("constraint", ["keep_owned", "exclude_buy", "exclude_team"])
+def test_constrained_chat_optimizer_agree_without_changing_default(configured_advisor, monkeypatch, constraint):
+    import pandas as pd
+
+    from fpl_oracle.llm.tools import tool_executor
+
+    state, pool, horizon = configured_advisor
+    state.bank_tenths = 0
+    state.free_transfers = 1
+    replacement = pool.iloc[2].copy()
+    owned = state.squad[2]
+    replacement["element"] = 999998
+    replacement["web_name"] = "Fixture Replacement"
+    replacement["value"] = owned.selling_price
+    replacement["expected_points"] = 25.0
+    market = pd.concat([pool, pd.DataFrame([replacement])], ignore_index=True)
+    monkeypatch.setattr(analysis_service, "projections", AsyncMock(return_value={6: market, 7: market.copy()}))
+    monkeypatch.setattr(
+        data_store,
+        "get_profile",
+        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+    )
+    kwargs = (
+        {"locked_in": [owned.element]}
+        if constraint == "keep_owned"
+        else {"locked_out": [999998]}
+        if constraint == "exclude_buy"
+        else {"excluded_teams": [int(replacement["team"])]}
+    )
+
+    async def run():
+        plain = await run_optimizer(OptimizeRequest())
+        constrained = await run_optimizer(OptimizeRequest(**kwargs))
+        assert [p["element"] for p in plain["recommended_plan"]["transfers_in"]] == [999998]
+        assert not constrained["recommended_plan"]["transfers_in"]
+        if constraint != "exclude_team":
+            chat = await tool_executor.execute("optimise_transfers", kwargs)
+            assert chat["recommended_plan"] == constrained["recommended_plan"]
+        again = await run_optimizer(OptimizeRequest())
+        assert again["recommended_plan"] == plain["recommended_plan"]
+
+    asyncio.run(run())
+
+
+def test_stale_fixtures_propagate_every_advice_surface(configured_advisor, monkeypatch):
+    monkeypatch.setattr(
+        data_store,
+        "get_profile",
+        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+    )
+    original = fpl_client.get_fixtures
+
+    async def stale_fixtures(**kwargs):
+        rows, _ = await original()
+        return rows, True
+
+    monkeypatch.setattr(fpl_client, "get_fixtures", stale_fixtures)
+
+    async def run():
+        results = await asyncio.gather(
+            get_squad(),
+            decision_card_generator.generate_decision_card(),
+            run_optimizer(OptimizeRequest()),
+            get_chip_strategy(),
+            get_contingency_plans(),
+            weekly_briefing_generator.generate_briefing(),
+        )
+        for name, result in zip(["squad", "card", "optimizer", "chips", "plans", "briefing"], results, strict=True):
+            assert result["is_stale"], name
+
+    asyncio.run(run())

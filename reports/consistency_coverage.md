@@ -50,3 +50,10 @@ Pipeline selected chip schedule now comes from the joint trajectory; independent
 Forced single-transfer tests use a profitable sale price and compare0FT (4-point hit) with1FT (no hit), bank after, move list and hits across card, optimizer, PlanA, briefing and chat. Cardft_used now means free transfers consumed, not total wildcard/free-hit changes. These tests do not cover every price history or constraints combination.
 
 Latest overlapping partition:29 tests passed76.73s (matrix, chat/pipeline,CLI andrefresh).74 source files type-check clean. No full-suite or Windows execution claim.
+
+
+## Final batch validation
+
+Final selected partition:45 tests passed97.35s, covering expanded surface matrix, pinned-read/revision guard, refresh continuity, joint planning andCLI. JavaScript atomic publication, timeout, superseded response and auxiliary nonblocking scenarios pass. Lint clean;74 source files type-check clean. This is not the full suite.
+
+Constraint cases verifykeep-owned,exclude-buy andexclude-team cannot pollute the unconstrained cached default;chat locked-in/out mirrors constrained optimizer. GET andadvice POST revision changes both return409. Fixture staleness is now propagated across all six advice surfaces even when manager state is fresh. Full arbitrary news/rival/provider failure and all concurrent state mutations remain unverified.

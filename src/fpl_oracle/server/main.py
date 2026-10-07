@@ -115,7 +115,11 @@ async def upstream_snapshot_guard(request: Request, call_next):
         changed = [
             key for key, (_, _, timestamp) in context.items() if fpl_client._cache_timestamps.get(key) != timestamp
         ]
-        if changed and request.method == "GET" and request.url.path.startswith("/api/"):
+        if (
+            changed
+            and request.url.path.startswith("/api/")
+            and (request.method == "GET" or request.url.path in ("/api/transfers", "/api/optimize", "/api/chat"))
+        ):
             return SafeJSONResponse(
                 status_code=409,
                 content={

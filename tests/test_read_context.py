@@ -4,6 +4,8 @@ import asyncio
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
+import pytest
+
 from fpl_oracle.api.fpl_client import FPLClient
 from fpl_oracle.api.read_context import read_context
 
@@ -27,7 +29,11 @@ def test_pinned_reads_are_copies_and_keep_original_revision(monkeypatch):
     asyncio.run(run())
 
 
-def test_http_guard_rejects_revision_change(monkeypatch):
+@pytest.mark.parametrize(
+    "path,method",
+    [("/api/squad", "GET"), ("/api/decision-card", "GET"), ("/api/transfers", "POST"), ("/api/optimize", "POST")],
+)
+def test_http_guard_rejects_revision_change(monkeypatch, path, method):
     from starlette.requests import Request
     from starlette.responses import Response
 
@@ -42,7 +48,7 @@ def test_http_guard_rejects_revision_change(monkeypatch):
             fpl_client._cache_timestamps["guard-test"] = datetime.now(UTC)
             return Response("{}", media_type="application/json")
 
-        request = Request({"type": "http", "path": "/api/squad", "method": "GET", "headers": []})
+        request = Request({"type": "http", "path": path, "method": method, "headers": []})
         response = await upstream_snapshot_guard(request, changed)
         assert response.status_code == 409
         assert b"Upstream data changed" in response.body
