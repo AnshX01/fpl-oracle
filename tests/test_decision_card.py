@@ -117,7 +117,7 @@ def test_decision_card_generator_contract(configured_advisor):
         assert "what_changed" in card
 
         # Disclaimer
-        assert card["advice_disclaimer"] == "Advice only — nothing is submitted to FPL."
+        assert card["advice_disclaimer"] == "Advice only - nothing is submitted to FPL."
 
     asyncio.run(_run())
 
@@ -134,7 +134,7 @@ def test_decision_card_api_endpoints():
         },
         "data_as_of": "2026-10-06T12:00:00Z",
         "model_version": "v2.1.0",
-        "advice_disclaimer": "Advice only — nothing is submitted to FPL.",
+        "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
         "chip": {
             "recommend": False,
             "chip_name": None,
@@ -268,7 +268,7 @@ def test_decision_card_api_endpoints():
                 assert data["transfers"]["action"] == "ROLL"
                 assert len(data["xi"]) == 11
                 assert data["captain"]["web_name"] == "Haaland"
-                assert data["advice_disclaimer"] == "Advice only — nothing is submitted to FPL."
+                assert data["advice_disclaimer"] == "Advice only - nothing is submitted to FPL."
 
                 # 2. Export Markdown endpoint (D2)
                 export_resp = await ac.get("/api/decision-card/export")
@@ -281,7 +281,7 @@ def test_decision_card_api_endpoints():
                 assert "## 3. Starting XI & Captaincy" in text
                 assert "## 4. Mini-League & Rivals" in text
                 assert "Haaland" in text
-                assert "Advice only — nothing is submitted to FPL." in text
+                assert "Advice only - nothing is submitted to FPL." in text
 
     asyncio.run(_run())
 
@@ -292,7 +292,7 @@ def test_format_decision_card_markdown():
         "deadline": {"label": "GW6 Deadline: Friday 18:30 UTC", "seconds_to_deadline": 7200.0},
         "data_as_of": "2026-10-06T12:00:00Z",
         "model_version": "v2.1.0",
-        "advice_disclaimer": "Advice only — nothing is submitted to FPL.",
+        "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
         "chip": {
             "recommend": False,
             "chip_name": None,

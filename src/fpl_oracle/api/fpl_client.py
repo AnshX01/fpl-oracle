@@ -51,6 +51,7 @@ class FPLClient:
         self._semaphore_loop = None
         self._client_loop = None
         self.rate_delay = float(fpl_cfg.get("rate_limit_delay_seconds", 0.05))
+        self.revision = 0
         self.is_stale_mode = False
         self.last_sync_time: datetime | None = None
         self._cache_timestamps: dict[str, datetime] = {}
@@ -165,6 +166,7 @@ class FPLClient:
                         # Save in cache and snapshot store
                         cache_manager.set(cache_key, data, ttl_seconds)
                         data_store.save_snapshot(endpoint, data)
+                        self.revision += 1
                         self.last_sync_time = now_dt
                         self._cache_timestamps[cache_key] = now_dt
                         self.is_stale_mode = False

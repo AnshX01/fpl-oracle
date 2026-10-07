@@ -15,10 +15,10 @@ class DefendingModel(BaseComponent):
     def __init__(self):
         super().__init__("defending_model")
         self.clf_cs = lgb.LGBMClassifier(
-            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
+            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1, n_jobs=4
         )
         self.reg_gc = lgb.LGBMRegressor(
-            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
+            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1, n_jobs=4
         )
         self.calibrator_cs = Calibrator("isotonic")
 
@@ -41,6 +41,7 @@ class DefendingModel(BaseComponent):
                     num_leaves=self.clf_cs.num_leaves,
                     random_state=42,
                     verbosity=-1,
+                    n_jobs=4,
                 )
                 clf_fold.fit(X.iloc[train_idx], y_cs[train_idx])
                 prob_oof[val_idx] = np.asarray(clf_fold.predict_proba(X.iloc[val_idx]))[:, 1]

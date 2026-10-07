@@ -21,6 +21,7 @@ class AttackingModel(BaseComponent):
             num_leaves=31,
             random_state=42,
             verbosity=-1,
+            n_jobs=4,
         )
         self.reg_assists = lgb.LGBMRegressor(
             objective="tweedie",
@@ -30,6 +31,7 @@ class AttackingModel(BaseComponent):
             num_leaves=31,
             random_state=42,
             verbosity=-1,
+            n_jobs=4,
         )
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):

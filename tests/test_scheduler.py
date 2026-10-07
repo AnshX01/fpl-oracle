@@ -20,7 +20,18 @@ from fpl_oracle.server.jobs import (
 
 
 @pytest.fixture(autouse=True)
-def clean_scheduler():
+def clean_scheduler(monkeypatch):
+    import json
+    from pathlib import Path
+    from unittest.mock import AsyncMock
+
+    from fpl_oracle.api.cache import cache_manager
+    from fpl_oracle.news.ingest import news_ingestion
+    root = Path(__file__).parent / "fixtures"
+    cache_manager.set("bootstrap-static", json.loads((root / "bootstrap_static.json").read_text()), 300)
+    cache_manager.set("fixtures:all", json.loads((root / "fixtures.json").read_text()), 300)
+    cache_manager.set("event-status", {"status": [], "leagues": "Updated"}, 300)
+    monkeypatch.setattr(news_ingestion, "fetch_rss_articles", AsyncMock(return_value=[]))
     """Ensure scheduler and client are cleanly terminated for tests."""
     yield
     if scheduler.running:

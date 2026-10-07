@@ -124,6 +124,7 @@ async def upstream_snapshot_guard(request: Request, call_next):
                     "error": "Upstream data changed during analysis. Refresh the coherent snapshot.",
                 },
             )
+        response.headers["X-FPL-Revision"] = str(fpl_client.revision)
         return response
     finally:
         read_context.reset(token)

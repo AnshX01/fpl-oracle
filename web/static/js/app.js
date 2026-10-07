@@ -11,6 +11,9 @@ const app = createApp({
     return {
       // Theme
       theme: 'dark',
+      servedRevisions: [],
+      snapshotBuffer: null,
+      refreshPromise: null,
 
       // Navigation: 4 Everyday Destinations
       activeTab: 'overview', // 'overview' | 'team' | 'transfers' | 'league'
@@ -391,6 +394,16 @@ const app = createApp({
   },
 
   methods: {
+    publishSnapshot(field, value) {
+      if (this.snapshotBuffer) this.snapshotBuffer[field] = value;
+      else this[field] = value;
+    },
+    async fetchSnapshot(path) {
+      const response = await fetch(path);
+      const revision = response.headers.get('X-FPL-Revision');
+      if (revision !== null) this.servedRevisions.push(revision);
+      return response;
+    },
     restoreSessionHistory() {
       try {
         const saved = JSON.parse(localStorage.getItem('fpl_oracle_session_v1') || 'null');
@@ -641,10 +654,11 @@ const app = createApp({
       this.squadLoading = true;
       this.squadError = null;
       try {
-        const res = await fetch('/api/squad');
+        const res = await this.fetchSnapshot('/api/squad');
         if (res.ok) {
-          this.squadData = await res.json();
-          if (!Array.isArray(this.squadData.starters) || !Array.isArray(this.squadData.bench)) {
+          this.publishSnapshot('squadData', await res.json());
+          const loaded = this.snapshotBuffer?.squadData || this.squadData;
+          if (!Array.isArray(loaded.starters) || !Array.isArray(loaded.bench)) {
             this.squadData = {};
             this.squadError = "Malformed squad response.";
           }
@@ -664,9 +678,9 @@ const app = createApp({
       this.plansLoading = true;
       this.plansError = null;
       try {
-        const res = await fetch('/api/contingency/plans');
+        const res = await this.fetchSnapshot('/api/contingency/plans');
         if (res.ok) {
-          this.contingencyPlans = await res.json();
+          this.publishSnapshot('contingencyPlans', await res.json());
         } else {
           this.contingencyPlans = {};
           this.plansError = `Plans unavailable (HTTP ${res.status})`;
@@ -698,15 +712,15 @@ const app = createApp({
 
     async loadChips() {
       try {
-        const res = await fetch('/api/chips');
-        if (res.ok) this.chipData = await res.json();
+        const res = await this.fetchSnapshot('/api/chips');
+        if (res.ok) this.publishSnapshot('chipData', await res.json());
       } catch (e) {}
     },
 
     async loadLeague() {
       try {
-        const res = await fetch('/api/league');
-        if (res.ok) this.leagueData = await res.json();
+        const res = await this.fetchSnapshot('/api/league');
+        if (res.ok) this.publishSnapshot('leagueData', await res.json());
       } catch (e) {}
     },
 
@@ -714,9 +728,9 @@ const app = createApp({
       this.decisionCardLoading = true;
       this.decisionCardError = null;
       try {
-        const res = await fetch('/api/decision-card');
+        const res = await this.fetchSnapshot('/api/decision-card');
         if (res.ok) {
-          this.decisionCard = await res.json();
+          this.publishSnapshot('decisionCard', await res.json());
         } else {
           this.decisionCard = null;
           this.decisionCardError = `Decision card unavailable (HTTP ${res.status})`;
@@ -748,8 +762,8 @@ const app = createApp({
 
     async loadBriefing() {
       try {
-        const res = await fetch('/api/briefing');
-        if (res.ok) this.briefingData = await res.json();
+        const res = await this.fetchSnapshot('/api/briefing');
+        if (res.ok) this.publishSnapshot('briefingData', await res.json());
       } catch (e) {}
     },
 
@@ -864,6 +878,13 @@ const app = createApp({
     },
 
     async refreshAll(refresh = false) {
+      if (this.refreshPromise) return this.refreshPromise;
+      this.refreshPromise = this.refreshSnapshot(refresh);
+      try { await this.refreshPromise; } finally { this.refreshPromise = null; }
+    },
+    async refreshSnapshot(refresh = false) {
+      this.servedRevisions = [];
+      this.snapshotBuffer = {};
       this.squadData = {};
       this.decisionCard = null;
       this.contingencyPlans = {};
@@ -889,6 +910,15 @@ const app = createApp({
         this.loadChecklist(),
         this.loadSystemStatus()
       ]);
+      if (new Set(this.servedRevisions).size > 1) {
+        this.squadData = {}; this.decisionCard = null; this.contingencyPlans = {};
+        this.chipData = {}; this.leagueData = {}; this.briefingData = {};
+        this.decisionCardError = 'Data changed during refresh. Refresh again for one coherent snapshot.';
+      } else {
+        // Publish all advice in one synchronous Vue update only after validation.
+        Object.assign(this, this.snapshotBuffer);
+      }
+      this.snapshotBuffer = null;
     }
   },
 

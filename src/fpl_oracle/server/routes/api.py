@@ -294,8 +294,6 @@ async def get_squad(manager_id: int | None = None):
     history = None
     if effective_state.manager_id:
         history, _ = await fpl_client.get_manager_history(effective_state.manager_id)
-    chips_status = chip_planner.get_remaining_chips(history)
-    prefix = "set_1" if target_gw <= 19 else "set_2"
     joint = await analysis_service.joint_plan(
         current_squad_df=user_squad_df,
         player_pool_df=target_df,
@@ -304,8 +302,11 @@ async def get_squad(manager_id: int | None = None):
         horizon_projections=horizon_proj,
         current_gw=curr_gw or 5,
         target_gw=target_gw,
-        available_chips=chips_status[f"{prefix}_remaining"],
-        chips_already_used=chips_status[f"{prefix}_used"],
+        available_chips=effective_state.chips_remaining_set_1
+        if target_gw <= 19
+        else effective_state.chips_remaining_set_2,
+        chips_by_set={1: effective_state.chips_remaining_set_1, 2: effective_state.chips_remaining_set_2},
+        chips_already_used=[c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
     )
     lineup_res = joint["recommended_plan"]["lineup"]
 
@@ -450,9 +451,9 @@ async def get_squad(manager_id: int | None = None):
                 "captain_bonus_expected_points", lineup_res["captain"]["expected_points"]
             ),
             "total_expected_points": lineup_res["total_gameweek_expected_points"],
-            "stale": is_stale,
-            "is_stale": is_stale,
-            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+            "stale": is_stale or effective_state.is_stale,
+            "is_stale": is_stale or effective_state.is_stale,
+            "data_as_of": effective_state.source_timestamp,
         }
     )
 
@@ -564,9 +565,10 @@ async def run_optimizer(req: OptimizeRequest | None = None):
         except Exception as e:
             logger.warning("Manager history fetch warning: %s", e)
 
-    chips_status = chip_planner.get_remaining_chips(manager_hist)
-    available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
-    chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
+    available_chips = (
+        effective_state.chips_remaining_set_1 if target_gw <= 19 else effective_state.chips_remaining_set_2
+    )
+    chips_used = [c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)]
 
     res = await analysis_service.joint_plan(
         current_squad_df=user_squad_df,
@@ -577,6 +579,7 @@ async def run_optimizer(req: OptimizeRequest | None = None):
         current_gw=curr_gw or 5,
         target_gw=target_gw,
         available_chips=available_chips,
+        chips_by_set={1: effective_state.chips_remaining_set_1, 2: effective_state.chips_remaining_set_2},
         chips_already_used=chips_used,
         locked_in_ids=locked_in,
         locked_out_ids=locked_out,
@@ -626,8 +629,6 @@ async def get_chip_strategy():
         bootstrap=boot,
         manager_history=hist,
     )
-    chips_status = chip_planner.get_remaining_chips(hist)
-    prefix = "set_1" if target_gw <= 19 else "set_2"
     joint = await analysis_service.joint_plan(
         current_squad_df=squad_df,
         player_pool_df=pool_df,
@@ -636,8 +637,11 @@ async def get_chip_strategy():
         horizon_projections=horizon_proj,
         current_gw=curr_gw or 5,
         target_gw=target_gw,
-        available_chips=chips_status[f"{prefix}_remaining"],
-        chips_already_used=chips_status[f"{prefix}_used"],
+        available_chips=effective_state.chips_remaining_set_1
+        if target_gw <= 19
+        else effective_state.chips_remaining_set_2,
+        chips_by_set={1: effective_state.chips_remaining_set_1, 2: effective_state.chips_remaining_set_2},
+        chips_already_used=[c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
     )
     res["recommend_chip_this_gw"] = joint["recommended_chip"] is not None
     res["recommended_chip"] = joint["recommended_chip"]

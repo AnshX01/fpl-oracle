@@ -21,6 +21,7 @@ class AnalysisService:
         self._snapshots = {}
         self._plan_tasks = {}
         self._plans = {}
+        self._league_context_cache = {}
 
     async def invalidate(self):
         """Wait for existing inference to finish, then drop dependent served caches."""
@@ -28,6 +29,7 @@ class AnalysisService:
             projection_engine._cache.clear()
             self._snapshots.clear()
             self._plans.clear()
+            self._league_context_cache.clear()
             self._news_at = 0.0
             self._news_key = None
 
@@ -103,11 +105,54 @@ class AnalysisService:
                 result[g] = frame
             return result
 
+    async def league_context(self, target_gw):
+        import time
+
+        from fpl_oracle.api.fpl_client import fpl_client
+        from fpl_oracle.data.store import data_store
+        from fpl_oracle.league.rivals import rival_analyzer
+        from fpl_oracle.league.standings import league_standings_manager
+
+        profile = data_store.get_profile()
+        if not profile.manager_id or not profile.target_league_id:
+            return None
+        key = (profile.manager_id, profile.target_league_id, target_gw)
+        cached = self._league_context_cache.get(key)
+        if cached and time.monotonic() - cached[0] < 300:
+            return cached[1]
+        standings = await league_standings_manager.get_league_standings(profile.target_league_id)
+        if standings.get("coverage", {}).get("partial"):
+            return None
+        rows = standings.get("standings", [])
+        user = next((r for r in rows if r.get("entry") == profile.manager_id), None)
+        if user is None:
+            return None
+        boot, stale = await fpl_client.get_bootstrap_static()
+        if stale:
+            return None
+        result = await rival_analyzer.analyze_rivals(rows, profile.manager_id, target_gw, boot)
+        context = dict(
+            user_points=user["total"],
+            rivals=[
+                dict(points=r["total_points"], elements=[p["element"] for p in r["squad"]])
+                for r in result.get("rival_squads", [])
+            ],
+        )
+        self._league_context_cache = {key: (time.monotonic(), context)}
+        return context
+
     async def joint_plan(self, **kwargs):
         from fpl_oracle.data.store import data_store
         from fpl_oracle.optimise.transfers import transfer_optimizer
 
-        kwargs.setdefault("risk_preference", getattr(data_store.get_profile(), "risk_preference", "balanced") or "balanced")
+        if "rival_context" not in kwargs:
+            try:
+                kwargs["rival_context"] = await self.league_context(kwargs["target_gw"])
+            except Exception:
+                kwargs["rival_context"] = None
+        kwargs.setdefault(
+            "risk_preference", getattr(data_store.get_profile(), "risk_preference", "balanced") or "balanced"
+        )
         for name in ("locked_in_ids", "locked_out_ids", "excluded_team_ids"):
             kwargs.setdefault(name, set())
 

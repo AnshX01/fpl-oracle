@@ -210,7 +210,25 @@ class ToolExecutor:
     async def _tool_optimise_transfers(self, args: dict[str, Any]) -> dict[str, Any]:
         from fpl_oracle.server.routes.api import OptimizeRequest, run_optimizer
 
-        return await run_optimizer(OptimizeRequest(locked_in=args.get("locked_in"), locked_out=args.get("locked_out")))
+        result = await run_optimizer(
+            OptimizeRequest(locked_in=args.get("locked_in"), locked_out=args.get("locked_out"))
+        )
+        plan = result["recommended_plan"]
+        return {
+            **result,
+            "decision": plan.get("recommendation_summary", plan.get("plan_type", "Unavailable")),
+            "roadmap": result.get("transfer_roadmap", []),
+            "candidate_plans": [
+                {
+                    **p,
+                    "type": p.get("plan_type"),
+                    "summary": p.get("recommendation_summary"),
+                    "net_xp": p.get("net_expected_points"),
+                    "gain": p.get("expected_gain"),
+                }
+                for p in result.get("candidate_plans", [])
+            ],
+        }
 
     async def _tool_plan_chips(self, args: dict[str, Any]) -> dict[str, Any]:
         from fpl_oracle.server.routes.api import get_chip_strategy

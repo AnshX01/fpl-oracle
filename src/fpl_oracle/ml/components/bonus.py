@@ -14,7 +14,9 @@ from fpl_oracle.ml.components.base import BaseComponent
 class BonusModel(BaseComponent):
     def __init__(self):
         super().__init__("bonus_model")
-        self.reg = lgb.LGBMRegressor(n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1)
+        self.reg = lgb.LGBMRegressor(
+            n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1, n_jobs=4
+        )
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
         y = Y["target_bonus"].values

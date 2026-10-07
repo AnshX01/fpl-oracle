@@ -29,6 +29,7 @@ param (
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $ScriptDir
 
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host " FPL Oracle 2026/27 - Decision Support and Intelligence   " -ForegroundColor Green
@@ -55,10 +56,15 @@ if (-not (Test-Path $VenvPython)) {
     
     Write-Host "[*] Installing dependencies in editable mode..." -ForegroundColor Cyan
     & $VenvPython -m pip install --upgrade pip
+    if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
     & $VenvPython -m pip install -e $ScriptDir
+    if ($LASTEXITCODE -ne 0) { throw "Dependency install failed" }
 }
 
 # 2. Setup-only check
+& $VenvPython -c "import sys; assert sys.version_info >= (3,11); import fpl_oracle.server.main"
+if ($LASTEXITCODE -ne 0) { throw "Environment verification failed" }
+
 if ($SetupOnly) {
     Write-Host "[+] Environment setup verified successfully." -ForegroundColor Green
     exit 0
@@ -111,26 +117,28 @@ Write-Host "    Local data and rules loaded. Press Ctrl+C to stop." -ForegroundC
 # If browser launch requested, poll in background job or wait loop
 if (-not $NoBrowser) {
     $JobScript = {
-        param($TargetUrl)
+        param($TargetUrl, $BrowserUrl)
         for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Seconds 1
             try {
                 $r = Invoke-RestMethod -Uri $TargetUrl -TimeoutSec 1 -ErrorAction SilentlyContinue
                 if ($r) {
-                    Start-Process "http://127.0.0.1:8000"
+                    Start-Process $BrowserUrl
                     break
                 }
             } catch {}
         }
     }
-    Start-Job -ScriptBlock $JobScript -ArgumentList $HealthUrl | Out-Null
+    $BrowserJob = Start-Job -ScriptBlock $JobScript -ArgumentList $HealthUrl, "http://127.0.0.1:$Port" | Out-Null
 }
 
 # Execute server in foreground
 try {
     & $VenvPython -m uvicorn fpl_oracle.server.main:app --host 127.0.0.1 --port $Port
 } finally {
-    Get-Job | Stop-Job -ErrorAction SilentlyContinue
-    Get-Job | Remove-Job -ErrorAction SilentlyContinue
+    if ($BrowserJob) {
+        $BrowserJob | Stop-Job -ErrorAction SilentlyContinue
+        $BrowserJob | Remove-Job -ErrorAction SilentlyContinue
+    }
     Write-Host "`n[+] FPL Oracle server stopped cleanly." -ForegroundColor Green
 }

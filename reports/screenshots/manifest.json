@@ -1,10 +1,10 @@
 {
   "source_kind": "deterministic_http_fixtures",
-  "code_head": "2fe419f2a964cb8043592b589a9c8b3950c20b20",
+  "code_head": "8243a03f658ab96ce35659b305550c1fa5ab65e9",
   "captures": [
     {
       "file": "dark_1920_populated.png",
-      "sha256": "37959cd47a7e789757bd890b21dfb7bd5669b17bf101ceaeae0d1951f08ddd1f",
+      "sha256": "55424e9cc8aabb7da31143f178d7b8f32f5d7db4fecc379020dd301a57b9de17",
       "state": "populated",
       "theme": "dark",
       "viewport": [
@@ -28,7 +28,7 @@
     },
     {
       "file": "dark_1920_missing.png",
-      "sha256": "8cdfbfe3051d99bd8547a3639cfb7f0b9f4f52f5529168f52d51a479dbc6b15e",
+      "sha256": "2544df3e25ddc629f08860302c495cde3adf9cc759a763140ccf2da552631bc5",
       "state": "missing",
       "theme": "dark",
       "viewport": [
@@ -40,7 +40,7 @@
     },
     {
       "file": "dark_390_populated.png",
-      "sha256": "175857a0f0a4134a25d26ca12b3af859b5f7b3c2564c40aff921e914f08fe5d7",
+      "sha256": "dc2a7410f6590d42a1759098e2fbf8506aeb008391ae705cdab3391ac64e6688",
       "state": "populated",
       "theme": "dark",
       "viewport": [
@@ -52,7 +52,7 @@
     },
     {
       "file": "dark_390_failed_after_success.png",
-      "sha256": "1f70b053ddc9a9f8d563b736f81ffe13f2d2d402152913bb18780070d81afebd",
+      "sha256": "d83d731bea73993032aa280401c3c05924a872369295f20275a9d8a8c0382195",
       "state": "failed_after_success",
       "theme": "dark",
       "viewport": [
@@ -64,7 +64,7 @@
     },
     {
       "file": "dark_390_missing.png",
-      "sha256": "19abcd6f9aff0ed5a94b0d98e1d7a6d0a16eecd4be6a82ec93e63e5609b2cedf",
+      "sha256": "0f504e8c1ea5a574595b5ce7ab91e8a17c01b4b4bbc833f2f3ecd4e8743c0788",
       "state": "missing",
       "theme": "dark",
       "viewport": [
@@ -76,7 +76,7 @@
     },
     {
       "file": "light_1920_populated.png",
-      "sha256": "d5ecfe2ca97acc4a7812ca77b056ecfdfdb596dc031baf6d243d983c6e69f27e",
+      "sha256": "a061bc2c7523ac890ef63758c6cb81dc4ab2fed9ebf9a4cd36b3fa3009428e1b",
       "state": "populated",
       "theme": "light",
       "viewport": [
@@ -88,7 +88,7 @@
     },
     {
       "file": "light_1920_failed_after_success.png",
-      "sha256": "aaf7c95a2c65cf52b5672c1197606ed15d506eb161796cca852258cacd7ae209",
+      "sha256": "df314a32a8f10e69ea08343d6ec0e4004b54745b2a69b04b8eef48f332611af9",
       "state": "failed_after_success",
       "theme": "light",
       "viewport": [
@@ -100,7 +100,7 @@
     },
     {
       "file": "light_1920_missing.png",
-      "sha256": "a65043f2ba145009cf3624a91219c072a67559b518332145cf82b76db0a12244",
+      "sha256": "7f5a1bf5fe12a236e2cb3761526c0b94eb8eeeec522d17aafc7692bcc0f4938d",
       "state": "missing",
       "theme": "light",
       "viewport": [
@@ -112,7 +112,7 @@
     },
     {
       "file": "light_390_populated.png",
-      "sha256": "d0b6ce17a0b5b0f8becb27ed091421d1bdd7ac41a23acc416d7fd341b99224ee",
+      "sha256": "09ebb07dd6f445d192439e83e1a867d33ca1c67578189eb6db2bab7986692b86",
       "state": "populated",
       "theme": "light",
       "viewport": [
@@ -136,7 +136,7 @@
     },
     {
       "file": "light_390_missing.png",
-      "sha256": "6cd450fab283c0815cbc94b7b90f165a4c58eac9e6f1aed20bc0628b6ddf2f6f",
+      "sha256": "9d336611c6b373e28f908a478ff0102ec4cd72a44ef7d0d9f8e6fe7f1b3b6311",
       "state": "missing",
       "theme": "light",
       "viewport": [

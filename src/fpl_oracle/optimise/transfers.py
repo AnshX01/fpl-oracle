@@ -1507,6 +1507,8 @@ class TransferOptimizer:
         target_gw: int,
         available_chips: list[str] | None = None,
         chip_retention_values: dict[str, float] | None = None,
+        chips_by_set: dict[int, list[str]] | None = None,
+        rival_context: dict[str, Any] | None = None,
         chips_already_used: set[str] | list[str] | None = None,
         locked_in_ids: list[int] | None = None,
         locked_out_ids: list[int] | None = None,
@@ -1523,8 +1525,8 @@ class TransferOptimizer:
 
         Candidate Pruning Methodology:
         The action space across a 15-player squad and ~600 pool players exceeds 10^7 actions
-        per gameweek, resulting in (10^7)^H states over an H-gameweek horizon. To guarantee
-        optimal tractability without sacrificing decision quality, we apply a multi-tier pruning strategy:
+        per gameweek, resulting in (10^7)^H states over an H-gameweek horizon. For bounded runtime, the search uses a multi-tier pruning strategy.
+        Pruning can miss better actions; no global-optimality guarantee is made:
         1. Position-Conserving Candidate Generation: Substitutions are evaluated within the same
            position group (GKP, DEF, MID, FWD), preserving valid squad constraints (2 GKP, 5 DEF, 5 MID, 3 FWD).
         2. Marginal Gain Pre-Ranking: In each position, candidate replacements are pre-screened by
@@ -1561,9 +1563,6 @@ class TransferOptimizer:
             horizon_len=h_len,
         )
         hold_plan = dict(base_res["recommended_plan"])
-        hold_discounted_score = float(
-            hold_plan.get("accumulated_discounted_net_xp") or hold_plan.get("horizon_net_xp", 0.0)
-        )
 
         horizon_gws = [target_gw + offset for offset in range(h_len) if target_gw + offset <= 38]
         if not horizon_gws:
@@ -1577,41 +1576,9 @@ class TransferOptimizer:
             clean_projections[gw] = df_gw
             player_maps[gw] = {int(r["element"]): dict(r) for _, r in df_gw.iterrows()}
 
-        # 2. Dynamic chip retention opportunity cost from per-GW projections (G9/G10)
+        # Future chip windows are searched explicitly. Only externally supplied
+        # beyond-horizon retention costs are applied, once at deployment.
         active_chips = list(available_chips or [])
-        dynamic_retention = compute_dynamic_chip_retention_values(
-            horizon_projections=horizon_projections,
-            current_squad_df=current_squad_df,
-            target_gw=target_gw,
-            available_chips=active_chips,
-            player_maps=player_maps,
-        )
-        retention_costs = dict(dynamic_retention)
-        if chip_retention_values:
-            retention_costs.update(chip_retention_values)
-
-        # 3. Evaluate candidate trajectories
-        candidates: list[dict[str, Any]] = [
-            {
-                "chip": "HOLD",
-                "chip_code": None,
-                "action": "HOLD",
-                "gross_gain_vs_hold": 0.0,
-                "opportunity_cost": 0.0,
-                "net_gain_vs_hold": 0.0,
-                "effective_trajectory_score": round(hold_discounted_score, 2),
-                "plan": hold_plan,
-                "reason": "Hold chips for higher expected value windows (e.g. Double Gameweeks).",
-            }
-        ]
-
-        if "selling_price" in current_squad_df.columns:
-            squad_selling_total = float(current_squad_df["selling_price"].sum())
-        elif "value" in current_squad_df.columns:
-            squad_selling_total = float(current_squad_df["value"].sum())
-        else:
-            squad_selling_total = 1000.0
-        total_budget = bank + squad_selling_total
 
         initial_elements = set(current_squad_df["element"].tolist())
         initial_bank = int(bank)
@@ -1622,315 +1589,119 @@ class TransferOptimizer:
         locked_out = set(locked_out_ids or [])
         excluded_teams = set(excluded_team_ids or [])
 
-        # Evaluate 3xc (Triple Captain)
-        if "3xc" in active_chips:
-            is_legal, legal_msg = validate_chip_legality("3xc", target_gw, chips_already_used)
-            if not is_legal:
-                candidates.append(
-                    {
-                        "chip": "3xc",
-                        "chip_code": "3xc",
-                        "action": "ILLEGAL",
-                        "gross_gain_vs_hold": 0.0,
-                        "opportunity_cost": 0.0,
-                        "net_gain_vs_hold": -999.0,
-                        "effective_trajectory_score": -999.0,
-                        "plan": hold_plan,
-                        "reason": legal_msg,
-                    }
-                )
+        from fpl_oracle.optimise.sequential import search_sequences
+
+        legal_chips = [c for c in active_chips if validate_chip_legality(c, target_gw, chips_already_used)[0]]
+        sequences = search_sequences(
+            self,
+            initial_elements,
+            initial_bank,
+            initial_purchase,
+            free_transfers,
+            horizon_gws,
+            clean_projections,
+            player_maps,
+            legal_chips,
+            locked_in,
+            locked_out,
+            excluded_teams,
+            risk_preference,
+            terminal_costs=chip_retention_values,
+            chips_by_set=chips_by_set,
+        )
+        # Compare complete trajectories with the same chip opportunities, not a
+        # current-chip bonus against a chip-free continuation.
+        from fpl_oracle.league.objective import select_balanced_sequence
+
+        league_choice, league_objective = select_balanced_sequence(sequences, rival_context, player_maps)
+        sequences = [league_choice] + [s for s in sequences if s is not league_choice]
+        by_first: dict[str | None, dict[str, Any]] = {}
+        for state in sequences:
+            by_first.setdefault(state["first_chip"], state)
+        if None not in by_first:
+            raise ValueError("Sequential beam did not retain a hold branch")
+        hold_score = by_first[None]["score"]
+        candidates = []
+        for chip, state in by_first.items():
+            first = state["history"][0]
+            first_df = clean_projections[target_gw][
+                clean_projections[target_gw]["element"].isin(first["elements"])
+            ].copy()
+            plan = dict(hold_plan)
+            plan.update(
+                chip_applied=chip,
+                lineup=lineup_optimizer.select_lineup_and_captain(
+                    first_df,
+                    risk_preference=risk_preference,
+                    is_triple_captain=chip == "3xc",
+                    is_bench_boost=chip == "bboost",
+                ),
+                trajectory=state["history"],
+                gross_expected_points=round(first["gross_xp"], 2),
+                net_expected_points=round(first["net_xp"], 2),
+                hits=first["hits"],
+                hit_cost=first["hit_cost"],
+                remaining_bank=first["bank"] / 10,
+                next_banked_ft=first["banked_ft"],
+                horizon_net_xp=round(sum(r["net_xp"] for r in state["history"]), 2),
+                horizon_gross_xp=round(sum(r["gross_xp"] for r in state["history"]), 2),
+                horizon_hits=sum(r["hits"] for r in state["history"]),
+                accumulated_discounted_net_xp=round(state["score"], 2),
+                transfers_in=[
+                    dict(player_maps[target_gw][e], cost=player_maps[target_gw][e]["value"] / 10)
+                    for e in first["transfers_in"]
+                ],
+                transfers_out=[
+                    dict(
+                        player_maps[target_gw][e],
+                        sell_price=self.calculate_selling_price(
+                            initial_purchase[e], int(player_maps[target_gw][e]["value"])
+                        )
+                        / 10,
+                    )
+                    for e in first["transfers_out"]
+                ],
+            )
+            if chip in {"freehit", "wildcard"}:
+                plan["plan_type"] = "FREE_HIT" if chip == "freehit" else "WILDCARD"
+            elif not first["transfers_in"]:
+                plan["plan_type"] = "ROLL_TRANSFER"
             else:
-                cap_info = hold_plan.get("lineup", {}).get("captain", {})
-                cap_xp = (
-                    float(cap_info.get("expected_points", 0.0))
-                    if isinstance(cap_info, dict)
-                    else float(getattr(cap_info, "expected_points", 0.0))
+                plan["plan_type"] = "1_TRANSFER"
+            gain = round(state["score"] - hold_score, 2)
+            candidates.append(
+                dict(
+                    chip=chip or "HOLD",
+                    chip_code=chip,
+                    action="DEPLOY" if chip else "HOLD",
+                    plan=plan,
+                    net_gain_vs_hold=gain,
+                    gross_gain_vs_hold=round(first["gross_xp"] - by_first[None]["history"][0]["gross_xp"], 2),
+                    opportunity_cost=float((chip_retention_values or {}).get(chip or "", 0)),
+                    effective_trajectory_score=round(state["score"], 2),
+                    reason="Legal sequential transfer/chip trajectory across the projection horizon.",
                 )
-                gross_tc = round(cap_xp, 2)
-                cost_tc = round(retention_costs.get("3xc", 6.0), 2)
-                net_tc = round(gross_tc - cost_tc, 2)
-                score_tc = round(hold_discounted_score + net_tc, 2)
-
-                tc_plan = dict(hold_plan)
-                tc_plan["chip_applied"] = "3xc"
-                tc_plan["gross_expected_points"] = round(hold_plan["gross_expected_points"] + gross_tc, 2)
-                tc_plan["net_expected_points"] = round(hold_plan["net_expected_points"] + gross_tc, 2)
-
-                cap_name = (
-                    cap_info.get("web_name", "Captain")
-                    if isinstance(cap_info, dict)
-                    else getattr(cap_info, "web_name", "Captain")
-                )
-                candidates.append(
-                    {
-                        "chip": "3xc",
-                        "chip_code": "3xc",
-                        "action": "DEPLOY",
-                        "gross_gain_vs_hold": gross_tc,
-                        "opportunity_cost": cost_tc,
-                        "net_gain_vs_hold": net_tc,
-                        "effective_trajectory_score": score_tc,
-                        "plan": tc_plan,
-                        "reason": f"Triple Captain on {cap_name} gains +{gross_tc} xP (dynamic retention cost: {cost_tc} xP, net: {net_tc:+} xP).",
-                    }
-                )
-
-        # Evaluate Bench Boost
-        if "bboost" in active_chips:
-            is_legal, legal_msg = validate_chip_legality("bboost", target_gw, chips_already_used)
-            if not is_legal:
-                candidates.append(
-                    {
-                        "chip": "bboost",
-                        "chip_code": "bboost",
-                        "action": "ILLEGAL",
-                        "gross_gain_vs_hold": 0.0,
-                        "opportunity_cost": 0.0,
-                        "net_gain_vs_hold": -999.0,
-                        "effective_trajectory_score": -999.0,
-                        "plan": hold_plan,
-                        "reason": legal_msg,
-                    }
-                )
-            else:
-                bench_obj = hold_plan.get("lineup", {}).get("bench")
-                if isinstance(bench_obj, pd.DataFrame):
-                    bench_xp = (
-                        float(bench_obj["expected_points"].sum())
-                        if not bench_obj.empty and "expected_points" in bench_obj.columns
-                        else 0.0
-                    )
-                elif isinstance(bench_obj, list):
-                    bench_xp = sum(float(b.get("expected_points", 0.0)) for b in bench_obj)
-                else:
-                    bench_xp = 0.0
-                gross_bb = round(bench_xp, 2)
-                cost_bb = round(retention_costs.get("bboost", 8.0), 2)
-                net_bb = round(gross_bb - cost_bb, 2)
-                score_bb = round(hold_discounted_score + net_bb, 2)
-
-                bb_plan = dict(hold_plan)
-                bb_plan["chip_applied"] = "bboost"
-                bb_plan["gross_expected_points"] = round(hold_plan["gross_expected_points"] + gross_bb, 2)
-                bb_plan["net_expected_points"] = round(hold_plan["net_expected_points"] + gross_bb, 2)
-
-                candidates.append(
-                    {
-                        "chip": "bboost",
-                        "chip_code": "bboost",
-                        "action": "DEPLOY",
-                        "gross_gain_vs_hold": gross_bb,
-                        "opportunity_cost": cost_bb,
-                        "net_gain_vs_hold": net_bb,
-                        "effective_trajectory_score": score_bb,
-                        "plan": bb_plan,
-                        "reason": f"Bench Boost contributes bench points (+{gross_bb} xP, dynamic retention cost: {cost_bb} xP, net: {net_bb:+} xP).",
-                    }
-                )
-
-        # Evaluate Free Hit
-        if "freehit" in active_chips:
-            is_legal, legal_msg = validate_chip_legality("freehit", target_gw, chips_already_used)
-            if not is_legal:
-                candidates.append(
-                    {
-                        "chip": "freehit",
-                        "chip_code": "freehit",
-                        "action": "ILLEGAL",
-                        "gross_gain_vs_hold": 0.0,
-                        "opportunity_cost": 0.0,
-                        "net_gain_vs_hold": -999.0,
-                        "effective_trajectory_score": -999.0,
-                        "plan": hold_plan,
-                        "reason": legal_msg,
-                    }
-                )
-            else:
-                try:
-                    from fpl_oracle.optimise.squad import squad_optimizer
-
-                    fh_solve = squad_optimizer.solve_best_squad(
-                        player_pool_df=player_pool_df,
-                        budget=total_budget,
-                        metric_col="expected_points",
-                    )
-                    fh_squad = fh_solve["squad"]
-                    fh_lineup = lineup_optimizer.select_lineup_and_captain(fh_squad, risk_preference=risk_preference)
-                    fh_gross = float(fh_lineup["total_gameweek_expected_points"])
-                    hold_gross = float(hold_plan["gross_expected_points"])
-                    gross_fh = round(max(0.0, fh_gross - hold_gross), 2)
-                    cost_fh = round(retention_costs.get("freehit", 8.0), 2)
-                    net_fh = round(gross_fh - cost_fh, 2)
-                    score_fh = round(hold_discounted_score + net_fh, 2)
-
-                    # Multi-GW continuation with Free Hit reversion at step 1
-                    fh_traj = self._run_beam_search_trajectory(
-                        initial_action={
-                            "plan_type": "FREE_HIT",
-                            "transfers_in": list(set(fh_squad["element"]) - initial_elements),
-                            "transfers_out": list(initial_elements - set(fh_squad["element"])),
-                            "bank_delta": 0,
-                            "buy_costs": {int(r["element"]): int(r["value"]) for _, r in fh_squad.iterrows()},
-                            "sell_prices": {},
-                        },
-                        initial_elements=initial_elements,
-                        initial_bank=initial_bank,
-                        initial_purchase_prices=initial_purchase,
-                        initial_ft=free_transfers,
-                        horizon_gws=horizon_gws,
-                        horizon_projections=clean_projections,
-                        player_maps=player_maps,
-                        locked_in=locked_in,
-                        locked_out=locked_out,
-                        excluded_teams=excluded_teams,
-                        risk_preference=risk_preference,
-                        revert_squad_at_step_1=True,
-                    )
-
-                    fh_plan = dict(hold_plan)
-                    fh_plan["chip_applied"] = "freehit"
-                    fh_plan["plan_type"] = "FREE_HIT"
-                    fh_plan["lineup"] = fh_lineup
-                    fh_plan["gross_expected_points"] = round(fh_gross, 2)
-                    fh_plan["net_expected_points"] = round(fh_gross, 2)
-                    fh_plan["hits"] = 0
-                    fh_plan["hit_cost"] = 0.0
-                    fh_plan["trajectory"] = fh_traj["history"]
-                    fh_elements = set(fh_squad["element"])
-                    fh_plan["transfers_in"] = [
-                        dict(r, cost=float(r["value"]) / 10.0)
-                        for _, r in fh_squad.iterrows()
-                        if int(r["element"]) not in initial_elements
-                    ]
-                    fh_plan["transfers_out"] = [
-                        dict(r, sell_price=float(r["selling_price"]) / 10.0)
-                        for _, r in current_squad_df.iterrows()
-                        if int(r["element"]) not in fh_elements
-                    ]
-                    fh_plan["remaining_bank"] = float(total_budget - fh_squad["value"].sum()) / 10.0
-                    fh_plan["next_banked_ft"] = min(5, free_transfers + 1)
-
-                    candidates.append(
-                        {
-                            "chip": "freehit",
-                            "chip_code": "freehit",
-                            "action": "DEPLOY",
-                            "gross_gain_vs_hold": gross_fh,
-                            "opportunity_cost": cost_fh,
-                            "net_gain_vs_hold": net_fh,
-                            "effective_trajectory_score": score_fh,
-                            "plan": fh_plan,
-                            "reason": f"Free Hit single-gameweek restructure yields +{gross_fh} xP (dynamic retention cost: {cost_fh} xP, net: {net_fh:+} xP).",
-                        }
-                    )
-                except Exception as e:
-                    logger.warning("Free Hit trajectory optimization error: %s", e)
-
-        # Evaluate Wildcard
-        if "wildcard" in active_chips:
-            is_legal, legal_msg = validate_chip_legality("wildcard", target_gw, chips_already_used)
-            if not is_legal:
-                candidates.append(
-                    {
-                        "chip": "wildcard",
-                        "chip_code": "wildcard",
-                        "action": "ILLEGAL",
-                        "gross_gain_vs_hold": 0.0,
-                        "opportunity_cost": 0.0,
-                        "net_gain_vs_hold": -999.0,
-                        "effective_trajectory_score": -999.0,
-                        "plan": hold_plan,
-                        "reason": legal_msg,
-                    }
-                )
-            else:
-                try:
-                    from fpl_oracle.optimise.squad import squad_optimizer
-
-                    wc_solve = squad_optimizer.solve_best_squad(
-                        player_pool_df=player_pool_df,
-                        budget=total_budget,
-                        metric_col="expected_points",
-                    )
-                    wc_squad = wc_solve["squad"]
-                    wc_elements = set(wc_squad["element"].tolist())
-                    wc_lineup = lineup_optimizer.select_lineup_and_captain(wc_squad, risk_preference=risk_preference)
-                    wc_step0_gross = float(wc_lineup["total_gameweek_expected_points"])
-
-                    # Wildcard trajectory continuation: unlimited free transfers, 0 hits, persists forward
-                    wc_traj = self._run_beam_search_trajectory(
-                        initial_action={
-                            "plan_type": "WILDCARD",
-                            "transfers_in": list(wc_elements - initial_elements),
-                            "transfers_out": list(initial_elements - wc_elements),
-                            "bank_delta": int(total_budget - wc_squad["value"].sum()) - initial_bank,
-                            "buy_costs": {int(r["element"]): int(r["value"]) for _, r in wc_squad.iterrows()},
-                            "sell_prices": {},
-                        },
-                        initial_elements=initial_elements,
-                        initial_bank=initial_bank,
-                        initial_purchase_prices=initial_purchase,
-                        initial_ft=free_transfers,
-                        horizon_gws=horizon_gws,
-                        horizon_projections=clean_projections,
-                        player_maps=player_maps,
-                        locked_in=locked_in,
-                        locked_out=locked_out,
-                        excluded_teams=excluded_teams,
-                        risk_preference=risk_preference,
-                        is_wildcard=True,
-                    )
-
-                    gross_wc = round(
-                        max(0.0, float(wc_traj["total_net_xp"]) - float(hold_plan.get("horizon_net_xp", 0.0))), 2
-                    )
-                    cost_wc = round(retention_costs.get("wildcard", 7.0), 2)
-                    net_wc = round(gross_wc - cost_wc, 2)
-                    score_wc = round(hold_discounted_score + net_wc, 2)
-
-                    wc_plan = dict(hold_plan)
-                    wc_plan["chip_applied"] = "wildcard"
-                    wc_plan["plan_type"] = "WILDCARD"
-                    wc_plan["lineup"] = wc_lineup
-                    wc_plan["gross_expected_points"] = round(wc_step0_gross, 2)
-                    wc_plan["net_expected_points"] = round(wc_step0_gross, 2)
-                    wc_plan["hits"] = 0
-                    wc_plan["hit_cost"] = 0.0
-                    wc_plan["trajectory"] = wc_traj["history"]
-                    wc_plan["transfers_in"] = [
-                        dict(r, cost=float(r["value"]) / 10.0)
-                        for _, r in wc_squad.iterrows()
-                        if int(r["element"]) not in initial_elements
-                    ]
-                    wc_plan["transfers_out"] = [
-                        dict(r, sell_price=float(r["selling_price"]) / 10.0)
-                        for _, r in current_squad_df.iterrows()
-                        if int(r["element"]) not in wc_elements
-                    ]
-                    wc_plan["remaining_bank"] = float(total_budget - wc_squad["value"].sum()) / 10.0
-                    wc_plan["next_banked_ft"] = min(5, free_transfers + 1)
-
-                    candidates.append(
-                        {
-                            "chip": "wildcard",
-                            "chip_code": "wildcard",
-                            "action": "DEPLOY",
-                            "gross_gain_vs_hold": gross_wc,
-                            "opportunity_cost": cost_wc,
-                            "net_gain_vs_hold": net_wc,
-                            "effective_trajectory_score": score_wc,
-                            "plan": wc_plan,
-                            "reason": f"Wildcard multi-GW restructure yields +{gross_wc} trajectory xP (dynamic retention cost: {cost_wc} xP, net: {net_wc:+} xP).",
-                        }
-                    )
-                except Exception as e:
-                    logger.warning("Wildcard trajectory optimization error: %s", e)
+            )
+        hold_plan = next(c["plan"] for c in candidates if c["chip"] == "HOLD")
+        for candidate in candidates:
+            plan = candidate["plan"]
+            count = len(plan["transfers_in"])
+            plan["recommendation_summary"] = (
+                f"{candidate['chip']}: {count} transfer(s), {plan['hits']} hit(s), "
+                f"{plan['net_expected_points']:.2f} next-GW xP; "
+                f"{candidate['net_gain_vs_hold']:+.2f} discounted horizon xP vs holding chips now"
+            )
+            plan["horizon_gain_vs_roll"] = round(plan["accumulated_discounted_net_xp"] - hold_score, 2)
+            plan["horizon_hit_cost"] = plan["horizon_hits"] * self.hit_penalty
+            plan["expected_gain"] = candidate["net_gain_vs_hold"]
+            plan["robustness_score"] = None
+            plan["is_no_regret"] = False
 
         # 4. Rank candidates by net gain vs hold
         candidates.sort(key=lambda c: c["net_gain_vs_hold"], reverse=True)
-        best_cand = candidates[0]
+        best_cand = next(c for c in candidates if c["chip_code"] == league_choice["first_chip"])
 
-        if best_cand["chip"] != "HOLD" and best_cand["net_gain_vs_hold"] > 0.0:
+        if best_cand["chip"] != "HOLD":
             recommended_chip = best_cand["chip"]
             recommended_action = "DEPLOY"
             recommended_plan = best_cand["plan"]
@@ -1949,11 +1720,21 @@ class TransferOptimizer:
             "recommended_plan": recommended_plan,
             "hold_plan": hold_plan,
             "roll_plan": base_res.get("roll_plan"),
-            "candidate_plans": base_res.get("candidate_plans", []),
+            "candidate_plans": [c["plan"] for c in candidates],
             "chip_comparison_table": candidates,
             "best_candidate": best_cand,
-            "opportunity_costs_applied": retention_costs,
-            "transfer_roadmap": base_res.get("transfer_roadmap", []),
+            "decision_scope": {
+                "method": "bounded_sequential_transfer_chip_beam",
+                "horizon_gameweeks": horizon_gws,
+                "global_optimum_proven": False,
+                "sequential_multi_chip_search": True,
+                "objective": "discounted_net_expected_points_with_bounded_balanced_rival_exposure",
+            },
+            "league_objective": league_objective,
+            "opportunity_costs_applied": chip_retention_values or {},
+            "transfer_roadmap": self._generate_dynamic_roadmap(
+                recommended_plan["trajectory"], horizon_gws, clean_projections, player_maps
+            ),
             "hit_verdict": base_res.get("hit_verdict", ""),
             "target_gameweek": target_gw,
             "available_free_transfers": free_transfers,

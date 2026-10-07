@@ -11,11 +11,43 @@ Verifies that all endpoints return valid JSON and graceful fallbacks with stale 
 """
 
 import asyncio
+import json
+from pathlib import Path
+from unittest.mock import AsyncMock
 
 import httpx
+import pytest
 
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.server.main import app
+
+
+@pytest.fixture(autouse=True)
+def seeded_upstream(monkeypatch):
+    """Fault tests exercise transport/cache fallbacks, not live-network warmup."""
+    from fpl_oracle.api.cache import cache_manager
+    from types import SimpleNamespace
+    from fpl_oracle.data.store import data_store
+
+    monkeypatch.setattr(
+        data_store,
+        "get_profile",
+        lambda: SimpleNamespace(
+            manager_id=None,
+            target_league_id=None,
+            manual_squad=None,
+            bank=None,
+            free_transfers=None,
+            bank_override_enabled=False,
+            ft_override_enabled=False,
+        ),
+    )
+    root = Path(__file__).parent / "fixtures"
+    cache_manager.set("bootstrap-static", json.loads((root / "bootstrap_static.json").read_text()), 300)
+    cache_manager.set("fixtures:all", json.loads((root / "fixtures.json").read_text()), 300)
+    cache_manager.set("event-status", {"status": [], "leagues": "Updated"}, 300)
+    monkeypatch.setattr(fpl_client, "rate_delay", 0)
+    monkeypatch.setattr("fpl_oracle.api.fpl_client.asyncio.sleep", AsyncMock())
 
 
 class FaultInjectingTransport(httpx.AsyncBaseTransport):
@@ -94,11 +126,12 @@ def test_fault_injection_503_service_unavailable():
         try:
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                res = await client.get("/api/squad")
+                res = await client.get("/api/squad/basic")
                 assert res.status_code == 200, f"Expected 200 with stale fallback, got {res.status_code}"
                 data = res.json()
                 assert data.get("stale") is True or data.get("is_stale") is True
-                assert len(data.get("starters", [])) + len(data.get("bench", [])) == 15
+                assert data["status"] == "unavailable"
+                assert data.get("starters", []) == []  # no invented demo on upstream failure
         finally:
             fpl_client.reset_transport()
 
@@ -116,13 +149,10 @@ def test_fault_injection_read_timeout():
         faulty_transport = FaultInjectingTransport(mode="timeout")
         fpl_client.set_transport(faulty_transport)
         try:
-            transport = httpx.ASGITransport(app=app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                res = await client.get("/api/projections?horizon=2")
-                assert res.status_code == 200
-                data = res.json()
-                assert data.get("stale") is True or data.get("is_stale") is True
-                assert len(data.get("players", [])) > 0
+            bootstrap, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
+            fixtures, fixture_stale = await fpl_client.get_fixtures(force_refresh=True)
+            assert stale and fixture_stale
+            assert bootstrap.elements and fixtures
         finally:
             fpl_client.reset_transport()
 

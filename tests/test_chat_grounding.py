@@ -17,6 +17,12 @@ from fpl_oracle.llm.agent import expert_agent
 # Unique session prefix per test run to prevent cross-run chat history contamination
 _RUN_ID = str(int(time.time()))
 
+@pytest.fixture(autouse=True)
+def grounded_chat_fixture(configured_advisor, monkeypatch):
+    from fpl_oracle.llm.provider import OfflineExpertProvider
+    monkeypatch.setattr("fpl_oracle.llm.agent.get_llm_provider", lambda: OfflineExpertProvider())
+
+
 
 @pytest.mark.anyio
 async def test_chat_grounding_captaincy_recommendation():

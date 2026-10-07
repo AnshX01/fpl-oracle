@@ -15,13 +15,13 @@ class CardsSavesModel(BaseComponent):
     def __init__(self):
         super().__init__("cards_saves_model")
         self.reg_saves = lgb.LGBMRegressor(
-            n_estimators=100, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
+            n_estimators=100, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1, n_jobs=4
         )
         self.reg_cards = lgb.LGBMRegressor(
-            n_estimators=100, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1
+            n_estimators=100, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1, n_jobs=4
         )
         self.reg_pen_saves = lgb.LGBMRegressor(
-            n_estimators=80, learning_rate=0.03, num_leaves=15, random_state=42, verbosity=-1
+            n_estimators=80, learning_rate=0.03, num_leaves=15, random_state=42, verbosity=-1, n_jobs=4
         )
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):

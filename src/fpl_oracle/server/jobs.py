@@ -313,7 +313,23 @@ async def deadline_alert_job():
 async def history_refresh_job():
     from fpl_oracle.data.historical import historical_manager
 
-    return await historical_manager.refresh_current_season()
+    job_id = "history_refresh"
+    start = datetime.now(UTC)
+    run_id = data_store.record_job_start(job_id, tracker.jobs_state[job_id]["name"])
+    tracker.update_job_start(job_id)
+    try:
+        result = await historical_manager.refresh_current_season()
+        duration = (datetime.now(UTC) - start).total_seconds()
+        success = bool(result.get("complete"))
+        details = str(result)
+        data_store.record_job_finish(run_id, "SUCCESS" if success else "FAILED", duration, details)
+        tracker.update_job_finish(job_id, success, duration, details)
+        return result
+    except Exception as error:
+        duration = (datetime.now(UTC) - start).total_seconds()
+        data_store.record_job_finish(run_id, "FAILED", duration, str(error))
+        tracker.update_job_finish(job_id, False, duration, str(error))
+        raise
 
 
 async def holdout_forward_job():

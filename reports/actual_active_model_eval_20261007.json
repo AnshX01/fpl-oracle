@@ -1,0 +1,167 @@
+{
+  "evaluated_at": "2026-10-07T08:43:02.185687+00:00",
+  "sample_count": 13628,
+  "ml_mae": 1.017,
+  "ml_rmse": 2.055,
+  "ml_spearman": 0.703,
+  "ml_pearson": 0.54,
+  "base_mae": 1.076,
+  "base_rmse": 2.221,
+  "base_spearman": 0.698,
+  "baselines": {
+    "weighted_recent_form": {
+      "mae": 1.078,
+      "rmse": 2.221,
+      "spearman": 0.698
+    },
+    "season_average": {
+      "mae": 1.076,
+      "rmse": 2.202,
+      "spearman": 0.687
+    },
+    "fixture_adjusted": {
+      "mae": 1.211,
+      "rmse": 2.558,
+      "spearman": 0.708
+    }
+  },
+  "mae_improvement_pct": 5.66,
+  "rmse_improvement_pct": 7.47,
+  "verdict": "The ML Projection Engine achieves an MAE of 1.017 and RMSE of 2.055 with a Spearman rank correlation of 0.703 (vs 0.698 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
+  "positions": {
+    "GKP": {
+      "count": 1454,
+      "ml_mae": 0.69,
+      "ml_rmse": 1.611,
+      "base_mae": 0.709,
+      "base_rmse": 1.708,
+      "improvement_mae_pct": 2.68
+    },
+    "DEF": {
+      "count": 4465,
+      "ml_mae": 1.177,
+      "ml_rmse": 2.264,
+      "base_mae": 1.247,
+      "base_rmse": 2.423,
+      "improvement_mae_pct": 5.61
+    },
+    "MID": {
+      "count": 6171,
+      "ml_mae": 0.948,
+      "ml_rmse": 1.941,
+      "base_mae": 1.016,
+      "base_rmse": 2.119,
+      "improvement_mae_pct": 6.69
+    },
+    "FWD": {
+      "count": 1538,
+      "ml_mae": 1.14,
+      "ml_rmse": 2.233,
+      "base_mae": 1.181,
+      "base_rmse": 2.425,
+      "improvement_mae_pct": 3.47
+    }
+  },
+  "calibration": {
+    "interval_80_coverage_pct": 83.76,
+    "below_p10_pct": 9.99,
+    "above_p90_pct": 6.25,
+    "pinball_loss_p10": 0.1547,
+    "pinball_loss_p50": 0.5036,
+    "pinball_loss_p90": 0.3963,
+    "avg_interval_width": 3.34,
+    "calibration_verdict": "CONSERVATIVE INTERVAL (83.76% vs 80% nominal)"
+  },
+  "rolling_origins": [
+    {
+      "season": "Holdout 2024-25 (trained on 2023-24)",
+      "train_size": 21427,
+      "test_size": 27605,
+      "mae": 0.992,
+      "rmse": 2.101,
+      "spearman": 0.682,
+      "base_recent_mae": 1.046,
+      "base_season_mae": 1.041,
+      "base_fixture_mae": 1.228,
+      "best_baseline_mae": 1.041,
+      "gain_vs_baseline": 0.049,
+      "interval_80_coverage_pct": 81.21,
+      "position_coverage": {
+        "GKP": 81.21,
+        "DEF": 84.62,
+        "MID": 79.31,
+        "FWD": 78.76
+      },
+      "minutes_bucket_coverage": {
+        "low": 81.79,
+        "mid": 81.64,
+        "high": 78.64
+      }
+    },
+    {
+      "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
+      "train_size": 29725,
+      "test_size": 29757,
+      "mae": 0.933,
+      "rmse": 1.991,
+      "spearman": 0.708,
+      "base_recent_mae": 0.995,
+      "base_season_mae": 0.99,
+      "base_fixture_mae": 1.094,
+      "best_baseline_mae": 0.99,
+      "gain_vs_baseline": 0.057,
+      "interval_80_coverage_pct": 84.23,
+      "position_coverage": {
+        "GKP": 88.68,
+        "DEF": 82.24,
+        "MID": 84.21,
+        "FWD": 85.55
+      },
+      "minutes_bucket_coverage": {
+        "low": 87.65,
+        "mid": 78.29,
+        "high": 78.29
+      }
+    },
+    {
+      "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
+      "train_size": 57330,
+      "test_size": 2054,
+      "mae": 1.806,
+      "rmse": 2.827,
+      "spearman": 0.439,
+      "base_recent_mae": 1.963,
+      "base_season_mae": 1.952,
+      "base_fixture_mae": 2.227,
+      "best_baseline_mae": 1.952,
+      "gain_vs_baseline": 0.146,
+      "interval_80_coverage_pct": 72.64,
+      "position_coverage": {
+        "GKP": 70.0,
+        "DEF": 75.17,
+        "MID": 71.62,
+        "FWD": 70.49
+      },
+      "minutes_bucket_coverage": {
+        "low": 57.92,
+        "mid": 79.05,
+        "high": 80.48
+      }
+    }
+  ],
+  "ablation": {},
+  "partial_dependence": {
+    "star_player_vs_tough_defence": 3.9,
+    "star_player_vs_avg_defence": 4.14,
+    "star_player_vs_weak_defence": 4.35,
+    "mid_player_vs_tough_defence": 2.92,
+    "mid_player_vs_avg_defence": 3.21,
+    "mid_player_vs_weak_defence": 3.36,
+    "low_player_vs_tough_defence": 0.72,
+    "low_player_vs_avg_defence": 0.87,
+    "low_player_vs_weak_defence": 0.99,
+    "home_advantage_premium_pts": 0.04
+  },
+  "upcoming_projections": [],
+  "gate_verdict": {}
+}

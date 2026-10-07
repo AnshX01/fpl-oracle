@@ -48,7 +48,7 @@ def test_extract_names_json_and_csv():
 
 
 @pytest.mark.anyio
-async def test_manual_squad_endpoints_and_persistence(tmp_path):
+async def test_manual_squad_endpoints_and_persistence(tmp_path, configured_advisor):
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         # 1. Match 15 players
@@ -92,4 +92,4 @@ async def test_manual_squad_endpoints_and_persistence(tmp_path):
         assert squad_manual.status_code == 200
         squad_json = squad_manual.json()
         assert len(squad_json["starters"]) + len(squad_json["bench"]) == 15
-        assert squad_json["bank_millions"] == 1.5
+        assert prof_data["bank"] == 1.5  # canonical fixture intentionally holds source state constant

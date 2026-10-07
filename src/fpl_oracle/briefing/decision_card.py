@@ -88,9 +88,10 @@ class DecisionCardGenerator:
             except Exception as e:
                 logger.warning("Decision card manager history fetch warning: %s", e)
 
-        chips_status = chip_planner.get_remaining_chips(hist)
-        available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
-        chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
+        available_chips = (
+            effective_state.chips_remaining_set_1 if target_gw <= 19 else effective_state.chips_remaining_set_2
+        )
+        chips_used = [c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)]
 
         joint_res = await analysis_service.joint_plan(
             current_squad_df=user_squad_df,
@@ -505,7 +506,7 @@ class DecisionCardGenerator:
         # ----------------------------------------------------------------------
         if is_roll:
             two_line = (
-                f"Rolling the free transfer banks flexibility (reaching {transfers_summary['ft_remaining']} FTs) with starting XI projecting {lineup_res['starters_expected_points']:.1f} pts. "
+                f"Rolling the free transfer banks flexibility (reaching {transfers_summary['ft_next_gw']} FTs next GW) with starting XI projecting {lineup_res['starters_expected_points']:.1f} pts. "
                 f"Captain {captain_dict['web_name']} leads output at {captain_dict['expected_points']:.1f} xP."
             )
         else:
@@ -555,6 +556,18 @@ class DecisionCardGenerator:
                 "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
             },
             "model_version": active_ver.get("version", "v1.0.0"),
+            "projection_snapshot_id": target_df.attrs.get("snapshot_id"),
+            "decision_scope": joint_res.get("decision_scope"),
+            "ranked_options": [
+                {
+                    "rank": i + 1,
+                    "chip": c["chip"],
+                    "net_gain_vs_hold": c["net_gain_vs_hold"],
+                    "reason": c["reason"],
+                    "recommended": c.get("is_recommended", False),
+                }
+                for i, c in enumerate(joint_res.get("chip_comparison_table", []))
+            ],
             "transfers": transfers_summary,
             "xi": starters_list,
             "formation": lineup_res.get("formation", "3-5-2"),
@@ -567,7 +580,7 @@ class DecisionCardGenerator:
             "two_line_reasoning": two_line,
             "caveats": caveats,
             "what_changed": what_changed,
-            "advice_disclaimer": "Advice only — nothing is submitted to FPL.",
+            "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
             "is_stale": is_stale,
             "stale": is_stale,
             "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
