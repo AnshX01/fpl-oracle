@@ -101,7 +101,7 @@ class OfflineExpertProvider:
                 f"| Gameweek | Status | Action | Banked FT | Key Targets |\n"
                 f"|---|---|---|---|---|\n"
                 f"{roadmap_table}\n\n"
-                f"**Strategic Note:** Firm steps are locked for the upcoming deadline; contingent steps adjust based on post-match injuries and European cup congestion."
+                f"**Strategic Note:** No step is locked or submitted. Refresh before every deadline; future moves depend on new availability, fixtures and rival observations."
             )
 
         # 3. Differentials under budget questions (e.g., "best differential midfielder under 6.5")
@@ -170,11 +170,11 @@ class OfflineExpertProvider:
             ]
             return (
                 f"### Captaincy Recommendation for Gameweek {res['gameweek']}\n"
-                f"**The Decision:** Captain **{safe}**. Vice-captain **{diff}**.\n\n"
+                f"**The Decision:** Selected-plan captain **{safe}**, vice-captain **{diff}**. This is conditional on adopting that squad, not your current owned team.\n\n"
                 f"**The Numbers:**\n" + "\n".join(lines) + "\n\n"
-                "**The Why:** This is the same selected plan (not submitted), lineup and captain decision shown in your squad and decision card.\n"
+                f"**The Why:** Same selected-plan captain as the decision card, using {res.get('risk_preference', 'balanced')} risk weighting. 'Safest' is not established by xP rank alone.\n"
                 "**The Risk:** Guard against late press-conference rotation notes.\n"
-                "**What would change the call:** If press conferences indicate minutes management, pivot immediately to your vice-captain."
+                "**What would change the call:** If verified news changes expected minutes, refresh and reassess both captain and vice-captain."
             )
 
         # 6. Injury & Availability questions

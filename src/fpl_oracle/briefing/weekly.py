@@ -196,7 +196,7 @@ class WeeklyBriefingGenerator:
         markdown += f"""
 ---
 
-## 3. 2026/27 Chip Strategy & Set 1 Deadlines
+## 3. Conditional Chip Roadmap (reassess every deadline)
 {chip_res.get("set_1_deadline_warning") or "Set 1 chips are active through GW19."}
 
 | Chip | Recommended GW | Expected Gain | Tactical Notes |
@@ -206,6 +206,10 @@ class WeeklyBriefingGenerator:
             markdown += (
                 f"| **{c['chip']}** | GW {c['recommended_gw']} | Not separately estimated | {c['reasoning']} |\n"
             )
+
+        markdown += "\nFuture resource value is not forecast. Legal preservation alternatives:\n"
+        for row in transfers_res.get("resource_frontier", []):
+            markdown += f"- Preserve {row['chip']} through GW{row['retained_through_gameweek']}: {row['discounted_horizon_cost_to_preserve']} discounted xP window cost; later value above {row['tail_value_break_even_at_horizon_end']} xP could reverse the choice.\n"
 
         markdown += f"""
 ---

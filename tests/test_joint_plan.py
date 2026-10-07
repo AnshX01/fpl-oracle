@@ -167,3 +167,22 @@ def test_chip_planner_evaluate_joint_plan_respects_sets(sample_squad_and_pool):
     # 3xc should not be available in Set 1 since it was already played in GW3
     assert "3xc" not in chip_codes
     assert "HOLD" in chip_codes
+
+
+def test_chip_preservation_frontier_exposes_future_value_gap(sample_squad_and_pool):
+    squad, pool, projections = sample_squad_and_pool
+    result = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
+        current_squad_df=squad,
+        player_pool_df=pool,
+        bank=10,
+        free_transfers=1,
+        horizon_projections=projections,
+        current_gw=5,
+        target_gw=6,
+        available_chips=["3xc", "bboost"],
+    )
+    assert {row["chip"] for row in result["resource_frontier"]} == {"3xc", "bboost"}
+    for row in result["resource_frontier"]:
+        assert all(step["chip"] != row["chip"] for step in row["retained_trajectory"])
+        assert row["tail_value_break_even_at_horizon_end"] >= row["discounted_horizon_cost_to_preserve"] >= 0
+    assert result["decision_scope"]["season_tail_value_estimated"] is False

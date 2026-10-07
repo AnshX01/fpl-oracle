@@ -257,6 +257,8 @@ class ToolExecutor:
         candidates = sorted(squad["starters"], key=lambda p: p.get("expected_points", 0), reverse=True)[:5]
         return {
             "gameweek": gw,
+            "risk_preference": data_store.get_profile().risk_preference,
+            "scope": "selected_plan_not_submitted",
             "safe_captain": captain["web_name"],
             "differential_captain": vice["web_name"],
             "captain": captain,

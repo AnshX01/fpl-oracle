@@ -127,6 +127,8 @@ class DecisionCardGenerator:
             manager_history=hist,
         )
 
+        chip_strat = analysis_service.bind_chip_schedule(chip_strat, joint_res)
+
         # ----------------------------------------------------------------------
         # 4. Synchronized Transfer & Chip Decision (ONE Plan across surfaces)
         # ----------------------------------------------------------------------
@@ -531,7 +533,7 @@ class DecisionCardGenerator:
             )
 
         caveats = [
-            "Five-GW bounded search only. Value of unused chips and squad flexibility beyond the window is not estimated; do not treat this as a whole-season recommendation.",
+            f"{len(joint_res['decision_scope']['horizon_gameweeks'])}-GW supported projection search. Value beyond this window is not estimated; chip decisions are conditional, not whole-season optima.",
             "Monitor Friday press conference updates for confirmed starter status.",
             "Verify lineup locking prior to the official deadline window.",
         ]
@@ -572,6 +574,9 @@ class DecisionCardGenerator:
             "model_version": active_ver.get("version", "v1.0.0"),
             "projection_snapshot_id": target_df.attrs.get("snapshot_id"),
             "decision_scope": joint_res.get("decision_scope"),
+            "rival_scenarios": joint_res.get("rival_scenarios"),
+            "resource_frontier": joint_res.get("resource_frontier"),
+            "decision_readiness": joint_res.get("decision_readiness"),
             "ranked_options": [
                 {
                     "rank": i + 1,

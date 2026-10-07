@@ -232,7 +232,7 @@ const app = createApp({
         let badgeClass = "";
 
         if (chip.recommend) {
-          title = `Deploy Chip: ${chip.chip_display_name || 'Active Chip'}`;
+          title = `Conditional Chip Candidate: ${chip.chip_display_name || 'Active Chip'}`;
           badge = "Chip Deployment";
           badgeClass = "bg-amber-500/20 text-amber-400 border border-amber-500/40";
         } else if (isRoll) {

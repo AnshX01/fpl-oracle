@@ -225,6 +225,14 @@ def search_sequences(
         first_best = {}
         for candidate in selected:
             first_best.setdefault(candidate["first_chip"], candidate)
-        states = list(first_best.values())
+        # Keep a frontier that retains each available chip so the endpoint can
+        # report preservation break-even instead of silently spending everything.
+        retain_best = []
+        for resource in sorted(available):
+            candidate = next((row for row in selected if resource in row["remaining"]), None)
+            if candidate is not None and not any(candidate is row for row in first_best.values()):
+                if not any(candidate is row for row in retain_best):
+                    retain_best.append(candidate)
+        states = list(first_best.values()) + retain_best
         states += [v for v in selected if not any(v is kept for kept in states)][: max(0, beam_width - len(states))]
     return sorted(states, key=lambda s: s["score"], reverse=True)

@@ -64,3 +64,15 @@ def test_review_does_not_invent_calibration_or_autosub_evidence(configured_advis
     assert "Variance remains within calibrated" not in review["review_markdown"]
     assert "Autosub and bench hierarchy operated" not in review["review_markdown"]
     assert "not assessed" in review["review_markdown"]
+
+
+def test_recent_chat_history_returns_newest_window(configured_advisor):
+    import uuid
+
+    from fpl_oracle.data.store import data_store
+
+    session = str(uuid.uuid4())
+    for i in range(25):
+        data_store.add_chat_message(role="user", content=str(i), session_id=session)
+    messages = data_store.get_chat_history(session_id=session, limit=20)
+    assert [m["content"] for m in messages] == [str(i) for i in range(5, 25)]

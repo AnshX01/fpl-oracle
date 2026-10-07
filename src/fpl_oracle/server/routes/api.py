@@ -368,8 +368,8 @@ async def get_squad(manager_id: int | None = None):
                 "p90": round(float(s.get("p90", 0.0)), 2),
                 "exp_defcon_pts": round(float(s.get("exp_defcon_pts", 0.0)), 2),
                 "chance_of_playing": s.get("chance_of_playing", 100),
-                "status": s.get("status", "a"),
-                "news": s.get("news", ""),
+                "status": next((e.status for e in boot.elements if e.id == elem_id), "a"),
+                "news": next((e.news for e in boot.elements if e.id == elem_id), ""),
                 "news_quote": sig.get("quote", ""),
                 "source_url": sig.get("source_url", ""),
                 "news_mode": "gated_active"
@@ -402,8 +402,8 @@ async def get_squad(manager_id: int | None = None):
                 "p90": round(float(b.get("p90", 0.0)), 2),
                 "exp_defcon_pts": round(float(b.get("exp_defcon_pts", 0.0)), 2),
                 "chance_of_playing": b.get("chance_of_playing", 100),
-                "status": b.get("status", "a"),
-                "news": b.get("news", ""),
+                "status": next((e.status for e in boot.elements if e.id == b_elem_id), "a"),
+                "news": next((e.news for e in boot.elements if e.id == b_elem_id), ""),
                 "news_quote": b_sig.get("quote", ""),
                 "source_url": b_sig.get("source_url", ""),
                 "news_mode": "gated_active"
@@ -932,6 +932,18 @@ async def _selected_advice_context(pool, projections, boot, current_gw, target_g
         float(plan["remaining_bank"]) * 10,
         max(0, ft - (0 if joint["recommended_chip"] in ("wildcard", "freehit") else len(plan["transfers_in"]))),
     )
+
+
+@router.get("/league/scenarios")
+async def get_rival_scenarios():
+    """On-demand diagnostic scenarios. Not calibrated odds or known hidden moves."""
+    boot, _ = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    current, target = await fpl_client.get_current_and_next_gw()
+    target = target or 6
+    projections = await analysis_service.projections(target, 8, boot, fixtures)
+    joint, _, _, _ = await _selected_advice_context(projections[target], projections, boot, current, target)
+    return safe_json_serialize(await analysis_service.rival_scenarios(joint, projections, target))
 
 
 @router.get("/contingency/matrix")

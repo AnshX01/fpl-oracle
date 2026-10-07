@@ -1518,6 +1518,7 @@ class TransferOptimizer:
         stability_threshold: float = 0.3,
         num_mc_scenarios: int = 50,
         horizon_len: int | None = None,
+        evaluate_rival_scenarios: bool = False,
     ) -> dict[str, Any]:
         """
         Evaluates joint dynamic trajectory search combining multi-GW transfer planning
@@ -1543,26 +1544,10 @@ class TransferOptimizer:
         Incorporates dynamic chip retention opportunity costs computed from per-GW projections (G9)
         to ensure chips are only deployed when their marginal gain exceeds their option retention value.
         """
-        # 1. Base transfer optimization (HOLD case)
+        # The sequential search supplies the ordinary-transfer baseline too.
+        # Do not run an obsolete second beam/MC just to copy its overwritten fields.
         h_len = horizon_len or PLANNER_HORIZON
-        base_res = self.evaluate_transfer_options(
-            current_squad_df=current_squad_df,
-            player_pool_df=player_pool_df,
-            bank=bank,
-            free_transfers=free_transfers,
-            horizon_projections=horizon_projections,
-            current_gw=current_gw,
-            target_gw=target_gw,
-            locked_in_ids=locked_in_ids,
-            locked_out_ids=locked_out_ids,
-            excluded_team_ids=excluded_team_ids,
-            risk_preference=risk_preference,
-            include_price_gain=include_price_gain,
-            stability_threshold=stability_threshold,
-            num_mc_scenarios=num_mc_scenarios,
-            horizon_len=h_len,
-        )
-        hold_plan = dict(base_res["recommended_plan"])
+        hold_plan: dict[str, Any] = {}
 
         horizon_gws = [target_gw + offset for offset in range(h_len) if target_gw + offset <= 38]
         if not horizon_gws:
@@ -1620,7 +1605,34 @@ class TransferOptimizer:
             by_first.setdefault(state["first_chip"], state)
         if None not in by_first:
             raise ValueError("Sequential beam did not retain a hold branch")
+        # Expose data-derived option-value break-even, never a fabricated tail constant.
+        resource_frontier = []
+        best_score = max(state["score"] for state in sequences)
+        for retained_chip in legal_chips:
+            conserved = [state for state in sequences if retained_chip in state["remaining"]]
+            if conserved:
+                state = max(conserved, key=lambda row: row["score"])
+                resource_frontier.append(
+                    dict(
+                        chip=retained_chip,
+                        retained_through_gameweek=horizon_gws[-1],
+                        first_chip=state["first_chip"],
+                        retained_trajectory=state["history"],
+                        ending_bank_tenths=state["bank"],
+                        ending_free_transfers=state["ft"],
+                        discounted_horizon_cost_to_preserve=round(best_score - state["score"], 2),
+                        tail_value_break_even_at_horizon_end=round(
+                            (best_score - state["score"]) / (self.discount_factor ** len(horizon_gws)), 2
+                        ),
+                        interpretation="If this chip's later option value exceeds this threshold, the preserved-chip trajectory may beat current-window deployment. Later value is not estimated.",
+                    )
+                )
         hold_score = by_first[None]["score"]
+        rival_scenarios = None
+        if evaluate_rival_scenarios:
+            from fpl_oracle.league.scenarios import compare_plan_scenarios
+
+            rival_scenarios = compare_plan_scenarios(list(by_first.values()), rival_context, player_maps)
         candidates = []
         for chip, state in by_first.items():
             first = state["history"][0]
@@ -1729,9 +1741,23 @@ class TransferOptimizer:
                 "horizon_gameweeks": horizon_gws,
                 "global_optimum_proven": False,
                 "sequential_multi_chip_search": True,
+                "recompute_each_deadline": True,
+                "season_tail_value_estimated": False,
+                "supported_horizon_only": True,
                 "objective": "discounted_net_expected_points_with_bounded_balanced_rival_exposure",
             },
             "league_objective": league_objective,
+            "rival_scenarios": rival_scenarios,
+            "resource_frontier": resource_frontier,
+            "decision_readiness": {
+                "status": "conditional" if recommended_chip else "bounded_model_candidate",
+                "reasons": [
+                    "Future rival actions are hypothetical, not known",
+                    "No validated resource valuation beyond the supported projection window",
+                    "Reassess every deadline; future steps are contingent",
+                ],
+                "automatic_execution": False,
+            },
             "opportunity_costs_applied": chip_retention_values or {},
             "transfer_roadmap": self._generate_dynamic_roadmap(
                 recommended_plan["trajectory"], horizon_gws, clean_projections, player_maps

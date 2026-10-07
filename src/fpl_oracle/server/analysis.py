@@ -233,9 +233,24 @@ class AnalysisService:
                 )
         result["chip_plan_table"] = rows
         result["joint_schedule"] = {r["recommended_gw"]: r["code"] for r in rows}
+        result["set_1_deadline_warning"] = "Unused Set 1 chips expire at the GW19 deadline. This roadmap is conditional; unknown later option value is not a verified points loss."
         result["recommended_chip"] = joint["recommended_chip"]
         result["chip_comparison_table"] = joint["chip_comparison_table"]
         return result
+
+    async def rival_scenarios(self, joint, projections, target_gw):
+        from fpl_oracle.league.scenarios import compare_plan_scenarios
+
+        context = await self.league_context(target_gw)
+        maps = {
+            g: {int(r["element"]): r for r in frame.to_dict("records")}
+            for g, frame in projections.items()
+            if g in joint["decision_scope"]["horizon_gameweeks"]
+        }
+        states = [
+            dict(first_chip=c["chip_code"], history=c["plan"]["trajectory"]) for c in joint["chip_comparison_table"]
+        ]
+        return await asyncio.to_thread(compare_plan_scenarios, states, context, maps)
 
     async def joint_plan(self, **kwargs):
         from fpl_oracle.data.store import data_store
@@ -252,6 +267,14 @@ class AnalysisService:
         for name in ("locked_in_ids", "locked_out_ids", "excluded_team_ids"):
             kwargs.setdefault(name, set())
 
+        # Search all supported loaded weeks, with no fabricated season-tail forecast.
+        if "horizon_len" not in kwargs:
+            start = kwargs["target_gw"]
+            consecutive = 0
+            while start + consecutive in kwargs["horizon_projections"] and consecutive < 8:
+                consecutive += 1
+            kwargs["horizon_len"] = consecutive
+        kwargs.setdefault("evaluate_rival_scenarios", False)
         # Different surfaces attach different projection columns and numeric
         # dtypes to the same owned squad. Canonicalize before cache-keying so
         # they share one CPU plan instead of several identical concurrent beams.

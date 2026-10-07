@@ -649,7 +649,7 @@
       <div class="council-card p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 class="font-bold text-xl text-white">Transfers to make</h2>
+            <h2 class="font-bold text-xl text-white">Conditional transfer candidates</h2>
             <p class="text-xs text-zinc-400">Bounded legal transfer/chip search over the served planning horizon.</p>
           </div>
           <!-- 3-Way Plan Toggle -->
@@ -663,6 +663,14 @@
             <button @click="selectedPlanKey = 'plan_c'" :class="selectedPlanKey === 'plan_c' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition font-mono">
               <span>Plan C (Differential)</span>
             </button>
+          </div>
+        </div>
+
+        <div v-if="decisionCard?.resource_frontier?.length" class="p-3 border border-amber-600 rounded-lg text-xs">
+          <h3 class="font-bold">Future chip value: preservation alternatives</h3>
+          <p>Model-only break-even, not a forecast of later value. Reassess before every deadline.</p>
+          <div v-for="row in decisionCard.resource_frontier" :key="row.chip" class="mt-2">
+            {{ row.chip }}: preserving through GW{{ row.retained_through_gameweek }} costs {{ row.discounted_horizon_cost_to_preserve }} discounted xP in this window. Later value above {{ row.tail_value_break_even_at_horizon_end }} xP could reverse the choice.
           </div>
         </div>
 
