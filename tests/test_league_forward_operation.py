@@ -1,8 +1,11 @@
 import asyncio
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+
+import pytest
 
 from fpl_oracle.league.forward import score_pending
 
@@ -21,7 +24,9 @@ def test_scoring_uses_official_cumulative_score_not_double_subtracted_hits(tmp_p
         owner_manager_id=1,
         observed_manager_ids=[1, 2],
     )
-    (tmp_path / "forecast.json").write_text(json.dumps(record))
+    identifier = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+    forecast = tmp_path / f"{identifier}.json"
+    forecast.write_text(json.dumps(record))
     monkeypatch.setattr(
         fpl_client,
         "get_bootstrap_static",
@@ -31,7 +36,8 @@ def test_scoring_uses_official_cumulative_score_not_double_subtracted_hits(tmp_p
     )
     monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=([SimpleNamespace(finished=True)], False)))
 
-    async def history(manager):
+    async def history(manager, force_refresh=False):
+        assert force_refresh
         return SimpleNamespace(
             current=[
                 SimpleNamespace(event=6, total_points=50 if manager == 1 else 49, points=10, event_transfers_cost=8)
@@ -41,16 +47,26 @@ def test_scoring_uses_official_cumulative_score_not_double_subtracted_hits(tmp_p
     monkeypatch.setattr(fpl_client, "get_manager_history", history)
     summary = asyncio.run(score_pending(tmp_path))
     assert summary["count"] == 1
-    result = json.loads((tmp_path / "forecast.score.json").read_text())
+    result = json.loads(forecast.with_suffix(".score.json").read_text())
     assert result["outcome"] == 1
     assert result["scores"] == {"1": 50, "2": 49}
     assert asyncio.run(score_pending(tmp_path))["count"] == 1
+    result["brier"] = 0
+    forecast.with_suffix(".score.json").write_text(json.dumps(result))
+    with pytest.raises(ValueError, match="does not match"):
+        asyncio.run(score_pending(tmp_path))
+    forecast.write_text("{}")
+    with pytest.raises(ValueError, match="hash"):
+        asyncio.run(score_pending(tmp_path))
 
 
 def test_pending_finalization_does_not_score(tmp_path, monkeypatch):
     from fpl_oracle.api.fpl_client import fpl_client
 
-    (tmp_path / "forecast.json").write_text(json.dumps(dict(target_gameweek=6)))
+    record = dict(target_gameweek=6)
+    identifier = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+    forecast = tmp_path / f"{identifier}.json"
+    forecast.write_text(json.dumps(record))
     monkeypatch.setattr(
         fpl_client,
         "get_bootstrap_static",
@@ -59,7 +75,7 @@ def test_pending_finalization_does_not_score(tmp_path, monkeypatch):
         ),
     )
     assert asyncio.run(score_pending(tmp_path))["count"] == 0
-    assert not (tmp_path / "forecast.score.json").exists()
+    assert not forecast.with_suffix(".score.json").exists()
 
 
 def test_capture_reuses_immutable_index_without_fetching(tmp_path, monkeypatch):

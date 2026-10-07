@@ -5,6 +5,7 @@ are part of its eventual forecast error, never substituted counterfactual labels
 """
 
 import asyncio
+import copy
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -61,7 +62,7 @@ async def _capture_forward(target_gw, directory=None, samples=512):
     from fpl_oracle.server.analysis import analysis_service
 
     directory = directory or BASE_DIR / "data" / "league_forward"
-    profile = data_store.get_profile()
+    profile = copy.deepcopy(data_store.get_profile())
     if not profile.manager_id or not profile.target_league_id:
         return dict(status="unconfigured")
     # One immutable forecast per owner/league/GW, independent of legacy player freezes.
@@ -188,10 +189,26 @@ async def score_pending(directory=None):
         if path.name.endswith(".index.json") or path.name.endswith(".score.json"):
             continue
         record = json.loads(path.read_text())
+        digest = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+        if path.stem != digest:
+            raise ValueError("Stored forecast content hash mismatch")
         gw = record["target_gameweek"]
         destination = path.with_suffix(".score.json")
         if destination.exists():
-            scored.append(json.loads(destination.read_text()))
+            cached = json.loads(destination.read_text())
+            if cached.get("forecast_id") != digest or cached.get("source_kind") != "official_forward_scored":
+                raise ValueError("Stored outcome has wrong forecast provenance")
+            verified = score_forecast(
+                record,
+                dict(
+                    source_kind="official_finalized_manager_history",
+                    gameweek=gw,
+                    scores={int(k): v for k, v in cached["scores"].items()},
+                ),
+            )
+            if any(cached.get(key) != value for key, value in verified.items()):
+                raise ValueError("Stored outcome does not match frozen forecast")
+            scored.append(cached)
             continue
         event = next((e for e in boot.events if e.id == gw), None)
         if not event or not event.finished or not event.data_checked:
@@ -201,7 +218,7 @@ async def score_pending(directory=None):
             continue
         scores = {}
         for manager in record["observed_manager_ids"]:
-            history, hs = await fpl_client.get_manager_history(manager)
+            history, hs = await fpl_client.get_manager_history(manager, force_refresh=True)
             rows = [r for r in history.current if r.event <= gw]
             if hs or not any(r.event == gw for r in rows):
                 break
@@ -211,7 +228,9 @@ async def score_pending(directory=None):
                 record, dict(source_kind="official_finalized_manager_history", gameweek=gw, scores=scores)
             )
             result.update(forecast_id=path.stem, scored_at=datetime.now(UTC).isoformat(), scores=scores)
-            destination.write_text(json.dumps(result, indent=2))
+            temporary = destination.with_suffix(".tmp")
+            temporary.write_text(json.dumps(result, indent=2))
+            temporary.replace(destination)
             scored.append(result)
     summary = validation_summary(scored)
     (directory / "validation_summary.txt").write_text(json.dumps(summary, indent=2))
