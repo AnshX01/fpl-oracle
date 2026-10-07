@@ -174,12 +174,9 @@ def test_selling_price_math_invariants():
 
 
 def test_free_transfers_replay_with_chips_and_caps():
-    # GW1 start: 1 FT
-    # GW1: made 0 transfers -> banked = min(5, 1 - 0 + 1) = 2
-    # GW2: made 0 transfers -> banked = min(5, 2 + 1) = 3
-    # GW3: played wildcard, made 5 transfers -> wildcard preserves banked and adds 1 -> min(5, 3 + 1) = 4
-    # GW4: made 2 transfers -> remaining = 4 - 2 = 2 -> banked = min(5, 2 + 1) = 3
-    # GW5: made 5 transfers (with 3 hits) -> remaining = 0 -> banked = min(5, 0 + 1) = 1
+    # Initial deadline unlimited: next GW starts at one FT.
+    # GW2 hold banks two; GW3 wildcard preserves two; GW4 uses two and resets one.
+    # GW5 five transfers leaves one FT for GW6.
     current_history = [
         {"event": 1, "event_transfers": 0},
         {"event": 2, "event_transfers": 0},

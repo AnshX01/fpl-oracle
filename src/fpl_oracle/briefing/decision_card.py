@@ -28,7 +28,7 @@ logger = logging.getLogger("fpl_oracle.briefing.decision_card")
 class DecisionCardGenerator:
     """Generates a per-gameweek decision card unifying all tactical facets."""
 
-    async def generate_decision_card(self) -> dict[str, Any]:
+    async def generate_decision_card(self, include_league: bool = True) -> dict[str, Any]:
         game_state = await game_state_manager.get_game_state()
         effective_state = await manager_state_service.get_current_state()
         profile = data_store.get_profile()
@@ -118,16 +118,22 @@ class DecisionCardGenerator:
             chips_already_used=chips_used,
         )
 
-        chip_strat = await analysis_service.chip_strategy(
-            current_gw=effective_curr_gw,
-            current_squad_df=user_squad_df,
-            horizon_projections=horizon_proj,
-            fixtures=fixtures,
-            bootstrap=boot,
-            manager_history=hist,
-        )
+        if include_league:
+            chip_strat = await analysis_service.chip_strategy(
+                current_gw=effective_curr_gw,
+                current_squad_df=user_squad_df,
+                horizon_projections=horizon_proj,
+                fixtures=fixtures,
+                bootstrap=boot,
+                manager_history=hist,
+            )
 
-        chip_strat = analysis_service.bind_chip_schedule(chip_strat, joint_res)
+            chip_strat = analysis_service.bind_chip_schedule(chip_strat, joint_res)
+
+        else:
+            chip_strat = {
+                "set_1_deadline_warning": "First-set chips expire at GW19; value beyond the loaded projection window remains unresolved."
+            }
 
         # ----------------------------------------------------------------------
         # 4. Synchronized Transfer & Chip Decision (ONE Plan across surfaces)
@@ -293,7 +299,7 @@ class DecisionCardGenerator:
             "differential_players": [],
         }
 
-        win_prob_dict: dict[str, Any] | None = {
+        win_prob_dict: dict[str, Any] = {
             "status": "unconfigured",
             "p_first": None,
             "p_above_key_rivals": None,
@@ -302,7 +308,17 @@ class DecisionCardGenerator:
             "simulation_note": "No mini-league configured for Monte Carlo championship simulation.",
         }
 
-        if league_id:
+        if league_id and not include_league:
+            rivals_dict.update(
+                status="deferred",
+                posture_reason="Detailed league report is calculating separately; core plan already uses observed rival exposure.",
+            )
+            win_prob_dict.update(
+                status="deferred",
+                simulation_note="Detailed league simulation is separate from core advice. Probability not yet measured.",
+            )
+
+        if league_id and include_league:
             try:
                 is_gw_known = (curr_gw is not None) or (game_state.current_gw is not None)
                 standings_data = await league_standings_manager.get_league_standings(league_id)

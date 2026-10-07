@@ -43,3 +43,5 @@ A finite concurrent case matrix andfocused chat/pipeline/price/hit/constraint/re
 ## Windows solver compatibility correction
 
 Actual Windows advice requests failed with PuLP4.0: direct `LpVariable(..., cat=...)` is removed, and bundled CBC also changed. The project now pins tested `pulp==3.3.2`. Existing Windows environments are corrected by start.ps1, which performs an actual binary CBC solve before starting the server. Import-only checks are not proof of advice runtime readiness. The user's immediate correction is limited to installing PuLP3.3.2 in the existing .venv; .env and user data remain unchanged. Native Windows readback is still required.
+
+October 7 second checkpoint: durable shared core publication replaces the 90-second six-surface discard path. Official FT and consecutive-FH rules corrected. Detailed league/chip-calendar/conditional alternatives load separately. 55 focused Python tests, JavaScript publication test and official-input HTTP readback pass; native Windows readback pending. Long-term tail and empirical probability evidence remain unfinished.

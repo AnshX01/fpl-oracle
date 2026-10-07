@@ -111,6 +111,7 @@ const app = createApp({
       ],
 
       // Background Sync Pipeline
+      adviceStage: '',
       pipelineRunning: false,
       pipelineProgress: 0,
       pipelineCurrentStage: 'Ready',
@@ -924,37 +925,42 @@ const app = createApp({
       // Render basic data before expensive requests enter the event loop.
       await Promise.all([this.loadBasicSquad(refresh), this.loadGameState(), this.loadProfile()]);
       await this.$nextTick();
-      // Auxiliary diagnostics and contingency matrices must not hold ready
-      // coherent advice hostage. They carry no squad/card snapshot state.
-      void Promise.all([this.loadHealth(), this.loadContingencyMatrix(), this.loadPriceChanges(),
-        this.loadChecklist(), this.loadSystemStatus()]);
-      let timeout;
-      try {
-        await Promise.race([
-          Promise.all([this.loadDecisionCard(), this.loadSquad(), this.loadContingencyPlans(),
-            this.loadChips(), this.loadLeague(), this.loadBriefing()]),
-          new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Analysis timeout')), 90000); })
-        ]);
-      } catch (e) {
-        this.snapshotAbort.abort();
-        this.snapshotGeneration++;
-        this.snapshotBuffer = {};
-        this.decisionCardLoading = false; this.squadLoading = false; this.plansLoading = false;
-        this.squadError = "Current lineup analysis timed out. No recommended lineup is shown.";
-        this.decisionCardError = 'Analysis did not finish within 90 seconds. Check the latest server error; no current advice published.';
-        clearTimeout(timeout);
-        return;
-      }
-      clearTimeout(timeout);
-      if (new Set(this.servedRevisions).size > 1) {
-        this.squadData = {}; this.decisionCard = null; this.contingencyPlans = {};
-        this.chipData = {}; this.leagueData = {}; this.briefingData = {};
-        this.decisionCardError = 'Data changed during refresh. Refresh again for one coherent snapshot.';
-      } else {
-        // Publish all advice in one synchronous Vue update only after validation.
-        Object.assign(this, this.snapshotBuffer);
-      }
+      // One durable calculation publishes the core atomically. Browser latency
+      // cannot discard a completed squad merely because league/report is slower.
       this.snapshotBuffer = null;
+      this.decisionCardLoading = true; this.squadLoading = true; this.plansLoading = true;
+      this.adviceStage = "Starting shared calculation";
+      this.decisionCardError = null; this.squadError = null; this.plansError = null;
+      const generation = this.snapshotGeneration;
+      try {
+        const start = await fetch('/api/advice/start', {method:'POST'});
+        if (!start.ok) throw new Error(`Advice start HTTP ${start.status}`);
+        let job = await start.json();
+        if (!job.id) throw new Error(job.reason || 'Advice job could not start');
+        while (job.status === 'calculating') {
+          this.adviceStage = job.stage || 'Calculating shared advice';
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          if (generation !== this.snapshotGeneration) return;
+          const response = await fetch(`/api/advice/status/${job.id}`);
+          if (!response.ok) throw new Error(`Advice status HTTP ${response.status}`);
+          job = await response.json();
+        }
+        if (generation !== this.snapshotGeneration) return;
+        if (job.status !== 'ready' || !job.result) throw new Error(job.error || 'Advice calculation stopped');
+        Object.assign(this, {squadData:job.result.squadData, decisionCard:job.result.decisionCard,
+          contingencyPlans:job.result.contingencyPlans});
+      } catch (error) {
+        if (generation !== this.snapshotGeneration) return;
+        this.squadError = 'Current advice unavailable. Published team is still visible.';
+        this.decisionCardError = String(error);
+      } finally {
+        if (generation === this.snapshotGeneration) {
+          this.decisionCardLoading=false; this.squadLoading=false; this.plansLoading=false;
+        }
+      }
+      // Optional surfaces never veto or overwrite coherent ready core.
+      void Promise.all([this.loadHealth(), this.loadContingencyMatrix(), this.loadPriceChanges(),
+        this.loadChecklist(), this.loadSystemStatus(), this.loadChips(), this.loadLeague(), this.loadBriefing()]);
     }
   },
 

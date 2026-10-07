@@ -53,15 +53,18 @@ def compare_plan_scenarios(states, rival_context, maps, samples=512):
         return dict(status="unavailable", reason="No current relevant rival observations", scenarios=[])
     scenario_rows = []
     rng = np.random.default_rng(42)
+    from fpl_oracle.league.montecarlo import monte_carlo_simulator
+
     draws = {}
     for gw, pool in sorted(maps.items()):
-        # Shared player draws preserve shared ownership. Normal spread is a
-        # stress model from P10/P90, not a calibrated championship probability.
-        draws[gw] = {}
-        for e, row in sorted(pool.items()):
-            xp = float(row["expected_points"])
-            sd = max(0, float(row.get("p90", xp)) - float(row.get("p10", xp))) / 2.5631
-            draws[gw][e] = xp + rng.standard_normal(samples) * sd
+        # One shared player score and fixture/team clean-sheet event per trial.
+        # This fixes independent-Normal stress draws, but is still not empirical
+        # calibration of future manager decisions or season championship odds.
+        draws[gw] = {e: np.empty(samples) for e in pool}
+        for trial in range(samples):
+            outcome = monte_carlo_simulator.draw_gameweek(pool, rng)
+            for e, points in outcome.items():
+                draws[gw][e][trial] = points
 
     path_cache = {}
 
@@ -123,5 +126,5 @@ def compare_plan_scenarios(states, rival_context, maps, samples=512):
         samples=samples,
         scenarios=scenario_rows,
         source="latest_released_rival_rosters",
-        unresolved="Hidden upcoming choices, team-correlated outcomes and season-tail resources are not calibrated",
+        unresolved="Hidden upcoming choices, score distributions and season-tail resources are not empirically calibrated",
     )

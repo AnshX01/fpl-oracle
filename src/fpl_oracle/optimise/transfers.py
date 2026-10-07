@@ -270,13 +270,16 @@ class TransferOptimizer:
         chips_used = {getattr(c, "event", 0): getattr(c, "name", "") for c in getattr(history, "chips", [])}
 
         banked = 1
-        for entry in entries:
+        for index, entry in enumerate(entries):
             gw = getattr(entry, "event", 0)
             transfers_made = getattr(entry, "event_transfers", 0)
             active_chip = chips_used.get(gw, "")
 
-            if active_chip in ("wildcard", "freehit"):
-                banked = min(5, banked + 1)
+            if index == 0:
+                # Initial deadline is unlimited; the following week starts at one FT.
+                banked = 1
+            elif active_chip in ("wildcard", "freehit"):
+                banked = banked
             else:
                 if transfers_made <= banked:
                     banked = min(5, (banked - transfers_made) + 1)
@@ -535,7 +538,7 @@ class TransferOptimizer:
         transfers_count = len(t_in)
         if is_wildcard or initial_action.get("plan_type") in ("FREE_HIT", "WILDCARD"):
             hits0 = 0
-            next_ft0 = min(5, initial_ft + 1)
+            next_ft0 = initial_ft
         elif transfers_count <= initial_ft:
             hits0 = 0
             next_ft0 = min(5, (initial_ft - transfers_count) + 1)
@@ -582,7 +585,7 @@ class TransferOptimizer:
                     state["elements"] = set(initial_elements)
                     state["bank"] = initial_bank
                     state["purchase_prices"] = dict(initial_purchase_prices)
-                    state["banked_ft"] = min(5, initial_ft + 1)
+                    state["banked_ft"] = initial_ft
 
             discount = self.discount_factor**step_idx
             pmap = player_maps[gw]

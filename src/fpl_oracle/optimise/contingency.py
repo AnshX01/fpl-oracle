@@ -43,6 +43,7 @@ class ContingencyEngine:
         target_gw: int,
         risk_preference: str = "balanced",
         primary_plan: dict[str, Any] | None = None,
+        compute_alternatives: bool = True,
     ) -> dict[str, Any]:
         """
         Precomputes Plan A (Primary), Plan B (Injury/Press Conf Pivot), and Plan C (Differential/Price Pivot).
@@ -81,6 +82,29 @@ class ContingencyEngine:
             "trigger_condition": "Standard baseline execution (no late injuries or unexpected price swings).",
             "action_summary": plan_a_raw.get("recommendation_summary", "Roll transfer"),
         }
+
+        if not compute_alternatives:
+            pending = dict(
+                title="Conditional alternative not calculated",
+                plan_type="UNAVAILABLE",
+                transfers_count=0,
+                transfers_in=[],
+                transfers_out=[],
+                hits=0,
+                hit_cost=0,
+                net_expected_points=None,
+                delta_vs_plan_a=None,
+                trigger_condition="Run the detailed contingency analysis if conditions change.",
+                action_summary="No alternative recommendation published. Primary plan remains below.",
+            )
+            return dict(
+                plan_a=plan_a,
+                plan_b=dict(pending),
+                plan_c=dict(pending),
+                target_gameweek=target_gw,
+                free_transfers_available=free_transfers,
+                bank_millions=bank / 10,
+            )
 
         # Step 2: Plan B (Injury / Press Conference Contingency Pivot)
         # If Plan A transfers in a player or keeps a doubtful player, Plan B provides the immediate safe alternative.

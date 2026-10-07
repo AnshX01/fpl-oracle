@@ -121,6 +121,8 @@ def search_sequences(
             # Global top-two pruning unfairly denied conserved chips future use.
             if id(state) in restructure_ids:
                 for chip in sorted(remaining & {"freehit", "wildcard"}):
+                    if chip == "freehit" and state["history"] and state["history"][-1].get("chip") == "freehit":
+                        continue
                     budget = state["bank"] + sum(
                         optimizer.calculate_selling_price(state["purchase"][e], int(maps[gw][e]["value"]))
                         for e in state["elements"]
@@ -180,7 +182,7 @@ def search_sequences(
                 count = len(move["transfers_in"])
                 special = chip in {"freehit", "wildcard"}
                 hits = 0 if special else max(0, count - state["ft"])
-                next_ft = min(5, state["ft"] + 1) if special else min(5, max(0, state["ft"] - count) + 1)
+                next_ft = state["ft"] if special else min(5, max(0, state["ft"] - count) + 1)
                 gross, captain, formation = evaluate_lineup(new, maps[gw], risk, chip)
                 net = gross - hits * optimizer.hit_penalty
                 record = dict(

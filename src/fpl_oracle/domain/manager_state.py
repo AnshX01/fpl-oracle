@@ -163,8 +163,8 @@ class ManagerStateService:
         """
         Replay free transfer banking from Gameweek 1 through current round.
         Rules verified for 2026/27:
-        - Starts at 1 FT in GW1.
-        - Wildcard and Free Hit preserve banked FTs and grant +1 FT for next round.
+        - Initial deadline unlimited; one FT is granted for the following gameweek.
+        - Wildcard and Free Hit preserve banked FTs unchanged for the next round.
         - Normal gameweek: remaining = max(0, banked - transfers_made), next_banked = min(5, remaining + 1).
         """
         if not history_current:
@@ -181,15 +181,18 @@ class ManagerStateService:
                 chips_used_map[ev] = nm.lower()
 
         banked = 1
-        for entry in entries:
+        for index, entry in enumerate(entries):
             gw = getattr(entry, "event", 0) if not isinstance(entry, dict) else entry.get("event", 0)
             transfers_made = (
                 getattr(entry, "event_transfers", 0) if not isinstance(entry, dict) else entry.get("event_transfers", 0)
             )
             active_chip = chips_used_map.get(gw, "")
 
-            if active_chip in ("wildcard", "freehit"):
-                banked = min(5, banked + 1)
+            if index == 0:
+                # Initial deadline is unlimited; the following week starts at one FT.
+                banked = 1
+            elif active_chip in ("wildcard", "freehit"):
+                banked = banked
             else:
                 if transfers_made <= banked:
                     remaining = banked - transfers_made

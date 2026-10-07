@@ -57,7 +57,7 @@
     <p>{{ basicSquadData.is_stale ? 'Cached published team; refresh failed or in progress.' : 'Published picks, not optimized recommendations.' }}</p>
     <div data-testid="basic-starters"><span v-for="p in basicSquadData.starters" :key="p.element" class="inline-block p-2">{{ p.web_name }}</span></div>
     <div data-testid="basic-bench">Bench: <span v-for="p in basicSquadData.bench" :key="p.element" class="inline-block p-2">{{ p.web_name }}</span></div>
-    <p>Source data as of: {{ basicSquadData.data_as_of || 'Unknown' }}. Fresh advice: calculating separately.</p>
+    <p>Source data as of: {{ basicSquadData.data_as_of || 'Unknown' }}. Fresh advice: {{ adviceStage || "calculating separately" }}.</p>
   </section>
   <!-- ========================================== -->
   <!-- TOP OPERATIONAL HEADER                     -->
@@ -207,9 +207,9 @@
         <div v-if="nextDecision.card && nextDecision.card.chip && nextDecision.card.chip.recommend" class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold">CHIP</span>
-            <span><strong>Chip plan:</strong> Deploy <strong>{{ nextDecision.card.chip.chip_display_name }}</strong> this gameweek (+{{ nextDecision.card.chip.gain_vs_hold }} xP over hold baseline).</span>
+            <span><strong>Conditional chip candidate:</strong> <strong>{{ nextDecision.card.chip.chip_display_name }}</strong> inside the loaded window (+{{ nextDecision.card.chip.gain_vs_hold }} next-GW xP). Later chip value remains unresolved.</span>
           </div>
-          <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 font-mono text-[10px]">Action Required</span>
+          <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 font-mono text-[10px]">Review first</span>
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -683,7 +683,7 @@
             </div>
             <div class="flex items-center gap-3 font-mono text-xs">
               <span class="text-zinc-400">Net Expected Points:</span>
-              <span class="font-bold text-emerald-400 text-base">{{ activePlan.net_expected_points }} pts</span>
+              <span class="font-bold text-emerald-400 text-base">{{ activePlan.net_expected_points == null ? "Not calculated" : activePlan.net_expected_points + " pts" }}</span>
             </div>
           </div>
           <div class="text-xs text-zinc-300 flex items-center gap-2">

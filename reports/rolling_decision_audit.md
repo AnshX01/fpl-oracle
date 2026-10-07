@@ -31,3 +31,13 @@ Preserving through GW13 costs: WC 15.27 discounted points, FH 1.95, TC 5.88, BB 
 - Native Windows readback and durable publication still pending for this batch.
 
 Sources: https://fantasy.premierleague.com/api/bootstrap-static/ ; https://fantasy.premierleague.com/api/fixtures/ ; current official manager picks/history read through the project's API client. No FPL transfer or chip was submitted.
+
+## October 7 usability/rules checkpoint
+
+The user's native Windows report showed completed squad/chips/plans/briefing requests being discarded when a six-surface UI barrier hit 90 seconds. The core publication now runs as one coalesced background job. The UI polls progress and publishes squad, card and primary plan together only after captain/source/profile validation. Detailed league simulation, separate chip-calendar search and conditional backups are not required to display the ready core. Unmeasured/deferred results stay labeled, not fabricated. A real official-input HTTP run completed in 51.51 seconds on the development host; this does not certify Windows laptop timing.
+
+Official rules corrections: the initial unlimited deadline grants one FT for the following GW, not a banked extra FT; Wildcard/Free Hit retain saved FTs unchanged; consecutive Free Hits are forbidden including GW19/20. Source: https://www.premierleague.com/en/news/4661029 . These rules changed the eight-week model candidate edge to about +7.3 discounted xP, still conditional on unresolved value beyond GW13.
+
+Forward league evidence utilities reject post-deadline freezes, synthetic provenance and non-finalized outcomes. Counterfactual plans are not scored against the actual manager outcome. Reliability bins/Brier are descriptive, never sufficient for promotion. No calibrated claim is enabled and this utility is not yet wired into automatic deadline capture/scoring. Legacy GW6 prediction freeze remains unchanged.
+
+Validation:26 joint/live/screenshot/rules/forward/rival/solver tests passed19.18s;29 surface/fault/job tests passed63.87s;JavaScript durable publication/hung-auxiliary/stale-generation regression passed;ruff clean;mypy77files passed. Desktop/mobile browser pixel replay inspected. Full-suite attempt exceeded bounded execution time without completion;no full-suite certification. Native Windows readback, automated forward evidence, and supported season-tail opportunity evaluation remain open.

@@ -87,6 +87,23 @@ class ChatRequest(BaseModel):
     session_id: str | None = "default"
 
 
+@router.post("/advice/start")
+async def start_advice_publication():
+    from fpl_oracle.server.advice_job import advice_publisher, profile_key
+
+    return safe_json_serialize(advice_publisher.start(profile_key(data_store.get_profile())))
+
+
+@router.get("/advice/status/{job_id}")
+async def get_advice_publication(job_id: str):
+    from fpl_oracle.server.advice_job import advice_publisher
+
+    state = advice_publisher.public()
+    if state.get("id") != job_id:
+        raise HTTPException(status_code=404, detail="Advice job unavailable or superseded")
+    return safe_json_serialize(state)
+
+
 @router.get("/health")
 async def get_health():
     game_state = await game_state_manager.get_game_state()
@@ -863,7 +880,7 @@ async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple
 
 
 @router.get("/contingency/plans")
-async def get_contingency_plans():
+async def get_contingency_plans(detailed: bool = True):
     """Returns precomputed Plan A, Plan B (injury pivot), and Plan C (differential/price pivot)."""
     boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
@@ -901,6 +918,7 @@ async def get_contingency_plans():
         target_gw=target_gw,
         risk_preference=profile.risk_preference or "balanced",
         primary_plan=joint["recommended_plan"],
+        compute_alternatives=detailed,
     )
     plans["stale"] = is_stale or state.is_stale
     plans["is_stale"] = plans["stale"]
