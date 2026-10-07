@@ -1,0 +1,53 @@
+Command: .venv\Scripts\python.exe scripts/check_feature_parity.py
+Exit Code: 0
+
+Output:
+======================================================================
+FPL Oracle — Feature Parity Verification on Real Multi-Season Data
+======================================================================
+
+Canonical Features Checked: 62
+----------------------------------------------------------------------
+Row 1: Colliding IDs (David Raya vs Fabio Vieira)    | Status: PASSED
+Row 2: Transferred Player (Cole Palmer)              | Status: PASSED
+Row 3: New Player 2026-27 (Christos Tzolis)          | Status: PASSED
+Row 4: DGW Fixture 1 (David Raya)                    | Status: PASSED
+Row 5: DGW Fixture 2 (Context Features & Days Rest)  | Status: PASSED (Allow-list gated)
+Row 6: Refreshed Snapshot GW7 (David Raya)           | Status: PASSED
+Row 7: Refreshed Snapshot GW7 (Cole Palmer)          | Status: PASSED
+Row 8: Blank Gameweek (is_bgw=1 & Non-null)          | Status: PASSED
+----------------------------------------------------------------------
+Summary: 8 rows compared across 62 features (434 evaluations).
+Allow-List Entries: 8 (Locked, verified intra-gameweek isolation).
+Overall Result: 100% PARITY PASSED
+======================================================================
+
+
+
+Command: .venv\Scripts\python.exe -m pytest tests/test_feature_parity_values.py -v
+Exit Code: 0
+
+Output:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 10 items
+
+tests/test_feature_parity_values.py::test_feature_parity_all_62_features_exact_values PASSED [ 10%]
+tests/test_feature_parity_values.py::test_feature_parity_schema_and_types PASSED [ 20%]
+tests/test_feature_parity_values.py::test_feature_parity_rest_days_computation PASSED [ 30%]
+tests/test_feature_parity_values.py::test_real_multi_season_parity_colliding_ids PASSED [ 40%]
+tests/test_feature_parity_values.py::test_real_multi_season_parity_transferred_player PASSED [ 50%]
+tests/test_feature_parity_values.py::test_real_multi_season_parity_new_player PASSED [ 60%]
+tests/test_feature_parity_values.py::test_real_parity_blank_gameweek PASSED [ 70%]
+tests/test_feature_parity_values.py::test_real_parity_double_gameweek PASSED [ 80%]
+tests/test_feature_parity_values.py::test_real_parity_refreshed_live_snapshot PASSED [ 90%]
+tests/test_feature_parity_values.py::test_parity_allow_list_minimal_and_locked PASSED [100%]
+
+============================= 10 passed in 17.12s =============================
+
+

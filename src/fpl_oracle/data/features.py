@@ -586,7 +586,7 @@ class FeatureEngineering:
             team_matches = (
                 df[["season", "round", "team", "kickoff_time"]]
                 .dropna(subset=["kickoff_time"])
-                .drop_duplicates(subset=["season", "round", "team"])
+                .drop_duplicates(subset=["season", "team", "kickoff_time"])
                 .copy()
             )
             team_matches["_dt"] = pd.to_datetime(team_matches["kickoff_time"], errors="coerce")
@@ -598,13 +598,25 @@ class FeatureEngineering:
                 .fillna(7.0)
             )
 
-            rest_map = {
+            rest_map_ko = {
+                (str(r["season"]), str(r["team"]), str(r["kickoff_time"])): float(r["days_rest"])
+                for _, r in team_matches.iterrows()
+            }
+            rest_map_rnd = {
                 (str(r["season"]), int(r["round"]), str(r["team"])): float(r["days_rest"])
                 for _, r in team_matches.iterrows()
             }
             df["days_rest"] = [
-                rest_map.get(
-                    (str(row.get("season", "2025-26")), int(row.get("round", 1)), str(row.get("team", "Unknown"))), 7.0
+                rest_map_ko.get(
+                    (
+                        str(row.get("season", "2025-26")),
+                        str(row.get("team", "Unknown")),
+                        str(row.get("kickoff_time", "")),
+                    ),
+                    rest_map_rnd.get(
+                        (str(row.get("season", "2025-26")), int(row.get("round", 1)), str(row.get("team", "Unknown"))),
+                        7.0,
+                    ),
                 )
                 for _, row in df.iterrows()
             ]

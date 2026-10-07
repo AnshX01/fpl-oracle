@@ -63,10 +63,10 @@ class PlayerIdentityResolver:
         Load historical records and construct canonical identity mappings.
         """
         if history_df is not None and not history_df.empty:
-            self._history_df = history_df.copy()
+            self._history_df = history_df.reset_index(drop=True)
         elif self.master_csv_path.exists():
             try:
-                self._history_df = pd.read_csv(self.master_csv_path)
+                self._history_df = pd.read_csv(self.master_csv_path).reset_index(drop=True)
             except Exception as e:
                 logger.error("Failed to load master history CSV from %s: %s", self.master_csv_path, e)
                 self._history_df = pd.DataFrame()
@@ -83,7 +83,7 @@ class PlayerIdentityResolver:
             if "norm_name" not in df.columns:
                 df["norm_name"] = df["name"].apply(normalize_player_name)
 
-            for idx, row in df.iterrows():
+            for idx, (_, row) in enumerate(df.iterrows()):
                 season = str(row.get("season", ""))
                 try:
                     elem_id = int(row.get("element", 0))
