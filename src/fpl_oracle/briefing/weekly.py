@@ -10,13 +10,11 @@ from typing import Any
 import pandas as pd
 
 from fpl_oracle.api.fpl_client import fpl_client
-from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.store import data_store
 from fpl_oracle.domain.manager_state import manager_state_service
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
-from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
 from fpl_oracle.server.analysis import analysis_service
@@ -96,8 +94,7 @@ class WeeklyBriefingGenerator:
                 user_squad_df,
                 risk_preference=profile.risk_preference or "balanced",
             )
-        chip_res = await asyncio.to_thread(
-            chip_planner.generate_chip_strategy,
+        chip_res = await analysis_service.chip_strategy(
             current_gw=effective_curr_gw,
             current_squad_df=user_squad_df,
             horizon_projections=horizon_proj,
@@ -114,7 +111,7 @@ class WeeklyBriefingGenerator:
         imminent_falls = [p for p in price_preds if p["direction"] in ["FALL_IMMINENT", "LIKELY_FALL"]][:3]
 
         # 5. News & Injuries
-        news_signals = await news_analyzer.get_player_news_signals(boot)
+        news_signals = await analysis_service.news_signals(boot, target_gw)
         squad_elem_ids = set(user_squad_df["element"].tolist())
         squad_news = [s for s in news_signals if s["element_id"] in squad_elem_ids]
 

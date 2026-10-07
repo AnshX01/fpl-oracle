@@ -246,6 +246,7 @@ def test_wildcard_zero_hits_and_persistence(small_reference_squad_and_pool):
     wc_candidate = next((c for c in res["chip_comparison_table"] if c["chip"] == "wildcard"), None)
     assert wc_candidate is not None
     assert wc_candidate["action"] == "DEPLOY"
+    assert wc_candidate["plan"]["transfers_count"] == len(wc_candidate["plan"]["transfers_in"])
 
     traj = wc_candidate["plan"].get("trajectory", [])
     assert len(traj) >= 2

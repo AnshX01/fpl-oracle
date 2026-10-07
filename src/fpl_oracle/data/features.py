@@ -256,6 +256,11 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
 class FeatureEngineering:
     def __init__(self):
         self._schema_hash = FEATURE_SCHEMA_HASH
+        self._live_context_key = None
+        self._live_resolver_history = None
+        self._live_history = None
+        self._live_team_map = None
+        self._live_player_stats = {}
 
     @property
     def schema_hash(self) -> str:
@@ -961,20 +966,46 @@ class FeatureEngineering:
                             if tid not in last_team_kickoff or ko_dt > last_team_kickoff[tid]:
                                 last_team_kickoff[tid] = ko_dt
 
-        # If history_df not provided, attempt to load master_history.csv
+        # Reuse GW-invariant history/identity/form only while its exact local
+        # source revision and current player identities remain unchanged.
+        cache_key = None
         if history_df is None or history_df.empty:
             master_csv = HISTORICAL_DIR / "master_history.csv"
             if master_csv.exists():
-                try:
-                    history_df = pd.read_csv(master_csv)
-                except Exception as e:
-                    logger.warning("Could not read master_history.csv for live features: %s", e)
+                stat = master_csv.stat()
+                cache_key = (
+                    stat.st_mtime_ns,
+                    stat.st_size,
+                    tuple(
+                        (e.id, e.code, e.first_name, e.second_name, e.now_cost, e.element_type)
+                        for e in bootstrap.elements
+                    ),
+                )
+                if cache_key == self._live_context_key:
+                    history_df = self._live_history
+                else:
+                    try:
+                        history_df = pd.read_csv(master_csv)
+                    except Exception as e:
+                        logger.warning("Could not read master_history.csv for live features: %s", e)
 
         team_history_map: dict[Any, dict[str, float]] = {}
-
+        reuse_context = (
+            cache_key is not None
+            and cache_key == self._live_context_key
+            and player_identity_resolver._history_df is self._live_resolver_history
+        )
         if history_df is not None and not history_df.empty:
-            player_identity_resolver.load(history_df=history_df, bootstrap_elements=bootstrap.elements)
-            team_history_map = self._build_team_history_map(history_df)
+            if reuse_context:
+                team_history_map = self._live_team_map
+            else:
+                player_identity_resolver.load(history_df=history_df, bootstrap_elements=bootstrap.elements)
+                team_history_map = self._build_team_history_map(history_df)
+                self._live_player_stats = {}
+                self._live_context_key = cache_key
+                self._live_resolver_history = player_identity_resolver._history_df
+                self._live_history = history_df
+                self._live_team_map = team_history_map
 
             # Supplement last_team_kickoff from history_df if fixture kickoff not available
             if "team" in history_df.columns and "kickoff_time" in history_df.columns:
@@ -1006,18 +1037,17 @@ class FeatureEngineering:
             elif elem.chance_of_playing_next_round is not None:
                 cop = float(elem.chance_of_playing_next_round)
 
-            # Look up player match history for authentic rolling stats via canonical identity
-            full_name = f"{elem.first_name} {elem.second_name}".strip()
-            p_hist = player_identity_resolver.get_player_history(
-                elem_id=elem.id,
-                season="2026-27",
-                full_name=full_name,
-                web_name=elem.web_name,
-                code=elem.code,
-            )
-
-            # Shared canonical transformer ensures 100% train/serve parity!
-            player_stats = compute_player_rolling_stats(p_hist, pos_code=pos_code, val_m=val_m)
+            # Rolling player history is identical across the forecast horizon.
+            if reuse_context and elem.id in self._live_player_stats:
+                player_stats = dict(self._live_player_stats[elem.id])
+            else:
+                full_name = f"{elem.first_name} {elem.second_name}".strip()
+                p_hist = player_identity_resolver.get_player_history(
+                    elem_id=elem.id, season="2026-27", full_name=full_name, web_name=elem.web_name, code=elem.code
+                )
+                player_stats = compute_player_rolling_stats(p_hist, pos_code=pos_code, val_m=val_m)
+                if cache_key is not None:
+                    self._live_player_stats[elem.id] = dict(player_stats)
 
             # Blank Gameweek Handling
             if not fixtures_for_team:

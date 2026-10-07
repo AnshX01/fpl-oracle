@@ -129,7 +129,14 @@ async def freeze_predictions(
     preds_df = horizon.get(target_gw)
     if preds_df is None:
         raise ValueError("Missing target projection snapshot")
-    snapshot = {"snapshot_id": preds_df.attrs.get("snapshot_id"), "inputs": preds_df.attrs.get("snapshot_inputs")}
+    snapshot = {
+        "snapshot_id": preds_df.attrs.get("snapshot_id"),
+        "inputs": (
+            json.loads(preds_df.attrs["snapshot_inputs_json"])
+            if "snapshot_inputs_json" in preds_df.attrs
+            else preds_df.attrs.get("snapshot_inputs")
+        ),
+    }
     if not snapshot["snapshot_id"] or not snapshot["inputs"]:
         raise ValueError("Projection snapshot provenance missing")
 

@@ -106,3 +106,79 @@ def test_chat_team_uses_canonical_bank_and_zero_ft(configured_advisor):
     result = asyncio.run(tool_executor._tool_get_my_team({}))
     assert result["bank_millions"] == state.bank_millions
     assert result["free_transfers"] == 0 and len(result["squad"]) == 15
+
+
+def test_joint_plan_canonicalizes_surface_columns_and_coalesces(configured_advisor, monkeypatch):
+    from unittest.mock import Mock
+
+    from fpl_oracle.optimise.transfers import transfer_optimizer
+    from fpl_oracle.server.analysis import AnalysisService
+
+    state, pool, horizon = configured_advisor
+    service = AnalysisService()
+    monkeypatch.setattr(service, "league_context", AsyncMock(return_value=None))
+    solve = Mock(return_value={"recommended_plan": {}})
+    monkeypatch.setattr(transfer_optimizer, "evaluate_joint_transfer_and_chip_plan", solve)
+    first = state.to_squad_dataframe()
+    second = first.copy()
+    second["expected_points"] = 0.0
+    second["p10"] = 0.0
+    second = second.reindex(columns=list(reversed(second.columns)))
+
+    async def run():
+        kwargs = dict(
+            player_pool_df=pool,
+            horizon_projections=horizon,
+            current_gw=5,
+            target_gw=6,
+            free_transfers=1,
+            available_chips=[],
+        )
+        await asyncio.gather(
+            service.joint_plan(current_squad_df=first, bank=18.0, **kwargs),
+            service.joint_plan(current_squad_df=second, bank=18, **kwargs),
+        )
+
+    asyncio.run(run())
+    assert solve.call_count == 1
+
+
+def test_chip_strategy_and_news_reuse(configured_advisor, monkeypatch):
+    import hashlib
+    import json
+    from unittest.mock import Mock
+
+    from fpl_oracle.api.models import BootstrapStatic
+    from fpl_oracle.chips.planner import chip_planner
+    from fpl_oracle.server.analysis import AnalysisService
+
+    state, pool, horizon = configured_advisor
+    service = AnalysisService()
+    solve = Mock(return_value={"chip_plan_table": []})
+    monkeypatch.setattr(chip_planner, "generate_chip_strategy", solve)
+    boot = BootstrapStatic.model_validate({"elements": [], "teams": [], "events": [], "element_types": []})
+    service._news_key = (
+        hashlib.sha256(json.dumps(boot.model_dump(mode="json"), sort_keys=True).encode()).hexdigest(),
+        6,
+    )
+    service._news_signals = [{"element_id": 1}]
+
+    async def run():
+        kwargs = dict(
+            current_gw=5,
+            current_squad_df=state.to_squad_dataframe(),
+            horizon_projections=horizon,
+            fixtures=[],
+            bootstrap=boot,
+            manager_history=None,
+        )
+        second = dict(kwargs)
+        second["current_squad_df"] = kwargs["current_squad_df"].iloc[::-1].reset_index(drop=True)
+        second["current_squad_df"]["value"] = second["current_squad_df"]["value"].astype(float)
+        await asyncio.gather(service.chip_strategy(**kwargs), service.chip_strategy(**second))
+        news = await service.news_signals(boot, 6)
+        news[0]["element_id"] = 99
+        assert service._news_signals[0]["element_id"] == 1
+
+    asyncio.run(run())
+    assert solve.call_count == 1

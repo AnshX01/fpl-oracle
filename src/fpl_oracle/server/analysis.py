@@ -18,9 +18,12 @@ class AnalysisService:
         self._news_lock = asyncio.Lock()
         self._news_key = None
         self._news_at = 0.0
+        self._news_signals = []
         self._snapshots = {}
         self._plan_tasks = {}
         self._plans = {}
+        self._chip_tasks = {}
+        self._chip_plans = {}
         self._league_context_cache = {}
 
     async def invalidate(self):
@@ -29,6 +32,7 @@ class AnalysisService:
             projection_engine._cache.clear()
             self._snapshots.clear()
             self._plans.clear()
+            self._chip_plans.clear()
             self._league_context_cache.clear()
             self._news_at = 0.0
             self._news_key = None
@@ -42,7 +46,7 @@ class AnalysisService:
             news_key = (hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest(), start_gw)
             async with self._news_lock:
                 if self._news_key != news_key or time.monotonic() - self._news_at >= 300:
-                    await news_analyzer.get_player_news_signals(bootstrap, target_gw=start_gw)
+                    self._news_signals = await news_analyzer.get_player_news_signals(bootstrap, target_gw=start_gw)
                     self._news_key = news_key
                     self._news_at = time.monotonic()
             inputs = {
@@ -94,13 +98,12 @@ class AnalysisService:
                     }
                 }
             result = {}
-            import copy
-
             snapshot = self._snapshots[key]
+            serialized_inputs = json.dumps(snapshot["inputs"], sort_keys=True, default=str)
             for g, df in snapshot["projections"].items():
                 frame = df.copy(deep=True)
                 frame.attrs["snapshot_id"] = key
-                frame.attrs["snapshot_inputs"] = copy.deepcopy(snapshot["inputs"])
+                frame.attrs["snapshot_inputs_json"] = serialized_inputs
                 frame.attrs["snapshot_created_at"] = snapshot["created_at"]
                 result[g] = frame
             return result
@@ -141,6 +144,65 @@ class AnalysisService:
         self._league_context_cache = {key: (time.monotonic(), context)}
         return context
 
+    async def news_signals(self, bootstrap, target_gw):
+        # Advice surfaces use the same news evidence that built their projections.
+        key = (
+            hashlib.sha256(json.dumps(bootstrap.model_dump(mode="json"), sort_keys=True).encode()).hexdigest(),
+            target_gw,
+        )
+        if key == self._news_key:
+            import copy
+
+            return copy.deepcopy(self._news_signals)
+        return await news_analyzer.get_player_news_signals(bootstrap, target_gw=target_gw)
+
+    async def chip_strategy(self, **kwargs):
+        import copy
+
+        from fpl_oracle.chips.planner import chip_planner
+
+        squad = kwargs["current_squad_df"]
+        prices = [
+            {
+                "element": int(r["element"]),
+                "selling_price": float(r.get("selling_price", r["value"])),
+                "value": float(r["value"]),
+            }
+            for r in squad.sort_values("element").to_dict("records")
+        ]
+        key = hashlib.sha256(
+            json.dumps(
+                {
+                    "squad": sorted(squad["element"].tolist()),
+                    "prices": prices,
+                    "snapshots": {
+                        g: df.attrs.get("snapshot_id") or df.to_json()
+                        for g, df in kwargs["horizon_projections"].items()
+                    },
+                    "current_gw": kwargs["current_gw"],
+                    "history": kwargs.get("manager_history"),
+                },
+                sort_keys=True,
+                default=str,
+            ).encode()
+        ).hexdigest()
+        if key in self._chip_plans:
+            return copy.deepcopy(self._chip_plans[key])
+        if key not in self._chip_tasks:
+            self._chip_tasks[key] = asyncio.create_task(
+                asyncio.to_thread(chip_planner.generate_chip_strategy, **kwargs)
+            )
+        task = self._chip_tasks[key]
+        try:
+            result = await asyncio.shield(task)
+            self._chip_plans[key] = result
+            if len(self._chip_plans) > 8:
+                self._chip_plans.pop(next(iter(self._chip_plans)))
+            return copy.deepcopy(result)
+        finally:
+            if task.done():
+                self._chip_tasks.pop(key, None)
+
     async def joint_plan(self, **kwargs):
         from fpl_oracle.data.store import data_store
         from fpl_oracle.optimise.transfers import transfer_optimizer
@@ -156,9 +218,26 @@ class AnalysisService:
         for name in ("locked_in_ids", "locked_out_ids", "excluded_team_ids"):
             kwargs.setdefault(name, set())
 
+        # Different surfaces attach different projection columns and numeric
+        # dtypes to the same owned squad. Canonicalize before cache-keying so
+        # they share one CPU plan instead of several identical concurrent beams.
+        target = kwargs["horizon_projections"][kwargs["target_gw"]]
+        owned = kwargs["current_squad_df"]
+        identity_columns = [c for c in ("element", "purchase_price", "selling_price", "price_provenance") if c in owned]
+        squad = owned[identity_columns].copy()
+        projection_columns = [
+            c for c in target.columns if c not in ("element", "selling_price", "purchase_price", "price_provenance")
+        ]
+        by_element = target.set_index("element")
+        for column in projection_columns:
+            squad[column] = squad["element"].map(by_element[column])
+        kwargs["current_squad_df"] = squad.sort_values("element").reset_index(drop=True)
+        kwargs["bank"] = int(kwargs["bank"])
+        kwargs["free_transfers"] = int(kwargs["free_transfers"])
+
         def normalize(value):
             if isinstance(value, pd.DataFrame):
-                return value.to_json(orient="split", double_precision=10)
+                return value.reindex(sorted(value.columns), axis=1).to_json(orient="split", double_precision=10)
             if isinstance(value, dict):
                 return {str(k): normalize(v) for k, v in value.items()}
             if isinstance(value, set):
@@ -180,7 +259,9 @@ class AnalysisService:
             self._plan_tasks[key] = task
         try:
             result = await asyncio.shield(task)
-            self._plans = {key: result}
+            self._plans[key] = result
+            if len(self._plans) > 8:
+                self._plans.pop(next(iter(self._plans)))
             import copy
 
             return copy.deepcopy(result)

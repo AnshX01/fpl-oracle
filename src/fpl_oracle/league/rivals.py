@@ -163,8 +163,23 @@ class RivalAnalyzer:
 
         sem = asyncio.Semaphore(5)
 
-        # Inspect prior GW for observed picks (since upcoming GW picks are private pre-deadline)
-        eval_gw = max(1, current_gw - 1) if current_gw > 1 else 1
+        # Use official released-event state, not caller-specific current/target
+        # arithmetic. After GW5 is finalized but GW6 has not started, every
+        # surface must inspect GW5, never GW4 or private GW6 picks.
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        released = []
+        for event in bootstrap.events:
+            try:
+                deadline = datetime.fromisoformat(event.deadline_time.replace("Z", "+00:00"))
+                if event.finished or deadline <= now:
+                    released.append(event.id)
+            except (ValueError, TypeError):
+                if event.finished:
+                    released.append(event.id)
+        eval_gw = max(released) if released else max(1, current_gw - 1)
+        target_gw = next((e.id for e in bootstrap.events if e.is_next), current_gw)
 
         async def fetch_rival_details(entry_dict):
             entry_id = entry_dict["entry"]
@@ -217,9 +232,10 @@ class RivalAnalyzer:
                             "chips_remaining": chip_status["chips_remaining"],
                             "set1_wildcard_expired": chip_status["set1_wildcard_expired"],
                             "picks_status": "OBSERVED_PRIOR_GW",
+                            "observed_gameweek": eval_gw,
                             "upcoming_transfers_known": False,
                             "transfers_visibility_note": (
-                                f"Rival transfers for Gameweek {current_gw} are private until the deadline. "
+                                f"Rival transfers for Gameweek {target_gw} are private until the deadline. "
                                 f"Picks reflect confirmed lineups from Gameweek {eval_gw}."
                             ),
                             "squad": squad_elements,

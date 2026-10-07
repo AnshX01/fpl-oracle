@@ -13,7 +13,6 @@ import pandas as pd
 
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
-from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.store import data_store
 from fpl_oracle.domain.manager_state import manager_state_service
 from fpl_oracle.league.montecarlo import monte_carlo_simulator
@@ -21,7 +20,6 @@ from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.ml.model_registry import model_registry
-from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.server.analysis import analysis_service
 
 logger = logging.getLogger("fpl_oracle.briefing.decision_card")
@@ -106,8 +104,7 @@ class DecisionCardGenerator:
             chips_already_used=chips_used,
         )
 
-        chip_strat = await asyncio.to_thread(
-            chip_planner.generate_chip_strategy,
+        chip_strat = await analysis_service.chip_strategy(
             current_gw=effective_curr_gw,
             current_squad_df=user_squad_df,
             horizon_projections=horizon_proj,
@@ -528,7 +525,7 @@ class DecisionCardGenerator:
         # News summary note
         news_count = 0
         try:
-            news_signals = await news_analyzer.get_player_news_signals(boot, target_gw=target_gw)
+            news_signals = await analysis_service.news_signals(boot, target_gw)
             news_count = len(news_signals)
         except Exception:
             pass

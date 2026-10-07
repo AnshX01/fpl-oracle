@@ -620,8 +620,7 @@ async def get_chip_strategy():
 
     squad_df, _, _ = await _get_effective_user_squad(pool_df, boot)
 
-    res = await asyncio.to_thread(
-        chip_planner.generate_chip_strategy,
+    res = await analysis_service.chip_strategy(
         current_gw=curr_gw or 5,
         current_squad_df=squad_df,
         horizon_projections=horizon_proj,
@@ -867,6 +866,19 @@ async def get_contingency_plans():
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
     profile = data_store.get_profile()
 
+    state = await manager_state_service.get_current_state()
+    joint = await analysis_service.joint_plan(
+        current_squad_df=user_squad_df,
+        player_pool_df=target_df,
+        bank=bank,
+        free_transfers=free_transfers,
+        horizon_projections=horizon_proj,
+        current_gw=curr_gw or 1,
+        target_gw=target_gw,
+        available_chips=state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2,
+        chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
+        chips_already_used=[c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
+    )
     plans = await asyncio.to_thread(
         contingency_engine.generate_contingency_plans,
         current_squad_df=user_squad_df,
@@ -877,6 +889,7 @@ async def get_contingency_plans():
         current_gw=curr_gw or 5,
         target_gw=target_gw,
         risk_preference=profile.risk_preference or "balanced",
+        primary_plan=joint["recommended_plan"],
     )
     plans["stale"] = is_stale
     plans["is_stale"] = is_stale

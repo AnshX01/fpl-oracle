@@ -13,6 +13,8 @@ const app = createApp({
       theme: 'dark',
       servedRevisions: [],
       snapshotBuffer: null,
+      snapshotGeneration: 0,
+      snapshotAbort: null,
       refreshPromise: null,
 
       // Navigation: 4 Everyday Destinations
@@ -394,12 +396,14 @@ const app = createApp({
   },
 
   methods: {
-    publishSnapshot(field, value) {
+    publishSnapshot(field, value, generation = this.snapshotGeneration) {
+      if (generation !== this.snapshotGeneration) return;
       if (this.snapshotBuffer) this.snapshotBuffer[field] = value;
       else this[field] = value;
     },
-    async fetchSnapshot(path) {
-      const response = await fetch(path);
+    async fetchSnapshot(path, generation = this.snapshotGeneration) {
+      const response = await fetch(path, this.snapshotAbort ? {signal: this.snapshotAbort.signal} : {});
+      if (generation !== this.snapshotGeneration) throw new Error('Superseded snapshot');
       const revision = response.headers.get('X-FPL-Revision');
       if (revision !== null) this.servedRevisions.push(revision);
       return response;
@@ -651,12 +655,14 @@ const app = createApp({
     },
 
     async loadSquad() {
+      const generation = this.snapshotGeneration;
       this.squadLoading = true;
       this.squadError = null;
       try {
-        const res = await this.fetchSnapshot('/api/squad');
+        const res = await this.fetchSnapshot('/api/squad', generation);
         if (res.ok) {
-          this.publishSnapshot('squadData', await res.json());
+          this.publishSnapshot('squadData', await res.json(), generation);
+          if (generation !== this.snapshotGeneration) return;
           const loaded = this.snapshotBuffer?.squadData || this.squadData;
           if (!Array.isArray(loaded.starters) || !Array.isArray(loaded.bench)) {
             this.squadData = {};
@@ -667,28 +673,33 @@ const app = createApp({
           this.squadError = `Squad unavailable (HTTP ${res.status})`;
         }
       } catch (e) {
+        if (generation !== this.snapshotGeneration) return;
         this.squadData = {};
         this.squadError = "Network error loading squad.";
       } finally {
+        if (generation !== this.snapshotGeneration) return;
         this.squadLoading = false;
       }
     },
 
     async loadContingencyPlans() {
+      const generation = this.snapshotGeneration;
       this.plansLoading = true;
       this.plansError = null;
       try {
-        const res = await this.fetchSnapshot('/api/contingency/plans');
+        const res = await this.fetchSnapshot('/api/contingency/plans', generation);
         if (res.ok) {
-          this.publishSnapshot('contingencyPlans', await res.json());
+          this.publishSnapshot('contingencyPlans', await res.json(), generation);
         } else {
           this.contingencyPlans = {};
           this.plansError = `Plans unavailable (HTTP ${res.status})`;
         }
       } catch (e) {
+        if (generation !== this.snapshotGeneration) return;
         this.contingencyPlans = {};
         this.plansError = "Network error loading transfer plans.";
       } finally {
+        if (generation !== this.snapshotGeneration) return;
         this.plansLoading = false;
       }
     },
@@ -711,35 +722,42 @@ const app = createApp({
     },
 
     async loadChips() {
+      const generation = this.snapshotGeneration;
       try {
-        const res = await this.fetchSnapshot('/api/chips');
-        if (res.ok) this.publishSnapshot('chipData', await res.json());
-      } catch (e) {}
+        const res = await this.fetchSnapshot('/api/chips', generation);
+        if (res.ok) this.publishSnapshot('chipData', await res.json(), generation);
+      } catch (e) {
+        if (generation !== this.snapshotGeneration) return;}
     },
 
     async loadLeague() {
+      const generation = this.snapshotGeneration;
       try {
-        const res = await this.fetchSnapshot('/api/league');
-        if (res.ok) this.publishSnapshot('leagueData', await res.json());
-      } catch (e) {}
+        const res = await this.fetchSnapshot('/api/league', generation);
+        if (res.ok) this.publishSnapshot('leagueData', await res.json(), generation);
+      } catch (e) {
+        if (generation !== this.snapshotGeneration) return;}
     },
 
     async loadDecisionCard() {
+      const generation = this.snapshotGeneration;
       this.decisionCardLoading = true;
       this.decisionCardError = null;
       try {
-        const res = await this.fetchSnapshot('/api/decision-card');
+        const res = await this.fetchSnapshot('/api/decision-card', generation);
         if (res.ok) {
-          this.publishSnapshot('decisionCard', await res.json());
+          this.publishSnapshot('decisionCard', await res.json(), generation);
         } else {
           this.decisionCard = null;
           this.decisionCardError = `Decision card unavailable (HTTP ${res.status})`;
         }
       } catch (e) {
+        if (generation !== this.snapshotGeneration) return;
         console.warn('Failed to fetch decision card:', e);
         this.decisionCard = null;
         this.decisionCardError = "Network error loading decision card.";
       } finally {
+        if (generation !== this.snapshotGeneration) return;
         this.decisionCardLoading = false;
       }
     },
@@ -761,10 +779,12 @@ const app = createApp({
     },
 
     async loadBriefing() {
+      const generation = this.snapshotGeneration;
       try {
-        const res = await this.fetchSnapshot('/api/briefing');
-        if (res.ok) this.publishSnapshot('briefingData', await res.json());
-      } catch (e) {}
+        const res = await this.fetchSnapshot('/api/briefing', generation);
+        if (res.ok) this.publishSnapshot('briefingData', await res.json(), generation);
+      } catch (e) {
+        if (generation !== this.snapshotGeneration) return;}
     },
 
     async loadReview() {
@@ -883,8 +903,10 @@ const app = createApp({
       try { await this.refreshPromise; } finally { this.refreshPromise = null; }
     },
     async refreshSnapshot(refresh = false) {
+      this.snapshotGeneration++;
       this.servedRevisions = [];
       this.snapshotBuffer = {};
+      this.snapshotAbort = new AbortController();
       this.squadData = {};
       this.decisionCard = null;
       this.contingencyPlans = {};
@@ -895,21 +917,28 @@ const app = createApp({
       // Render basic data before expensive requests enter the event loop.
       await Promise.all([this.loadBasicSquad(refresh), this.loadGameState(), this.loadProfile()]);
       await this.$nextTick();
-      await Promise.all([
-        this.loadHealth(),
-        this.loadGameState(),
-        this.loadProfile(),
-        this.loadDecisionCard(),
-        this.loadSquad(),
-        this.loadContingencyPlans(),
-        this.loadContingencyMatrix(),
-        this.loadPriceChanges(),
-        this.loadChips(),
-        this.loadLeague(),
-        this.loadBriefing(),
-        this.loadChecklist(),
-        this.loadSystemStatus()
-      ]);
+      // Auxiliary diagnostics and contingency matrices must not hold ready
+      // coherent advice hostage. They carry no squad/card snapshot state.
+      void Promise.all([this.loadHealth(), this.loadContingencyMatrix(), this.loadPriceChanges(),
+        this.loadChecklist(), this.loadSystemStatus()]);
+      let timeout;
+      try {
+        await Promise.race([
+          Promise.all([this.loadDecisionCard(), this.loadSquad(), this.loadContingencyPlans(),
+            this.loadChips(), this.loadLeague(), this.loadBriefing()]),
+          new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Analysis timeout')), 90000); })
+        ]);
+      } catch (e) {
+        this.snapshotAbort.abort();
+        this.snapshotGeneration++;
+        this.snapshotBuffer = {};
+        this.decisionCardLoading = false; this.squadLoading = false; this.plansLoading = false;
+        this.squadError = "Current lineup analysis timed out. No recommended lineup is shown.";
+        this.decisionCardError = 'Analysis did not finish within 90 seconds. Check the latest server error; no current advice published.';
+        clearTimeout(timeout);
+        return;
+      }
+      clearTimeout(timeout);
       if (new Set(this.servedRevisions).size > 1) {
         this.squadData = {}; this.decisionCard = null; this.contingencyPlans = {};
         this.chipData = {}; this.leagueData = {}; this.briefingData = {};

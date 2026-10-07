@@ -42,21 +42,26 @@ class ContingencyEngine:
         current_gw: int,
         target_gw: int,
         risk_preference: str = "balanced",
+        primary_plan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Precomputes Plan A (Primary), Plan B (Injury/Press Conf Pivot), and Plan C (Differential/Price Pivot).
         Returns concrete triggers, replacement actions, and expected points delta vs Plan A.
         """
         # Step 1: Base Plan A (using TransferOptimizer)
-        base_res = transfer_optimizer.evaluate_transfer_options(
-            current_squad_df=current_squad_df,
-            player_pool_df=player_pool_df,
-            bank=bank,
-            free_transfers=free_transfers,
-            horizon_projections=horizon_projections,
-            current_gw=current_gw,
-            target_gw=target_gw,
-            risk_preference=risk_preference,
+        base_res: dict[str, Any] = (
+            {"recommended_plan": primary_plan}
+            if primary_plan is not None
+            else transfer_optimizer.evaluate_transfer_options(
+                current_squad_df=current_squad_df,
+                player_pool_df=player_pool_df,
+                bank=bank,
+                free_transfers=free_transfers,
+                horizon_projections=horizon_projections,
+                current_gw=current_gw,
+                target_gw=target_gw,
+                risk_preference=risk_preference,
+            )
         )
 
         plan_a_raw = base_res.get("recommended_plan", {})
@@ -83,7 +88,11 @@ class ContingencyEngine:
         current_elements = set(current_squad_df["element"].tolist())
         target_gw_df = horizon_projections.get(target_gw, player_pool_df)
 
-        if plan_a_raw.get("transfers_in"):
+        if (
+            plan_a_raw.get("transfers_in")
+            and plan_a_raw.get("plan_type") not in ("WILDCARD", "FREE_HIT", "FREEHIT")
+            and len(plan_a_raw["transfers_in"]) <= 2
+        ):
             transferred_in_elem = plan_a_raw["transfers_in"][0]["element"]
             transferred_in_name = plan_a_raw["transfers_in"][0]["web_name"]
             # Exclude the primary target to find the 2nd best alternative (the backup pivot)

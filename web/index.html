@@ -454,6 +454,9 @@
         </div>
       </div>
 
+      <div v-if="!hasLoadedSquad" class="p-4 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400">
+        {{ squadError || (squadLoading ? 'Current lineup analysis is calculating. Published picks are shown above.' : 'Current lineup unavailable. No recommended lineup is being shown.') }}
+      </div>
       <!-- FOOTBALL PITCH CANVAS -->
       <div class="pitch-canvas p-4 md:p-6 min-h-[560px] flex flex-col justify-between relative">
         <div class="pitch-markings">
@@ -647,7 +650,7 @@
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 class="font-bold text-xl text-white">Transfers to make</h2>
-            <p class="text-xs text-zinc-400">Mathematical MILP optimization over 5 gameweeks with tactical contingencies.</p>
+            <p class="text-xs text-zinc-400">Bounded legal transfer/chip search over the served planning horizon.</p>
           </div>
           <!-- 3-Way Plan Toggle -->
           <div class="flex rounded-lg bg-zinc-950 p-1 border border-zinc-800 text-xs font-bold">
@@ -733,28 +736,28 @@
       <!-- PRICE CHANGE RADAR -->
       <div class="council-card p-5 space-y-3">
         <h3 class="font-bold text-sm text-white flex items-center justify-between">
-          <span>Price Change Radar (Tonight's Midnight Market Predictor)</span>
+          <span>Price Change Radar (Heuristic Transfer Momentum)</span>
           <span class="text-xs font-normal text-zinc-400">Transfer velocity & net ownership changes</span>
         </h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- Rises -->
           <div class="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800">
-            <div class="text-xs font-bold text-emerald-400 mb-2">Likely Price Rises Tonight (+£0.1m)</div>
+            <div class="text-xs font-bold text-emerald-400 mb-2">Positive transfer momentum (unverified price timing)</div>
             <div class="space-y-2">
               <div v-for="p in priceChanges.rises.slice(0, 5)" :key="p.element_id" class="flex justify-between items-center text-xs">
                 <span class="font-medium text-white">{{ p.web_name }}</span>
-                <span class="font-mono text-emerald-400 font-semibold">{{ p.direction }}</span>
+                <span class="font-mono text-emerald-400 font-semibold">{{ p.direction.replace("_IMMINENT", "_SIGNAL") }}</span>
               </div>
               <div v-if="priceChanges.rises.length === 0" class="text-xs text-zinc-500 italic">No imminent rises flagged.</div>
             </div>
           </div>
           <!-- Falls -->
           <div class="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800">
-            <div class="text-xs font-bold text-red-400 mb-2">Likely Price Falls Tonight (-£0.1m)</div>
+            <div class="text-xs font-bold text-red-400 mb-2">Negative transfer momentum (unverified price timing)</div>
             <div class="space-y-2">
               <div v-for="p in priceChanges.falls.slice(0, 5)" :key="p.element_id" class="flex justify-between items-center text-xs">
                 <span class="font-medium text-white">{{ p.web_name }}</span>
-                <span class="font-mono text-red-400 font-semibold">{{ p.direction }}</span>
+                <span class="font-mono text-red-400 font-semibold">{{ p.direction.replace("_IMMINENT", "_SIGNAL") }}</span>
               </div>
               <div v-if="priceChanges.falls.length === 0" class="text-xs text-zinc-500 italic">No imminent falls flagged.</div>
             </div>
@@ -783,14 +786,14 @@
         <!-- Simulation Win Probability Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-            <div class="text-xs text-zinc-400 font-semibold">Championship Win Probability</div>
+            <div class="text-xs text-zinc-400 font-semibold">Selected-Rival Horizon Probability</div>
             <div class="text-3xl font-black text-emerald-400 font-mono mt-1">
               {{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}
             </div>
-            <div class="text-[10px] text-zinc-500 mt-1">Monte Carlo (1,000 season runs)</div>
+            <div class="text-[10px] text-zinc-500 mt-1">Conditional horizon scenarios, not a season-winning forecast</div>
           </div>
           <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-            <div class="text-xs text-zinc-400 font-semibold">Expected Final Rank</div>
+            <div class="text-xs text-zinc-400 font-semibold">Expected Horizon Rank</div>
             <div class="text-3xl font-black text-white font-mono mt-1">
               {{ leagueData.simulation?.expected_final_rank != null ? '#' + leagueData.simulation.expected_final_rank.toFixed(1) : '—' }}
             </div>
@@ -1119,9 +1122,9 @@
         </div>
 
         <div class="p-3 rounded-lg bg-zinc-950 border border-zinc-800 space-y-1">
-          <div class="text-zinc-400">Background Scheduler: <strong class="text-emerald-400">{{ systemStatus.scheduler?.running ? 'Running' : 'Active' }}</strong></div>
-          <div class="text-zinc-400">Verified Test Suite: <strong class="text-emerald-400">{{ systemStatus.tests?.summary || 'Passing' }}</strong></div>
-          <div class="text-zinc-400">CBC MILP Solver: <strong class="text-emerald-400">Operational</strong></div>
+          <div class="text-zinc-400">Background Scheduler: <strong class="text-emerald-400">{{ systemStatus.scheduler?.running === true ? 'Running' : systemStatus.scheduler?.running === false ? 'Stopped' : 'Unknown' }}</strong></div>
+          <div class="text-zinc-400">Verified Test Suite: <strong class="text-emerald-400">{{ systemStatus.tests?.summary || 'Not verified this session' }}</strong></div>
+          <div class="text-zinc-400">CBC MILP Solver: <strong class="text-emerald-400">{{ systemStatus.solver?.status || 'Not verified this session' }}</strong></div>
         </div>
       </div>
     </div>

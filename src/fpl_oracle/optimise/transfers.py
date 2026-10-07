@@ -1642,6 +1642,7 @@ class TransferOptimizer:
                 hits=first["hits"],
                 hit_cost=first["hit_cost"],
                 remaining_bank=first["bank"] / 10,
+                transfers_count=len(first["transfers_in"]),
                 next_banked_ft=first["banked_ft"],
                 horizon_net_xp=round(sum(r["net_xp"] for r in state["history"]), 2),
                 horizon_gross_xp=round(sum(r["gross_xp"] for r in state["history"]), 2),
