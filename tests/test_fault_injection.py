@@ -25,8 +25,9 @@ from fpl_oracle.server.main import app
 @pytest.fixture(autouse=True)
 def seeded_upstream(monkeypatch):
     """Fault tests exercise transport/cache fallbacks, not live-network warmup."""
-    from fpl_oracle.api.cache import cache_manager
     from types import SimpleNamespace
+
+    from fpl_oracle.api.cache import cache_manager
     from fpl_oracle.data.store import data_store
 
     monkeypatch.setattr(
