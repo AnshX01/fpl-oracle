@@ -230,6 +230,7 @@ class ContingencyEngine:
         bank: float,
         free_transfers: int,
         bootstrap: BootstrapStatic,
+        lineup: dict | None = None,
     ) -> list[dict[str, Any]]:
         """
         Calculates the full 'What if Player X is ruled out' replacement matrix for all starters.
@@ -238,7 +239,7 @@ class ContingencyEngine:
         2. Direct emergency transfer: best replacement on market within budget.
         3. Recommendation: TRUST_BENCH vs EXECUTE_TRANSFER vs MONITOR.
         """
-        lineup_res = lineup_optimizer.select_lineup_and_captain(squad_df)
+        lineup_res = lineup or lineup_optimizer.select_lineup_and_captain(squad_df)
         starters = lineup_res["starters"]
         bench = lineup_res["bench"]
 
@@ -266,9 +267,12 @@ class ContingencyEngine:
                 # First outfield bench player that maintains a legal formation (3+ DEF, 2+ MID, 1+ FWD)
                 sub_row = None
                 for _, b_row in bench_outfield.iterrows():
-                    # Check hypothetical formation if b_row replaces starter_row
-                    sub_row = b_row
-                    break
+                    counts = starters["position"].value_counts().to_dict()
+                    counts[pos] -= 1
+                    counts[b_row["position"]] = counts.get(b_row["position"], 0) + 1
+                    if counts.get("DEF", 0) >= 3 and counts.get("MID", 0) >= 2 and counts.get("FWD", 0) >= 1:
+                        sub_row = b_row
+                        break
 
             sub_name = sub_row["web_name"] if sub_row is not None else "None"
             sub_xp = round(float(sub_row["expected_points"]), 2) if sub_row is not None else 0.0
@@ -283,6 +287,8 @@ class ContingencyEngine:
                 & (~player_pool_df["element"].isin(squad_df["element"]))
                 & (player_pool_df["value"] <= avail_budget)
             ].sort_values(by="expected_points", ascending=False)
+            other_teams = squad_df[squad_df["element"] != elem_id]["team"].value_counts()
+            candidates = candidates[candidates["team"].map(other_teams).fillna(0) < 3]
 
             best_rep = candidates.iloc[0] if not candidates.empty else None
             rep_name = best_rep["web_name"] if best_rep is not None else "None"
@@ -321,10 +327,11 @@ class ContingencyEngine:
                     "emergency_replacement": rep_name,
                     "emergency_cost": round((best_rep["value"] / 10.0), 1) if best_rep is not None else 0.0,
                     "emergency_expected_points": rep_xp,
+                    "emergency_net_expected_points": transfer_net_xp,
                     "transfer_gain_vs_bench": transfer_gain_vs_bench,
                     "action_verdict": verdict,
                     "verdict_reason": verdict_reason,
-                    "wait_vs_commit": "Commit transfer early only if target faces imminent price rise tonight; otherwise wait for Friday press conferences.",
+                    "wait_vs_commit": "Wait for verified availability news; transfer momentum does not establish a price-change time.",
                 }
             )
 
@@ -448,6 +455,7 @@ class ContingencyEngine:
         bootstrap: BootstrapStatic,
         game_state_data: dict[str, Any],
         chips_status: dict[str, Any],
+        lineup: dict | None = None,
     ) -> list[dict[str, Any]]:
         """
         Generates 5-point operational pre-deadline audit.
@@ -456,7 +464,7 @@ class ContingencyEngine:
         elem_meta = {e.id: e for e in bootstrap.elements}
 
         # 1. Starters Fitness
-        lineup = lineup_optimizer.select_lineup_and_captain(squad_df)
+        lineup = lineup or lineup_optimizer.select_lineup_and_captain(squad_df)
         doubtful = []
         for _, s in lineup["starters"].iterrows():
             e = elem_meta.get(int(s["element"]))
@@ -471,7 +479,7 @@ class ContingencyEngine:
                     "item": "Starting XI Fitness & Availability",
                     "status": "PASS",
                     "badge": "Fit",
-                    "detail": "All 11 starters are 100% available with zero injury or suspension flags.",
+                    "detail": "No current official injury/suspension flags for the selected starters. Availability and starting minutes are not guaranteed.",
                 }
             )
         else:
@@ -497,20 +505,20 @@ class ContingencyEngine:
         )
 
         # 3. Bench Autosub Hierarchy
-        b1 = lineup["bench"].iloc[1] if len(lineup["bench"]) > 1 else lineup["bench"].iloc[0]
+        b1 = lineup["bench"][lineup["bench"]["position"] != "GKP"].iloc[0]
         checklist.append(
             {
                 "item": "Autosub Hierarchy Order",
                 "status": "PASS",
                 "badge": f"1st Sub: {b1['web_name']}",
-                "detail": f"Highest projected outfield sub {b1['web_name']} ({round(float(b1['expected_points']), 2)} xP) occupies position 1 on the bench.",
+                "detail": f"Selected first outfield sub {b1['web_name']} ({round(float(b1['expected_points']), 2)} xP) occupies position 1 on the bench.",
             }
         )
 
         # 4. Chip Set 1 Expiry Horizon
-        curr_gw = game_state_data.get("current_gameweek", 5)
+        curr_gw = game_state_data.get("next_gw") or game_state_data.get("current_gw") or 5
         rem_set_1 = chips_status.get("set_1_remaining", [])
-        gws_to_19 = max(0, 19 - curr_gw)
+        gws_to_19 = max(0, 20 - curr_gw)
         if len(rem_set_1) > gws_to_19:
             checklist.append(
                 {
@@ -526,7 +534,7 @@ class ContingencyEngine:
                     "item": "Chip Set 1 Expiry Deadline",
                     "status": "INFO",
                     "badge": f"{len(rem_set_1)} Chips / {gws_to_19} GWs",
-                    "detail": f"Set 1 chips remaining: {', '.join(rem_set_1)}. Hard cutoff at GW19 deadline (January 2, 2027).",
+                    "detail": f"Set 1 chips remaining: {', '.join(rem_set_1)}. Cutoff is the GW19 deadline; consult the current official deadline.",
                 }
             )
         else:

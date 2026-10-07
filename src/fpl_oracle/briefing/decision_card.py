@@ -268,10 +268,8 @@ class DecisionCardGenerator:
                 if chip_rec_now
                 else "No chip deployment recommended this gameweek. Save chips for confirmed DGWs."
             ),
-            "next_best_window": (
-                chip_strat.get("chip_plan_table", [{}])[0].get("recommended_gw")
-                if chip_strat.get("chip_plan_table")
-                else None
+            "next_best_window": next(
+                (step["gameweek"] for step in rec_plan["trajectory"][1:] if step.get("chip")), None
             ),
             "gain_vs_hold": round(float(best_cand.get("gross_gain_vs_hold", 0.0)), 1) if chip_rec_now else 0.0,
             "set_1_deadline_warning": chip_strat.get("set_1_deadline_warning"),
@@ -444,6 +442,7 @@ class DecisionCardGenerator:
                                 rival_squads=rivals_res.get("rival_squads", []),
                                 projections_df=target_df,
                                 horizon_gws=5,
+                                seed=42,
                                 projections_by_gw=horizon_proj,
                             )
 
@@ -501,7 +500,7 @@ class DecisionCardGenerator:
                                     ),
                                     "expected_rank": round(float(mc_res.get("expected_final_rank", 1.0)), 1),
                                     "mc_se": round(float(mc_res.get("win_prob_se", 0.5)), 2),
-                                    "simulation_note": "Joint Bernoulli Monte Carlo simulation (correlated clean-sheets & shared player draws).",
+                                    "simulation_note": "Owned squad held with observed prior picks/captain; selected-rival horizon scenario, not selected transfer plan or season title odds.",
                                 }
             except Exception as e:
                 logger.error(f"[DecisionCard] Error during rival/Monte Carlo simulation: {e}")
@@ -532,6 +531,7 @@ class DecisionCardGenerator:
             )
 
         caveats = [
+            "Five-GW bounded search only. Value of unused chips and squad flexibility beyond the window is not estimated; do not treat this as a whole-season recommendation.",
             "Monitor Friday press conference updates for confirmed starter status.",
             "Verify lineup locking prior to the official deadline window.",
         ]
@@ -547,7 +547,7 @@ class DecisionCardGenerator:
             pass
 
         what_changed = (
-            f"Projections calibrated across {news_count} verified team-news signals and opponent difficulty ratings."
+            f"{news_count} team-news signals loaded; only gated, reconciled inputs may affect projections."
             if news_count > 0
             else "Projections refreshed against latest fixture and availability states."
         )

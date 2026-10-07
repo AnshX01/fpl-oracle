@@ -34,7 +34,7 @@ class PostGameweekReviewer:
         elem_map = {e.id: e for e in boot.elements}
 
         # Manager history and picks
-        actual_points = 0
+        actual_points = None
         overall_rank = None
         gw_rank = None
         picks_data = []
@@ -73,15 +73,16 @@ class PostGameweekReviewer:
             "## Key Learnings & Diagnostic Findings",
         ]
         learnings = [
-            f"Gameweek {target_gw} actual score of {actual_points} pts recorded against competitive mini-league.",
-            "Autosub and bench hierarchy operated as contingency failsafe.",
-            "Variance remains within calibrated [P10, P90] confidence bands.",
+            f"Official GW{target_gw} points: {actual_points}"
+            if actual_points is not None
+            else "Official score unavailable.",
+            "No stored pre-deadline decision snapshot was loaded for this review. Prediction accuracy, autosub impact and risk compliance are not assessed.",
         ]
         for kl in learnings:
             md_lines.append(f"- {kl}")
         md_lines.append("")
         md_lines.append("## Contingency & Risk Assessment")
-        md_lines.append("Lineup decisions executed within pre-deadline risk thresholds.")
+        md_lines.append("Pre-deadline decisions and prediction intervals not verified for this gameweek.")
         review_md = "\n".join(md_lines)
 
         return {
@@ -94,7 +95,7 @@ class PostGameweekReviewer:
             "squad_picks": picks_data,
             "summary_headline": f"Gameweek {target_gw} Post-Match Debrief",
             "key_learnings": learnings,
-            "contingency_assessment": "Lineup decisions executed within pre-deadline risk thresholds.",
+            "contingency_assessment": "Pre-deadline decisions and prediction intervals not verified for this gameweek.",
             "review_markdown": review_md,
             "data_as_of": datetime.now(UTC).isoformat(),
         }

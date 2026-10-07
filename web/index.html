@@ -241,7 +241,7 @@
               Captain: (C) {{ nextDecision.card.captain.web_name }} ({{ nextDecision.card.captain.expected_points }} xP)
             </span>
             <span v-if="nextDecision.card && nextDecision.card.rivals && nextDecision.card.rivals.status === 'configured'" class="text-purple-300 px-2 py-1 rounded bg-purple-950/40 border border-purple-800/50">
-              Posture: {{ nextDecision.card.rivals.posture }} ({{ nextDecision.card.win_prob.p_first }}% Win)
+              Posture: {{ nextDecision.card.rivals.posture }} ({{ nextDecision.card.win_prob.p_first }}% horizon, owned squad held)
             </span>
           </div>
         </div>
@@ -310,7 +310,7 @@
 
           <div class="text-[11px] text-zinc-400 flex items-center justify-between">
             <span>Starting Formation: <strong class="text-white">{{ squadData.formation || '—' }}</strong></span>
-            <span>Confidence: <strong class="text-emerald-400">{{ squadData.confidence != null ? squadData.confidence + '%' : '—' }}</strong></span>
+            <span>Confidence: <strong class="text-emerald-400">{{ squadData.confidence != null ? squadData.confidence : '—' }}</strong></span>
           </div>
         </div>
 
@@ -365,7 +365,7 @@
 
           <div class="text-xs text-zinc-300 flex items-center justify-between font-mono pt-1">
             <span>Total Points: <strong class="text-emerald-400">{{ squadData.overall_points ?? '—' }}</strong></span>
-            <span>Win Prob: <strong class="text-emerald-400">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</strong></span>
+            <span>Owned-hold horizon: <strong class="text-emerald-400">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</strong></span>
           </div>
 
           <div class="text-[11px] text-zinc-400 pt-1">
@@ -381,7 +381,7 @@
             <span class="w-2 h-2 rounded-full bg-amber-400"></span>
             <span>Squad Availability & News Alerts</span>
           </span>
-          <span class="text-xs font-normal text-zinc-400">Verified official Premier League flags & manager press quotes</span>
+          <span class="text-xs font-normal text-zinc-400">Official flags and sourced news; extraction mode shown per player</span>
         </h3>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -597,7 +597,7 @@
       <!-- INJURY & ROTATION CONTINGENCY MATRIX -->
       <div class="council-card p-4 space-y-3">
         <h3 class="font-bold text-sm text-white flex items-center justify-between">
-          <span>Starter Injury & Rotation Matrix</span>
+          <span>Selected Plan Injury & Rotation Matrix (not submitted)</span>
           <span class="text-xs font-normal text-zinc-400">What if a starter is ruled out: Autosub vs Emergency Transfer</span>
         </h3>
         <div class="overflow-x-auto">
@@ -621,15 +621,15 @@
                 </td>
                 <td class="py-2 px-3">
                   <div class="text-zinc-200">{{ row.autosub_player }} <span class="font-mono text-emerald-400">({{ row.autosub_expected_points }} pts)</span></div>
-                  <div class="text-[10px] text-zinc-500 font-mono">{{ row.autosub_delta >= 0 ? '+' : '' }}{{ row.autosub_delta }} delta</div>
+                  <div class="text-[10px] text-zinc-500 font-mono">{{ row.autosub_points_delta >= 0 ? '+' : '' }}{{ row.autosub_points_delta }} delta</div>
                 </td>
                 <td class="py-2 px-3">
-                  <div class="text-zinc-200">{{ row.emergency_replacement_player }} <span class="font-mono text-emerald-400">({{ row.emergency_replacement_expected_points }} pts)</span></div>
-                  <div class="text-[10px] text-zinc-500 font-mono">Net: {{ row.emergency_replacement_net_expected_points }} pts (after hit)</div>
+                  <div class="text-zinc-200">{{ row.emergency_replacement }} <span class="font-mono text-emerald-400">({{ row.emergency_expected_points }} pts)</span></div>
+                  <div class="text-[10px] text-zinc-500 font-mono">Net: {{ row.emergency_net_expected_points }} pts (after hit)</div>
                 </td>
                 <td class="py-2 px-3">
-                  <span :class="row.verdict === 'EXECUTE_TRANSFER' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-blue-500/20 text-blue-300 border-blue-500/40'" class="px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap">
-                    {{ row.verdict === 'EXECUTE_TRANSFER' ? 'Transfer' : 'Trust Bench' }}
+                  <span :class="row.action_verdict === 'EXECUTE_TRANSFER' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : 'bg-blue-500/20 text-blue-300 border-blue-500/40'" class="px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap">
+                    {{ row.action_verdict === 'EXECUTE_TRANSFER' ? 'Transfer' : row.action_verdict === 'TRUST_BENCH' ? 'Trust Bench' : 'Monitor' }}
                   </span>
                 </td>
               </tr>
@@ -709,7 +709,7 @@
             </div>
             <div v-for="t in activePlan.transfers_out" :key="t.element" class="flex justify-between items-center py-2 border-b border-red-900/20 text-xs">
               <span class="font-bold text-white">{{ t.web_name }} ({{ t.position }})</span>
-              <span class="font-mono text-zinc-400">£{{ t.cost }}m</span>
+              <span class="font-mono text-zinc-400">£{{ t.sell_price != null ? t.sell_price : t.cost }}m</span>
             </div>
           </div>
           <!-- In -->
@@ -744,22 +744,22 @@
           <div class="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800">
             <div class="text-xs font-bold text-emerald-400 mb-2">Positive transfer momentum (unverified price timing)</div>
             <div class="space-y-2">
-              <div v-for="p in priceChanges.rises.slice(0, 5)" :key="p.element_id" class="flex justify-between items-center text-xs">
+              <div v-for="p in (priceChanges.rises || []).slice(0, 5)" :key="p.element_id" class="flex justify-between items-center text-xs">
                 <span class="font-medium text-white">{{ p.web_name }}</span>
                 <span class="font-mono text-emerald-400 font-semibold">{{ p.direction.replace("_IMMINENT", "_SIGNAL") }}</span>
               </div>
-              <div v-if="priceChanges.rises.length === 0" class="text-xs text-zinc-500 italic">No imminent rises flagged.</div>
+              <div v-if="(priceChanges.rises || []).length === 0" class="text-xs text-zinc-500 italic">No imminent rises flagged.</div>
             </div>
           </div>
           <!-- Falls -->
           <div class="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800">
             <div class="text-xs font-bold text-red-400 mb-2">Negative transfer momentum (unverified price timing)</div>
             <div class="space-y-2">
-              <div v-for="p in priceChanges.falls.slice(0, 5)" :key="p.element_id" class="flex justify-between items-center text-xs">
+              <div v-for="p in (priceChanges.falls || []).slice(0, 5)" :key="p.element_id" class="flex justify-between items-center text-xs">
                 <span class="font-medium text-white">{{ p.web_name }}</span>
                 <span class="font-mono text-red-400 font-semibold">{{ p.direction.replace("_IMMINENT", "_SIGNAL") }}</span>
               </div>
-              <div v-if="priceChanges.falls.length === 0" class="text-xs text-zinc-500 italic">No imminent falls flagged.</div>
+              <div v-if="(priceChanges.falls || []).length === 0" class="text-xs text-zinc-500 italic">No imminent falls flagged.</div>
             </div>
           </div>
         </div>
@@ -786,7 +786,7 @@
         <!-- Simulation Win Probability Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
-            <div class="text-xs text-zinc-400 font-semibold">Selected-Rival Horizon Probability</div>
+            <div class="text-xs text-zinc-400 font-semibold">Owned-Hold Selected-Rival Horizon Probability</div>
             <div class="text-3xl font-black text-emerald-400 font-mono mt-1">
               {{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}
             </div>
@@ -832,7 +832,7 @@
                 <td class="py-2.5 px-3 font-mono text-zinc-400">{{ team.event_total }}</td>
                 <td class="py-2.5 px-3 font-mono font-bold text-emerald-400">{{ team.total }}</td>
                 <td class="py-2.5 px-3 font-mono text-zinc-300">
-                  {{ team.effective_ownership_overlap ? (team.effective_ownership_overlap + '%') : '72%' }}
+                  {{ team.effective_ownership_overlap != null ? (team.effective_ownership_overlap + '%') : 'Not measured' }}
                 </td>
               </tr>
             </tbody>

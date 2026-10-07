@@ -498,11 +498,13 @@ const app = createApp({
 
     renderMarkdown(text) {
       if (!text) return '';
+      const escapeText = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      if (!window.DOMPurify) return '<pre>' + escapeText(text) + '</pre>';
       try {
-        const rawHtml = marked.parse(text);
+        const rawHtml = window.marked ? marked.parse(text) : '<pre>' + escapeText(text) + '</pre>';
         return DOMPurify.sanitize(rawHtml);
       } catch (e) {
-        return DOMPurify.sanitize(text);
+        return '<pre>' + escapeText(text) + '</pre>';
       }
     },
 
@@ -588,7 +590,8 @@ const app = createApp({
 
     async loadChecklist() {
       try {
-        const res = await fetch('/api/contingency/checklist');
+        const generation = this.snapshotGeneration;
+        const res = await this.fetchSnapshot('/api/contingency/checklist', generation);
         if (res.ok) {
           const data = await res.json();
           this.checklistItems = data.checklist || [];
@@ -706,10 +709,11 @@ const app = createApp({
 
     async loadContingencyMatrix() {
       try {
-        const res = await fetch('/api/contingency/matrix');
+        const generation = this.snapshotGeneration;
+        const res = await this.fetchSnapshot('/api/contingency/matrix', generation);
         if (res.ok) {
           const data = await res.json();
-          this.contingencyMatrix = data.contingency_matrix || [];
+          this.publishSnapshot('contingencyMatrix', data.contingency_matrix || [], generation);
         }
       } catch (e) {}
     },
@@ -804,12 +808,15 @@ const app = createApp({
 
       try {
         const res = await fetch('/api/chat', {
+          signal: AbortSignal.timeout(170000),
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: q })
         });
         const data = await res.json();
-        this.chatMessages.push({ role: 'assistant', content: data.response });
+        const body = res.ok && typeof data.response === 'string' && data.response.trim()
+          ? data.response : (data.error || 'No answer returned. Check the server error and try again.');
+        this.chatMessages.push({ role: 'assistant', content: body });
       } catch (e) {
         this.chatMessages.push({ role: 'assistant', content: "Error communicating with local expert agent." });
       } finally {

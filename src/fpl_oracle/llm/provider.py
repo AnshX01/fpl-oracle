@@ -80,7 +80,7 @@ class OfflineExpertProvider:
                     f"**The Numbers:**\n"
                     f"- **{better['web_name']}** (£{better['cost']}m): **{better['expected_points']} xP** (Floor P10: {better['p10']}, Ceiling P90: {better['p90']}, DefCon: +{better['defcon_pts']} pts)\n"
                     f"- **{worse['web_name']}** (£{worse['cost']}m): **{worse['expected_points']} xP** (Floor P10: {worse['p10']}, Ceiling P90: {worse['p90']}, DefCon: +{worse['defcon_pts']} pts)\n\n"
-                    f"**The Why:** {better['web_name']} holds higher expected minutes and superior underlying box touches and non-penalty xG for the upcoming fixture. Both benefit from the 2026/27 scoring rules.\n"
+                    f"**The Why:** {better['web_name']} has the higher current model projection. A points comparison alone does not verify superiority in minutes, touches or xG.\n"
                     f"**The Risk:** Monitor pre-match team news for any late tactical rotation.\n"
                     f"**What would change the call:** If press conferences indicate a position shift or reduced minutes for {better['web_name']}."
                 )
@@ -142,7 +142,7 @@ class OfflineExpertProvider:
             table_rows = []
             for row in res.get("chip_table", [])[:4]:
                 table_rows.append(
-                    f"| **{row['chip']}** | GW {row['recommended_gw']} | +{row['expected_gain']} pts | {row['confidence']} | {row['reasoning']} |"
+                    f"| **{row['chip']}** | GW {row['recommended_gw']} | {row.get('expected_gain') if row.get('expected_gain') is not None else 'Not separately estimated'} | {row.get('confidence', 'Not assessed')} | {row['reasoning']} |"
                 )
 
             table_str = "\n".join(table_rows)
@@ -172,7 +172,7 @@ class OfflineExpertProvider:
                 f"### Captaincy Recommendation for Gameweek {res['gameweek']}\n"
                 f"**The Decision:** Captain **{safe}**. Vice-captain **{diff}**.\n\n"
                 f"**The Numbers:**\n" + "\n".join(lines) + "\n\n"
-                "**The Why:** This is the same configured lineup and captain decision shown in your squad and decision card.\n"
+                "**The Why:** This is the same selected plan (not submitted), lineup and captain decision shown in your squad and decision card.\n"
                 "**The Risk:** Guard against late press-conference rotation notes.\n"
                 "**What would change the call:** If press conferences indicate minutes management, pivot immediately to your vice-captain."
             )

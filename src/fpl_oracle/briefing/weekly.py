@@ -103,8 +103,7 @@ class WeeklyBriefingGenerator:
             bootstrap=boot,
             manager_history=user_history,
         )
-        chip_res["recommended_chip"] = transfers_res["recommended_chip"]
-        chip_res["chip_comparison_table"] = transfers_res["chip_comparison_table"]
+        chip_res = analysis_service.bind_chip_schedule(chip_res, transfers_res)
 
         # 4. Price Changes Tonight
         price_preds = price_change_predictor.analyze_price_changes(boot)
@@ -178,7 +177,7 @@ class WeeklyBriefingGenerator:
 - **Vice-Captain:** **{vc["web_name"]}** ({vc["expected_points"]} projected points).
 - **Transfers Decision:** {rec_plan.get("recommendation_summary", rec_plan.get("plan_type", "Unavailable"))}
 - **Hit Verdict:** {transfers_res["hit_verdict"]}
-- **Starting Formation:** {lineup_res["formation"]} (Projected starting points: **{lineup_res["starters_expected_points"]}** xP).
+- **Starting Formation:** {lineup_res["formation"]} (Starting XI before captain bonus: **{lineup_res["starters_expected_points"]}** xP; total including captain/chip: **{lineup_res["total_gameweek_expected_points"]}** xP).
 
 ---
 
@@ -205,15 +204,15 @@ class WeeklyBriefingGenerator:
 """
         for c in chip_res.get("chip_plan_table", [])[:4]:
             markdown += (
-                f"| **{c['chip']}** | GW {c['recommended_gw']} | +{c['expected_gain']} pts | {c['reasoning']} |\n"
+                f"| **{c['chip']}** | GW {c['recommended_gw']} | Not separately estimated | {c['reasoning']} |\n"
             )
 
         markdown += f"""
 ---
 
-## 4. Market & Price Change Alert Tonight
-- **Imminent Rises (+£0.1m):** {", ".join([r["web_name"] for r in imminent_rises]) if imminent_rises else "None at immediate trigger"}
-- **Imminent Falls (-£0.1m):** {", ".join([f["web_name"] for f in imminent_falls]) if imminent_falls else "None at immediate trigger"}
+## 4. Heuristic Transfer Momentum (price timing unverified)
+- **Positive momentum:** {", ".join([r["web_name"] for r in imminent_rises]) if imminent_rises else "No signal"}
+- **Negative momentum:** {", ".join([f["web_name"] for f in imminent_falls]) if imminent_falls else "No signal"}
 
 ---
 

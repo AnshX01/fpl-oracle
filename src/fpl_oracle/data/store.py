@@ -448,11 +448,11 @@ class DataStore:
             msgs = (
                 session.query(ChatMessage)
                 .filter(ChatMessage.session_id == session_id)
-                .order_by(ChatMessage.created_at.asc())
+                .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
                 .limit(limit)
                 .all()
             )
-            return [{"role": m.role, "content": m.content} for m in msgs]
+            return [{"role": m.role, "content": m.content} for m in reversed(msgs)]
 
     def add_chat_message(self, role: str, content: str, session_id: str = "default"):
         with self.get_session() as session:

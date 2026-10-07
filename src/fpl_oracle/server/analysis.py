@@ -215,6 +215,28 @@ class AnalysisService:
             if task.done():
                 self._chip_tasks.pop(key, None)
 
+    def bind_chip_schedule(self, calendar, joint):
+        """Public chip recommendations follow the selected resource trajectory."""
+        result = dict(calendar)
+        result["independent_calendar_context"] = calendar.get("chip_plan_table", [])
+        rows = []
+        for step in joint["recommended_plan"].get("trajectory", []):
+            if step.get("chip"):
+                rows.append(
+                    {
+                        "chip": step["chip"],
+                        "code": step["chip"],
+                        "recommended_gw": step["gameweek"],
+                        "expected_gain": None,
+                        "reasoning": "Selected legal joint transfer/chip trajectory; isolated chip gain is not estimated.",
+                    }
+                )
+        result["chip_plan_table"] = rows
+        result["joint_schedule"] = {r["recommended_gw"]: r["code"] for r in rows}
+        result["recommended_chip"] = joint["recommended_chip"]
+        result["chip_comparison_table"] = joint["chip_comparison_table"]
+        return result
+
     async def joint_plan(self, **kwargs):
         from fpl_oracle.data.store import data_store
         from fpl_oracle.optimise.transfers import transfer_optimizer

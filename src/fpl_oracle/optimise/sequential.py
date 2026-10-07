@@ -81,7 +81,12 @@ def search_sequences(
     solve_cache: dict[Any, Any] = {}
     for step, gw in enumerate(gameweeks):
         next_states = []
-        for index, state in enumerate(states):
+        restructure_parents = {}
+        for parent in states:
+            group = (parent["first_chip"], parent["remaining"])
+            restructure_parents.setdefault(group, []).append(parent)
+        restructure_ids = {id(parent) for parents in restructure_parents.values() for parent in parents[:1]}
+        for state in states:
             remaining = state["remaining"]
             if step and gameweeks[step - 1] <= 19 < gw:
                 # Do not infer the owner's second set from first-set availability.
@@ -112,8 +117,9 @@ def search_sequences(
             branches = [(None, m) for m in moves]
             for chip in sorted(remaining & {"3xc", "bboost"}):
                 branches += [(chip, m) for m in moves]
-            # Expensive restructuring branches are bounded to two best parent states.
-            if index < 2:
+            # Reserve restructuring for every resource state, including hold-now.
+            # Global top-two pruning unfairly denied conserved chips future use.
+            if id(state) in restructure_ids:
                 for chip in sorted(remaining & {"freehit", "wildcard"}):
                     budget = state["bank"] + sum(
                         optimizer.calculate_selling_price(state["purchase"][e], int(maps[gw][e]["value"]))

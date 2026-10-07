@@ -646,6 +646,7 @@ async def get_chip_strategy():
         chips_by_set={1: effective_state.chips_remaining_set_1, 2: effective_state.chips_remaining_set_2},
         chips_already_used=[c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
     )
+    res = analysis_service.bind_chip_schedule(res, joint)
     res["recommend_chip_this_gw"] = joint["recommended_chip"] is not None
     res["recommended_chip"] = joint["recommended_chip"]
     res["chip_comparison_table"] = joint["chip_comparison_table"]
@@ -745,6 +746,9 @@ async def get_league_intel(league_id: int | None = None):
             "reason": "Configured squad unavailable",
         }
 
+    # Same observed owned-squad/captain scenario as decision card, not the selected WC team.
+    if proj_df is not None:
+        user_squad_df["expected_points"] = user_squad_df["element"].map(proj_df.set_index("element")["expected_points"])
     mc_res = await asyncio.to_thread(
         monte_carlo_simulator.simulate_league,
         user_points=user_pts,
@@ -752,6 +756,7 @@ async def get_league_intel(league_id: int | None = None):
         rival_squads=rivals_res["rival_squads"],
         projections_df=proj_df,
         horizon_gws=5,
+        seed=42,
         projections_by_gw=projections_horizon,
     )
 
@@ -903,6 +908,32 @@ async def get_contingency_plans():
     return safe_json_serialize(plans)
 
 
+async def _selected_advice_context(pool, projections, boot, current_gw, target_gw):
+    owned, bank, ft = await _get_effective_user_squad(pool, boot)
+    state = await manager_state_service.get_current_state()
+    joint = await analysis_service.joint_plan(
+        current_squad_df=owned,
+        player_pool_df=pool,
+        bank=bank,
+        free_transfers=ft,
+        horizon_projections=projections,
+        current_gw=current_gw or 5,
+        target_gw=target_gw,
+        available_chips=state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2,
+        chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
+        chips_already_used=[c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
+    )
+    plan = joint["recommended_plan"]
+    lineup = plan["lineup"]
+    squad = pd.concat([lineup["starters"], lineup["bench"]], ignore_index=True)
+    return (
+        joint,
+        squad,
+        float(plan["remaining_bank"]) * 10,
+        max(0, ft - (0 if joint["recommended_chip"] in ("wildcard", "freehit") else len(plan["transfers_in"]))),
+    )
+
+
 @router.get("/contingency/matrix")
 async def get_contingency_matrix():
     """Returns 'What if Player X is ruled out' matrix comparing auto-sub vs emergency transfer."""
@@ -915,7 +946,9 @@ async def get_contingency_matrix():
     horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
-    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
+    joint, user_squad_df, bank, free_transfers = await _selected_advice_context(
+        target_df, horizon_proj, boot, curr_gw, target_gw
+    )
 
     matrix = await asyncio.to_thread(
         contingency_engine.compute_injury_matrix,
@@ -924,10 +957,12 @@ async def get_contingency_matrix():
         bank=bank,
         free_transfers=free_transfers,
         bootstrap=boot,
+        lineup=joint["recommended_plan"]["lineup"],
     )
     return safe_json_serialize(
         {
             "gameweek": target_gw,
+            "scope": "selected_plan_not_submitted",
             "contingency_matrix": matrix,
             "stale": is_stale,
             "is_stale": is_stale,
@@ -977,7 +1012,9 @@ async def get_pre_deadline_checklist():
     horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
-    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
+    joint, user_squad_df, bank, free_transfers = await _selected_advice_context(
+        target_df, horizon_proj, boot, curr_gw, target_gw
+    )
     game_state = await game_state_manager.get_game_state()
 
     profile = data_store.get_profile()
@@ -995,10 +1032,12 @@ async def get_pre_deadline_checklist():
         bootstrap=boot,
         game_state_data=game_state.model_dump(),
         chips_status=chips_status,
+        lineup=joint["recommended_plan"]["lineup"],
     )
     return safe_json_serialize(
         {
             "gameweek": target_gw,
+            "scope": "selected_plan_not_submitted",
             "seconds_to_deadline": game_state.seconds_to_deadline,
             "checklist": checklist,
             "stale": is_stale,
