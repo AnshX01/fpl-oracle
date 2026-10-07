@@ -220,16 +220,16 @@ When running `python run.py run`, navigate to `http://localhost:8000` for the si
 FPL Oracle is thoroughly validated against expanding-window out-of-sample data. Full reports are generated in the `reports/` directory:
 
 - [Model Evaluation Report](reports/model_eval.md):
-  - **Rank Correlation ($\\rho$)**: **0.429** (Production Ensemble)
-  - **Mean Absolute Error (MAE)**: **1.883** (ML Ensemble) vs 1.963 (Weighted Form) and 1.952 (Season Average)
-  - **Current 2026-27 Holdout**: **1.883 MAE** vs 1.952 baseline (+0.069 gain)
+  - **Rank Correlation ($\\rho$)**: **0.424** (Production Ensemble)
+  - **Mean Absolute Error (MAE)**: **1.895** (ML Ensemble) vs 1.963 (Weighted Form) and 1.952 (Season Average)
+  - **Current 2026-27 Holdout**: **1.895 MAE** vs 1.952 baseline (+0.057 gain)
   - **True Retraining Feature Ablation**: +1.17% MAE improvement without Fixture Difficulty And Context
-  - **Uncertainty Interval Coverage**: **71.47%** empirical coverage for nominal 80% credible interval ($P_{10}$–$P_{90}$)
+  - **Uncertainty Interval Coverage**: **71.28%** empirical coverage for nominal 80% credible interval ($P_{10}$–$P_{90}$)
 - [Final Correction Pass Ledger](reports/final_fix_ledger.md): Full evidence-gated audit matrix confirming resolution of all milestones G1–G14.
 - [News Extraction Benchmark](reports/news_benchmark.json): 70/70 held-out cases passed (100.0% precision, 0 false ruled out) with deterministic fallback and benchmark gate.
 - [Proxy Simulation Replay Report](reports/fix_pass_backtest.md):
   - **Proxy Simulation Replay**: Evaluated across 26 historical scenarios with pre-deadline data isolation and 100% legal squads.
-  - **Brier Calibration Score**: **0.2486** vs 0.3740 (naive points lead baseline).
+  - **Brier Calibration Score**: **0.2502** vs 0.3740 (naive points lead baseline).
 
 ---
 

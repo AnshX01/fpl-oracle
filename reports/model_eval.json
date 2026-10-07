@@ -1,10 +1,10 @@
 {
-  "evaluated_at": "2026-10-06T19:07:44.829775+00:00",
+  "evaluated_at": "2026-10-07T02:45:07.253343+00:00",
   "sample_count": 2054,
-  "ml_mae": 1.883,
-  "ml_rmse": 2.828,
-  "ml_spearman": 0.429,
-  "ml_pearson": 0.354,
+  "ml_mae": 1.895,
+  "ml_rmse": 2.855,
+  "ml_spearman": 0.424,
+  "ml_pearson": 0.347,
   "base_mae": 1.963,
   "base_rmse": 3.09,
   "base_spearman": 0.374,
@@ -25,77 +25,77 @@
       "spearman": 0.399
     }
   },
-  "mae_improvement_pct": 4.08,
-  "rmse_improvement_pct": 8.48,
-  "verdict": "The ML Projection Engine achieves an MAE of 1.883 and RMSE of 2.828 with a Spearman rank correlation of 0.429 (vs 0.374 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
+  "mae_improvement_pct": 3.46,
+  "rmse_improvement_pct": 7.61,
+  "verdict": "The ML Projection Engine achieves an MAE of 1.895 and RMSE of 2.855 with a Spearman rank correlation of 0.424 (vs 0.374 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
   "positions": {
     "GKP": {
       "count": 120,
-      "ml_mae": 2.082,
-      "ml_rmse": 2.96,
+      "ml_mae": 2.106,
+      "ml_rmse": 2.986,
       "base_mae": 2.256,
       "base_rmse": 3.25,
-      "improvement_mae_pct": 7.71
+      "improvement_mae_pct": 6.65
     },
     "DEF": {
       "count": 721,
-      "ml_mae": 2.095,
-      "ml_rmse": 3.074,
+      "ml_mae": 2.112,
+      "ml_rmse": 3.101,
       "base_mae": 2.192,
       "base_rmse": 3.349,
-      "improvement_mae_pct": 4.43
+      "improvement_mae_pct": 3.65
     },
     "MID": {
       "count": 969,
-      "ml_mae": 1.701,
-      "ml_rmse": 2.631,
+      "ml_mae": 1.713,
+      "ml_rmse": 2.655,
       "base_mae": 1.776,
       "base_rmse": 2.884,
-      "improvement_mae_pct": 4.22
+      "improvement_mae_pct": 3.55
     },
     "FWD": {
       "count": 244,
-      "ml_mae": 1.879,
-      "ml_rmse": 2.757,
+      "ml_mae": 1.874,
+      "ml_rmse": 2.794,
       "base_mae": 1.883,
       "base_rmse": 3.007,
-      "improvement_mae_pct": 0.21
+      "improvement_mae_pct": 0.48
     }
   },
   "calibration": {
-    "interval_80_coverage_pct": 71.47,
-    "below_p10_pct": 14.9,
-    "above_p90_pct": 13.63,
-    "pinball_loss_p10": 0.284,
-    "pinball_loss_p50": 0.9298,
-    "pinball_loss_p90": 0.6456,
-    "avg_interval_width": 4.45,
-    "calibration_verdict": "NARROW INTERVAL (71.47% vs 80% nominal)"
+    "interval_80_coverage_pct": 71.28,
+    "below_p10_pct": 14.17,
+    "above_p90_pct": 14.56,
+    "pinball_loss_p10": 0.2832,
+    "pinball_loss_p50": 0.9362,
+    "pinball_loss_p90": 0.6521,
+    "avg_interval_width": 4.36,
+    "calibration_verdict": "NARROW INTERVAL (71.28% vs 80% nominal)"
   },
   "rolling_origins": [
     {
       "season": "Holdout 2024-25 (trained on 2023-24)",
       "train_size": 29725,
       "test_size": 27605,
-      "mae": 1.013,
-      "rmse": 2.103,
-      "spearman": 0.681,
+      "mae": 1.012,
+      "rmse": 2.102,
+      "spearman": 0.68,
       "base_recent_mae": 1.046,
       "base_season_mae": 1.041,
       "base_fixture_mae": 1.228,
       "best_baseline_mae": 1.041,
-      "gain_vs_baseline": 0.028,
-      "interval_80_coverage_pct": 77.36,
+      "gain_vs_baseline": 0.029,
+      "interval_80_coverage_pct": 77.34,
       "position_coverage": {
-        "GKP": 72.39,
-        "DEF": 78.97,
-        "MID": 77.59,
-        "FWD": 76.24
+        "GKP": 73.13,
+        "DEF": 79.5,
+        "MID": 76.84,
+        "FWD": 76.91
       },
       "minutes_bucket_coverage": {
-        "low": 80.53,
-        "mid": 77.23,
-        "high": 66.76
+        "low": 80.33,
+        "mid": 77.42,
+        "high": 67.13
       }
     },
     {
@@ -103,68 +103,68 @@
       "train_size": 57330,
       "test_size": 29757,
       "mae": 0.948,
-      "rmse": 1.978,
+      "rmse": 1.979,
       "spearman": 0.707,
       "base_recent_mae": 0.995,
       "base_season_mae": 0.99,
       "base_fixture_mae": 1.094,
       "best_baseline_mae": 0.99,
       "gain_vs_baseline": 0.042,
-      "interval_80_coverage_pct": 81.71,
+      "interval_80_coverage_pct": 81.77,
       "position_coverage": {
-        "GKP": 84.86,
-        "DEF": 78.93,
-        "MID": 82.31,
-        "FWD": 84.27
+        "GKP": 84.48,
+        "DEF": 79.58,
+        "MID": 82.16,
+        "FWD": 83.78
       },
       "minutes_bucket_coverage": {
-        "low": 86.34,
-        "mid": 76.23,
-        "high": 70.71
+        "low": 86.5,
+        "mid": 76.62,
+        "high": 70.02
       }
     },
     {
       "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
       "train_size": 87087,
       "test_size": 2054,
-      "mae": 1.883,
-      "rmse": 2.828,
-      "spearman": 0.429,
+      "mae": 1.895,
+      "rmse": 2.855,
+      "spearman": 0.424,
       "base_recent_mae": 1.963,
       "base_season_mae": 1.952,
       "base_fixture_mae": 2.227,
       "best_baseline_mae": 1.952,
-      "gain_vs_baseline": 0.069,
-      "interval_80_coverage_pct": 71.47,
+      "gain_vs_baseline": 0.057,
+      "interval_80_coverage_pct": 71.28,
       "position_coverage": {
-        "GKP": 62.5,
-        "DEF": 71.43,
-        "MID": 72.24,
-        "FWD": 72.95
+        "GKP": 60.0,
+        "DEF": 70.87,
+        "MID": 73.27,
+        "FWD": 70.08
       },
       "minutes_bucket_coverage": {
-        "low": 60.45,
-        "mid": 79.1,
-        "high": 73.62
+        "low": 62.07,
+        "mid": 77.96,
+        "high": 72.74
       }
     }
   ],
   "ablation": {},
   "partial_dependence": {
-    "star_player_vs_tough_defence": 4.69,
-    "star_player_vs_avg_defence": 4.9,
-    "star_player_vs_weak_defence": 5.45,
-    "mid_player_vs_tough_defence": 3.06,
+    "star_player_vs_tough_defence": 4.85,
+    "star_player_vs_avg_defence": 5.06,
+    "star_player_vs_weak_defence": 5.78,
+    "mid_player_vs_tough_defence": 3.08,
     "mid_player_vs_avg_defence": 3.68,
-    "mid_player_vs_weak_defence": 3.63,
-    "low_player_vs_tough_defence": 1.5,
-    "low_player_vs_avg_defence": 1.75,
+    "mid_player_vs_weak_defence": 3.66,
+    "low_player_vs_tough_defence": 1.41,
+    "low_player_vs_avg_defence": 1.72,
     "low_player_vs_weak_defence": 1.85,
-    "home_advantage_premium_pts": 0.08
+    "home_advantage_premium_pts": 0.04
   },
   "upcoming_projections": [],
   "gate_verdict": {
     "passed": false,
-    "reason": "Candidate failed rolling origin gate: origin 'Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)' 80% interval coverage (71.47%) is outside target band [75.0%, 85.0%]."
+    "reason": "Candidate failed rolling origin gate: origin 'Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)' 80% interval coverage (71.28%) is outside target band [75.0%, 85.0%]."
   }
 }

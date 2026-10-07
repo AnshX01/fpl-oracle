@@ -1,0 +1,34 @@
+COMMAND: python scripts/capture_screenshots.py
+EXIT CODE: 0
+OUTPUT:
+============================================================
+FPL ORACLE -- RESPONSIVE UI VERIFICATION & SCREENSHOTS (G3)
+============================================================
+Starting uvicorn server on http://127.0.0.1:8000...
+Waiting for server startup...
+Server is up and responsive!
+
+Verifying backend API endpoints:
+  [OK 200] / (68,124 bytes)
+  [OK 200] /api/v1/health (1,807 bytes)
+  [OK 200] /api/v1/squad/current (12,366 bytes)
+  [OK 200] /api/v1/briefing/decision-card (5,785 bytes)
+  [OK 200] /api/v1/transfers/plans (2,369 bytes)
+
+Launching headless Chromium...
+
+[Desktop Viewport: 1920x1080]
+  Decision card rendered with 430 characters of text content.
+  Captured: dashboard_desktop.png (121,954 bytes)
+  Captured: decision_card_desktop.png (34,200 bytes)
+
+[Mobile Viewport: 390x844]
+  Captured: dashboard_mobile.png (108,757 bytes)
+  Captured: decision_card_mobile.png (31,085 bytes)
+
+Browser execution closed successfully.
+Terminating server process...
+Server shutdown complete.
+============================================================
+SUCCESS: All visual screenshots and endpoint assertions passed!
+============================================================

@@ -1,0 +1,4 @@
+COMMAND: python -c "import fpl_oracle.server.main"
+EXIT CODE: 0
+OUTPUT:
+fpl_oracle.server.main imported cleanly

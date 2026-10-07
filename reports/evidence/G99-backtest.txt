@@ -1,0 +1,5 @@
+COMMAND: python scripts/run_league_backtest.py
+EXIT CODE: 0
+OUTPUT:
+Starting Proxy Simulation Replay (Synthetic League States, Strict Legality & Zero-Hindsight)...
+Proxy simulation completed in 76.42s. Sample Size: 26, Model Brier: 0.2481, Naive Lead Brier: 0.3740

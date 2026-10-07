@@ -110,8 +110,9 @@ def capture_screenshots():
             context_desktop = browser.new_context(viewport={"width": 1920, "height": 1080})
             page_desktop = context_desktop.new_page()
 
-            page_desktop.goto(SERVER_URL, wait_until="networkidle", timeout=120000)
-            page_desktop.wait_for_timeout(2500)  # Wait for Vue to finish reactive render
+            page_desktop.goto(SERVER_URL, wait_until="domcontentloaded", timeout=45000)
+            page_desktop.wait_for_selector("#decision-card", timeout=45000)
+            page_desktop.wait_for_timeout(3000)  # Wait for Vue to finish reactive render
 
             # Assert recommendation element exists and is non-empty
             card_el = page_desktop.query_selector("#decision-card")
@@ -134,25 +135,20 @@ def capture_screenshots():
             print(f"  Captured: {dc_desktop_path.name} ({dc_desktop_path.stat().st_size:,} bytes)")
             (SCREENSHOTS_DIR / "decision_card.png").write_bytes(dc_desktop_path.read_bytes())
 
-            context_desktop.close()
-
             # --- MOBILE VIEWPORT (390x844) ---
             print("\n[Mobile Viewport: 390x844]")
-            context_mobile = browser.new_context(viewport={"width": 390, "height": 844})
-            page_mobile = context_mobile.new_page()
-
-            page_mobile.goto(SERVER_URL, wait_until="networkidle", timeout=120000)
-            page_mobile.wait_for_timeout(2500)
+            page_desktop.set_viewport_size({"width": 390, "height": 844})
+            page_desktop.wait_for_timeout(1500)
 
             # Assert recommendation element in mobile
-            card_el_m = page_mobile.query_selector("#decision-card")
+            card_el_m = page_desktop.query_selector("#decision-card")
             assert card_el_m is not None, "Decision card element '#decision-card' not found in mobile DOM"
             card_text_m = card_el_m.inner_text().strip()
             assert len(card_text_m) > 20, f"Decision card mobile content is empty: {card_text_m}"
 
             # Capture mobile dashboard
             dash_mobile_path = SCREENSHOTS_DIR / "dashboard_mobile.png"
-            page_mobile.screenshot(path=str(dash_mobile_path), full_page=True)
+            page_desktop.screenshot(path=str(dash_mobile_path), full_page=True)
             print(f"  Captured: {dash_mobile_path.name} ({dash_mobile_path.stat().st_size:,} bytes)")
 
             # Capture mobile decision card (scoped to element)
@@ -160,7 +156,7 @@ def capture_screenshots():
             card_el_m.screenshot(path=str(dc_mobile_path))
             print(f"  Captured: {dc_mobile_path.name} ({dc_mobile_path.stat().st_size:,} bytes)")
 
-            context_mobile.close()
+            context_desktop.close()
             browser.close()
             print("\nBrowser execution closed successfully.")
 

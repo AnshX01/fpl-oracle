@@ -1,0 +1,5 @@
+COMMAND: python scripts/run_news_benchmark.py
+EXIT CODE: 0
+OUTPUT:
+INFO: Starting Production News Extraction Benchmark across 70 held-out cases...
+INFO: News Benchmark: 70/70 PASSED (100.0%) | Precision: 100.0% | Recall: 100.0% | False Ruled Out: 0 (0.0%) | Gate Status: OPEN

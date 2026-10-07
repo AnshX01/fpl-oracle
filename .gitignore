@@ -49,6 +49,7 @@ web/dist/
 scratch/
 tmp/
 temp/
+reports/evidence_postcommit/
 
 # IDE & OS
 .vscode/

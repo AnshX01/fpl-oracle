@@ -1,0 +1,21 @@
+COMMAND: python scripts/check_freshness.py
+EXIT CODE: 0
+OUTPUT:
+Running G4 Freshness Check...
+Wrote reports/evidence/G4-freshness.txt
+
+Running G4 Identity Verification...
+Wrote reports/evidence/G4-identity.txt
+
+Running G4 Cache Verification...
+Wrote reports/evidence/G4-cache.txt
+
+All G4 verifications passed successfully!
+INFO:check_freshness:Querying official FPL API for latest events...
+INFO:httpx:HTTP Request: GET https://fantasy.premierleague.com/api/bootstrap-static/ "HTTP/1.1 200 OK"
+INFO:fpl_oracle.data.player_identity:PlayerIdentityResolver loaded: 2931 (season, element) pairs mapped to 1585 canonical identities.
+INFO:fpl_oracle.predict:Loading pre-trained component models from disk...
+INFO:fpl_oracle.ml.registry:[ModelIntegrity] All active component model weights successfully verified.
+INFO:fpl_oracle.data.player_identity:PlayerIdentityResolver loaded: 2931 (season, element) pairs mapped to 1585 canonical identities.
+INFO:fpl_oracle.data.player_identity:PlayerIdentityResolver loaded: 2931 (season, element) pairs mapped to 1585 canonical identities.
+INFO:fpl_oracle.data.player_identity:PlayerIdentityResolver loaded: 2931 (season, element) pairs mapped to 1585 canonical identities.

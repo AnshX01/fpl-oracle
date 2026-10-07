@@ -1,0 +1,4 @@
+COMMAND: ruff format --check src tests scripts
+EXIT CODE: 0
+OUTPUT:
+124 files already formatted

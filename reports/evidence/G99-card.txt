@@ -1,0 +1,19 @@
+COMMAND: pytest tests/test_decision_card.py
+EXIT CODE: 0
+OUTPUT:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 5 items
+
+tests/test_decision_card.py::test_decision_card_generator_contract PASSED [ 20%]
+tests/test_decision_card.py::test_decision_card_api_endpoints PASSED     [ 40%]
+tests/test_decision_card.py::test_format_decision_card_markdown PASSED   [ 60%]
+tests/test_decision_card.py::test_decision_card_unmocked_happy_path PASSED [ 80%]
+tests/test_decision_card.py::test_decision_card_error_path_honest_reporting PASSED [100%]
+
+======================== 5 passed in 168.69s (0:02:48) ========================

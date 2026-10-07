@@ -1,0 +1,48 @@
+COMMAND: pytest tests/
+EXIT CODE: 0
+OUTPUT:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collected 220 items
+
+tests\test_ablation.py .....                                             [  2%]
+tests\test_api_parsing.py ...                                            [  3%]
+tests\test_backtest_no_leak.py .....                                     [  5%]
+tests\test_calibration_persist.py ....                                   [  7%]
+tests\test_chat_grounding.py ....                                        [  9%]
+tests\test_check_secrets.py ....                                         [ 11%]
+tests\test_chips.py ........                                             [ 15%]
+tests\test_contingency.py ....                                           [ 16%]
+tests\test_decision_card.py .....                                        [ 19%]
+tests\test_domain_foundations.py ........                                [ 22%]
+tests\test_fault_injection.py .....                                      [ 25%]
+tests\test_feature_parity_values.py ..........                           [ 29%]
+tests\test_fuzzy_and_manual_squad.py ...                                 [ 30%]
+tests\test_gemini_mock.py .........                                      [ 35%]
+tests\test_holdout_forward.py ....                                       [ 36%]
+tests\test_joint_plan.py ....                                            [ 38%]
+tests\test_joint_plan_live.py .......                                    [ 41%]
+tests\test_league_strategy_mc.py ..........                              [ 46%]
+tests\test_leakage.py ...                                                [ 47%]
+tests\test_model_gap_closure.py .........                                [ 51%]
+tests\test_monte_carlo_components.py ......................              [ 61%]
+tests\test_montecarlo_cs.py ...                                          [ 63%]
+tests\test_news_availability.py .............                            [ 69%]
+tests\test_offline_fixtures.py ...                                       [ 70%]
+tests\test_optimizer.py ...........                                      [ 75%]
+tests\test_optimizer_properties.py ...                                   [ 76%]
+tests\test_player_identity.py .....                                      [ 79%]
+tests\test_promotion_gate.py .......                                     [ 82%]
+tests\test_provenance.py ........                                        [ 85%]
+tests\test_recommendation_consistency.py .                               [ 86%]
+tests\test_rival_set.py ....                                             [ 88%]
+tests\test_rivals_standings.py ........                                  [ 91%]
+tests\test_rules_checker.py ....                                         [ 93%]
+tests\test_safe_json.py ....                                             [ 95%]
+tests\test_scheduler.py ......                                           [ 98%]
+tests\test_ui_honesty.py ....                                            [100%]
+
+======================= 220 passed in 944.95s (0:15:44) =======================

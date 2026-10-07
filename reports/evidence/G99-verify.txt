@@ -1,0 +1,42 @@
+COMMAND: python scripts/verify_ledger.py
+EXIT CODE: 0
+OUTPUT:
+======================================================================
+FPL Oracle - Evidence Ledger, Integrity & Metric Validator (G14)
+======================================================================
+
+--- 1. Verifying Manifest SHA256 Locks (Including Calibration) ---
+  [MATCH]   minutes_model.pkl        SHA256 verified (6fcb69189755b730...)
+  [MATCH]   attacking_model.pkl      SHA256 verified (611091e62a65c6b5...)
+  [MATCH]   defending_model.pkl      SHA256 verified (7a07a777d0cc8c8b...)
+  [MATCH]   defcon_model.pkl         SHA256 verified (c0298907536f73e5...)
+  [MATCH]   bonus_model.pkl          SHA256 verified (abcb23681970ae37...)
+  [MATCH]   cards_saves_model.pkl    SHA256 verified (d96518e17d973417...)
+  [MATCH]   calibration.json         SHA256 verified (4251387c9dad9ed8...)
+
+--- 2. Verifying Milestone Accounting & Evidence in reports/final_fix_ledger.md ---
+  [CLOSED  ] G1  : Verified with 3 evidence file(s)
+  [CLOSED  ] G2  : Verified with 1 evidence file(s)
+  [CLOSED  ] G3  : Verified with 1 evidence file(s)
+  [CLOSED  ] G4  : Verified with 3 evidence file(s)
+  [CLOSED  ] G5  : Verified with 2 evidence file(s)
+  [CLOSED  ] G6  : Verified with 1 evidence file(s)
+  [CLOSED  ] G7  : Verified with 1 evidence file(s)
+  [CLOSED  ] G8  : Verified with 1 evidence file(s)
+  [CLOSED  ] G9  : Verified with 1 evidence file(s)
+  [CLOSED  ] G10 : Verified with 1 evidence file(s)
+  [CLOSED  ] G11 : Verified with 1 evidence file(s)
+  [CLOSED  ] G12 : Verified with 1 evidence file(s)
+  [CLOSED  ] G13 : Verified with 1 evidence file(s)
+  [CLOSED  ] G14 : Verified with 1 evidence file(s)
+
+--- 3. Verifying Metric Consistency with Authoritative JSON Artifacts ---
+  [CONSISTENT] 2026-27 Holdout MAE: 1.895 pts verified in README.md
+  [CONSISTENT] Backtest: 26 scenarios, Brier 0.2502 verified in README.md
+  [CONSISTENT] Ablation gain 1.17% verified in README.md
+  [CONSISTENT] News Benchmark: 70 cases, 100.0% precision verified in README.md
+  [CONSISTENT] reports/final_status.md references G1-G14 pass and 70-case benchmark
+
+======================================================================
+ALL AUDIT CHECKS PASSED: 100% EVIDENCE-GATED VERIFICATION ACHIEVED (0 LITERALS)
+======================================================================

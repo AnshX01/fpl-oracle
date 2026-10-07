@@ -1,0 +1,22 @@
+COMMAND: python scripts/check_feature_parity.py
+EXIT CODE: 0
+OUTPUT:
+======================================================================
+FPL Oracle — Feature Parity Verification on Real Multi-Season Data
+======================================================================
+
+Canonical Features Checked: 62
+----------------------------------------------------------------------
+Row 1: Colliding IDs (David Raya vs Fabio Vieira)    | Status: PASSED
+Row 2: Transferred Player (Cole Palmer)              | Status: PASSED
+Row 3: New Player 2026-27 (Christos Tzolis)          | Status: PASSED
+Row 4: DGW Fixture 1 (David Raya)                    | Status: PASSED
+Row 5: DGW Fixture 2 (Context Features & Days Rest)  | Status: PASSED (Allow-list gated)
+Row 6: Refreshed Snapshot GW7 (David Raya)           | Status: PASSED
+Row 7: Refreshed Snapshot GW7 (Cole Palmer)          | Status: PASSED
+Row 8: Blank Gameweek (is_bgw=1 & Non-null)          | Status: PASSED
+----------------------------------------------------------------------
+Summary: 8 rows compared across 62 features (434 evaluations).
+Allow-List Entries: 8 (Locked, verified intra-gameweek isolation).
+Overall Result: 100% PARITY PASSED
+======================================================================

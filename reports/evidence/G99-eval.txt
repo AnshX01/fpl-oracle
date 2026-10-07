@@ -1,0 +1,49 @@
+COMMAND: python scripts/run_eval.py
+EXIT CODE: 0
+OUTPUT:
+======================================================================
+F2 EVALUATION: MULTI-ORIGIN ROLLING CV AND 2026-27 ACCURACY
+======================================================================
+Total dataset: 89141 rows across seasons: ['2023-24', '2024-25', '2025-26', '2026-27']
+
+Computing authentic temporal rolling-origin cross-validation...
+
+--- ROLLING ORIGINS PERFORMANCE TABLE ---
+Origin                                        Train   Test    ML MAE   Base MAE   Gain vs Base
+Holdout 2024-25 (trained on 2023-24)          29725   27605   1.012    1.041            +0.029
+Holdout 2025-26 (trained on 2023-24, 2024-25) 57330   29757   0.948    0.990            +0.042
+Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26) 87087   2054    1.895    1.952            +0.057
+
+Evaluation Setup: 87087 train rows, 29757 calibration rows (2025-26), 2054 holdout rows (2026-27)
+
+--- OVERALL 2026-27 HOLDOUT METRICS ---
+ML MAE:                  1.895 (RMSE: 2.855, Spearman: 0.424)
+Baseline (Recent Form):  1.963
+Baseline (Season Avg):   1.952
+Baseline (Fixture Adj):  2.227
+Improvement vs Baseline: +3.46%
+80% Credible Coverage:   71.28% (NARROW INTERVAL (71.28% vs 80% nominal))
+
+--- PROMOTION GATE VERDICT ---
+Passed: False
+Reason: Candidate failed rolling origin gate: origin 'Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)' 80% interval coverage (71.28%) is outside target band [75.0%, 85.0%].
+
+--- 2026-27 CURRENT SEASON HOLDOUT CHECK ---
+2026-27 ML MAE:       1.895
+2026-27 Best Base:    1.952
+2026-27 Gain:         +0.057
+2026-27 Coverage 80%: 71.28%
+
+[GATE STATUS] Candidate model REJECTED by promotion gate criteria.
+Reason: Candidate failed rolling origin gate: origin 'Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)' 80% interval coverage (71.28%) is outside target band [75.0%, 85.0%].
+Active production model retained in data/models/ (zero premature promotion).
+
+======================================================================
+F2/G5 EVALUATION COMPLETED SUCCESSFULLY — REPORTS GENERATED
+======================================================================
+INFO:fpl_oracle.historical:Loading existing historical dataset from C:\Users\anshw\Documents\fpl-expert\data\historical\master_history.csv
+INFO:fpl_oracle.train:Evaluating rolling origin: Train ['2023-24'] (29725) -> Test ['2024-25'] (27605)...
+INFO:fpl_oracle.train:Evaluating rolling origin: Train ['2023-24', '2024-25'] (57330) -> Test ['2025-26'] (29757)...
+INFO:fpl_oracle.train:Evaluating rolling origin: Train ['2023-24', '2024-25', '2025-26'] (87087) -> Test ['2026-27'] (2054)...
+INFO:fpl_oracle.eval:Saved machine-readable metrics to C:\Users\anshw\Documents\fpl-expert\reports\model_eval.json
+INFO:fpl_oracle.eval:Saved evaluation markdown report to C:\Users\anshw\Documents\fpl-expert\reports\model_eval.md

@@ -1,6 +1,6 @@
 # FPL Oracle — Authoritative Model Evaluation Report
 
-**Generated**: 2026-10-06T19:07:44.829775+00:00
+**Generated**: 2026-10-07T02:45:07.253343+00:00
 **Dataset**: Time-separated historical match observations (2,054 test samples)
 **Verification Protocol**: Zero data leakage, strict pre-deadline feature shifts ($t-1$), no synthetic caps.
 
@@ -10,12 +10,12 @@
 
 | Model / Baseline | Mean Absolute Error (MAE) | Root Mean Squared Error (RMSE) | Spearman Rank Correlation ($\\rho$) |
 |:---|:---:|:---:|:---:|
-| **ML Projection Engine (Full 62 Features)** | **1.883 pts** | **2.828 pts** | **0.429** |
+| **ML Projection Engine (Full 62 Features)** | **1.895 pts** | **2.855 pts** | **0.424** |
 | *Baseline 1: Weighted Recent Form (5 GW)* | 1.963 pts | 3.090 pts | 0.374 |
 | *Baseline 2: Season-to-Date Average (PPG)* | 1.952 pts | 3.060 pts | 0.365 |
 | *Baseline 3: Heuristic Fixture-Adjusted* | 2.227 pts | 3.498 pts | 0.399 |
 
-> **Verdict**: The ML Projection Engine achieves an MAE of 1.883 and RMSE of 2.828 with a Spearman rank correlation of 0.429 (vs 0.374 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.
+> **Verdict**: The ML Projection Engine achieves an MAE of 1.895 and RMSE of 2.855 with a Spearman rank correlation of 0.424 (vs 0.374 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.
 
 ---
 
@@ -25,9 +25,9 @@ Every season split trained solely on strictly prior seasons and tested out-of-ti
 
 | Origin / Split | Training Matches | Holdout Matches | ML Holdout MAE | Best Baseline MAE | Honest ML Gain | Spearman $\\rho$ |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Holdout 2024-25 (trained on 2023-24)** | 29,725 | 27,605 | **1.013** pts | 1.041 pts | **+0.028** | **0.681** |
+| **Holdout 2024-25 (trained on 2023-24)** | 29,725 | 27,605 | **1.012** pts | 1.041 pts | **+0.029** | **0.680** |
 | **Holdout 2025-26 (trained on 2023-24, 2024-25)** | 57,330 | 29,757 | **0.948** pts | 0.990 pts | **+0.042** | **0.707** |
-| **Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)** | 87,087 | 2,054 | **1.883** pts | 1.952 pts | **+0.069** | **0.429** |
+| **Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)** | 87,087 | 2,054 | **1.895** pts | 1.952 pts | **+0.057** | **0.424** |
 
 ---
 
@@ -35,10 +35,10 @@ Every season split trained solely on strictly prior seasons and tested out-of-ti
 
 | Position | Match Samples | ML MAE | Heuristic Form MAE | ML RMSE | Heuristic Form RMSE | MAE Gain |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **GKP** | 120 | **2.082** | 2.256 | **2.960** | 3.250 | +7.7% |
-| **DEF** | 721 | **2.095** | 2.192 | **3.074** | 3.349 | +4.4% |
-| **MID** | 969 | **1.701** | 1.776 | **2.631** | 2.884 | +4.2% |
-| **FWD** | 244 | **1.879** | 1.883 | **2.757** | 3.007 | +0.2% |
+| **GKP** | 120 | **2.106** | 2.256 | **2.986** | 3.250 | +6.7% |
+| **DEF** | 721 | **2.112** | 2.192 | **3.101** | 3.349 | +3.6% |
+| **MID** | 969 | **1.713** | 1.776 | **2.655** | 2.884 | +3.5% |
+| **FWD** | 244 | **1.874** | 1.883 | **2.794** | 3.007 | +0.5% |
 
 ---
 
@@ -65,9 +65,9 @@ Residual quantiles calibrated per position and minutes-played bucket:
 
 | Metric | Measured Value | Target Nominal | Calibration Status |
 |:---|:---:|:---:|:---|
-| **Credible Interval Coverage ($[P_{10}, P_{90}]$)** | **71.47%** | 80.0% | **NARROW INTERVAL (71.47% vs 80% nominal)** |
-| **Lower Tail Exceedance ($Y < P_{10}$)** | **14.90%** | 10.0% | Well-calibrated |
-| **Upper Tail Exceedance ($Y > P_{90}$)** | **13.63%** | 10.0% | Well-calibrated |
-| **Average Interval Width ($P_{90} - P_{10}$)** | **4.45 pts** | — | Informative spread |
+| **Credible Interval Coverage ($[P_{10}, P_{90}]$)** | **71.28%** | 80.0% | **NARROW INTERVAL (71.28% vs 80% nominal)** |
+| **Lower Tail Exceedance ($Y < P_{10}$)** | **14.17%** | 10.0% | Well-calibrated |
+| **Upper Tail Exceedance ($Y > P_{90}$)** | **14.56%** | 10.0% | Well-calibrated |
+| **Average Interval Width ($P_{90} - P_{10}$)** | **4.36 pts** | — | Informative spread |
 
 *All metrics rendered automatically from reports/model_eval.json and reports/ablation.json.*
