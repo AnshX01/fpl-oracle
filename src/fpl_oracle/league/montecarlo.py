@@ -60,12 +60,12 @@ class MonteCarloSimulator:
             elif "clean_sheet_probability" in row and pd.notna(row["clean_sheet_probability"]):
                 p_val = float(row["clean_sheet_probability"])
 
-            if p_val is not None and 0.0 < p_val < 1.0 and pos in ["GKP", "DEF"]:
+            if p_val is not None and np.isfinite(p_val) and 0.0 <= p_val <= 1.0 and pos in ["GKP", "DEF"]:
                 team_model_probs.setdefault(tm, []).append(p_val)
 
         for tm, probs in team_model_probs.items():
             if tm not in team_p_cs and probs:
-                team_p_cs[tm] = float(np.clip(np.median(probs), 0.05, 0.75))
+                team_p_cs[tm] = float(np.median(probs))
 
         # Fixture difficulty context for remaining teams
         for _, row in projections_df.iterrows():
@@ -85,6 +85,7 @@ class MonteCarloSimulator:
         player_data: dict[str, Any] | pd.Series,
         team_clean_sheet: bool,
         rng: np.random.Generator,
+        shared_cs_probability: float | None = None,
     ) -> float:
         """
         Simulate points for a single player in a single trial gameweek.
@@ -108,13 +109,19 @@ class MonteCarloSimulator:
 
         # Position-specific clean sheet scoring rate according to FPL rules
         cs_rate = 4.0 if pos in ("GKP", "DEF") else (1.0 if pos == "MID" else 0.0)
-        p_cs = float(player_data.get("p_clean_sheet", DEFAULT_CLEAN_SHEET_PROBABILITY))
+        p_cs = float(
+            shared_cs_probability
+            if shared_cs_probability is not None
+            else player_data.get("p_clean_sheet", DEFAULT_CLEAN_SHEET_PROBABILITY)
+        )
+        if not np.isfinite(p_cs) or not 0 <= p_cs <= 1:
+            raise ValueError("Invalid shared CS probability")
 
         # Determine minutes / appearance probabilities
         if "p_min60" in player_data and pd.notna(player_data["p_min60"]):
             p_min60 = float(player_data["p_min60"])
             p_play = float(player_data.get("p_play", max(p_min60, float(player_data.get("p_starts", p_min60)))))
-            exp_cs_pts = float(player_data.get("exp_cs_pts", p_min60 * p_cs * cs_rate))
+            exp_cs_pts = p_min60 * p_cs * cs_rate
         else:
             # Calibrated positional decomposition when summary xP only is provided
             if pos in ("GKP", "DEF"):
@@ -142,6 +149,9 @@ class MonteCarloSimulator:
                     p_play = min(0.98, p_min60 + 0.03)
                 exp_cs_pts = 0.0
 
+        if not (0 <= p_min60 <= p_play <= 1):
+            raise ValueError("Incoherent minutes probabilities")
+        exp_cs_pts = p_min60 * p_cs * cs_rate
         # Step 1: Appearance hurdle
         u_min = rng.random()
         if u_min >= p_play:
@@ -167,6 +177,8 @@ class MonteCarloSimulator:
             if mu_other_play > 1e-4:
                 # Non-negative Gamma draw with exact expectation mu_other_play
                 var_other = max(0.2, mu_other_play * 1.5)
+                # Exact marginal variance matching needs hurdle covariance; report this model as approximate.
+                # Never call this calibrated variance merely because a variance field exists.
                 k = (mu_other_play**2) / var_other
                 theta = var_other / mu_other_play
                 other_pts = float(rng.gamma(k, theta))
@@ -189,7 +201,40 @@ class MonteCarloSimulator:
         scores = np.empty(n_simulations, dtype=np.float64)
         for i in range(n_simulations):
             team_cs = bool(rng.random() < team_p_cs)
-            scores[i] = self.simulate_player_gameweek(player_data, team_clean_sheet=team_cs, rng=rng)
+            scores[i] = self.simulate_player_gameweek(
+                player_data, team_clean_sheet=team_cs, rng=rng, shared_cs_probability=team_p_cs
+            )
+        return scores
+
+    def draw_gameweek(self, player_rows, rng, fixture_cs_prob_map=None):
+        parts = {}
+        for eid, row in player_rows.items():
+            raw = row.get("fixture_components")
+            parts[eid] = raw if isinstance(raw, list) and raw else [row]
+        fixture_probabilities = {}
+        fixture_candidates = {}
+        for records in parts.values():
+            for row in records:
+                key = (row.get("fixture_id", 0), row.get("team"))
+                prob = row.get("p_clean_sheet", DEFAULT_CLEAN_SHEET_PROBABILITY)
+                if np.isfinite(prob) and 0 <= prob <= 1:
+                    fixture_candidates.setdefault(key, []).append(float(prob))
+        for key, values in fixture_candidates.items():
+            supplied = (fixture_cs_prob_map or {}).get(key)
+            fixture_probabilities[key] = float(np.median(values)) if supplied is None else float(supplied)
+        team_draws = {k: bool(rng.random() < p) for k, p in fixture_probabilities.items()}
+        scores = {}
+        for eid, records in parts.items():
+            total = 0.0
+            for row in records:
+                key = (row.get("fixture_id", 0), row.get("team"))
+                total += self.simulate_player_gameweek(
+                    row,
+                    team_draws.get(key, False),
+                    rng,
+                    shared_cs_probability=fixture_probabilities.get(key, DEFAULT_CLEAN_SHEET_PROBABILITY),
+                )
+            scores[eid] = total
         return scores
 
     def simulate_league(
@@ -292,8 +337,14 @@ class MonteCarloSimulator:
                 starters = [int(p["element"]) for p in squad_picks[:11]]
 
             cap = r.get("captain_element")
-            if not cap and starters:
-                cap = starters[0]
+            if cap is None or cap not in starters:
+                return {
+                    "status": "CAPTAIN_UNKNOWN",
+                    "user_win_probability_pct": None,
+                    "expected_final_rank": None,
+                    "simulations_count": 0,
+                    "reason": "No inferred upcoming rival captain; observed-prior-GW scenario requires a known captain",
+                }
 
             rival_entries.append(
                 {
@@ -332,27 +383,19 @@ class MonteCarloSimulator:
             trial_rival_caps = [r["captain"] for r in rival_entries]
 
             for gw_step in range(horizon_gws):
-                team_p_cs = step_team_p_cs[gw_step]
                 proj_map = step_proj_maps[gw_step]
 
-                # 1. Team-level clean sheet draws for this GW's fixtures
-                team_cs = {
-                    t: bool(rng.random() < team_p_cs.get(t, DEFAULT_CLEAN_SHEET_PROBABILITY)) for t in all_unique_teams
-                }
-
-                # 2. Joint player point draws (common player evaluated once per trial)
-                player_draws: dict[int, float] = {}
-                for elem in all_unique_elements:
-                    p_data = proj_map.get(elem)
-                    if p_data is None:
-                        p_data = {"element": elem, "expected_points": 3.5, "position": "MID", "team": 1}
-                    tm = p_data.get("team", 1)
-                    t_cs = team_cs.get(tm, False)
-                    player_draws[elem] = self.simulate_player_gameweek(
-                        player_data=p_data,
-                        team_clean_sheet=t_cs,
-                        rng=rng,
-                    )
+                # One draw per player and one clean-sheet event per fixture/team.
+                if any(eid not in proj_map for eid in all_unique_elements):
+                    return {
+                        "status": "MISSING_PROJECTIONS",
+                        "user_win_probability_pct": None,
+                        "expected_final_rank": None,
+                        "simulations_count": 0,
+                    }
+                player_draws = self.draw_gameweek(
+                    {eid: proj_map[eid] for eid in all_unique_elements}, rng, fixture_cs_prob_map=fixture_cs_prob_map
+                )
 
                 # User points this GW
                 gw_user = sum(
@@ -386,14 +429,16 @@ class MonteCarloSimulator:
             "user_top3_probability_pct": top3_prob,
             "expected_final_rank": avg_rank,
             "simulations_count": self.n_simulations,
+            "scope": "conditional selected-rival horizon, not season-winning probability",
+            "variance_model": "approximate hurdle/gamma; not empirically certified",
             "rank_distribution": {
                 "rank_1": win_prob,
                 "top_3": top3_prob,
                 "rank_4_plus": round(100.0 - top3_prob, 1),
             },
             "rival_behavior_assumptions": {
-                "captaincy_model": "Observed squad picks and known captaincy; no speculative guessing",
-                "transfer_model": "Observed squads across evaluation horizon",
+                "captaincy_model": "Conditional scenario using observed prior-GW captain; upcoming captain unknown",
+                "transfer_model": "Frozen observed rosters; not actual future transfers",
                 "chip_model": "Observed active chips",
                 "team_correlation": "Correlated team-level clean sheets (GKP/DEF +4 pts, MID +1 pt on clean sheet)",
                 "joint_draws": "Shared players evaluated on single common draw per trial",

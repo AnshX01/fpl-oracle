@@ -90,7 +90,12 @@ def run_verification() -> bool:
         ]
         missing = [m for m in required_models if not (MODELS_DIR / m).exists()]
         if not missing:
-            checks.append(("ML Component Models", "PASS", "All 6 component models loaded and verified"))
+            from fpl_oracle.ml.predict import projection_engine
+
+            projection_engine.load_or_train()
+            checks.append(
+                ("ML Component Models", "PASS", "All 6 models deserialized and integrity checked; not a skill verdict")
+            )
         else:
             checks.append(("ML Component Models", "FAIL", f"Missing models: {missing}"))
     except Exception as e:
@@ -143,7 +148,9 @@ def run_verification() -> bool:
     console.print(table)
 
     if all_passed:
-        console.print("\n[bold green]ALL SYSTEMS VERIFIED! FPL Oracle is production ready.[/bold green]")
+        console.print(
+            "\n[bold green]Selected operational checks passed. Model skill and forward evidence remain separate gates.[/bold green]"
+        )
         return True
     else:
         console.print("\n[bold red]SOME CHECKS FAILED. Please review above details.[/bold red]")

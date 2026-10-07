@@ -130,7 +130,8 @@ def test_squad_availability_empty_state_honesty():
     assert "!hasLoadedSquad" in content
     assert "Squad data unavailable" in content
     # The claim must be contingent on flaggedSquadPlayers.length === 0, NOT an empty raw squad
-    assert "flaggedSquadPlayers.length === 0" in content
+    assert "allSquadConfirmedAvailable" in content
+    assert "unknownAvailabilityPlayers.length === 0" in APP_JS.read_text()
     # No emoji checkmark next to all fit
     assert "✅" not in content
 

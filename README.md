@@ -2,7 +2,7 @@
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests: Passing](https://img.shields.io/badge/Tests-105%20Passing-brightgreen.svg)]()
+Testing status: see current CI results and the scoped repair checkpoints below; no full-suite pass is claimed.
 [![2026/27 Rules: Verified](https://img.shields.io/badge/FPL%20Rules-2026%2F27%20Verified-orange.svg)]()
 
 > **FPL Oracle** is an autonomous, machine-learning-driven Fantasy Premier League decision engine and conversational AI expert designed to help managers dominate their mini-leagues. Running 100% locally on your machine, it couples a decomposed ML projection engine with a stateful multi-gameweek beam-search transfer optimizer, correlated clean-sheet Monte Carlo simulation, and an Atlas/Council decision dashboard.
@@ -217,19 +217,13 @@ When running `python run.py run`, navigate to `http://localhost:8000` for the si
 
 ## 📊 Model Validation & Performance
 
-FPL Oracle is thoroughly validated against expanding-window out-of-sample data. Full reports are generated in the `reports/` directory:
+FPL Oracle's checked-in metrics are historical reports, not a fresh certification of the current code.
 
-- [Model Evaluation Report](reports/model_eval.md):
-  - **Rank Correlation ($\\rho$)**: **0.424** (Production Ensemble)
-  - **Mean Absolute Error (MAE)**: **1.895** (ML Ensemble) vs 1.963 (Weighted Form) and 1.952 (Season Average)
-  - **Current 2026-27 Holdout**: **1.895 MAE** vs 1.952 baseline (+0.057 gain)
-  - **True Retraining Feature Ablation**: +1.17% MAE improvement without Fixture Difficulty And Context
-  - **Uncertainty Interval Coverage**: **71.28%** empirical coverage for nominal 80% credible interval ($P_{10}$–$P_{90}$)
-- [Final Correction Pass Ledger](reports/final_fix_ledger.md): Full evidence-gated audit matrix confirming resolution of all milestones G1–G14.
-- [News Extraction Benchmark](reports/news_benchmark.json): 70/70 held-out cases passed (100.0% precision, 0 false ruled out) with deterministic fallback and benchmark gate.
-- [Proxy Simulation Replay Report](reports/fix_pass_backtest.md):
-  - **Proxy Simulation Replay**: Evaluated across 26 historical scenarios with pre-deadline data isolation and 100% legal squads.
-  - **Brier Calibration Score**: **0.2502** vs 0.3740 (naive points lead baseline).
+- The recorded nominal 80% interval coverage is 71.28%, below the unchanged 75-85% acceptance gate.
+- The historical proxy replay is not a replay of the complete served advisor. Its Brier result does not certify the production mini-league simulation or the recommended actions.
+- The deterministic news benchmark does not establish Gemini accuracy. Each extractor needs its own measured passing evidence before production overrides.
+- Forward scoring requires a genuine pre-deadline prediction snapshot and finalized official actuals. Synthetic tests never count as forward performance.
+- Current repairs are on a working branch. Passing scoped tests do not mean every feature or the full suite is complete.
 
 ---
 

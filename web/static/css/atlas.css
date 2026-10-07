@@ -92,7 +92,8 @@ body {
 
 /* Council Decision Card */
 .council-card {
-  background: var(--bg-card);
+  background: var(--bg-card) !important;
+  color: var(--text-primary);
   border: 1px solid var(--border-muted);
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.25);
@@ -235,3 +236,17 @@ body {
   color: var(--accent-emerald-light);
   font-weight: 600;
 }
+
+/* Text tokens must follow the card theme, not fixed white utilities. */
+.council-card .text-white { color: var(--text-primary) !important; }
+.council-card .text-zinc-400 { color: var(--text-muted) !important; }
+html.light .text-white { color: var(--text-primary); }
+
+html.light .bg-zinc-900, html.light .bg-zinc-950, html.light .bg-black { background-color: var(--bg-card-elevated) !important; }
+html.light .text-zinc-200, html.light .text-zinc-300, html.light .text-zinc-400, html.light .text-zinc-500 { color: var(--text-muted) !important; }
+html.light .text-emerald-400, html.light .text-emerald-500 { color: #047857 !important; }
+html.light .text-amber-400, html.light .text-amber-500 { color: #92400e !important; }
+html.light .text-blue-400 { color: #1d4ed8 !important; }
+
+html.light header, html.light nav, html.light [class*="bg-[#"] { background-color: var(--bg-card-elevated) !important; }
+html.light [class*="bg-zinc-800"], html.light [class*="bg-zinc-950"], html.light [class*="bg-zinc-900"] { background-color: var(--bg-card-elevated) !important; }

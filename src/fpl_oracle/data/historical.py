@@ -38,6 +38,7 @@ STANDARD_COLUMNS = [
     "position",
     "team",
     "round",
+    "fixture",
     "opponent_team",
     "was_home",
     "kickoff_time",
@@ -103,6 +104,59 @@ class HistoricalDataManager:
         logger.info(f"Successfully saved master history ({len(master_df)} rows) to {self.output_file}")
         return master_df
 
+    async def refresh_current_season(self) -> dict:
+        """Refresh finalized match rows, atomically; never rebuild/download past seasons."""
+        import os
+        from datetime import UTC, datetime
+
+        old = pd.read_csv(self.output_file, low_memory=False) if self.output_file.exists() else pd.DataFrame()
+        boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
+        fixtures, fixture_stale = await fpl_client.get_fixtures(force_refresh=True)
+        if stale or fixture_stale:
+            raise RuntimeError("History refresh needs fresh official context")
+        finalized = {e.id for e in boot.events if e.finished and e.data_checked}
+        valid_fixtures = {f.id for f in fixtures if f.event in finalized and f.finished}
+        fresh = await self._fetch_live_season_async()
+        if fresh.empty:
+            raise RuntimeError("No fresh current-season rows; retained old dataset")
+        fresh = fresh[fresh["round"].isin(finalized) & fresh["fixture"].isin(valid_fixtures)].copy()
+        if fresh.empty:
+            return {"status": "awaiting_finalization", "rows": 0}
+        past = old[old["season"] != "2026-27"] if not old.empty else pd.DataFrame()
+        current = old[old["season"] == "2026-27"] if not old.empty else pd.DataFrame()
+        # Preserve rows for players whose fetch failed; mark refresh incomplete below.
+        if not current.empty and "fixture" not in current:
+            current["fixture"] = 0
+        if not current.empty:
+            replaced = set(zip(fresh["element"], fresh["round"], strict=True))
+            current = current[
+                [(e, r) not in replaced for e, r in zip(current["element"], current["round"], strict=True)]
+            ]
+        merged = self._clean_and_standardize(pd.concat([past, current, fresh], ignore_index=True))
+        merged = merged.drop_duplicates(["season", "element", "fixture", "round"], keep="last")
+        self.output_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.output_file.with_suffix(".csv.tmp")
+        merged.to_csv(tmp, index=False)
+        os.replace(tmp, self.output_file)
+        import hashlib
+        import json
+
+        failed = sorted(getattr(self, "_last_failed_player_ids", []))
+        metadata = {
+            "status": "partial_refresh" if failed else "refreshed",
+            "failed_player_ids": failed,
+            "complete": not failed,
+            "rows": len(fresh),
+            "finalized_gameweeks": sorted(finalized),
+            "refreshed_at": datetime.now(UTC).isoformat(),
+            "sha256": hashlib.sha256(self.output_file.read_bytes()).hexdigest(),
+        }
+        self.output_file.with_suffix(".meta.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        from fpl_oracle.ml.predict import projection_engine
+
+        projection_engine._cache.clear()
+        return metadata
+
     def _fetch_vaastav_season(self, season: str) -> pd.DataFrame | None:
         cache_path = HISTORICAL_DIR / f"{season}_merged_gw.csv"
         if cache_path.exists():
@@ -148,12 +202,15 @@ class HistoricalDataManager:
         logger.info(f"Fetching element match histories for {len(active_elements)} active players...")
 
         records = []
+        self._last_failed_player_ids: list[int] = []
         sem = asyncio.Semaphore(15)
 
         async def fetch_player(elem):
             async with sem:
                 try:
-                    summary, _ = await fpl_client.get_element_summary(elem.id)
+                    summary, stale = await fpl_client.get_element_summary(elem.id, force_refresh=True)
+                    if stale:
+                        raise RuntimeError(f"Stale element history {elem.id}")
                     for h in summary.history:
                         rec = {
                             "season": "2026-27",
@@ -162,6 +219,7 @@ class HistoricalDataManager:
                             "position": pos_id_to_pos.get(elem.element_type, "MID"),
                             "team": team_id_to_name.get(elem.team, str(elem.team)),
                             "round": h.round,
+                            "fixture": h.fixture,
                             "opponent_team": h.opponent_team,
                             "was_home": h.was_home,
                             "kickoff_time": h.kickoff_time,
@@ -193,6 +251,7 @@ class HistoricalDataManager:
                         }
                         records.append(rec)
                 except Exception as ex:
+                    self._last_failed_player_ids.append(int(elem.id))
                     logger.debug(f"Failed element summary for {elem.id}: {ex}")
 
         tasks = [fetch_player(e) for e in active_elements]

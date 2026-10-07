@@ -13,12 +13,45 @@ Tests:
 """
 
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from scripts.verify_ledger import (
     validate_evidence_file,
     verify_doc_and_metric_consistency,
 )
+
+
+@pytest.fixture(autouse=True)
+def evidence_schema_adapter(monkeypatch):
+    # Old output cases retained; write current schema instead of legacy free-form labels.
+    original = Path.write_text
+
+    def write(path, value, *args, **kwargs):
+        if value.startswith("COMMAND:") or value.startswith("EXIT CODE:"):
+            import re
+
+            cmd = re.search(r"COMMAND: (.*)", value)
+            exit_match = re.search(r"EXIT CODE: (.*)", value)
+            exit_raw = exit_match.group(1) if exit_match else None
+            out = value.split("OUTPUT:\n", 1)[-1] if "OUTPUT:\n" in value else ""
+            record = {
+                "schema_version": 1,
+                "command": cmd.group(1).split() if cmd else [],
+                "exit_code": int(exit_raw) if exit_raw and exit_raw.isdigit() else exit_raw,
+                "stdout": out,
+                "stderr": "",
+                "code_head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+                "result": "FAIL" if "not passed" in out.lower() else "PASS",
+                "gates": [],
+                "artifacts": [],
+            }
+            value = json.dumps(record)
+        return original(path, value, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", write)
 
 
 def test_passing_fixture_accepted(tmp_path: Path):
@@ -35,7 +68,7 @@ def test_passing_fixture_accepted(tmp_path: Path):
     is_valid, reason, meta = validate_evidence_file(passing_file)
     assert is_valid is True
     assert meta["exit_code"] == 0
-    assert "pytest tests/test_smoke.py" in meta["command"]
+    assert meta["command"] == ["pytest", "tests/test_smoke.py"]
 
 
 def test_explicit_exit_9_not_passed_rejected(tmp_path: Path):
@@ -47,7 +80,7 @@ def test_explicit_exit_9_not_passed_rejected(tmp_path: Path):
     )
     is_valid, reason, _ = validate_evidence_file(failing_file)
     assert is_valid is False
-    assert "non-zero exit code: 9" in reason.lower() or "not passed" in reason.lower()
+    assert "exit_code" in reason.lower()
 
 
 def test_exit_0_with_not_passed_content_rejected(tmp_path: Path):
@@ -59,7 +92,7 @@ def test_exit_0_with_not_passed_content_rejected(tmp_path: Path):
     )
     is_valid, reason, _ = validate_evidence_file(failing_file)
     assert is_valid is False
-    assert "not passed" in reason
+    assert "not pass" in reason.lower()
 
 
 def test_malformed_exit_code_rejected(tmp_path: Path):
@@ -70,7 +103,7 @@ def test_malformed_exit_code_rejected(tmp_path: Path):
     )
     is_valid, reason, _ = validate_evidence_file(bad_file)
     assert is_valid is False
-    assert "Malformed" in reason
+    assert "exit_code" in reason
 
 
 def test_missing_command_rejected(tmp_path: Path):

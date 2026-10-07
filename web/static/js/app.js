@@ -46,6 +46,9 @@ const app = createApp({
 
       // Core Squad & Lineup
       squadData: {},
+      basicSquadData: {},
+      basicSquadLoading: false,
+      basicSquadError: null,
       squadLoading: false,
       squadError: null,
       simulatedOutIds: [],
@@ -116,21 +119,63 @@ const app = createApp({
     },
 
     hasLoadedSquad() {
-      return Boolean(this.squadData && this.squadData.starters && this.squadData.starters.length > 0);
+      if (this.squadLoading || this.squadError || this.squadData?.is_stale) return false;
+      const s = this.squadData;
+      if (!Array.isArray(s?.starters) || s.starters.length !== 11 || !Array.isArray(s?.bench) || s.bench.length !== 4) return false;
+      const ids = [...s.starters, ...s.bench].map(p => p.element);
+      return ids.every(Number.isInteger) && new Set(ids).size === 15 &&
+        s.starters.some(p => p.element === s.captain?.element);
+    },
+
+    hasBasicSquad() {
+      const s = this.basicSquadData;
+      return Array.isArray(s?.starters) && s.starters.length === 11 && Array.isArray(s?.bench) && s.bench.length === 4;
     },
 
     flaggedSquadPlayers() {
       if (!this.hasLoadedSquad) return [];
-      const allPlayers = (this.squadData.starters || []).concat(this.squadData.bench || []);
-      return allPlayers.filter(s => s.status !== 'a' || (s.chance_of_playing !== null && s.chance_of_playing < 100) || s.news_quote);
+      return [...this.squadData.starters, ...this.squadData.bench].filter(p =>
+        p.status !== 'a' || (Number.isFinite(p.chance_of_playing) && p.chance_of_playing < 100) || p.news_quote);
+    },
+
+    unknownAvailabilityPlayers() {
+      if (!this.hasLoadedSquad) return [];
+      return [...this.squadData.starters, ...this.squadData.bench].filter(p => !Number.isFinite(p.chance_of_playing));
+    },
+
+    allSquadConfirmedAvailable() {
+      return this.hasLoadedSquad && this.flaggedSquadPlayers.length === 0 && this.unknownAvailabilityPlayers.length === 0;
+    },
+
+    bankDisplay() {
+      const s = this.hasLoadedSquad ? this.squadData : this.basicSquadData;
+      return Number.isFinite(s?.bank_millions) && s.bank_source !== 'default' ? `£${s.bank_millions.toFixed(1)}m` : 'Unavailable';
+    },
+
+    ftDisplay() {
+      const s = this.hasLoadedSquad ? this.squadData : this.basicSquadData;
+      return Number.isInteger(s?.free_transfers) && s.ft_source !== 'default' ? String(s.free_transfers) : 'Unavailable';
     },
 
     activePlan() {
-      if (!this.contingencyPlans) return null;
-      return this.contingencyPlans[this.selectedPlanKey] || this.contingencyPlans.plan_a || null;
+      if (this.plansLoading || this.plansError || this.contingencyPlans?.is_stale) return null;
+      const p = this.contingencyPlans?.[this.selectedPlanKey] || this.contingencyPlans?.plan_a;
+      if (!p || !Array.isArray(p.transfers_in) || !Array.isArray(p.transfers_out) ||
+          !['ROLL_TRANSFER', '1_TRANSFER', '2_TRANSFERS', 'FREE_HIT', 'WILDCARD'].includes(p.plan_type)) return null;
+      const isRoll = p.plan_type === 'ROLL_TRANSFER';
+      if (isRoll ? (p.transfers_in.length !== 0 || p.transfers_out.length !== 0) :
+          (p.transfers_in.length === 0 || p.transfers_in.length !== p.transfers_out.length)) return null;
+      return p;
     },
 
     nextDecision() {
+      if (this.decisionCardLoading || this.plansLoading || this.decisionCardError || this.plansError || this.squadError || this.decisionCard?.is_stale) {
+        return {title: (this.decisionCardLoading || this.plansLoading) ? "Calculating recommendations..." : "Transfer recommendations unavailable",
+          badge: "Unavailable", badgeClass: "text-zinc-400", gainText: "Unavailable", hitText: "Unavailable",
+          bankText: this.bankDisplay, ftText: this.ftDisplay,
+          reasons: [this.decisionCardError || this.plansError || this.squadError || "Waiting for current analysis."],
+          caveat: "No current advice until analysis succeeds.", card: null, isUnavailable: true};
+      }
       if (!this.hasLoadedSquad) {
         if (this.decisionCardLoading || this.plansLoading || this.squadLoading) {
           return {
@@ -168,7 +213,9 @@ const app = createApp({
         };
       }
 
-      if (this.decisionCard && this.decisionCard.transfers) {
+      if (this.decisionCard?.status !== 'unavailable' && this.decisionCard?.transfers &&
+          typeof this.decisionCard.transfers.is_roll === 'boolean' &&
+          Array.isArray(this.decisionCard.transfers.in) && Array.isArray(this.decisionCard.transfers.out)) {
         const card = this.decisionCard;
         const chip = card.chip || {};
         const t = card.transfers || {};
@@ -184,7 +231,7 @@ const app = createApp({
           badge = "Chip Deployment";
           badgeClass = "bg-amber-500/20 text-amber-400 border border-amber-500/40";
         } else if (isRoll) {
-          title = `Roll Free Transfer (Bank to ${t.ft_remaining || 2} FTs)`;
+          title = `Roll Free Transfer (Bank to ${t.ft_next_gw ?? "unavailable"} FTs)`;
           badge = "Hold & Roll";
           badgeClass = "bg-blue-500/20 text-blue-400 border border-blue-500/40";
         } else {
@@ -206,8 +253,8 @@ const app = createApp({
           badgeClass: badgeClass,
           gainText: `+${(t.net_gain_vs_roll || 0.0).toFixed(1)} pts (5-GW)`,
           hitText: `${t.hit_cost ? '-' + t.hit_cost : '0'} hit pts`,
-          bankText: `£${(t.bank_after !== undefined ? t.bank_after : (this.squadData.bank_millions || 0.0))}m in bank`,
-          ftText: `${t.ft_remaining || 1} FT left`,
+          bankText: Number.isFinite(t.bank_after) ? `£${t.bank_after.toFixed(1)}m in bank` : "Bank unavailable",
+          ftText: `${t.ft_remaining ?? "unavailable"} FT left`,
           reasons: reasons,
           caveat: (card.caveats && card.caveats.length > 0) ? card.caveats[0] : "Check Friday press conference updates for confirmed starter status.",
           card: card,
@@ -267,7 +314,7 @@ const app = createApp({
           badgeClass: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40",
           gainText: `+${Math.abs(delta).toFixed(1)} pts projected gain`,
           hitText: `${plan.hits ? '-' + (plan.hits * 4) : '0'} hit pts`,
-          bankText: `£${plan.bank_after !== undefined ? (plan.bank_after / 10).toFixed(1) : this.squadData.bank_millions}m in bank`,
+          bankText: Number.isFinite(plan.bank_after) ? `£${(plan.bank_after / 10).toFixed(1)}m in bank` : "Bank unavailable",
           ftText: `${plan.free_transfers_remaining || 0} FT left`,
           reasons: [
             plan.action_summary || `Targeting favorable fixture run and superior attacking form.`,
@@ -300,7 +347,7 @@ const app = createApp({
           gainText: "0.0 pts (Roll)",
           hitText: "0 hit pts",
           bankText: `£${(this.squadData.bank_millions !== undefined ? this.squadData.bank_millions : 0.0).toFixed(1)}m in bank`,
-          ftText: `${(this.squadData.free_transfers || 1) + 1} FTs next week`,
+          ftText: Number.isInteger(plan.next_banked_ft) ? `${plan.next_banked_ft} FTs next week` : "FT unavailable",
           reasons: [
             "Starting XI holds high expected output across all fixtures.",
             "Accumulating a second free transfer provides greater pivot leverage next week."
@@ -454,12 +501,12 @@ const app = createApp({
         try {
           const data = JSON.parse(event.data);
           this.pipelineProgress = data.progress_pct || 0;
-          this.pipelineCurrentStage = `${data.step_label || data.step}: ${data.detail || ''}`;
-          if (data.is_running === false && data.progress_pct === 100) {
+          this.pipelineCurrentStage = `${data.step}: ${data.message || ''}`;
+          if (data.done) {
             this.pipelineRunning = false;
             this.eventSource.close();
             this.refreshAll();
-            this.triggerToast("Data updated successfully!");
+            this.triggerToast(data.error ? "Analysis failed. Current advice unavailable." : "Data updated successfully!");
           }
         } catch (e) {}
       };
@@ -565,10 +612,16 @@ const app = createApp({
         const res = await fetch('/api/squad');
         if (res.ok) {
           this.squadData = await res.json();
+          if (!Array.isArray(this.squadData.starters) || !Array.isArray(this.squadData.bench)) {
+            this.squadData = {};
+            this.squadError = "Malformed squad response.";
+          }
         } else {
+          this.squadData = {};
           this.squadError = `Squad unavailable (HTTP ${res.status})`;
         }
       } catch (e) {
+        this.squadData = {};
         this.squadError = "Network error loading squad.";
       } finally {
         this.squadLoading = false;
@@ -583,9 +636,11 @@ const app = createApp({
         if (res.ok) {
           this.contingencyPlans = await res.json();
         } else {
+          this.contingencyPlans = {};
           this.plansError = `Plans unavailable (HTTP ${res.status})`;
         }
       } catch (e) {
+        this.contingencyPlans = {};
         this.plansError = "Network error loading transfer plans.";
       } finally {
         this.plansLoading = false;
@@ -631,10 +686,12 @@ const app = createApp({
         if (res.ok) {
           this.decisionCard = await res.json();
         } else {
+          this.decisionCard = null;
           this.decisionCardError = `Decision card unavailable (HTTP ${res.status})`;
         }
       } catch (e) {
         console.warn('Failed to fetch decision card:', e);
+        this.decisionCard = null;
         this.decisionCardError = "Network error loading decision card.";
       } finally {
         this.decisionCardLoading = false;
@@ -761,7 +818,23 @@ const app = createApp({
       }
     },
 
+    async loadBasicSquad() {
+      this.basicSquadLoading = true;
+      this.basicSquadError = null;
+      try {
+        const res = await fetch('/api/squad/basic');
+        if (!res.ok) throw new Error(`Basic squad HTTP ${res.status}`);
+        this.basicSquadData = await res.json();
+      } catch (e) {
+        this.basicSquadData = {};
+        this.basicSquadError = String(e);
+      } finally { this.basicSquadLoading = false; }
+    },
+
     async refreshAll() {
+      // Render basic data before expensive requests enter the event loop.
+      await Promise.all([this.loadBasicSquad(), this.loadGameState(), this.loadProfile()]);
+      await this.$nextTick();
       await Promise.all([
         this.loadHealth(),
         this.loadGameState(),

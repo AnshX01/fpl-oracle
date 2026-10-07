@@ -261,6 +261,12 @@ class TextExtractor:
         ):
             category = EvidenceCategory.RULED_OUT
             conf = 0.95
+        elif re.search(
+            r"\b(?:not|never|isn't|is not|won't be|will not be)\s+(?:yet\s+|fully\s+)?(?:ready|fit|available|cleared|eligible)\b",
+            clause_lower,
+        ):
+            category = EvidenceCategory.DOUBTFUL
+            conf = 0.90
         # Priority for positive affirmations over residual knock/doubt mentions
         elif (
             "passed fit" in clause_lower

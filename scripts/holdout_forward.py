@@ -52,7 +52,11 @@ def main():
         if args.gw is None:
             print("Error: --gw <number> is required for --score.")
             sys.exit(1)
-        score_frozen_predictions(gw=args.gw, dry_run=args.dry_run)
+        from fpl_oracle.ml.holdout import fetch_finalized_actuals
+
+        actuals = asyncio.run(fetch_finalized_actuals(args.gw))
+        result = score_frozen_predictions(gw=args.gw, actual_points_map=actuals, dry_run=args.dry_run)
+        print(result if result is not None else "Awaiting official finalization or valid frozen predictions.")
     else:
         asyncio.run(run_holdout_cycle(dry_run=args.dry_run))
 

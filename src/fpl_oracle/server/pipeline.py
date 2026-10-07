@@ -20,10 +20,10 @@ from fpl_oracle.data.store import data_store
 from fpl_oracle.league.montecarlo import monte_carlo_simulator
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
-from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.server.analysis import analysis_service
 
 logger = logging.getLogger("fpl_oracle.pipeline")
 
@@ -138,7 +138,6 @@ class SyncPipeline:
                 analyzed_news = []
 
             # Extract unified reconciled availability map (N1)
-            reconciled_map = news_analyzer.get_reconciled_availabilities_map(boot, target_gw=target_gw)
 
             # ------------------------------------------------------------------
             # Stage 4: Feature Engineering
@@ -154,12 +153,8 @@ class SyncPipeline:
                 55,
                 f"Generating calibrated xP, P10 floor & P90 ceiling across GW {target_gw}-{target_gw + horizon - 1}...",
             )
-            projections = projection_engine.predict_multi_gameweeks(
-                start_gw=target_gw,
-                horizon=horizon,
-                bootstrap=boot,
-                fixtures=fixtures,
-                reconciled_availabilities=reconciled_map,
+            projections = await analysis_service.projections(
+                start_gw=target_gw, horizon=horizon, bootstrap=boot, fixtures=fixtures
             )
             target_df = projections.get(target_gw)
 
@@ -231,7 +226,7 @@ class SyncPipeline:
                 lineup_res = lineup_optimizer.select_lineup_and_captain(
                     user_squad_df, risk_preference=profile.risk_preference
                 )
-                opt_res = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
+                opt_res = await analysis_service.joint_plan(
                     current_squad_df=user_squad_df,
                     player_pool_df=target_df,
                     bank=bank,

@@ -314,7 +314,7 @@ class ModelEvaluator:
             "ml_rmse": ml_rmse,
             "ml_spearman": ml_spearman,
             "ml_pearson": ml_pearson,
-            "base_mae": b1_mae,
+            "base_mae": min(b1_mae, b2_mae, b3_mae),
             "base_rmse": b1_rmse,
             "base_spearman": b1_sp,
             "baselines": {

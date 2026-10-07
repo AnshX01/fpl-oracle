@@ -7,10 +7,10 @@ Implements out-of-fold probability calibration to prevent in-sample overfitting.
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import KFold
 
 from fpl_oracle.ml.calibration import Calibrator
 from fpl_oracle.ml.components.base import BaseComponent
+from fpl_oracle.ml.temporal import temporal_folds
 
 
 class DefConModel(BaseComponent):
@@ -29,10 +29,10 @@ class DefConModel(BaseComponent):
         y = Y["target_defcon"].values
 
         # Independent out-of-fold probability estimation for calibration
-        kf = KFold(n_splits=3, shuffle=False)
+        folds = list(temporal_folds(X))
         oof_probs = np.zeros(len(X))
 
-        for train_idx, val_idx in kf.split(X):
+        for train_idx, val_idx in folds:
             X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_tr = y[train_idx]
             w_tr = weights[train_idx]
@@ -44,7 +44,8 @@ class DefConModel(BaseComponent):
             oof_probs[val_idx] = np.asarray(fold_clf.predict_proba(X_val))[:, 1]
 
         # Fit calibrator on truly out-of-fold predictions
-        self.calibrator.fit(oof_probs, y)
+        valid = np.concatenate([test for _, test in folds])
+        self.calibrator.fit(oof_probs[valid], y[valid])
 
         # Fit main classifier on full dataset
         self.clf.fit(X, y, sample_weight=weights)

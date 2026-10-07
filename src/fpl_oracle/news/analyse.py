@@ -82,6 +82,15 @@ class NewsAnalyzer:
         except Exception as e:
             logger.warning(f"Error ingesting news feeds: {e}")
 
+        from datetime import UTC, datetime, timedelta
+
+        prior = [
+            ev
+            for ev in self._last_candidate_evidences
+            if ev.published_at and ev.published_at.tzinfo and datetime.now(UTC) - ev.published_at < timedelta(hours=48)
+        ]
+        combined = {ev.model_dump_json(): ev for ev in prior + candidate_evidences}
+        candidate_evidences = list(combined.values())
         self._last_candidate_evidences = candidate_evidences
 
         # 2. Reconcile players through single AvailabilityReconciler
@@ -108,6 +117,7 @@ class NewsAnalyzer:
                 element=elem,
                 target_gw=target_gw,
                 candidate_evidence=candidate_evidences,
+                extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
             )
             reconciled_map[elem_id] = reconciled.effective_chance_of_playing
 
@@ -148,11 +158,23 @@ class NewsAnalyzer:
                     element=elem,
                     target_gw=target_gw,
                     candidate_evidence=candidate_evidences,
+                    extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
                 )
                 reconciled_map[eid] = rec.effective_chance_of_playing
 
         self._last_reconciled_map = reconciled_map
         return signals
+
+    def get_reconciled_inputs(self, bootstrap, target_gw):
+        return {
+            int(e.id): self.reconciler.reconcile_player_fixture(
+                e,
+                target_gw,
+                candidate_evidence=self._last_candidate_evidences,
+                extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
+            )
+            for e in bootstrap.elements
+        }
 
     def get_reconciled_availabilities_map(
         self,
@@ -169,6 +191,7 @@ class NewsAnalyzer:
                 element=elem,
                 target_gw=target_gw,
                 candidate_evidence=evidences,
+                extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
             )
             avail_map[eid] = rec.effective_chance_of_playing
         return avail_map

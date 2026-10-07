@@ -296,8 +296,12 @@ class ManagerStateService:
         # Bank resolution
         # User profile bank is stored in millions (e.g. 1.5). In tenths it is 15.
         profile_bank_val = getattr(profile_data, "bank", None)
+        if getattr(profile_data, "bank_override_enabled", None) is False:
+            profile_bank_val = None
         # FT resolution
         profile_ft_val = getattr(profile_data, "free_transfers", None)
+        if getattr(profile_data, "ft_override_enabled", None) is False:
+            profile_ft_val = None
 
         bank_tenths = 0
         bank_source = "default"
@@ -428,7 +432,7 @@ class ManagerStateService:
             elif elem.chance_of_playing_next_round is not None:
                 cop = float(elem.chance_of_playing_next_round)
             else:
-                cop = 100.0
+                cop = None
 
             squad_players.append(
                 PlayerSquadState(
@@ -518,22 +522,25 @@ class ManagerStateService:
         manager_transfers = None
 
         if profile.manager_id:
-            try:
-                manager_entry, _ = await fpl_client.get_manager_entry(profile.manager_id)
-            except Exception:
-                pass
-            try:
-                manager_picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw)
-            except Exception:
-                pass
-            try:
-                manager_history, _ = await fpl_client.get_manager_history(profile.manager_id)
-            except Exception:
-                pass
-            try:
-                manager_transfers, _ = await fpl_client.get_manager_transfers(profile.manager_id)
-            except Exception:
-                pass
+            import asyncio
+
+            calls = [
+                fpl_client.get_manager_entry(profile.manager_id),
+                fpl_client.get_manager_picks(profile.manager_id, curr_gw),
+                fpl_client.get_manager_history(profile.manager_id),
+                fpl_client.get_manager_transfers(profile.manager_id),
+            ]
+            results = await asyncio.gather(*calls, return_exceptions=True)
+            values: list[Any] = []
+            for result in results:
+                if isinstance(result, BaseException):
+                    values.append(None)
+                    is_stale = True
+                else:
+                    value, stale = result
+                    values.append(value)
+                    is_stale = is_stale or stale
+            manager_entry, manager_picks, manager_history, manager_transfers = values
 
         deadline = None
         for ev in getattr(boot, "events", []):

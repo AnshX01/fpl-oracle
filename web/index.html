@@ -52,6 +52,13 @@
 
 <div id="app" v-cloak class="min-h-screen flex flex-col">
 
+  <section v-if="hasBasicSquad && !hasLoadedSquad" data-testid="basic-squad" class="council-card p-4 m-4">
+    <h2 class="font-bold">Published team loaded</h2>
+    <p>{{ basicSquadData.is_stale ? 'Cached published team; refresh failed or in progress.' : 'Published picks, not optimized recommendations.' }}</p>
+    <div data-testid="basic-starters"><span v-for="p in basicSquadData.starters" :key="p.element" class="inline-block p-2">{{ p.web_name }}</span></div>
+    <div data-testid="basic-bench">Bench: <span v-for="p in basicSquadData.bench" :key="p.element" class="inline-block p-2">{{ p.web_name }}</span></div>
+    <p>Fresh advice: calculating separately.</p>
+  </section>
   <!-- ========================================== -->
   <!-- TOP OPERATIONAL HEADER                     -->
   <!-- ========================================== -->
@@ -132,13 +139,13 @@
         </div>
         <div class="flex items-center gap-1.5">
           <span class="text-zinc-400">In Bank:</span>
-          <span class="font-bold text-amber-400">£{{ (squadData.bank_millions ?? profile.bank ?? 0.0).toFixed(1) }}m</span>
+          <span class="font-bold text-amber-400">{{ bankDisplay }}</span>
           <span v-if="squadData.has_bank_override" class="text-[10px] px-1 rounded bg-amber-500/20 text-amber-300" title="Manual bank override applied">override</span>
         </div>
         <div class="flex items-center gap-1.5">
           <span class="text-zinc-400">Banked Transfers:</span>
           <span class="font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30">
-            {{ squadData.free_transfers ?? profile.free_transfers ?? 1 }} (max 5)
+            {{ ftDisplay }} (max 5)
           </span>
           <span v-if="squadData.has_ft_override" class="text-[10px] px-1 rounded bg-amber-500/20 text-amber-300" title="Manual transfers override applied">override</span>
         </div>
@@ -415,8 +422,11 @@
             <div class="text-zinc-300 font-medium">Squad data unavailable</div>
             <div class="text-xs text-zinc-500">Configure manager ID in settings or import squad to evaluate player fitness and availability.</div>
           </div>
-          <div v-else-if="flaggedSquadPlayers.length === 0" class="col-span-2 p-4 rounded-lg bg-zinc-950/60 border border-zinc-800 text-emerald-400 text-center font-medium">
-            All 15 squad players are fully fit and available with 100% playing chance.
+          <div v-else-if="allSquadConfirmedAvailable" class="col-span-2 p-4 rounded-lg bg-zinc-950/60 border border-zinc-800 text-emerald-400 text-center font-medium">
+            All 15 have an explicit 100% official availability value. This is not a guaranteed start.
+          </div>
+          <div v-else-if="unknownAvailabilityPlayers.length > 0" class="text-zinc-400">
+            Availability unknown for {{ unknownAvailabilityPlayers.length }} players. No all-fit claim.
           </div>
         </div>
       </div>

@@ -156,13 +156,6 @@ class BacktestHarness:
             oracle_starters = oracle_lineup["starters"]["element"].tolist()
             oracle_cap = oracle_lineup["captain"]["element"]
 
-            # Evaluate Talisman captaincy: If Haaland is starting and at home or facing non-top-4, he is the anchor
-            haaland_row = actual_r[actual_r["name"].str.contains("Haaland", case=False, na=False)]
-            if not haaland_row.empty:
-                h_id = haaland_row["element"].iloc[0]
-                if h_id in oracle_starters and r in [2, 3, 4, 5]:
-                    oracle_cap = h_id
-
             actual_pts_oracle = 0.0
             starters_breakdown = []
             for elem_id in oracle_starters:
@@ -200,7 +193,7 @@ class BacktestHarness:
                         elem_actual = actual_r[actual_r["element"] == elem_id]["total_points"].values[0]
                         mult = 2.0 if elem_id == u_cap else 1.0
                         user_raw_gw += elem_actual * mult
-            user_pts = round(user_raw_gw, 1) if user_raw_gw > 0 else 67.6
+            user_pts = round(user_raw_gw, 1) if user_elem_ids else None
             user_scores.append(user_pts)
 
             # Strategy 3: Naive Baseline (Picks using raw unweighted 3-match rolling form)
@@ -245,7 +238,7 @@ class BacktestHarness:
                 {
                     "gw": r,
                     "oracle": round(actual_pts_oracle, 1),
-                    "user": round(user_pts, 1),
+                    "user": round(user_pts, 1) if user_pts is not None else None,
                     "baseline": round(actual_pts_base, 1),
                     "average": avg_gw_score,
                     "hindsight": round(actual_pts_hind, 1),
@@ -260,14 +253,14 @@ class BacktestHarness:
 
         total_oracle = sum(oracle_scores)
         total_baseline = sum(baseline_scores)
-        total_user = sum(user_scores)
+        total_user = sum(p for p in user_scores if p is not None) if any(p is not None for p in user_scores) else None
         total_avg = sum(average_manager_scores)
         total_hindsight = sum(hindsight_scores)
 
         results = {
             "rounds_evaluated": rounds,
             "oracle_total": round(total_oracle, 1),
-            "user_total": round(total_user, 1),
+            "user_total": round(total_user, 1) if total_user is not None else None,
             "baseline_total": round(total_baseline, 1),
             "average_manager_total": round(total_avg, 1),
             "hindsight_total": round(total_hindsight, 1),
@@ -285,71 +278,14 @@ class BacktestHarness:
         return results
 
     def generate_report(self, res: dict[str, Any]):
-        gw_rows = []
-        for r in res["per_gw_results"]:
-            gw_rows.append(
-                f"| GW {r['gw']} | **{r['oracle']}** pts | **{r['user']}** pts | {r['baseline']} pts | {r['average']} pts | {r['hindsight']} pts | {r['captain']} ({r['captain_pts']} pts) |"
-            )
+        import json
 
-        table_str = "\n".join(gw_rows)
-
-        content = f"""# FPL Oracle — Elite Out-of-Time Backtest & Championship Strategy Report
-
-## 1. Executive Summary & Verification Methodology
-This report documents the **Elite Out-of-Time Performance** of FPL Oracle across completed gameweeks of the 2026/27 Fantasy Premier League season.
-
-### Experimental Setup & Data Integrity:
-1. **Multi-Season Player Continuity**: All historical player statistics are tracked across seasons using normalized player names, properly capturing career baselines for premiums (e.g., Erling Haaland, Cole Palmer, Bukayo Saka, Mohamed Salah).
-2. **Seasonal Shrinkage Prior**: Round 1 inference incorporates expanding career minutes and start rates, ensuring first-choice stars are not penalized by end-of-season rotation in the prior campaign.
-3. **Joint MILP Starter/Bench & Talisman Anchoring**: Solves starting XI, captaincy, and bench allocation jointly with bench discount weighting (0.05), ensuring the squad is built around high-ceiling talismans rather than fifteen mediocre budget players.
-4. **Zero Data Leakage**: All match features are shifted by 1 ($t-1$), guaranteeing zero within-gameweek or future data contamination.
-
----
-
-## 2. Cumulative Strategy Performance (Gameweeks 1–5)
-
-| Strategy | Total Points | Average Pts/GW | Uplift vs Global Average | Uplift vs Naive Baseline |
-|---|---|---|---|---|
-| **User's Actual Squad** (Top Mini-League Contender) | **{res["user_total"]}** pts | **{round(res["user_total"] / len(res["rounds_evaluated"]), 1)}** pts | **+{round(res["user_total"] - res["average_manager_total"], 1)}** pts | **+{round(res["user_total"] - res["baseline_total"], 1)}** pts |
-| **FPL Oracle Elite Strategy** | **{res["oracle_total"]}** pts | **{round(res["oracle_total"] / len(res["rounds_evaluated"]), 1)}** pts | **{res["oracle_uplift_over_average"]:+}** pts | **{res["oracle_uplift_over_baseline"]:+}** pts |
-| **Heuristic Form Baseline** | {res["baseline_total"]} pts | {round(res["baseline_total"] / len(res["rounds_evaluated"]), 1)} pts | {round(res["baseline_total"] - res["average_manager_total"], 1):+} pts | Benchmark (0) |
-| **FPL Global Average Manager** | {res["average_manager_total"]} pts | {round(res["average_manager_total"] / len(res["rounds_evaluated"]), 1)} pts | Benchmark (0) | - |
-| **Hindsight Ceiling** (Perfect Foresight) | {res["hindsight_total"]} pts | {round(res["hindsight_total"] / len(res["rounds_evaluated"]), 1)} pts | Theoretical Upper Bound | - |
-
----
-
-## 3. Gameweek-by-Gameweek Breakdown
-
-| Gameweek | FPL Oracle Elite | User Squad | Naive Baseline | Global Average | Hindsight Max | Oracle Captain Pick |
-|---|---|---|---|---|---|---|
-{table_str}
-
----
-
-## 4. How to Win Your Mini-League & Climb the Global Rankings
-
-Achieving **338 points in 5 Gameweeks (~67.6 pts/GW)** places a manager in the elite top fraction of a percent globally. Here is how FPL Oracle's mathematical engine guarantees sustainable championship performance over 38 gameweeks:
-
-### 1. The Talisman Anchor & Effective Ownership (EO) Defense
-- In 2026/27, Erling Haaland has sustained an average of ~8.0 xGI per gameweek with regular double-digit returns (13, 9, 9, 6 points).
-- High EO players (>100% active EO) cannot be faded in high-probability home fixtures without catastrophic rank downside.
-- FPL Oracle anchors the squad around high-ceiling talismans, using cheap £4.5m/£5.0m enablers on the bench so budget is concentrated where points actually score.
-
-### 2. High-ROI Value Outliers
-- Pascal Groß (£5.5m Brighton talisman) has scored **47 points** across 5 gameweeks through penalty duties and set-piece creation.
-- Arsenal defensive double-ups (Gabriel Magalhães + Riccardo Calafiori + David Raya) capitalize on Arsenal's league-leading clean sheet probability and DefCon +2 baseline.
-- FPL Oracle's decomposed models identify these structural efficiencies before prices rise.
-
-### 3. Hit Discipline & Free Transfer Banking
-- The 2026/27 rule allowing **up to 5 banked free transfers** rewards patience.
-- Taking speculative -4 hits to chase past hauls destroys long-term rank. The transfer optimizer enforces that a hit is only recommended if net projected return over a 3-gameweek horizon exceeds 5.5 xP.
-
-### 4. Risk Mode Calibration (Protecting Lead vs Chasing)
-- When leading your mini-league: set strategy mode to **Conservative / Lead Protection** to mirror rival captaincy anchors and minimize variance.
-- When chasing a deficit: switch to **Aggressive / Differential** mode to target high $P_{90}$ ceiling differentials (e.g. Bukayo Saka, Cole Palmer, Alexander Isak) against favorable fixture runs.
-"""
-        self.report_path.write_text(content, encoding="utf-8")
-        logger.info(f"Backtest report saved to {self.report_path}")
+        content = (
+            "# Exploratory historical replay\n\nNot forward evidence or production-readiness certification.\n\n```json\n"
+            + json.dumps(res, indent=2)
+            + "\n```\n"
+        )
+        (REPORTS_DIR / "fix_pass_backtest.md").write_text(content, encoding="utf-8")
 
 
 backtest_harness = BacktestHarness()

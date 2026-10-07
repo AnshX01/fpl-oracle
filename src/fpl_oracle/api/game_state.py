@@ -68,7 +68,7 @@ class GameStateManager:
         try:
             event_status_raw, _ = await fpl_client.get_event_status()
         except Exception:
-            event_status_raw = {"status": [], "leagues": "Updated"}
+            event_status_raw = {"status": [], "leagues": "Unknown"}
 
         curr_gw = None
         next_gw = None
@@ -98,7 +98,7 @@ class GameStateManager:
                 # Parse ISO deadline string
                 clean_time = next_event.deadline_time.replace("Z", "+00:00")
                 dl_dt = datetime.fromisoformat(clean_time)
-                seconds_to_deadline = max(0.0, (dl_dt - now_utc).total_seconds())
+                seconds_to_deadline = (dl_dt - now_utc).total_seconds()
             except Exception:
                 pass
 
@@ -113,7 +113,7 @@ class GameStateManager:
         # Check bonus and league status
         bonus_added = False
         leagues_updated = False
-        status_items = event_status_raw.get("status", [])
+        status_items = [item for item in event_status_raw.get("status", []) if item.get("event") == curr_gw]
         if status_items:
             # Check if all status items have bonus added and points finalised
             all_bonus = all(item.get("bonus_added") is True for item in status_items)

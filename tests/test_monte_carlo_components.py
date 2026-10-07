@@ -157,6 +157,7 @@ def test_horizon_simulation_per_gw_projections():
         {
             "entry_id": 1,
             "total_points": 0.0,
+            "captain_element": 1,
             "squad": [{"element": 1, "is_starter": True}],
         }
     ]

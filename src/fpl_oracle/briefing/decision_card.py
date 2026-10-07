@@ -5,6 +5,7 @@ from the shared game state, projection snapshots, transfer engine, chip calendar
 and rival simulations.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -20,10 +21,8 @@ from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.ml.model_registry import model_registry
-from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.analyse import news_analyzer
-from fpl_oracle.optimise.lineup import lineup_optimizer
-from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.server.analysis import analysis_service
 
 logger = logging.getLogger("fpl_oracle.briefing.decision_card")
 
@@ -35,6 +34,14 @@ class DecisionCardGenerator:
         game_state = await game_state_manager.get_game_state()
         effective_state = await manager_state_service.get_current_state()
         profile = data_store.get_profile()
+        if len(effective_state.squad) != 15:
+            return {
+                "status": "unavailable",
+                "transfers": None,
+                "captain": None,
+                "reason": "Configured squad unavailable",
+                "is_stale": effective_state.is_stale,
+            }
 
         boot, is_stale = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
@@ -47,19 +54,18 @@ class DecisionCardGenerator:
         # ----------------------------------------------------------------------
         # 1. Projections & Squad Resolution
         # ----------------------------------------------------------------------
-        reconciled_map = news_analyzer.get_reconciled_availabilities_map(boot, target_gw=target_gw)
-        horizon_proj = projection_engine.predict_multi_gameweeks(
-            target_gw, 8, boot, fixtures=fixtures, reconciled_availabilities=reconciled_map
-        )
+        horizon_proj = await analysis_service.projections(target_gw, 8, boot, fixtures=fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         user_squad_df = effective_state.to_squad_dataframe()
-        if user_squad_df.empty or len(user_squad_df) < 15:
-            from fpl_oracle.optimise.squad import squad_optimizer
-
-            squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
-            user_squad_df = squad_res["squad"].copy()
-            user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
+        if user_squad_df.empty or len(user_squad_df) != 15:
+            return {
+                "status": "unavailable",
+                "transfers": None,
+                "captain": None,
+                "reason": "Configured squad unavailable",
+                "is_stale": effective_state.is_stale,
+            }
 
         # Attach current projections to squad
         if not target_df.empty and "expected_points" in target_df.columns:
@@ -73,9 +79,51 @@ class DecisionCardGenerator:
             user_squad_df["p90"] = user_squad_df["element"].map(p90_map).fillna(0.0)
 
         # ----------------------------------------------------------------------
+        # 3. Chip Strategy & Joint Optimization (G10)
+        # ----------------------------------------------------------------------
+        hist = None
+        if effective_state.manager_id:
+            try:
+                hist, _ = await fpl_client.get_manager_history(effective_state.manager_id)
+            except Exception as e:
+                logger.warning("Decision card manager history fetch warning: %s", e)
+
+        chips_status = chip_planner.get_remaining_chips(hist)
+        available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
+        chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
+
+        joint_res = await analysis_service.joint_plan(
+            current_squad_df=user_squad_df,
+            player_pool_df=target_df,
+            bank=float(effective_state.bank_tenths),
+            free_transfers=int(effective_state.free_transfers),
+            horizon_projections=horizon_proj,
+            current_gw=effective_curr_gw,
+            target_gw=target_gw,
+            available_chips=available_chips,
+            chips_already_used=chips_used,
+        )
+
+        chip_strat = await asyncio.to_thread(
+            chip_planner.generate_chip_strategy,
+            current_gw=effective_curr_gw,
+            current_squad_df=user_squad_df,
+            horizon_projections=horizon_proj,
+            fixtures=fixtures,
+            bootstrap=boot,
+            manager_history=hist,
+        )
+
+        # ----------------------------------------------------------------------
+        # 4. Synchronized Transfer & Chip Decision (ONE Plan across surfaces)
+        # ----------------------------------------------------------------------
+        rec_plan = joint_res["recommended_plan"]
+        # ----------------------------------------------------------------------
         # 2. Lineup & Captaincy
         # ----------------------------------------------------------------------
-        lineup_res = lineup_optimizer.select_lineup_and_captain(user_squad_df)
+        lineup_res = rec_plan.get("lineup")
+        if not isinstance(lineup_res, dict) or "starters" not in lineup_res:
+            raise ValueError("Recommended plan missing verified post-action lineup")
 
         starters_list = []
         captain_elem = lineup_res["captain"]["element"]
@@ -136,45 +184,6 @@ class DecisionCardGenerator:
             "p90": round(float(lineup_res["vice_captain"].get("p90", 0.0)), 2),
         }
 
-        # ----------------------------------------------------------------------
-        # 3. Chip Strategy & Joint Optimization (G10)
-        # ----------------------------------------------------------------------
-        hist = None
-        if effective_state.manager_id:
-            try:
-                hist, _ = await fpl_client.get_manager_history(effective_state.manager_id)
-            except Exception as e:
-                logger.warning("Decision card manager history fetch warning: %s", e)
-
-        chips_status = chip_planner.get_remaining_chips(hist)
-        available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
-        chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
-
-        joint_res = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
-            current_squad_df=user_squad_df,
-            player_pool_df=target_df,
-            bank=float(effective_state.bank_tenths),
-            free_transfers=int(effective_state.free_transfers),
-            horizon_projections=horizon_proj,
-            current_gw=effective_curr_gw,
-            target_gw=target_gw,
-            available_chips=available_chips,
-            chips_already_used=chips_used,
-        )
-
-        chip_strat = chip_planner.generate_chip_strategy(
-            current_gw=effective_curr_gw,
-            current_squad_df=user_squad_df,
-            horizon_projections=horizon_proj,
-            fixtures=fixtures,
-            bootstrap=boot,
-            manager_history=hist,
-        )
-
-        # ----------------------------------------------------------------------
-        # 4. Synchronized Transfer & Chip Decision (ONE Plan across surfaces)
-        # ----------------------------------------------------------------------
-        rec_plan = joint_res["recommended_plan"]
         t_in_raw = rec_plan.get("transfers_in", [])
         t_out_raw = rec_plan.get("transfers_out", [])
 
@@ -185,7 +194,7 @@ class DecisionCardGenerator:
                     {
                         "element": int(p.get("element", 0)),
                         "web_name": p.get("web_name", ""),
-                        "cost": round(float(p.get("buy_price", 0.0)), 1),
+                        "cost": round(float(p.get("cost", 0.0)), 1),
                         "expected_points": round(float(p.get("expected_points", 0.0)), 2),
                     }
                 )
@@ -202,7 +211,7 @@ class DecisionCardGenerator:
                     }
                 )
 
-        is_roll = rec_plan.get("plan_type") == "ROLL_TRANSFER" or len(transfers_in) == 0
+        is_roll = rec_plan.get("plan_type") == "ROLL_TRANSFER"
         action_name = "ROLL" if is_roll else ("SINGLE_TRANSFER" if len(transfers_in) == 1 else "MULTIPLE_TRANSFERS")
 
         transfers_summary = {
@@ -212,7 +221,12 @@ class DecisionCardGenerator:
             "out": transfers_out,
             "bank_after": round(float(rec_plan.get("remaining_bank", effective_state.bank_millions)), 2),
             "ft_used": 0 if is_roll else len(transfers_in),
-            "ft_remaining": int(rec_plan.get("next_banked_ft", effective_state.free_transfers)),
+            "ft_remaining": max(
+                0,
+                int(effective_state.free_transfers)
+                - (0 if joint_res.get("recommended_chip") in ("wildcard", "freehit") else len(transfers_in)),
+            ),
+            "ft_next_gw": int(rec_plan["next_banked_ft"]),
             "hit_cost": int(rec_plan.get("hits", 0) * 4),
             "hits_count": int(rec_plan.get("hits", 0)),
             "net_gain_vs_roll": round(float(rec_plan.get("horizon_gain_vs_roll", 0.0)), 2),
@@ -393,10 +407,10 @@ class DecisionCardGenerator:
                             }
                             win_prob_dict = {
                                 "status": "leader, no close chasers",
-                                "p_first": 100.0,
-                                "p_above_key_rivals": 100.0,
-                                "expected_rank": 1.0,
-                                "mc_se": 0.0,
+                                "p_first": None,
+                                "p_above_key_rivals": None,
+                                "expected_rank": None,
+                                "mc_se": None,
                                 "simulation_note": "Leader with no rivals within points window.",
                             }
                         else:
@@ -408,7 +422,8 @@ class DecisionCardGenerator:
                             )
 
                             # Monte Carlo simulation across multi-gameweek horizon
-                            mc_res = monte_carlo_simulator.simulate_league(
+                            mc_res = await asyncio.to_thread(
+                                monte_carlo_simulator.simulate_league,
                                 user_points=user_pts,
                                 user_squad_df=user_squad_df,
                                 rival_squads=rivals_res.get("rival_squads", []),
@@ -447,6 +462,15 @@ class DecisionCardGenerator:
                                     "simulation_note": mc_res.get(
                                         "message", "No rivals found in window for simulation."
                                     ),
+                                }
+                            elif mc_res.get("status") != "SIMULATION_SUCCESS":
+                                win_prob_dict = {
+                                    "status": "unavailable",
+                                    "p_first": None,
+                                    "p_above_key_rivals": None,
+                                    "expected_rank": None,
+                                    "mc_se": None,
+                                    "simulation_note": mc_res.get("status", "Unknown simulation state"),
                                 }
                             else:
                                 win_prob_dict = {

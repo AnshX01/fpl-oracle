@@ -46,12 +46,22 @@ def check_news_benchmark_gate(
     try:
         data = json.loads(bench_file.read_text(encoding="utf-8"))
         extractors = data.get("extractors", {})
-        metrics = extractors.get(extractor_name, data)
+        metrics = extractors.get(extractor_name)
+        if not isinstance(metrics, dict) or not metrics.get("active"):
+            return False, f"No measured active benchmark for {extractor_name}", {}
+        if metrics.get("status") in ("mock", "awaiting", "unverified"):
+            return False, f"Extractor {extractor_name} is unverified", metrics
 
-        precision = float(metrics.get("extraction_precision_pct", metrics.get("precision_pct", 0.0))) / 100.0
-        recall = float(metrics.get("extraction_recall_pct", metrics.get("recall_pct", 0.0))) / 100.0
-        false_ro_rate = float(metrics.get("false_ruled_out_rate_pct", metrics.get("false_ruled_out_rate", 0.0))) / 100.0
+        precision = float(metrics.get("extraction_precision_pct", metrics.get("precision_pct", 0.0)) or 0.0) / 100.0
+        recall = float(metrics.get("extraction_recall_pct", metrics.get("recall_pct", 0.0)) or 0.0) / 100.0
+        false_ro_rate = (
+            float(metrics.get("false_ruled_out_rate_pct", metrics.get("false_ruled_out_rate", 0.0)) or 0.0) / 100.0
+        )
 
+        import math
+
+        if not all(math.isfinite(v) and 0 <= v <= 1 for v in (precision, recall, false_ro_rate)):
+            return False, "Invalid benchmark metrics", metrics
         if precision < NEWS_GATE_MIN_PRECISION:
             return False, f"Precision {precision:.1%} below gate threshold {NEWS_GATE_MIN_PRECISION:.1%}", metrics
         if recall < NEWS_GATE_MIN_RECALL:
@@ -109,6 +119,7 @@ class AvailabilityReconciler:
         target_gw: int,
         fixture: Fixture | None = None,
         candidate_evidence: list[PlayerEvidence] | None = None,
+        extractor_name: str = "deterministic_fallback",
     ) -> ReconciledAvailability:
         """
         Reconcile a single player's availability for a specific gameweek and fixture.
@@ -150,6 +161,8 @@ class AvailabilityReconciler:
                 p_start_given_avail = 0.0
                 reconciliation_reason = f"Official Scout Risk: Loan ineligible for GW {target_gw}"
 
+        baseline_p_avail = p_avail
+        baseline_p_start = p_start_given_avail
         effective_cop = baseline_cop
         is_shadow_override = False
         source_quote = None
@@ -160,7 +173,7 @@ class AvailabilityReconciler:
         # 2. Evaluate Candidate Text Evidence if in Shadow or Gated-Active mode
         if self.mode != RecommendationMode.API_ONLY and candidate_evidence:
             player_evidences = [
-                e for e in candidate_evidence if e.player_id == elem_id or e.player_name.lower() == web_name.lower()
+                e for e in candidate_evidence if e.player_id == elem_id and e.target_gw in (None, target_gw)
             ]
 
             for ev in player_evidences:
@@ -188,7 +201,7 @@ class AvailabilityReconciler:
                 source_quote = ev.quote
                 source_url = ev.source_url
 
-                if ev.category == EvidenceCategory.RULED_OUT:
+                if ev.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE):
                     # Explicit manager ruled out statement
                     is_shadow_override = True
                     effective_cop = 0.0
@@ -200,8 +213,9 @@ class AvailabilityReconciler:
                 elif ev.category == EvidenceCategory.MINUTES_LIMIT:
                     is_shadow_override = True
                     mins_limit = float(ev.minutes_restriction or 60.0)
-                    effective_cop = max(effective_cop, 75.0)
-                    p_avail = 1.0
+                    # A minutes cap alone does not clear an official fitness doubt.
+                    effective_cop = baseline_cop
+                    p_avail = baseline_p_avail
                     p_start_given_avail = self.prob_settings.prob_start_minutes_limit
                     reconciliation_reason = (
                         f"Candidate Evidence: Minutes restricted to {mins_limit:.0f}m ('{ev.quote[:50]}...')"
@@ -234,7 +248,7 @@ class AvailabilityReconciler:
         # Enforce benchmark accuracy gate before applying candidate news to production
         gate_open = True
         if self.mode == RecommendationMode.GATED_ACTIVE:
-            gate_open, gate_reason, _ = check_news_benchmark_gate()
+            gate_open, gate_reason, _ = check_news_benchmark_gate(extractor_name)
             if not gate_open:
                 rejected_signals.append(f"News gate closed: {gate_reason}")
 
@@ -250,9 +264,9 @@ class AvailabilityReconciler:
             baseline_chance_of_playing=baseline_cop,
             official_news_text=news_text,
             effective_chance_of_playing=effective_cop if applied_to_production else baseline_cop,
-            p_available=p_avail,
-            p_start_given_available=p_start_given_avail,
-            expected_minutes_limit=mins_limit,
+            p_available=p_avail if applied_to_production else baseline_p_avail,
+            p_start_given_available=p_start_given_avail if applied_to_production else baseline_p_start,
+            expected_minutes_limit=mins_limit if applied_to_production else None,
             evidence_category=evidence_category,
             source_quote=source_quote,
             source_url=source_url,

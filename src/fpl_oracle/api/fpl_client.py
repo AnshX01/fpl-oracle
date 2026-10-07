@@ -210,10 +210,12 @@ class FPLClient:
         fixtures = [Fixture.model_validate(item) for item in raw]
         return fixtures, is_stale
 
-    async def get_element_summary(self, element_id: int) -> tuple[ElementSummary, bool]:
+    async def get_element_summary(self, element_id: int, force_refresh: bool = False) -> tuple[ElementSummary, bool]:
         cache_key = f"element-summary:{element_id}"
         ttl = SETTINGS.get("cache", {}).get("summary_ttl_seconds", 1800)
-        raw, is_stale = await self._fetch_json(f"element-summary/{element_id}/", cache_key, ttl)
+        raw, is_stale = await self._fetch_json(
+            f"element-summary/{element_id}/", cache_key, ttl, force_refresh=force_refresh
+        )
         return ElementSummary.model_validate(raw), is_stale
 
     async def get_element_summaries_batch(
@@ -234,10 +236,10 @@ class FPLClient:
                 await asyncio.sleep(polite_delay)
         return results
 
-    async def get_live_gameweek(self, gw: int) -> tuple[dict[str, Any], bool]:
+    async def get_live_gameweek(self, gw: int, force_refresh: bool = False) -> tuple[dict[str, Any], bool]:
         cache_key = f"event:{gw}:live"
         ttl = SETTINGS.get("cache", {}).get("live_gw_ttl_seconds", 60)
-        return await self._fetch_json(f"event/{gw}/live/", cache_key, ttl)
+        return await self._fetch_json(f"event/{gw}/live/", cache_key, ttl, force_refresh=force_refresh)
 
     async def get_manager_entry(self, manager_id: int) -> tuple[ManagerEntry, bool]:
         cache_key = f"entry:{manager_id}"

@@ -167,6 +167,30 @@ class ScoringEnsemble:
         p_min60 = p_min60 * cop_scale
         p_starts = p_starts * cop_scale
         exp_mins = exp_mins * cop_scale
+        if "news_start_probability" in X:
+            start = X["news_start_probability"].to_numpy(dtype=float)
+            valid = np.isfinite(start)
+            p_starts = np.where(valid, np.minimum(p_starts, start * cop_scale), p_starts)
+            p_min60 = np.minimum(p_min60, p_starts)
+        if "news_minutes_limit" in X:
+            limit = X["news_minutes_limit"].to_numpy(dtype=float)
+            valid = np.isfinite(limit)
+            ratio = np.where(valid, np.minimum(1.0, limit / np.maximum(exp_mins, 1e-9)), 1.0)
+            exp_mins = exp_mins * ratio
+            p_min60 = np.where(valid & (limit < 60), 0.0, p_min60)
+            # Scale unconditional point components once for explicit minutes restriction.
+            components = dict(components)
+            for key in (
+                "expected_goals",
+                "expected_assists",
+                "expected_goals_conceded",
+                "expected_saves",
+                "expected_bonus",
+                "expected_card_deduction",
+                "expected_penalties_saved",
+            ):
+                if key in components:
+                    components[key] = components[key] * ratio
 
         # Probability of playing (at least 1 minute)
         # Bounded coherently: p_play >= p_min60
@@ -198,26 +222,28 @@ class ScoringEnsemble:
         # Using Poisson expectation for floor(conceded / 2) to correctly account for threshold probability
         exp_gc = components["expected_goals_conceded"]
         gc_penalty_multiplier = pos_gkp * 1.0 + pos_def * 1.0
-        exp_gc_deduction = np.array([expected_floor_div(float(r), 2) for r in exp_gc]) * gc_penalty_multiplier
+        exp_gc_deduction = (
+            np.array([expected_floor_div(float(r), 2) for r in exp_gc]) * gc_penalty_multiplier * cop_scale
+        )
 
         # 6. Goalkeeper saves (1 pt per 3 saves)
         # Using Poisson expectation for floor(saves / 3)
         exp_saves = components["expected_saves"]
-        exp_saves_pts = np.array([expected_floor_div(float(s), 3) for s in exp_saves]) * pos_gkp
+        exp_saves_pts = np.array([expected_floor_div(float(s), 3) for s in exp_saves]) * pos_gkp * cop_scale
 
         # 7. Defensive Contribution (DefCon +2 for DEF, MID, FWD)
         defcon_eligible = 1.0 - pos_gkp
         exp_defcon_pts = components["p_defcon"] * p_play * 2.0 * defcon_eligible
 
         # 8. Disciplinary deductions (trained on real card labels)
-        exp_card_deduction = components["expected_card_deduction"]
+        exp_card_deduction = components["expected_card_deduction"] * cop_scale
 
         # 9. Bonus points
-        exp_bonus_pts = components["expected_bonus"]
+        exp_bonus_pts = components["expected_bonus"] * cop_scale
 
         # 10. Goalkeeper penalty saves (+5 pts)
         exp_pen_saves = components.get("expected_penalties_saved", np.zeros(n))
-        exp_pen_saves_pts = exp_pen_saves * 5.0 * pos_gkp
+        exp_pen_saves_pts = exp_pen_saves * 5.0 * pos_gkp * cop_scale
 
         # Total Expected Points (unclipped to preserve negative point outcomes!)
         xP = (

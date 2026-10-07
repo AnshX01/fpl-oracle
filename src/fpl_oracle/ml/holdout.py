@@ -26,7 +26,6 @@ from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
 from fpl_oracle.config import DATA_DIR, HOLDOUT_DIR, REPORTS_DIR
 from fpl_oracle.ml.model_registry import model_registry
-from fpl_oracle.ml.predict import projection_engine
 
 logger = logging.getLogger("fpl_oracle.ml.holdout")
 
@@ -86,30 +85,53 @@ async def freeze_predictions(
 
     if target_gw is None:
         _, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or 6
+        if next_gw is None:
+            raise ValueError("No official upcoming GW")
+        target_gw = next_gw
 
     target_file = out_dir / f"gw{target_gw}_predictions.json"
-    if target_file.exists() and not force:
+    if target_file.exists():
         logger.info(f"Predictions already frozen for GW{target_gw} at {target_file}. Skipping freeze.")
         with open(target_file, encoding="utf-8") as f:
-            return json.load(f)
+            existing = json.load(f)
+        if (
+            existing.get("schema_version") != 2
+            or existing.get("source_kind") != "official_forward"
+            or existing.get("gameweek") != target_gw
+        ):
+            raise ValueError("Existing freeze is legacy/invalid; retained unchanged, not valid forward evidence")
+        frozen = datetime.fromisoformat(existing["frozen_at"].replace("Z", "+00:00"))
+        deadline = datetime.fromisoformat(existing["deadline_utc"].replace("Z", "+00:00"))
+        if frozen.tzinfo is None or deadline.tzinfo is None or frozen >= deadline or not existing.get("predictions"):
+            raise ValueError("Existing freeze is not valid pre-deadline evidence")
+        return existing
 
-    # 1. Capture active model metadata & manifest hash
+    # Strict target event deadline, never a clamped seconds counter or default GW.
+    import subprocess
+
+    from fpl_oracle.server.analysis import analysis_service
+
+    bootstrap, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
+    fixtures, fix_stale = await fpl_client.get_fixtures(force_refresh=True)
+    event = next((e for e in bootstrap.events if e.id == target_gw), None)
+    if event is None or not event.deadline_time or stale or fix_stale:
+        raise ValueError("Cannot freeze without fresh target event and official deadline")
+    deadline = datetime.fromisoformat(event.deadline_time.replace("Z", "+00:00"))
+    if deadline.tzinfo is None or datetime.now(UTC) >= deadline:
+        raise ValueError("Late/unknown deadline: forward freeze forbidden")
     active_version = model_registry.get_active_version()
     manifest_hash = compute_manifest_sha256()
-    model_ver = active_version.get("version", "v1.0.0")
-    git_commit = active_version.get("git_commit", "unknown")
-
-    # 2. Fetch live official API context
-    bootstrap, _ = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
-
-    # 3. Generate served predictions
-    preds_df = projection_engine.predict_gameweek(
-        target_gw=target_gw,
-        bootstrap=bootstrap,
-        fixtures=fixtures,
-    )
+    if manifest_hash == "unmanifested":
+        raise ValueError("Missing manifest")
+    model_ver = active_version.get("version")
+    git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    horizon = await analysis_service.projections(target_gw, 5, bootstrap, fixtures)
+    preds_df = horizon.get(target_gw)
+    if preds_df is None:
+        raise ValueError("Missing target projection snapshot")
+    snapshot = {"snapshot_id": preds_df.attrs.get("snapshot_id"), "inputs": preds_df.attrs.get("snapshot_inputs")}
+    if not snapshot["snapshot_id"] or not snapshot["inputs"]:
+        raise ValueError("Projection snapshot provenance missing")
 
     if preds_df.empty:
         raise ValueError(f"Unable to generate predictions for GW{target_gw} (empty DataFrame returned).")
@@ -132,17 +154,27 @@ async def freeze_predictions(
             }
         )
 
+    # Inference can finish after the deadline even if it began before it.
+    if datetime.now(UTC) >= deadline or manifest_hash != compute_manifest_sha256():
+        raise ValueError("Deadline passed or model changed during inference; freeze forbidden")
     freeze_payload = {
         "gameweek": target_gw,
         "frozen_at": datetime.now(UTC).isoformat(),
         "model_version": model_ver,
         "git_commit": git_commit,
         "manifest_hash": manifest_hash,
+        "schema_version": 2,
+        "source_kind": "official_forward",
+        "deadline_utc": deadline.isoformat(),
+        "snapshot_id": snapshot["snapshot_id"],
+        "snapshot_inputs": snapshot["inputs"],
         "player_count": len(player_projections),
         "predictions": player_projections,
     }
 
     if not dry_run:
+        if datetime.now(UTC) >= deadline:
+            raise ValueError("Deadline passed before write; freeze forbidden")
         tmp_file = out_dir / f"gw{target_gw}_predictions.json.tmp"
         with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(freeze_payload, f, indent=2)
@@ -154,6 +186,38 @@ async def freeze_predictions(
         logger.info(f"[Dry Run] Generated freeze payload for GW{target_gw} ({len(player_projections)} players).")
 
     return freeze_payload
+
+
+class FinalizedActuals(dict):
+    """Only official retrieval constructs this marker. Plain maps are research-only."""
+
+    def __init__(self, gw, points, fetched_at):
+        super().__init__(points)
+        self.gameweek = gw
+        self.fetched_at = fetched_at
+        self.source_kind = "official_finalized_live"
+
+
+async def fetch_finalized_actuals(gw: int):
+    bootstrap, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
+    fixtures, fix_stale = await fpl_client.get_fixtures(event=gw, force_refresh=True)
+    event = next((e for e in bootstrap.events if e.id == gw), None)
+    if (
+        stale
+        or fix_stale
+        or event is None
+        or not event.finished
+        or not event.data_checked
+        or not fixtures
+        or not all(f.finished for f in fixtures)
+    ):
+        return None
+    live, live_stale = await fpl_client.get_live_gameweek(gw, force_refresh=True)
+    if live_stale or not isinstance(live.get("elements"), list):
+        return None
+    return FinalizedActuals(
+        gw, {int(e["id"]): float(e["stats"]["total_points"]) for e in live["elements"]}, datetime.now(UTC).isoformat()
+    )
 
 
 def score_frozen_predictions(
@@ -183,19 +247,21 @@ def score_frozen_predictions(
         logger.warning(f"Frozen predictions for GW{gw} contain 0 records.")
         return None
 
-    # Load actual points if not provided
+    # Live finalized actuals must be provided by the async official retrieval path.
+    # Cached master CSV is not evidence that a GW is complete.
     if actual_points_map is None:
-        master_path = DATA_DIR / "historical" / "master_history.csv"
-        actual_points_map = {}
-        if master_path.exists():
-            import pandas as pd
+        return None
+    if freeze_data.get("source_kind") != "official_forward" or freeze_data.get("schema_version") != 2:
+        if not dry_run:
+            raise ValueError("Legacy/synthetic freeze cannot enter measured forward log")
+    if freeze_data.get("source_kind") == "official_forward":
+        frozen = datetime.fromisoformat(freeze_data["frozen_at"].replace("Z", "+00:00"))
+        deadline = datetime.fromisoformat(freeze_data["deadline_utc"].replace("Z", "+00:00"))
+        if frozen.tzinfo is None or deadline.tzinfo is None or frozen >= deadline:
+            raise ValueError("Invalid pre-deadline provenance")
 
-            m_df = pd.read_csv(master_path, low_memory=False)
-            gw_mask = (m_df["round"] == gw) & (m_df["season"] == "2026-27")
-            if gw_mask.sum() > 0:
-                for _, r in m_df[gw_mask].iterrows():
-                    actual_points_map[int(r["element"])] = float(r["total_points"])
-
+    if not dry_run and (not isinstance(actual_points_map, FinalizedActuals) or actual_points_map.gameweek != gw):
+        raise ValueError("Measured forward scoring requires finalized official live actuals")
     if not actual_points_map:
         logger.warning(f"Actual points for GW{gw} not yet available in dataset.")
         return None
@@ -214,7 +280,7 @@ def score_frozen_predictions(
             p10_list.append(p.get("p10", p["expected_points"] - 1.5))
             p90_list.append(p.get("p90", p["expected_points"] + 1.5))
 
-    if len(y_true) < 10:
+    if len(y_true) != len(preds_list) or len(y_true) < 10:
         logger.warning(f"Insufficient matched observations for GW{gw} ({len(y_true)} matches).")
         return None
 
@@ -238,6 +304,8 @@ def score_frozen_predictions(
         "model_version": freeze_data.get("model_version"),
         "git_commit": freeze_data.get("git_commit"),
         "manifest_hash": freeze_data.get("manifest_hash"),
+        "actual_source": getattr(actual_points_map, "source_kind", "research_only"),
+        "actuals_fetched_at": getattr(actual_points_map, "fetched_at", None),
         "sample_count": len(y_true),
         "ml_mae": mae,
         "ml_rmse": rmse,
@@ -246,7 +314,10 @@ def score_frozen_predictions(
     }
 
     if not dry_run:
-        log_data = ensure_holdout_log_initialized(next_gw=gw + 1)
+        if log_path.exists():
+            log_data = json.loads(log_path.read_text(encoding="utf-8"))
+        else:
+            log_data = {"status": "AWAITING_FORWARD_GAMEWEEKS", "evaluated_gameweeks": []}
         existing_gw = [idx for idx, eg in enumerate(log_data["evaluated_gameweeks"]) if eg["gameweek"] == gw]
         if existing_gw:
             log_data["evaluated_gameweeks"][existing_gw[0]] = score_record
@@ -257,8 +328,10 @@ def score_frozen_predictions(
         log_data["last_updated"] = datetime.now(UTC).isoformat()
         log_data["next_scheduled_freeze_gw"] = gw + 1
 
-        with open(log_path, "w", encoding="utf-8") as f:
-            json.dump(log_data, f, indent=2)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_log = log_path.with_suffix(".json.tmp")
+        tmp_log.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
+        os.replace(tmp_log, log_path)
 
         logger.info(f"Scored GW{gw} forward holdout: MAE={mae}, RMSE={rmse}, Spearman={sp_val}, Cov={cov_pct}%")
 
@@ -282,7 +355,9 @@ async def run_holdout_cycle(dry_run: bool = False) -> dict[str, Any]:
     game_state = await game_state_manager.get_game_state()
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
-    target_freeze_gw = next_gw or 6
+    if next_gw is None:
+        raise ValueError("No official upcoming gameweek for freeze cycle")
+    target_freeze_gw = next_gw
     print(f"\nCurrent Season Gameweek Phase:   {game_state.phase.value}")
     print(f"Next Gameweek:                  GW{target_freeze_gw}")
     print(f"Seconds to Deadline:            {game_state.seconds_to_deadline}s")
@@ -299,7 +374,8 @@ async def run_holdout_cycle(dry_run: bool = False) -> dict[str, Any]:
             print(f"Executing pre-deadline freeze for GW{target_freeze_gw}...")
             await freeze_predictions(target_gw=target_freeze_gw, dry_run=False)
         else:
-            print(f"[Dry Run] Pre-deadline freeze for GW{target_freeze_gw} simulated successfully.")
+            await freeze_predictions(target_gw=target_freeze_gw, dry_run=True)
+            print(f"[Dry Run] Validated pre-deadline payload for GW{target_freeze_gw}; not written.")
 
     # Check for scored gameweeks
     if eval_gws:

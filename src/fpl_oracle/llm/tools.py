@@ -15,9 +15,11 @@ from fpl_oracle.data.store import data_store
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.ml.predict import projection_engine
+from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.price_change import price_change_predictor
 from fpl_oracle.optimise.squad import squad_optimizer
 from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.server.analysis import analysis_service
 
 logger = logging.getLogger("fpl_oracle.llm.tools")
 
@@ -202,7 +204,7 @@ class ToolExecutor:
         query = (args.get("query") or "").strip().lower()
         horizon = min(8, max(1, args.get("horizon", 3)))
 
-        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, horizon, boot, fixtures)
+        horizon_proj = await analysis_service.projections(target_gw, horizon, boot, fixtures)
         df_target = horizon_proj.get(target_gw, pd.DataFrame())
 
         if query:
@@ -237,7 +239,7 @@ class ToolExecutor:
         target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
         effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
-        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+        horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         # Load user squad or generate standard template if not loaded
@@ -296,7 +298,7 @@ class ToolExecutor:
         target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
         effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
-        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 8, boot, fixtures)
+        horizon_proj = await analysis_service.projections(target_gw, 8, boot, fixtures)
         pool_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         hist = None
@@ -323,7 +325,9 @@ class ToolExecutor:
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         gw = args.get("gameweek") or next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
 
-        gw_df = projection_engine.predict_gameweek(gw, boot, fixtures)
+        gw_df = projection_engine.predict_gameweek(
+            gw, boot, fixtures, reconciled_inputs=news_analyzer.get_reconciled_inputs(boot, gw)
+        )
         top5 = gw_df.sort_values(by="expected_points", ascending=False).head(5)
 
         return {
@@ -383,7 +387,9 @@ class ToolExecutor:
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
 
-        gw_df = projection_engine.predict_gameweek(target_gw, boot, fixtures)
+        gw_df = projection_engine.predict_gameweek(
+            target_gw, boot, fixtures, reconciled_inputs=news_analyzer.get_reconciled_inputs(boot, target_gw)
+        )
         names = [n.strip().lower() for n in args.get("player_names", [])]
 
         matches = []

@@ -244,7 +244,10 @@ async def retrain_trigger_job():
             logger.info(
                 f"[Scheduler] GW{curr_gw} bonus points finalized! Triggering automated retrain with rollback guard..."
             )
+            from fpl_oracle.data.historical import historical_manager
             from fpl_oracle.ml.train import train_all_models
+
+            await historical_manager.refresh_current_season()
 
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, train_all_models)
@@ -328,6 +331,12 @@ async def deadline_alert_job():
 # JOB 6: Forward Holdout Pre-Deadline Freeze & Post-GW Scoring (Requirement G6)
 # Checks every 15 minutes to freeze predictions or score finished GW
 # ====================================================================
+async def history_refresh_job():
+    from fpl_oracle.data.historical import historical_manager
+
+    return await historical_manager.refresh_current_season()
+
+
 async def holdout_forward_job():
     job_id = "holdout_forward"
     job_name = tracker.jobs_state[job_id]["name"]
@@ -342,19 +351,27 @@ async def holdout_forward_job():
 
         game_state = await game_state_manager.get_game_state()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_freeze_gw = next_gw or 6
+        target_freeze_gw = next_gw
 
         details = ""
         # 1. Pre-deadline freeze if within 24h
-        if game_state.seconds_to_deadline <= 86400:
+        if (
+            target_freeze_gw is not None
+            and game_state.seconds_to_deadline is not None
+            and 0 < game_state.seconds_to_deadline <= 86400
+            and not game_state.stale
+        ):
             payload = await freeze_predictions(target_gw=target_freeze_gw)
             details = f"Froze GW{target_freeze_gw} predictions ({payload['player_count']} players)."
         else:
-            details = f"Awaiting GW{target_freeze_gw} pre-deadline freeze window ({int(game_state.seconds_to_deadline // 3600)}h remaining)."
+            details = f"Awaiting valid pre-deadline window for GW{target_freeze_gw}."
 
         # 2. Check if previous gameweek finished and can be scored
         if curr_gw and curr_gw >= 6:
-            scored = score_frozen_predictions(gw=curr_gw)
+            from fpl_oracle.ml.holdout import fetch_finalized_actuals
+
+            actuals = await fetch_finalized_actuals(curr_gw)
+            scored = score_frozen_predictions(gw=curr_gw, actual_points_map=actuals) if actuals is not None else None
             if scored:
                 details += f" Scored finished GW{curr_gw} holdout (MAE={scored['ml_mae']})."
 
@@ -414,6 +431,7 @@ async def run_job_on_demand(job_id: str) -> dict[str, Any]:
         "retrain_trigger": retrain_trigger_job,
         "deadline_alert": deadline_alert_job,
         "holdout_forward": holdout_forward_job,
+        "history_refresh": history_refresh_job,
     }
 
     if job_id not in job_map:
@@ -448,6 +466,8 @@ def start_scheduler():
 
         # Job 5: Pre-deadline alert & briefing check every 5 minutes
         scheduler.add_job(deadline_alert_job, "interval", minutes=5, id="deadline_alert", replace_existing=True)
+
+        scheduler.add_job(history_refresh_job, "interval", hours=1, id="history_refresh", replace_existing=True)
 
         # Job 6: Forward Holdout freeze and scoring every 15 minutes
         scheduler.add_job(holdout_forward_job, "interval", minutes=15, id="holdout_forward", replace_existing=True)

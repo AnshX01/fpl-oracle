@@ -998,7 +998,9 @@ class FeatureEngineering:
             cop = 100.0
             if reconciled_availabilities and elem.id in reconciled_availabilities:
                 val = float(reconciled_availabilities[elem.id])
-                cop = val * 100.0 if 0.0 < val <= 1.0 else val
+                if not np.isfinite(val) or not 0 <= val <= 100:
+                    raise ValueError("Availability map requires percent in [0,100]")
+                cop = val
             elif elem.status in ("i", "s"):
                 cop = 0.0
             elif elem.chance_of_playing_next_round is not None:

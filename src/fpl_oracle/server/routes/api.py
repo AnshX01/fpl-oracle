@@ -2,6 +2,7 @@
 FastAPI REST API routes for FPL Oracle.
 """
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -34,9 +35,8 @@ from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.news.ingest import news_ingestion
 from fpl_oracle.optimise.contingency import contingency_engine
-from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.server.analysis import analysis_service
 from fpl_oracle.server.jobs import get_jobs_status, run_job_on_demand
 from fpl_oracle.server.pipeline import sync_pipeline
 from fpl_oracle.server.safe_json import SafeJSONResponse, safe_json_serialize
@@ -157,6 +157,8 @@ def get_profile():
         "llm_provider": p.llm_provider,
         "bank": p.bank,
         "free_transfers": p.free_transfers,
+        "bank_override_enabled": p.bank_override_enabled,
+        "ft_override_enabled": p.ft_override_enabled,
         "manual_squad": json.loads(p.manual_squad) if p.manual_squad else None,
         "status_diagnostic": diag,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
@@ -168,13 +170,19 @@ def update_profile(req: ProfileUpdateRequest):
     kwargs: dict[str, Any] = {}
     if req.risk_preference is not None:
         kwargs["risk_preference"] = req.risk_preference
-    if req.bank is not None:
+    if "bank" in req.model_fields_set:
         kwargs["bank"] = req.bank
-    if req.free_transfers is not None:
+    if "free_transfers" in req.model_fields_set:
         kwargs["free_transfers"] = req.free_transfers
     if req.manual_squad is not None:
         kwargs["manual_squad"] = req.manual_squad
 
+    import math
+
+    if req.bank is not None and (not math.isfinite(req.bank) or req.bank < 0):
+        raise HTTPException(status_code=422, detail="Bank must be a finite nonnegative value")
+    if req.free_transfers is not None and not 0 <= req.free_transfers <= 5:
+        raise HTTPException(status_code=422, detail="Free transfers must be between 0 and 5")
     data_store.update_profile(**kwargs)
     return {"status": "success", "profile": get_profile()}
 
@@ -216,6 +224,38 @@ def get_sync_status():
     return sync_pipeline.get_status()
 
 
+@router.get("/squad/basic")
+async def get_basic_squad():
+    state = await manager_state_service.get_current_state()
+    squad = state.to_squad_dataframe()
+    if len(squad) != 15 or squad["element"].nunique() != 15:
+        return {
+            "status": "unavailable",
+            "starters": [],
+            "bench": [],
+            "reason": "No complete configured squad",
+            "is_stale": state.is_stale,
+        }
+    starters = squad[squad["is_starter"]].to_dict("records")
+    bench = squad[~squad["is_starter"]].sort_values("bench_order").to_dict("records")
+    return safe_json_serialize(
+        {
+            "status": "published",
+            "starters": starters,
+            "bench": bench,
+            "captain": next((p for p in starters if p["is_captain"]), None),
+            "bank_millions": state.bank_millions,
+            "bank_source": state.bank_source,
+            "free_transfers": state.free_transfers,
+            "ft_source": state.ft_source,
+            "is_stale": state.is_stale,
+            "data_as_of": state.source_timestamp,
+            "source_kind": state.mode.value,
+            "target_gameweek": state.target_gw,
+        }
+    )
+
+
 @router.get("/squad")
 async def get_squad(manager_id: int | None = None):
     effective_state = await manager_state_service.get_current_state()
@@ -226,16 +266,18 @@ async def get_squad(manager_id: int | None = None):
     fixtures_list, _ = await fpl_client.get_fixtures()
     team_map = {t.id: t for t in boot.teams}
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures=fixtures_list)
+    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures=fixtures_list)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df = effective_state.to_squad_dataframe()
-    if user_squad_df.empty or len(user_squad_df) < 15:
-        from fpl_oracle.optimise.squad import squad_optimizer
-
-        squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
-        user_squad_df = squad_res["squad"].copy()
-        user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
+    if user_squad_df.empty or len(user_squad_df) != 15:
+        return {
+            "status": "unavailable",
+            "starters": [],
+            "bench": [],
+            "reason": "Configured squad unavailable",
+            "is_stale": effective_state.is_stale,
+        }
 
     # Attach current GW projections to user squad
     if not target_df.empty and "expected_points" in target_df.columns:
@@ -249,7 +291,23 @@ async def get_squad(manager_id: int | None = None):
         user_squad_df["p90"] = user_squad_df["element"].map(p90_map).fillna(0.0)
         user_squad_df["exp_defcon_pts"] = user_squad_df["element"].map(defcon_map).fillna(0.0)
 
-    lineup_res = lineup_optimizer.select_lineup_and_captain(user_squad_df)
+    history = None
+    if effective_state.manager_id:
+        history, _ = await fpl_client.get_manager_history(effective_state.manager_id)
+    chips_status = chip_planner.get_remaining_chips(history)
+    prefix = "set_1" if target_gw <= 19 else "set_2"
+    joint = await analysis_service.joint_plan(
+        current_squad_df=user_squad_df,
+        player_pool_df=target_df,
+        bank=float(effective_state.bank_tenths),
+        free_transfers=int(effective_state.free_transfers),
+        horizon_projections=horizon_proj,
+        current_gw=curr_gw or 5,
+        target_gw=target_gw,
+        available_chips=chips_status[f"{prefix}_remaining"],
+        chips_already_used=chips_status[f"{prefix}_used"],
+    )
+    lineup_res = joint["recommended_plan"]["lineup"]
 
     def get_next_fixtures(team_id: int):
         f_list = []
@@ -277,13 +335,17 @@ async def get_squad(manager_id: int | None = None):
                     )
         return f_list[:5]
 
-    news_map = {}
-    try:
-        raw_signals = await news_analyzer.get_player_news_signals(boot, target_gw=target_gw)
-        for sig in raw_signals:
-            news_map[sig["element_id"]] = sig
-    except Exception:
-        pass
+    recs = news_analyzer.get_reconciled_inputs(boot, target_gw)
+    news_map = {
+        eid: {
+            "quote": r.source_quote,
+            "source_url": r.source_url,
+            "applied_to_production": r.applied_to_production,
+            "expected_minutes_limit": r.expected_minutes_limit,
+            "reconciliation_reason": r.reconciliation_reason,
+        }
+        for eid, r in recs.items()
+    }
 
     starters_out = []
     for _, s in lineup_res["starters"].iterrows():
@@ -438,7 +500,7 @@ async def get_projections(position: str | None = None, team_id: int | None = Non
     _, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, horizon, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, horizon, boot, fixtures)
     df = horizon_proj.get(target_gw, pd.DataFrame())
 
     if position:
@@ -484,10 +546,7 @@ async def run_optimizer(req: OptimizeRequest | None = None):
     target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
 
     # News adjustment path: pass reconciled availabilities map
-    reconciled_map = news_analyzer.get_reconciled_availabilities_map(boot, target_gw=target_gw)
-    horizon_proj = projection_engine.predict_multi_gameweeks(
-        target_gw, PLANNER_HORIZON, boot, fixtures, reconciled_availabilities=reconciled_map
-    )
+    horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     # Get user squad with real selling prices and actual free transfers
@@ -509,7 +568,7 @@ async def run_optimizer(req: OptimizeRequest | None = None):
     available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
     chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
 
-    res = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
+    res = await analysis_service.joint_plan(
         current_squad_df=user_squad_df,
         player_pool_df=target_df,
         bank=bank_tenths,
@@ -546,10 +605,7 @@ async def get_chip_strategy():
     target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
 
     # News adjustment path: identical across all surfaces
-    reconciled_map = news_analyzer.get_reconciled_availabilities_map(boot, target_gw=target_gw)
-    horizon_proj = projection_engine.predict_multi_gameweeks(
-        target_gw, 8, boot, fixtures, reconciled_availabilities=reconciled_map
-    )
+    horizon_proj = await analysis_service.projections(target_gw, 8, boot, fixtures)
     pool_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     hist = None
@@ -561,7 +617,8 @@ async def get_chip_strategy():
 
     squad_df, _, _ = await _get_effective_user_squad(pool_df, boot)
 
-    res = chip_planner.generate_chip_strategy(
+    res = await asyncio.to_thread(
+        chip_planner.generate_chip_strategy,
         current_gw=curr_gw or 5,
         current_squad_df=squad_df,
         horizon_projections=horizon_proj,
@@ -569,8 +626,24 @@ async def get_chip_strategy():
         bootstrap=boot,
         manager_history=hist,
     )
-    res["stale"] = is_stale
-    res["is_stale"] = is_stale
+    chips_status = chip_planner.get_remaining_chips(hist)
+    prefix = "set_1" if target_gw <= 19 else "set_2"
+    joint = await analysis_service.joint_plan(
+        current_squad_df=squad_df,
+        player_pool_df=pool_df,
+        bank=float(effective_state.bank_tenths),
+        free_transfers=int(effective_state.free_transfers),
+        horizon_projections=horizon_proj,
+        current_gw=curr_gw or 5,
+        target_gw=target_gw,
+        available_chips=chips_status[f"{prefix}_remaining"],
+        chips_already_used=chips_status[f"{prefix}_used"],
+    )
+    res["recommend_chip_this_gw"] = joint["recommended_chip"] is not None
+    res["recommended_chip"] = joint["recommended_chip"]
+    res["chip_comparison_table"] = joint["chip_comparison_table"]
+    res["stale"] = is_stale or effective_state.is_stale
+    res["is_stale"] = res["stale"]
     res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     return safe_json_serialize(res)
 
@@ -590,7 +663,7 @@ async def get_league_intel(league_id: int | None = None):
                 "standings": [],
                 "template_players": [],
                 "differential_players": [],
-                "simulation": {"user_win_probability_pct": 0.0, "expected_final_rank": 1.0},
+                "simulation": {"user_win_probability_pct": None, "expected_final_rank": None},
                 "strategy": {
                     "mode_title": "Setup Required",
                     "rationale": "Set your mini-league ID in settings to activate rival analysis.",
@@ -616,7 +689,7 @@ async def get_league_intel(league_id: int | None = None):
                 "standings": [],
                 "template_players": [],
                 "differential_players": [],
-                "simulation": {"user_win_probability_pct": 0.0, "expected_final_rank": 1.0},
+                "simulation": {"user_win_probability_pct": None, "expected_final_rank": None},
                 "strategy": {
                     "mode_title": "No Standings",
                     "rationale": "No standings data returned from FPL API for this league.",
@@ -652,18 +725,20 @@ async def get_league_intel(league_id: int | None = None):
     # Monte Carlo simulation
     fixtures, _ = await fpl_client.get_fixtures()
     sim_target_gw = (curr_gw + 1) if curr_gw else 2
-    projections_horizon = projection_engine.predict_multi_gameweeks(sim_target_gw, 5, boot, fixtures)
+    projections_horizon = await analysis_service.projections(sim_target_gw, 5, boot, fixtures)
     proj_df = projections_horizon.get(sim_target_gw)
 
     user_squad_df = effective_state.to_squad_dataframe()
-    if user_squad_df.empty or len(user_squad_df) < 15:
-        user_squad_df = (
-            proj_df.sort_values(by="expected_points", ascending=False).head(15)
-            if proj_df is not None and not proj_df.empty
-            else pd.DataFrame()
-        )
+    if user_squad_df.empty or len(user_squad_df) != 15:
+        return {
+            "status": "unavailable",
+            "standings": standings_data["standings"],
+            "simulation": None,
+            "reason": "Configured squad unavailable",
+        }
 
-    mc_res = monte_carlo_simulator.simulate_league(
+    mc_res = await asyncio.to_thread(
+        monte_carlo_simulator.simulate_league,
         user_points=user_pts,
         user_squad_df=user_squad_df,
         rival_squads=rivals_res["rival_squads"],
@@ -760,12 +835,8 @@ async def get_price_changes():
 async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple[pd.DataFrame, float, int]:
     effective_state = await manager_state_service.get_current_state()
     user_squad_df = effective_state.to_squad_dataframe()
-    if user_squad_df.empty or len(user_squad_df) < 15:
-        from fpl_oracle.optimise.squad import squad_optimizer
-
-        squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
-        user_squad_df = squad_res["squad"].copy()
-        user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
+    if user_squad_df.empty or len(user_squad_df) != 15:
+        raise HTTPException(status_code=409, detail="Configured squad unavailable; no personal advice generated")
 
     if not target_df.empty and "expected_points" in target_df.columns:
         xp_map = {int(r["element"]): float(r["expected_points"]) for _, r in target_df.iterrows()}
@@ -786,13 +857,14 @@ async def get_contingency_plans():
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
     profile = data_store.get_profile()
 
-    plans = contingency_engine.generate_contingency_plans(
+    plans = await asyncio.to_thread(
+        contingency_engine.generate_contingency_plans,
         current_squad_df=user_squad_df,
         player_pool_df=target_df,
         bank=bank,
@@ -816,13 +888,18 @@ async def get_contingency_matrix():
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
 
-    matrix = contingency_engine.compute_injury_matrix(
-        squad_df=user_squad_df, player_pool_df=target_df, bank=bank, free_transfers=free_transfers, bootstrap=boot
+    matrix = await asyncio.to_thread(
+        contingency_engine.compute_injury_matrix,
+        squad_df=user_squad_df,
+        player_pool_df=target_df,
+        bank=bank,
+        free_transfers=free_transfers,
+        bootstrap=boot,
     )
     return safe_json_serialize(
         {
@@ -843,12 +920,13 @@ async def post_contingency_panic(req: PanicRequest):
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
 
-    crisis_res = contingency_engine.panic_button_reoptimize(
+    crisis_res = await asyncio.to_thread(
+        contingency_engine.panic_button_reoptimize,
         query=req.query or "",
         squad_df=user_squad_df,
         player_pool_df=target_df,
@@ -870,7 +948,7 @@ async def get_pre_deadline_checklist():
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or 6
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
@@ -885,8 +963,12 @@ async def get_pre_deadline_checklist():
             pass
 
     chips_status = chip_planner.get_remaining_chips(history)
-    checklist = contingency_engine.generate_pre_deadline_checklist(
-        squad_df=user_squad_df, bootstrap=boot, game_state_data=game_state.model_dump(), chips_status=chips_status
+    checklist = await asyncio.to_thread(
+        contingency_engine.generate_pre_deadline_checklist,
+        squad_df=user_squad_df,
+        bootstrap=boot,
+        game_state_data=game_state.model_dump(),
+        chips_status=chips_status,
     )
     return safe_json_serialize(
         {

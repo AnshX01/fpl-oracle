@@ -238,7 +238,7 @@ def run_proxy_simulation(quick: bool = False) -> dict[str, Any]:
 
         # 6 Distinct Manager Strategies
         strategy_configs = [
-            ("Oracle (Model xP)", "expected_points", 1000.0),
+            ("Clipped season-mean proxy", "expected_points", 1000.0),
             ("Recent Form", "recent_pts", 1000.0),
             ("Season Average", "mean_pts", 1000.0),
             ("Template", "sum_pts", 1000.0),
@@ -453,7 +453,7 @@ def run_proxy_simulation(quick: bool = False) -> dict[str, Any]:
         "",
         "| Strategy | Mean Actual Pts / GW | Uplift vs Strategy |",
         "| :--- | :---: | :---: |",
-        f"| **FPL Oracle Model (xP)** | **{mean_oracle_pts:.2f}** | - |",
+        f"| **Clipped season-mean proxy** | **{mean_oracle_pts:.2f}** | - |",
         f"| **Previous GW Hauler** | {mean_prev_gw_pts:.2f} | +{mean_oracle_pts - mean_prev_gw_pts:.2f} |",
         f"| **Season Average** | {mean_season_avg_pts:.2f} | +{mean_oracle_pts - mean_season_avg_pts:.2f} |",
         f"| **Template (Total Points)** | {mean_template_pts:.2f} | +{mean_oracle_pts - mean_template_pts:.2f} |",
@@ -499,6 +499,8 @@ def run_proxy_simulation(quick: bool = False) -> dict[str, Any]:
 
     # Legacy compatibility return format
     payload["brier_score"] = overall_brier_model
+    payload["predictor_kind"] = "clipped_season_mean_proxy"
+    payload["validates_actual_advisor"] = False
     return payload
 
 

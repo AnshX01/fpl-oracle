@@ -7,10 +7,10 @@ Implements out-of-fold probability calibration to prevent in-sample overfitting.
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import KFold
 
 from fpl_oracle.ml.calibration import Calibrator
 from fpl_oracle.ml.components.base import BaseComponent
+from fpl_oracle.ml.temporal import temporal_folds
 
 
 class MinutesModel(BaseComponent):
@@ -34,11 +34,11 @@ class MinutesModel(BaseComponent):
         y_mins = Y["target_minutes"].values
 
         # 1. Independent out-of-fold probability estimation for calibration
-        kf = KFold(n_splits=3, shuffle=False)
+        folds = list(temporal_folds(X))
         oof_starts = np.zeros(len(X))
         oof_min60 = np.zeros(len(X))
 
-        for train_idx, val_idx in kf.split(X):
+        for train_idx, val_idx in folds:
             X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_s_tr = y_starts[train_idx]
             y_m_tr = y_min60[train_idx]
@@ -57,8 +57,9 @@ class MinutesModel(BaseComponent):
             oof_min60[val_idx] = np.asarray(fold_clf_m.predict_proba(X_val))[:, 1]
 
         # Fit calibrators on truly out-of-fold predictions
-        self.calibrator_starts.fit(oof_starts, y_starts)
-        self.calibrator_min60.fit(oof_min60, y_min60)
+        valid = np.concatenate([test for _, test in folds])
+        self.calibrator_starts.fit(oof_starts[valid], y_starts[valid])
+        self.calibrator_min60.fit(oof_min60[valid], y_min60[valid])
 
         # 2. Fit main models on full dataset
         self.clf_starts.fit(X, y_starts)
@@ -78,13 +79,6 @@ class MinutesModel(BaseComponent):
         p_min60 = self.calibrator_min60.calibrate(p_min60_raw)
 
         exp_mins = np.clip(self.reg_minutes.predict(X), 0.0, 95.0)
-
-        # Apply chance_of_playing adjustment strictly
-        if "chance_of_playing" in X.columns:
-            cop = X["chance_of_playing"].values / 100.0
-            p_starts = p_starts * cop
-            p_min60 = p_min60 * cop
-            exp_mins = exp_mins * cop
 
         # Enforce probabilistic coherence
         # A player playing 60+ minutes implies expected minutes >= 60 * p_min60

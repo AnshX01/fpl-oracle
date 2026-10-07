@@ -29,7 +29,7 @@ from fpl_oracle.ml.components.cards_saves import CardsSavesModel
 from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.defending import DefendingModel
 from fpl_oracle.ml.components.minutes import MinutesModel
-from fpl_oracle.ml.ensemble import scoring_ensemble
+from fpl_oracle.ml.ensemble import ScoringEnsemble
 from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.model_registry import check_promotion_gate
 from fpl_oracle.ml.train import compute_rolling_origin_cv
@@ -62,7 +62,7 @@ def run_full_evaluation():
         )
 
     # 3. Disjoint Calibration and Holdout Evaluation (G5)
-    train_mask = seasons.isin(["2023-24", "2024-25", "2025-26"])
+    train_mask = seasons.isin(["2023-24", "2024-25"])
     cal_mask = seasons == "2025-26"
     eval_mask = seasons == "2026-27"
 
@@ -91,8 +91,9 @@ def run_full_evaluation():
     for m in models.values():
         comps_cal.update(m.predict(X_cal))
 
-    scoring_ensemble.calibrate(comps_cal, X_cal, Y_cal)
+    scoring_ensemble = ScoringEnsemble(blend_weights=(0.72, 0.04, 0.24))
     scoring_ensemble.fit_stacking_weights(comps_cal, X_cal, Y_cal)
+    scoring_ensemble.calibrate(comps_cal, X_cal, Y_cal)
 
     # Predict on unseen 2026-27 holdout evaluation block
     comps_eval = {}

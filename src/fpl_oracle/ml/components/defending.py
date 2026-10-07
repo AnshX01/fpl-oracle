@@ -29,13 +29,12 @@ class DefendingModel(BaseComponent):
         self.clf_cs.fit(X, y_cs)
         self.reg_gc.fit(X, y_gc)
 
-        prob_cs_raw = self.clf_cs.predict_proba(X)[:, 1]
         if len(X) >= 6:
-            from sklearn.model_selection import KFold
+            from fpl_oracle.ml.temporal import temporal_folds
 
-            kf = KFold(n_splits=3, shuffle=True, random_state=42)
+            folds = list(temporal_folds(X))
             prob_oof = np.zeros(len(X))
-            for train_idx, val_idx in kf.split(X):
+            for train_idx, val_idx in folds:
                 clf_fold = lgb.LGBMClassifier(
                     n_estimators=self.clf_cs.n_estimators,
                     learning_rate=self.clf_cs.learning_rate,
@@ -45,9 +44,10 @@ class DefendingModel(BaseComponent):
                 )
                 clf_fold.fit(X.iloc[train_idx], y_cs[train_idx])
                 prob_oof[val_idx] = np.asarray(clf_fold.predict_proba(X.iloc[val_idx]))[:, 1]
-            self.calibrator_cs.fit(prob_oof, y_cs)
+            valid = np.concatenate([test for _, test in folds])
+            self.calibrator_cs.fit(prob_oof[valid], y_cs[valid])
         else:
-            self.calibrator_cs.fit(prob_cs_raw, y_cs)
+            raise ValueError("Insufficient temporal rows for clean-sheet calibration")
 
         self.is_fitted = True
 

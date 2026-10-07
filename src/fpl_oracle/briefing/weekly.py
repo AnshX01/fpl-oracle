@@ -14,11 +14,11 @@ from fpl_oracle.data.store import data_store
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
-from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
 from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.server.analysis import analysis_service
 from fpl_oracle.server.safe_json import safe_json_serialize
 
 
@@ -41,7 +41,7 @@ class WeeklyBriefingGenerator:
         deadline_str = next_event.deadline_time if next_event else "2026-10-10T10:00:00Z"
 
         # Predictions for next 5 gameweeks
-        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+        horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         # Load user squad

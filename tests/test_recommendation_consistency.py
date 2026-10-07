@@ -28,7 +28,7 @@ def _get_json_data(response):
     return response
 
 
-def test_cross_surface_recommendation_consistency():
+def test_cross_surface_recommendation_consistency(configured_advisor):
     """Assert that decision card, squad, and optimizer agree on transfers, captaincy, and chips."""
 
     async def _run():

@@ -12,6 +12,8 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from fpl_oracle.news.analyse import news_analyzer
+
 # Ensure utf-8 output on Windows
 if sys.platform == "win32":
     try:
@@ -44,7 +46,15 @@ def analyze():
             f"Current GW: [bold yellow]{curr_gw}[/bold yellow] | Next GW: [bold green]{target_gw}[/bold green]"
         )
 
-        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+        horizon_proj = projection_engine.predict_multi_gameweeks(
+            target_gw,
+            5,
+            boot,
+            fixtures,
+            reconciled_inputs_by_gw={
+                g: news_analyzer.get_reconciled_inputs(boot, g) for g in range(target_gw, min(39, target_gw + 5))
+            },
+        )
         target_df = horizon_proj[target_gw]
 
         profile = data_store.get_profile()
@@ -112,7 +122,15 @@ def optimize():
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         target_gw = next_gw or 6
 
-        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+        horizon_proj = projection_engine.predict_multi_gameweeks(
+            target_gw,
+            5,
+            boot,
+            fixtures,
+            reconciled_inputs_by_gw={
+                g: news_analyzer.get_reconciled_inputs(boot, g) for g in range(target_gw, min(39, target_gw + 5))
+            },
+        )
         target_df = horizon_proj[target_gw]
 
         squad_df = squad_optimizer.solve_best_squad(target_df, budget=1000.0)["squad"].copy()
@@ -171,7 +189,15 @@ def chips():
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
-        horizon_proj = projection_engine.predict_multi_gameweeks(next_gw or 6, 8, boot, fixtures)
+        horizon_proj = projection_engine.predict_multi_gameweeks(
+            next_gw or 6,
+            8,
+            boot,
+            fixtures,
+            reconciled_inputs_by_gw={
+                g: news_analyzer.get_reconciled_inputs(boot, g) for g in range(next_gw or 6, min(39, next_gw or 6 + 8))
+            },
+        )
         squad_df = squad_optimizer.solve_best_squad(horizon_proj[next_gw or 6], budget=1000.0)["squad"]
 
         chip_res = chip_planner.generate_chip_strategy(

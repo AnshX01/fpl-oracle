@@ -535,7 +535,7 @@ class TransferOptimizer:
         transfers_count = len(t_in)
         if is_wildcard or initial_action.get("plan_type") in ("FREE_HIT", "WILDCARD"):
             hits0 = 0
-            next_ft0 = 1
+            next_ft0 = min(5, initial_ft + 1)
         elif transfers_count <= initial_ft:
             hits0 = 0
             next_ft0 = min(5, (initial_ft - transfers_count) + 1)
@@ -582,7 +582,7 @@ class TransferOptimizer:
                     state["elements"] = set(initial_elements)
                     state["bank"] = initial_bank
                     state["purchase_prices"] = dict(initial_purchase_prices)
-                    state["banked_ft"] = 1
+                    state["banked_ft"] = min(5, initial_ft + 1)
 
             discount = self.discount_factor**step_idx
             pmap = player_maps[gw]
@@ -1796,6 +1796,19 @@ class TransferOptimizer:
                     fh_plan["hits"] = 0
                     fh_plan["hit_cost"] = 0.0
                     fh_plan["trajectory"] = fh_traj["history"]
+                    fh_elements = set(fh_squad["element"])
+                    fh_plan["transfers_in"] = [
+                        dict(r, cost=float(r["value"]) / 10.0)
+                        for _, r in fh_squad.iterrows()
+                        if int(r["element"]) not in initial_elements
+                    ]
+                    fh_plan["transfers_out"] = [
+                        dict(r, sell_price=float(r["selling_price"]) / 10.0)
+                        for _, r in current_squad_df.iterrows()
+                        if int(r["element"]) not in fh_elements
+                    ]
+                    fh_plan["remaining_bank"] = float(total_budget - fh_squad["value"].sum()) / 10.0
+                    fh_plan["next_banked_ft"] = min(5, free_transfers + 1)
 
                     candidates.append(
                         {
@@ -1857,7 +1870,7 @@ class TransferOptimizer:
                         initial_elements=initial_elements,
                         initial_bank=initial_bank,
                         initial_purchase_prices=initial_purchase,
-                        initial_ft=15,
+                        initial_ft=free_transfers,
                         horizon_gws=horizon_gws,
                         horizon_projections=clean_projections,
                         player_maps=player_maps,
@@ -1884,6 +1897,18 @@ class TransferOptimizer:
                     wc_plan["hits"] = 0
                     wc_plan["hit_cost"] = 0.0
                     wc_plan["trajectory"] = wc_traj["history"]
+                    wc_plan["transfers_in"] = [
+                        dict(r, cost=float(r["value"]) / 10.0)
+                        for _, r in wc_squad.iterrows()
+                        if int(r["element"]) not in initial_elements
+                    ]
+                    wc_plan["transfers_out"] = [
+                        dict(r, sell_price=float(r["selling_price"]) / 10.0)
+                        for _, r in current_squad_df.iterrows()
+                        if int(r["element"]) not in wc_elements
+                    ]
+                    wc_plan["remaining_bank"] = float(total_budget - wc_squad["value"].sum()) / 10.0
+                    wc_plan["next_banked_ft"] = min(5, free_transfers + 1)
 
                     candidates.append(
                         {

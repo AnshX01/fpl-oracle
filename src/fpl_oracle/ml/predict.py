@@ -65,14 +65,9 @@ class ProjectionEngine:
             except Exception as e:
                 logger.warning(f"Error loading models from disk: {e}. Retraining...")
 
-        # If models don't exist, we must train them
-        if X is not None and Y is not None:
-            self.train(X, Y)
-        else:
-            from fpl_oracle.ml.train import train_all_models
-
-            train_all_models()
-            self.load_or_train()
+        raise RuntimeError(
+            "Model bundle unavailable. Serving never retrains implicitly; run explicit candidate training."
+        )
 
     def train(self, X: pd.DataFrame, Y: pd.DataFrame):
         logger.info(f"Training ML component models on {len(X)} records...")
@@ -103,6 +98,7 @@ class ProjectionEngine:
         bootstrap: BootstrapStatic,
         fixtures: list[Fixture],
         reconciled_availabilities: dict[int, float] | None = None,
+        reconciled_inputs: dict[int, Any] | None = None,
     ) -> pd.DataFrame:
         """
         Generate expected points for all players for a specific gameweek.
@@ -111,6 +107,8 @@ class ProjectionEngine:
         if not self.is_loaded:
             self.load_or_train()
 
+        if reconciled_inputs is not None:
+            reconciled_availabilities = {eid: r.effective_chance_of_playing for eid, r in reconciled_inputs.items()}
         features_df = feature_engineering.extract_live_features_for_upcoming(
             bootstrap=bootstrap,
             fixtures=fixtures,
@@ -120,6 +118,19 @@ class ProjectionEngine:
 
         if features_df.empty:
             return pd.DataFrame()
+        if reconciled_inputs is not None:
+            features_df["news_start_probability"] = features_df["element"].map(
+                {
+                    eid: r.p_start_given_available if r.applied_to_production else float("nan")
+                    for eid, r in reconciled_inputs.items()
+                }
+            )
+            features_df["news_minutes_limit"] = features_df["element"].map(
+                {
+                    eid: r.expected_minutes_limit if r.applied_to_production else float("nan")
+                    for eid, r in reconciled_inputs.items()
+                }
+            )
 
         # Content-based hash prediction caching with namespace isolation per model version and season (G4)
         active_entry = model_registry.get_active_version()
@@ -129,7 +140,12 @@ class ProjectionEngine:
             model_version = str(active_entry or "default")
         season = "2026-27"
         feature_hash = hashlib.sha256(
-            pd.util.hash_pandas_object(features_df[FEATURE_COLUMNS], index=True).values.tobytes()
+            pd.util.hash_pandas_object(
+                features_df[
+                    FEATURE_COLUMNS + [c for c in ("news_start_probability", "news_minutes_limit") if c in features_df]
+                ],
+                index=True,
+            ).values.tobytes()
         ).hexdigest()[:16]
         avail_str = ""
         if reconciled_availabilities:
@@ -155,8 +171,9 @@ class ProjectionEngine:
 
         # Aggregate through scoring ensemble (passes chance_of_playing for availability scaling)
         X_agg = X.copy()
-        if "chance_of_playing" in features_df.columns:
-            X_agg["chance_of_playing"] = features_df["chance_of_playing"].values
+        for col in ("chance_of_playing", "news_start_probability", "news_minutes_limit"):
+            if col in features_df.columns:
+                X_agg[col] = features_df[col].values
         res_df = scoring_ensemble.aggregate_components(components, X_agg)
 
         # Merge metadata
@@ -180,6 +197,7 @@ class ProjectionEngine:
             if col in features_df.columns:
                 res_df[col] = features_df[col].values
 
+        fixture_records = {int(eid): group.to_dict("records") for eid, group in res_df.groupby("element")}
         # If a player has a Double Gameweek (2 fixtures in same GW), sum the expectations
         # Group by element
         dgw_grouped = res_df.groupby("element", as_index=False).agg(
@@ -241,6 +259,7 @@ class ProjectionEngine:
         ]
         dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, [c for c in bgw_zero_cols if c in dgw_grouped.columns]] = 0.0
 
+        dgw_grouped["fixture_components"] = dgw_grouped["element"].map(fixture_records)
         self._cache[cache_key] = dgw_grouped.copy()
 
         return dgw_grouped
@@ -252,6 +271,7 @@ class ProjectionEngine:
         bootstrap: BootstrapStatic,
         fixtures: list[Fixture],
         reconciled_availabilities: dict[int, float] | None = None,
+        reconciled_inputs_by_gw: dict[int, dict[int, Any]] | None = None,
     ) -> dict[int, pd.DataFrame]:
         """
         Generate projections across an N-gameweek horizon.
@@ -260,7 +280,13 @@ class ProjectionEngine:
         for gw in range(start_gw, start_gw + horizon):
             if gw > 38:
                 break
-            gw_df = self.predict_gameweek(gw, bootstrap, fixtures, reconciled_availabilities=reconciled_availabilities)
+            gw_df = self.predict_gameweek(
+                gw,
+                bootstrap,
+                fixtures,
+                reconciled_availabilities=reconciled_availabilities if reconciled_inputs_by_gw is None else None,
+                reconciled_inputs=(reconciled_inputs_by_gw or {}).get(gw),
+            )
             multi_projections[gw] = gw_df
         return multi_projections
 

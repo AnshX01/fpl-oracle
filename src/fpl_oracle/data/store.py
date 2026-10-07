@@ -54,6 +54,8 @@ class UserProfile(Base):
     llm_provider: Mapped[str] = mapped_column(String(50), default="gemini")
     bank: Mapped[float] = mapped_column(Float, default=0.0)  # in millions, e.g. 1.5
     free_transfers: Mapped[int] = mapped_column(Integer, default=1)
+    bank_override_enabled: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ft_override_enabled: Mapped[int | None] = mapped_column(Integer, nullable=True)
     manual_squad: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of element IDs
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
@@ -129,6 +131,12 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     """Create tables if they do not exist and ensure schema is up to date."""
     Base.metadata.create_all(bind=engine)
+    # Additive SQLite migration preserves all existing data and NOT NULL columns.
+    with engine.begin() as conn:
+        names = {r[1] for r in conn.execute(text("PRAGMA table_info(user_profile)"))}
+        for name in ("bank_override_enabled", "ft_override_enabled"):
+            if name not in names:
+                conn.execute(text(f"ALTER TABLE user_profile ADD COLUMN {name} INTEGER"))
     with engine.connect() as conn:
         try:
             conn.execute(text("ALTER TABLE user_profile ADD COLUMN manual_squad TEXT"))
@@ -149,6 +157,8 @@ class ProfileData:
     llm_provider: str = "gemini"
     bank: float = 0.0
     free_transfers: int = 1
+    bank_override_enabled: bool | None = None
+    ft_override_enabled: bool | None = None
     manual_squad: str | None = None
     updated_at: datetime | None = None
 
@@ -254,6 +264,8 @@ class DataStore:
                 "risk_preference": profile.risk_preference,
                 "llm_provider": profile.llm_provider,
                 "bank": profile.bank,
+                "bank_override_enabled": profile.bank_override_enabled,
+                "ft_override_enabled": profile.ft_override_enabled,
                 "free_transfers": profile.free_transfers,
                 "manual_squad": json.loads(str(profile.manual_squad)) if profile.manual_squad else None,
                 "updated_at": profile.updated_at.isoformat() if profile.updated_at else datetime.now(UTC).isoformat(),
@@ -267,7 +279,9 @@ class DataStore:
         with self.get_session() as session:
             profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
             if not profile:
-                profile = UserProfile(id=1, manager_id=None, target_league_id=None)
+                profile = UserProfile(
+                    id=1, manager_id=None, target_league_id=None, bank_override_enabled=0, ft_override_enabled=0
+                )
                 if PROFILE_JSON_PATH.exists():
                     try:
                         with open(PROFILE_JSON_PATH, encoding="utf-8") as f:
@@ -278,6 +292,12 @@ class DataStore:
                             profile.llm_provider = p_data.get("llm_provider", "gemini")
                             profile.bank = p_data.get("bank", 0.0)
                             profile.free_transfers = p_data.get("free_transfers", 1)
+                            profile.bank_override_enabled = p_data.get(
+                                "bank_override_enabled", 1 if "bank" in p_data else 0
+                            )
+                            profile.ft_override_enabled = p_data.get(
+                                "ft_override_enabled", 1 if "free_transfers" in p_data else 0
+                            )
                             if p_data.get("manual_squad"):
                                 profile.manual_squad = json.dumps(p_data["manual_squad"])  # type: ignore[assignment]
                     except Exception:
@@ -341,6 +361,12 @@ class DataStore:
                 target_league_id=int(profile.target_league_id) if profile.target_league_id is not None else None,
                 risk_preference=str(profile.risk_preference or "balanced"),
                 llm_provider=str(profile.llm_provider or "gemini"),
+                bank_override_enabled=bool(profile.bank_override_enabled)
+                if profile.bank_override_enabled is not None
+                else None,
+                ft_override_enabled=bool(profile.ft_override_enabled)
+                if profile.ft_override_enabled is not None
+                else None,
                 bank=float(profile.bank if profile.bank is not None else 0.0),
                 free_transfers=int(profile.free_transfers if profile.free_transfers is not None else 1),
                 manual_squad=str(profile.manual_squad) if profile.manual_squad else None,
@@ -354,7 +380,7 @@ class DataStore:
         with self.get_session() as session:
             profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
             if not profile:
-                profile = UserProfile(id=1)
+                profile = UserProfile(id=1, bank_override_enabled=0, ft_override_enabled=0)
                 session.add(profile)
             if FPL_MANAGER_ID:
                 try:
@@ -380,7 +406,7 @@ class DataStore:
         with self.get_session() as session:
             profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
             if not profile:
-                profile = UserProfile(id=1)
+                profile = UserProfile(id=1, bank_override_enabled=0, ft_override_enabled=0)
                 session.add(profile)
             for k, v in kwargs.items():
                 if k == "manual_squad":
@@ -390,6 +416,14 @@ class DataStore:
                         profile.manual_squad = None
                 elif hasattr(profile, k):
                     setattr(profile, k, v)
+            if "bank" in kwargs:
+                profile.bank_override_enabled = int(kwargs["bank"] is not None)
+                if kwargs["bank"] is None:
+                    profile.bank = 0.0
+            if "free_transfers" in kwargs:
+                profile.ft_override_enabled = int(kwargs["free_transfers"] is not None)
+                if kwargs["free_transfers"] is None:
+                    profile.free_transfers = 1
             profile.updated_at = datetime.now(UTC)
             session.commit()
             session.refresh(profile)

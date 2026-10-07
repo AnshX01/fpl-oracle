@@ -94,102 +94,110 @@ def verify_manifest_hashes() -> bool:
     return all_match
 
 
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON field: {key}")
+        result[key] = value
+    return result
+
+
 def validate_evidence_file(file_path: Path) -> tuple[bool, str, dict]:
-    """
-    Validates a single evidence file against the strict fail-closed contract.
-    Returns: (is_valid, failure_reason_or_status, metadata_dict)
-    """
-    if not file_path.exists():
-        return False, f"Evidence file does not exist: {file_path.name}", {}
-
-    if file_path.stat().st_size == 0:
-        return False, f"Evidence file is empty (0 bytes): {file_path.name}", {}
-
-    content = file_path.read_text(encoding="utf-8-sig", errors="replace")
-
-    # 1. Command Line Extraction
-    cmd_match = re.search(r"(?:COMMAND|Command|\$)\s*:\s*([^=\r\n]+)", content, re.IGNORECASE)
-    if not cmd_match or not cmd_match.group(1).strip():
-        return False, "Missing or empty command line in evidence", {}
-    cmd = cmd_match.group(1).strip()
-
-    # 2. Exit Code Extraction & Exact Integer Verification (Must be 0)
-    exit_match = re.search(r"exit\s*code\s*:\s*([^\r\n]+)", content, re.IGNORECASE)
-    if not exit_match:
-        return False, "Missing exit code declaration in evidence", {}
-
-    raw_code = exit_match.group(1).strip()
+    """Validate a recorded run, never execute untrusted recorded commands."""
     try:
-        exit_code = int(raw_code)
-    except ValueError:
-        return False, f"Malformed non-integer exit code: '{raw_code}'", {}
+        raw = file_path.read_bytes()
+        record = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=_unique_object)
+        if not isinstance(record, dict) or record.get("schema_version") != 1:
+            raise ValueError("Legacy/unverified evidence: schema_version 1 required")
+        for field in ("command", "exit_code", "stdout", "stderr", "code_head", "result", "artifacts", "gates"):
+            if field not in record:
+                raise ValueError(f"Missing {field}")
+        if (
+            not isinstance(record["command"], list)
+            or not record["command"]
+            or not all(isinstance(v, str) and v for v in record["command"])
+        ):
+            raise ValueError("command must be a nonempty argv list")
+        if type(record["exit_code"]) is not int or record["exit_code"] != 0:
+            raise ValueError("exit_code must be integer zero")
+        if not isinstance(record["stdout"], str) or not isinstance(record["stderr"], str):
+            raise ValueError("stdout/stderr must be strings")
+        head = get_current_git_head()
+        if head is None or record["code_head"] != head or not re.fullmatch(r"[0-9a-f]{40}", head):
+            raise ValueError("Missing/unknown/stale checked code HEAD")
+        if record["result"] != "PASS":
+            raise ValueError("Explicit result is not PASS")
+        output = record["stdout"] + "\n" + record["stderr"]
+        if not output.strip():
+            raise ValueError("Empty output")
+        # Check every summary, including the final line after pytest's opening banner.
+        for summary in re.findall(r"^=+\s*(.*?)\s*=+\s*$", output, re.MULTILINE):
+            for count in re.findall(r"\b(\d+)\s+(?:failed|errors?)\b", summary.lower()):
+                if int(count) > 0:
+                    raise ValueError("Pytest failed/error summary")
+        if re.search(
+            r"^\s*(?:promotion_gate|gate_result|verification_result)\s*:\s*(?:FAIL|FAILED|NOT PASSED)\s*$",
+            output,
+            re.I | re.M,
+        ):
+            raise ValueError("Output declares failed gate")
+        if "traceback (most recent call last)" in output.lower():
+            raise ValueError("Unhandled traceback")
+        if not isinstance(record["gates"], list) or not isinstance(record["artifacts"], list):
+            raise ValueError("gates/artifacts must be lists")
+        import math
 
-    if exit_code != 0:
-        return False, f"Command reported non-zero exit code: {exit_code}", {}
-
-    # 3. Output Block Verification
-    out_idx = -1
-    for marker in [
-        "OUTPUT:\n",
-        "OUTPUT:\r\n",
-        "Output:\n",
-        "Output:\r\n",
-        "output:\n",
-        "output:\r\n",
-        "--- STDOUT ---",
-    ]:
-        pos = content.find(marker)
-        if pos != -1:
-            out_idx = pos + len(marker)
-            break
-
-    if out_idx != -1:
-        output_body = content[out_idx:].strip()
-    else:
-        output_body = content[exit_match.end() :].strip()
-
-    if not output_body:
-        return False, "Missing or empty command output body in evidence", {}
-
-    # 4. Fail-Closed Structural Output Analysis
-    lower_out = output_body.lower()
-
-    if "not passed" in lower_out:
-        return False, "Output contains explicit failure declaration: 'not passed'", {}
-
-    if "verification failed" in lower_out:
-        return False, "Output contains explicit failure declaration: 'VERIFICATION FAILED'", {}
-
-    if "traceback (most recent call last)" in lower_out:
-        return False, "Output contains unhandled python exception traceback", {}
-
-    # Pytest summary line inspection
-    pytest_summary_match = re.search(r"=+\s*(.*?)\s*=+\s*$", output_body, re.MULTILINE)
-    if pytest_summary_match:
-        summary_text = pytest_summary_match.group(1).lower()
-        failed_count_m = re.search(r"\b(\d+)\s+failed\b", summary_text)
-        if failed_count_m and int(failed_count_m.group(1)) > 0:
-            return False, f"Pytest reported failing test count: {failed_count_m.group(1)} failed", {}
-
-        error_count_m = re.search(r"\b(\d+)\s+error(?:s)?\b", summary_text)
-        if error_count_m and int(error_count_m.group(1)) > 0:
-            return False, f"Pytest reported error count: {error_count_m.group(1)} errors", {}
-
-    # 5. Provenance metadata
-    file_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    metadata = {
-        "command": cmd,
-        "exit_code": exit_code,
-        "sha256": file_sha256,
-        "bytes": len(content.encode("utf-8")),
-    }
-    return True, "Passes fail-closed evidence contract", metadata
+        gate_names = set()
+        for gate in record["gates"]:
+            name = gate.get("name")
+            if not isinstance(name, str) or not name or name in gate_names:
+                raise ValueError("Missing/duplicate gate name")
+            gate_names.add(name)
+            if gate.get("status") != "PASS":
+                raise ValueError(f"Gate {name} not PASS")
+            value = gate.get("value")
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError(f"Gate {name} value not finite")
+            if "min" not in gate and "max" not in gate:
+                raise ValueError(f"Gate {name} missing limits")
+            for bound in ("min", "max"):
+                if bound in gate and (type(gate[bound]) not in (int, float) or not math.isfinite(gate[bound])):
+                    raise ValueError(f"Gate {name} invalid {bound}")
+            if ("min" in gate and value < gate["min"]) or ("max" in gate and value > gate["max"]):
+                raise ValueError(f"Gate {name} outside bounds")
+        seen_paths = set()
+        for artifact in record["artifacts"]:
+            path = artifact.get("path")
+            expected = artifact.get("sha256")
+            if not isinstance(path, str) or path in seen_paths or not re.fullmatch(r"[0-9a-f]{64}", str(expected)):
+                raise ValueError("Invalid/duplicate artifact reference")
+            seen_paths.add(path)
+            target = (ROOT / path).resolve()
+            if not target.is_relative_to(ROOT.resolve()) or not target.is_file():
+                raise ValueError(f"Missing/outside artifact {path}")
+            if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                raise ValueError(f"Artifact hash mismatch {path}")
+        return (
+            True,
+            "Valid recorded run; not rerun by this validator",
+            {
+                "command": record["command"],
+                "exit_code": 0,
+                "fingerprint_sha256": hashlib.sha256(raw).hexdigest(),
+                "bytes": len(raw),
+            },
+        )
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
+        return False, str(exc), {}
 
 
 def verify_ledger_milestones_and_evidence() -> bool:
     print("\n--- 2. Verifying Milestone Accounting & Evidence in reports/final_fix_ledger.md ---")
     current_head = get_current_git_head()
     print(f"  [PROVENANCE] Current Git HEAD: {current_head or 'Unknown'}")
+    if current_head is None:
+        return False
 
     if not LEDGER_PATH.exists():
         print("  [ERROR] final_fix_ledger.md missing!")
@@ -207,6 +215,9 @@ def verify_ledger_milestones_and_evidence() -> bool:
         match = row_pattern.search(line)
         if match:
             m_id = match.group(1)
+            if m_id in milestone_rows:
+                print(f"  [ERROR] Duplicate milestone {m_id}")
+                return False
             milestone_rows[m_id] = line
 
     all_passed = True
@@ -244,7 +255,7 @@ def verify_ledger_milestones_and_evidence() -> bool:
                     continue
 
             if row_evidence_valid:
-                print(f"Verified with {len(raw_paths)} evidence file(s) [SHA256 locked]")
+                print(f"Recorded evidence validated: {len(raw_paths)} file(s); commands NOT rerun")
                 reproduced_count += 1
             else:
                 all_passed = False
@@ -260,7 +271,9 @@ def verify_ledger_milestones_and_evidence() -> bool:
             print(f"FAILED (Unresolved status '{final_status}')")
             all_passed = False
 
-    print(f"\n  [AUDIT SUMMARY] Active reproduced milestones: {reproduced_count}/{len(expected_ids)}")
+    print(
+        f"\n  [AUDIT SUMMARY] Current-HEAD recorded milestones: {reproduced_count}/{len(expected_ids)}; rerun here: 0"
+    )
     print("  [AUDIT SUMMARY] Historical records (M*, N*, T*, W*, Q*, G00-*): Preserved as audit history baseline.")
     return all_passed
 
@@ -353,7 +366,7 @@ def verify_doc_and_metric_consistency() -> bool:
         print("  [STALE] reports/final_status.md contains stale F-pass or 20/20 claims!")
         all_consistent = False
     else:
-        print("  [CONSISTENT] reports/final_status.md references G1-G14 pass and 70-case benchmark")
+        print("  [CONSISTENT] No known legacy pass-count wording; not a readiness verdict")
 
     return all_consistent
 

@@ -63,15 +63,22 @@ def check_promotion_gate(
        - Latest rolling origin gain (e.g. current season holdout) must be strictly > 0.
        - Per-origin empirical 80% credible interval coverage must fall strictly within [coverage_min, coverage_max].
     """
+    import math
+
+    def finite(value):
+        return type(value) in (int, float) and math.isfinite(value)
+
     cand_mae = candidate_metrics.get("ml_mae", candidate_metrics.get("mae"))
     base_mae = candidate_metrics.get("base_mae", candidate_metrics.get("best_baseline_mae"))
 
-    if cand_mae is None or base_mae is None:
+    if not finite(cand_mae) or not finite(base_mae):
         return (
             False,
             f"Candidate metrics missing required MAE fields ('ml_mae'/'mae' and 'base_mae'/'best_baseline_mae') defined in {EVAL_METRICS_SCHEMA_KEYS}.",
         )
 
+    assert cand_mae is not None and base_mae is not None
+    cand_mae, base_mae = float(cand_mae), float(base_mae)
     # 1. Baseline superiority check (global degradation tolerance is 0 against best baseline)
     if cand_mae > (base_mae + tolerance):
         return (
@@ -82,7 +89,11 @@ def check_promotion_gate(
     # 2. Active production degradation check
     if active_metrics:
         active_mae = active_metrics.get("ml_mae", active_metrics.get("mae"))
-        if active_mae is not None and cand_mae > (active_mae + tolerance):
+        if not finite(active_mae):
+            return False, "Active MAE is missing/nonfinite"
+        assert active_mae is not None
+        active_mae = float(active_mae)
+        if cand_mae > (active_mae + tolerance):
             return (
                 False,
                 f"Candidate MAE ({cand_mae:.3f}) degraded vs active production MAE ({active_mae:.3f}) by > {tolerance:.2f}.",
@@ -90,8 +101,8 @@ def check_promotion_gate(
 
     # 3. Rolling origins checks
     origins = rolling_origins if rolling_origins is not None else candidate_metrics.get("rolling_origins")
-    if not origins:
-        return False, "Candidate failed promotion gate: no rolling origins evaluated."
+    if not isinstance(origins, list) or len(origins) < k_origins:
+        return False, "Candidate failed promotion gate: insufficient rolling origins evaluated."
 
     eval_origins = origins[-k_origins:]
     gains: list[float] = []
@@ -101,6 +112,9 @@ def check_promotion_gate(
             if req_k not in o:
                 return False, f"Origin '{o.get('season', 'unknown')}' missing required schema key '{req_k}'."
 
+        for key in ("mae", "best_baseline_mae", "gain_vs_baseline", "interval_80_coverage_pct"):
+            if not finite(o.get(key)):
+                return False, f"Origin invalid/nonfinite {key}"
         gain_o = o.get("gain_vs_baseline")
         if gain_o is not None:
             gains.append(float(gain_o))
@@ -295,6 +309,7 @@ class ModelRegistry:
         save_reports: bool = True,
         custom_json_path: Any = None,
         custom_md_path: Any = None,
+        ensemble: Any = None,
     ) -> dict[str, float]:
         """Generate holdout predictions and compute validation metrics."""
         mins_p = models_dict["minutes_model"].predict(X_val)
@@ -305,7 +320,8 @@ class ModelRegistry:
         cards_p = models_dict["cards_saves_model"].predict(X_val)
 
         components = {**mins_p, **att_p, **def_p, **defcon_p, **bonus_p, **cards_p}
-        val_preds_df = scoring_ensemble.aggregate_components(components, X_val)
+        actual_ensemble = ensemble or scoring_ensemble
+        val_preds_df = actual_ensemble.aggregate_components(components, X_val)
         ml_preds = val_preds_df["expected_points"].values
 
         metrics = model_evaluator.evaluate_expanding_window(
@@ -327,6 +343,15 @@ class ModelRegistry:
             "ml_spearman": float(metrics["ml_spearman"]),
             "base_mae": float(metrics["base_mae"]),
         }
+
+    @staticmethod
+    def _load_bundle_ensemble(path):
+        from fpl_oracle.ml.ensemble import ScoringEnsemble
+
+        ens = ScoringEnsemble(z10=-0.806, z90=1.009, blend_weights=(0.72, 0.04, 0.24))
+        if not ens.load_calibration(path):
+            raise ValueError("Bundle calibration unavailable")
+        return ens
 
     def evaluate_production_weights(
         self, X_val: pd.DataFrame, Y_val: pd.DataFrame, rolling_origins: list[dict[str, Any]] | None = None
@@ -353,6 +378,7 @@ class ModelRegistry:
                 save_reports=True,
                 custom_json_path=REPORTS_DIR / "active_model_eval.json",
                 custom_md_path=REPORTS_DIR / "active_model_eval.md",
+                ensemble=self._load_bundle_ensemble(self.models_dir / "calibration.json"),
             )
         except Exception as e:
             logger.warning(f"Existing production weights evaluation failed ({e}); treating as schema upgrade.")
@@ -566,7 +592,7 @@ class ModelRegistry:
         candidate_models: dict[str, Any],
         candidate_metrics: dict[str, Any],
         active_metrics: dict[str, float] | None = None,
-        tolerance: float = 0.05,
+        tolerance: float = 0.0,
         new_version_tag: str | None = None,
         notes: str = "",
         calibration_data: dict[str, Any] | Path | None = None,

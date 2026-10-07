@@ -31,7 +31,7 @@ def clean_client():
         pass
 
 
-def test_decision_card_generator_contract():
+def test_decision_card_generator_contract(configured_advisor):
     async def _run():
         card = await decision_card_generator.generate_decision_card()
 
@@ -366,7 +366,7 @@ def test_format_decision_card_markdown():
     assert "Legends League" in md
 
 
-def test_decision_card_unmocked_happy_path():
+def test_decision_card_unmocked_happy_path(configured_advisor):
     """Verify unmocked end-to-end decision card execution and honest metrics."""
 
     async def _run():
@@ -393,14 +393,21 @@ def test_decision_card_unmocked_happy_path():
     asyncio.run(_run())
 
 
-def test_decision_card_error_path_honest_reporting():
+def test_decision_card_error_path_honest_reporting(configured_advisor):
     """Verify that Monte Carlo exceptions emit status='error' with null metrics rather than swallowing."""
 
     async def _run():
         from fpl_oracle.domain.manager_state import manager_state_service
 
         current_state = await manager_state_service.get_current_state()
-        mock_state = current_state.model_copy(update={"manager_id": 1, "overall_points": 500})
+        mock_state = current_state.model_copy(update={"manager_id": 1, "target_league_id": 99, "overall_points": 500})
+        from types import SimpleNamespace
+
+        profile_patch = patch(
+            "fpl_oracle.briefing.decision_card.data_store.get_profile",
+            return_value=SimpleNamespace(target_league_id=99),
+        )
+        profile_patch.start()
 
         with (
             patch(
@@ -437,5 +444,6 @@ def test_decision_card_error_path_honest_reporting():
             assert wp["p_first"] is None, "Failed simulation must emit p_first=None, not 0.0"
             assert wp["expected_rank"] is None, "Failed simulation must emit expected_rank=None, not 1.0"
             assert "Simulated Monte Carlo numerical breakdown" in wp["error_message"]
+            profile_patch.stop()
 
     asyncio.run(_run())

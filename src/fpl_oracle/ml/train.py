@@ -20,7 +20,7 @@ from fpl_oracle.ml.components.cards_saves import CardsSavesModel
 from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.defending import DefendingModel
 from fpl_oracle.ml.components.minutes import MinutesModel
-from fpl_oracle.ml.ensemble import ScoringEnsemble, scoring_ensemble
+from fpl_oracle.ml.ensemble import ScoringEnsemble
 from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.model_registry import model_registry
 
@@ -51,7 +51,16 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
         if train_mask.sum() == 0 or test_mask.sum() == 0:
             continue
 
-        X_tr, Y_tr = X[train_mask], Y[train_mask]
+        # Calibration rows are strictly disjoint from fitting rows and precede evaluation.
+        val_mask = pd.Series(False, index=seasons.index)
+        if test_label == "2026-27":
+            val_mask = seasons == "2025-26"
+        elif test_label == "2025-26":
+            val_mask = seasons == "2024-25"
+        else:
+            val_mask = (seasons == "2023-24") & (meta["round"] >= 30)
+        fit_mask = train_mask & ~val_mask
+        X_tr, Y_tr = X[fit_mask], Y[fit_mask]
         X_te, Y_te = X[test_mask], Y[test_mask]
 
         logger.info(
@@ -99,8 +108,8 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
                 **models["bonus_model"].predict(X_v),
                 **models["cards_saves_model"].predict(X_v),
             }
-            ens.calibrate(v_comps, X_v, Y_v)
             ens.fit_stacking_weights(v_comps, X_v, Y_v)
+            ens.calibrate(v_comps, X_v, Y_v)
 
         # Unified single recipe: aggregate_components produces final blended expected_points and intervals
         preds_df = ens.aggregate_components(comps, X_te)
@@ -230,8 +239,9 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         **cal_comps["bonus_model"],
         **cal_comps["cards_saves_model"],
     }
-    z10, z90 = scoring_ensemble.calibrate(cal_comps_flat, X_cal, Y_cal)
-    bw = scoring_ensemble.fit_stacking_weights(cal_comps_flat, X_cal, Y_cal)
+    candidate_ensemble = ScoringEnsemble(blend_weights=(0.72, 0.04, 0.24))
+    bw = candidate_ensemble.fit_stacking_weights(cal_comps_flat, X_cal, Y_cal)
+    z10, z90 = candidate_ensemble.calibrate(cal_comps_flat, X_cal, Y_cal)
     logger.info(f"Empirical quantile calibration fit: z10={z10:.3f}, z90={z90:.3f}, blend_weights={bw}")
 
     # 7. Evaluate candidate models on holdout validation split with real dynamic ablation (M8)
@@ -244,7 +254,7 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
     cards_val = candidate_models["cards_saves_model"].predict(X_val)
 
     val_comps = {**mins_val, **att_val, **def_val, **defcon_val, **bonus_val, **cards_val}
-    val_preds_df = scoring_ensemble.aggregate_components(val_comps, X_val)
+    val_preds_df = candidate_ensemble.aggregate_components(val_comps, X_val)
     full_preds = val_preds_df["expected_points"].values
     actual_val = Y_val["target_points"].values
 
@@ -302,7 +312,7 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         **ablated_comps["bonus_model"],
         **ablated_comps["cards_saves_model"],
     }
-    ablated_preds_df = scoring_ensemble.aggregate_components(ablated_comps_flat, X_val_ablated)
+    ablated_preds_df = candidate_ensemble.aggregate_components(ablated_comps_flat, X_val_ablated)
     ablated_preds = ablated_preds_df["expected_points"].values
 
     ablated_mae = float(np.round(mean_absolute_error(actual_val, ablated_preds), 3))
@@ -370,18 +380,19 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         save_reports=True,
         custom_json_path=REPORTS_DIR / "candidate_model_eval.json",
         custom_md_path=REPORTS_DIR / "candidate_model_eval.md",
+        ensemble=candidate_ensemble,
     )
     logger.info(
         f"Candidate Metrics: MAE={cand_metrics['ml_mae']}, Spearman={cand_metrics['ml_spearman']}, Baseline MAE={cand_metrics['base_mae']}"
     )
 
     # 7. Verify and promote or engage automated rollback
-    cal_dict = scoring_ensemble.get_calibration_dict()
+    cal_dict = candidate_ensemble.get_calibration_dict()
     promote_res = model_registry.verify_and_promote(
         candidate_models=candidate_models,
         candidate_metrics=cand_metrics,
         active_metrics=active_metrics,
-        tolerance=0.05,
+        tolerance=0.0,
         notes="Automated retrain pipeline with true rolling origins",
         calibration_data=cal_dict,
         rolling_origins=rolling_origins,
