@@ -87,6 +87,29 @@ class ChatRequest(BaseModel):
     session_id: str | None = "default"
 
 
+@router.get("/research/league-validation")
+async def get_league_validation_status():
+    from fpl_oracle.config import BASE_DIR
+    from fpl_oracle.league.validation import validation_summary
+
+    directory = BASE_DIR / "data" / "league_forward"
+    scored = [json.loads(p.read_text()) for p in directory.glob("*.score.json")] if directory.exists() else []
+    summary = validation_summary(scored)
+    summary["frozen_forecast_count"] = len(list(directory.glob("*.index.json"))) if directory.exists() else 0
+    summary["capture_window"] = (
+        "Existing 15-minute job records once within 24h before deadline while local server is running"
+    )
+    summary["event_definition"] = (
+        "Strict cumulative leader after target GW among fixed observed manager set; not entire league or season title odds"
+    )
+    return safe_json_serialize(summary)
+
+
+@router.get("/research/chip-expiry")
+async def get_chip_expiry_research():
+    return safe_json_serialize(await analysis_service.expiry_sensitivity())
+
+
 @router.post("/advice/start")
 async def start_advice_publication():
     from fpl_oracle.server.advice_job import advice_publisher, profile_key

@@ -361,6 +361,8 @@ async def holdout_forward_job():
         else:
             details = f"Awaiting valid pre-deadline window for GW{target_freeze_gw}."
 
+        # League forward evidence is independent of legacy player forecast files.
+        # Keep one broken/legacy player freeze from disabling this evidence path.
         # 2. Check if previous gameweek finished and can be scored
         if curr_gw and curr_gw >= 6:
             from fpl_oracle.ml.holdout import fetch_finalized_actuals
@@ -379,6 +381,17 @@ async def holdout_forward_job():
         data_store.record_job_finish(run_id, "FAILED", dur, err_msg)
         tracker.update_job_finish(job_id, False, dur, err_msg)
         logger.warning(f"[Scheduler] {job_name} failed: {e}")
+    finally:
+        try:
+            from fpl_oracle.league.forward import capture_forward, score_pending
+
+            state = await game_state_manager.get_game_state()
+            _, upcoming = await fpl_client.get_current_and_next_gw()
+            if upcoming and not state.stale and state.seconds_to_deadline and 0 < state.seconds_to_deadline <= 86400:
+                await capture_forward(upcoming)
+            await score_pending()
+        except Exception as error:
+            logger.warning("League forward evidence not recorded/scored: %s", error)
 
 
 def get_jobs_status() -> dict[str, Any]:

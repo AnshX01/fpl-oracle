@@ -38,6 +38,10 @@ const app = createApp({
       health: {},
       gameState: {},
       systemStatus: {},
+      expiryResearch: null,
+      expiryResearchLoading: false,
+      expiryResearchError: null,
+      leagueValidation: {},
 
       // Profile & Overrides
       profile: {
@@ -397,6 +401,22 @@ const app = createApp({
   },
 
   methods: {
+    async loadExpiryResearch() {
+      if (this.expiryResearchLoading) return;
+      this.expiryResearchLoading=true; this.expiryResearchError=null;
+      try {
+        const response=await fetch('/api/research/chip-expiry');
+        if (!response.ok) throw new Error(`Expiry research HTTP ${response.status}`);
+        this.expiryResearch=await response.json();
+      } catch (error) { this.expiryResearchError=String(error); }
+      finally { this.expiryResearchLoading=false; }
+    },
+    async loadLeagueValidation() {
+      try {
+        const response=await fetch('/api/research/league-validation');
+        if(response.ok)this.leagueValidation=await response.json();
+      } catch(error) { this.leagueValidation={status:'unavailable'}; }
+    },
     publishSnapshot(field, value, generation = this.snapshotGeneration) {
       if (generation !== this.snapshotGeneration) return;
       if (this.snapshotBuffer) this.snapshotBuffer[field] = value;
@@ -960,7 +980,7 @@ const app = createApp({
       }
       // Optional surfaces never veto or overwrite coherent ready core.
       void Promise.all([this.loadHealth(), this.loadContingencyMatrix(), this.loadPriceChanges(),
-        this.loadChecklist(), this.loadSystemStatus(), this.loadChips(), this.loadLeague(), this.loadBriefing()]);
+        this.loadChecklist(), this.loadSystemStatus(), this.loadLeagueValidation(), this.loadChips(), this.loadLeague(), this.loadBriefing()]);
     }
   },
 

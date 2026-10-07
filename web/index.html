@@ -674,6 +674,20 @@
           </div>
         </div>
 
+        <div class="p-4 rounded-xl border border-zinc-700 space-y-2 text-xs">
+          <p class="font-semibold">Chip expiry-window research</p>
+          <p>Compare the same inputs over eight weeks and through GW19. Separate stress test, not a validated tail forecast. Can take around two minutes or longer on slower devices; normal advice stays visible.</p>
+          <button @click="loadExpiryResearch" :disabled="expiryResearchLoading" class="px-3 py-2 rounded bg-emerald-600 text-white disabled:opacity-50">{{ expiryResearchLoading ? 'Calculating expiry comparison...' : 'Run expiry comparison' }}</button>
+          <p v-if="expiryResearchError">{{ expiryResearchError }}</p>
+          <div v-if="expiryResearch?.status === 'model_expiry_sensitivity'" class="space-y-2">
+            <p>Eight-week first chip: {{ expiryResearch.short.first_chip || 'Hold' }}, discounted edge {{ expiryResearch.short.discounted_edge }} xP.</p>
+            <p>Through GW19 first chip: {{ expiryResearch.extended.first_chip || 'Hold' }}, discounted edge {{ expiryResearch.extended.discounted_edge }} xP.</p>
+            <p>{{ expiryResearch.first_chip_changes ? 'Choice changes with the horizon. Reassess before committing.' : 'Same first-chip candidate across these windows. This does not prove it is optimal.' }}</p>
+            <p>{{ expiryResearch.assumptions }}</p>
+            <p>{{ expiryResearch.unresolved }}</p>
+          </div>
+        </div>
+
         <!-- Active Plan Card -->
         <div v-if="activePlan" class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
           <div class="flex items-center justify-between flex-wrap gap-2">
@@ -699,7 +713,7 @@
         <div v-else class="p-6 rounded-xl bg-zinc-950 border border-zinc-800 text-center space-y-2">
           <div class="font-bold text-white text-sm">{{ plansLoading ? 'Loading contingency plans...' : 'No transfer plans available' }}</div>
           <p class="text-xs text-zinc-400">
-            {{ plansError || 'Verify your squad is configured and refresh recommendations.' }}
+            {{ plansError || '{{ selectedPlanKey === "plan_a" ? "Verify your squad is configured and refresh recommendations." : "Plan A remains available. Detailed alternatives are not part of the fast core publication." }}' }}
           </p>
         </div>
 
@@ -1122,6 +1136,13 @@
         <button @click="showSystemModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
       </div>
 
+      <div class="p-3 rounded border border-zinc-700 text-xs space-y-1">
+        <p class="font-semibold">Mini-league forward evidence</p>
+        <p>Status: {{ leagueValidation.status || 'Not loaded' }}. Frozen forecasts: {{ leagueValidation.frozen_forecast_count ?? 'Unknown' }}. Finalized scored forecasts: {{ leagueValidation.count ?? 'Unknown' }}.</p>
+        <p>Probabilities are not empirically calibrated. Baseline comparison and chronological validation are required before promotion.</p>
+        <p>{{ leagueValidation.capture_window }}</p>
+        <p>{{ leagueValidation.event_definition }}</p>
+      </div>
       <div class="space-y-3 text-xs font-mono">
         <div class="p-3 rounded-lg bg-zinc-950 border border-zinc-800 space-y-1">
           <div class="text-zinc-400">ML Model Version: <strong class="text-white">{{ systemStatus.model?.active_version || '—' }}</strong></div>

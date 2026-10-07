@@ -233,7 +233,9 @@ class AnalysisService:
                 )
         result["chip_plan_table"] = rows
         result["joint_schedule"] = {r["recommended_gw"]: r["code"] for r in rows}
-        result["set_1_deadline_warning"] = "Unused Set 1 chips expire at the GW19 deadline. This roadmap is conditional; unknown later option value is not a verified points loss."
+        result["set_1_deadline_warning"] = (
+            "Unused Set 1 chips expire at the GW19 deadline. This roadmap is conditional; unknown later option value is not a verified points loss."
+        )
         result["recommended_chip"] = joint["recommended_chip"]
         result["chip_comparison_table"] = joint["chip_comparison_table"]
         return result
@@ -251,6 +253,70 @@ class AnalysisService:
             dict(first_chip=c["chip_code"], history=c["plan"]["trajectory"]) for c in joint["chip_comparison_table"]
         ]
         return await asyncio.to_thread(compare_plan_scenarios, states, context, maps)
+
+    async def expiry_sensitivity(self):
+        """On-demand model stress through chip expiry. Never blocks core advice."""
+        from fpl_oracle.api.fpl_client import fpl_client
+        from fpl_oracle.domain.manager_state import manager_state_service
+        from fpl_oracle.optimise.transfers import transfer_optimizer
+
+        state = await manager_state_service.get_current_state()
+        start = state.target_gw
+        if start > 19:
+            return dict(status="unavailable", reason="First-set expiry research applies before GW19")
+        boot, stale = await fpl_client.get_bootstrap_static()
+        fixtures, fixture_stale = await fpl_client.get_fixtures()
+        if stale or fixture_stale or state.is_stale:
+            return dict(status="unavailable", reason="Fresh sources required for expiry sensitivity")
+        projections = await self.projections(start, 20 - start, boot, fixtures)
+        kwargs = dict(
+            current_squad_df=state.to_squad_dataframe(),
+            player_pool_df=projections[start],
+            bank=state.bank_tenths,
+            free_transfers=state.free_transfers,
+            horizon_projections=projections,
+            current_gw=state.current_gw,
+            target_gw=start,
+            available_chips=state.chips_remaining_set_1,
+            chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
+            chips_already_used=[c["name"] for c in state.chips_used if c["event"] <= 19],
+            rival_context=await self.league_context(start),
+            num_mc_scenarios=0,
+        )
+        short, extended = await asyncio.to_thread(
+            lambda: (
+                transfer_optimizer.evaluate_joint_transfer_and_chip_plan(**kwargs, horizon_len=min(8, 20 - start)),
+                transfer_optimizer.evaluate_joint_transfer_and_chip_plan(**kwargs, horizon_len=20 - start),
+            )
+        )
+
+        def summarize(plan):
+            return dict(
+                gameweeks=plan["decision_scope"]["horizon_gameweeks"],
+                first_chip=plan["recommended_chip"],
+                discounted_edge=plan["best_candidate"]["net_gain_vs_hold"],
+                trajectory=[
+                    dict(gameweek=r["gameweek"], chip=r.get("chip"), transfers_count=r["transfers_count"])
+                    for r in plan["recommended_plan"]["trajectory"]
+                ],
+                options=[
+                    dict(first_chip=c["chip_code"], discounted_edge=c["net_gain_vs_hold"])
+                    for c in plan["chip_comparison_table"]
+                ],
+                retained_resource_frontier=plan.get("resource_frontier"),
+            )
+
+        return dict(
+            status="model_expiry_sensitivity",
+            calibrated=False,
+            promotion_allowed=False,
+            snapshot_id=projections[start].attrs.get("snapshot_id"),
+            short=summarize(short),
+            extended=summarize(extended),
+            first_chip_changes=short["recommended_chip"] != extended["recommended_chip"],
+            assumptions="Current price/minutes/form extrapolation. Unknown postponements, price moves and future news not known. Pruned search, not global optimum.",
+            unresolved="No deadline-grounded out-of-time tail calibration. Rival choices are stress assumptions, not predictions. Agreement between horizons does not prove optimality.",
+        )
 
     async def joint_plan(self, **kwargs):
         from fpl_oracle.data.store import data_store
