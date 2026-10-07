@@ -61,6 +61,16 @@ if (-not (Test-Path $VenvPython)) {
     if ($LASTEXITCODE -ne 0) { throw "Dependency install failed" }
 }
 
+# Keep existing environments on the tested solver API, not only fresh installs.
+& $VenvPython -c "import pulp, sys; sys.exit(0 if pulp.__version__ == '3.3.2' else 1)"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[*] Installing tested PuLP 3.3.2 solver runtime..." -ForegroundColor Cyan
+    & $VenvPython -m pip install "pulp==3.3.2"
+    if ($LASTEXITCODE -ne 0) { throw "PuLP runtime correction failed" }
+}
+& $VenvPython (Join-Path $ScriptDir "scripts/check_solver_runtime.py")
+if ($LASTEXITCODE -ne 0) { throw "CBC solve verification failed; server not started" }
+
 # 2. Setup-only check
 & $VenvPython -c "import sys; assert sys.version_info >= (3,11); import fpl_oracle.server.main"
 if ($LASTEXITCODE -ne 0) { throw "Environment verification failed" }

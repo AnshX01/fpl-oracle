@@ -39,3 +39,7 @@ Host measurements against the actual manager's public official squad and full li
 ## Batched consistency follow-up
 
 A finite concurrent case matrix andfocused chat/pipeline/price/hit/constraint/revision tests found andfixed missing manager/fixture stale flags, invalid projections reaching solvers, market-based chat captain divergence, pipeline selected-chip schedule divergence, special-chipFT-used counts, andchanged POST advice bypassing the snapshot guard. See `reports/consistency_coverage.md` for tested cases andremaining gaps. Final scoped partition45 tests passed97.35s;no full-suite,exhaustive orWindows execution claim. The user must still pull/restart andverify the actual Windows result.
+
+## Windows solver compatibility correction
+
+Actual Windows advice requests failed with PuLP4.0: direct `LpVariable(..., cat=...)` is removed, and bundled CBC also changed. The project now pins tested `pulp==3.3.2`. Existing Windows environments are corrected by start.ps1, which performs an actual binary CBC solve before starting the server. Import-only checks are not proof of advice runtime readiness. The user's immediate correction is limited to installing PuLP3.3.2 in the existing .venv; .env and user data remain unchanged. Native Windows readback is still required.
