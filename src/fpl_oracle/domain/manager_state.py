@@ -375,7 +375,7 @@ class ManagerStateService:
             published_lineup.bench = bench_published
 
         # 2. Attempt Manual Squad Path if real manager is not configured or failed
-        elif getattr(profile_data, "manual_squad", None):
+        elif not manager_id and getattr(profile_data, "manual_squad", None):
             mode = ManagerMode.MANUAL
             man_raw = getattr(profile_data, "manual_squad", None)
             parsed_ids = json.loads(man_raw) if isinstance(man_raw, str) else (man_raw or [])
@@ -510,7 +510,8 @@ class ManagerStateService:
 
         profile = data_store.get_profile()
         boot, is_stale = await fpl_client.get_bootstrap_static(force_refresh=force_refresh)
-        fixtures, _ = await fpl_client.get_fixtures(force_refresh=force_refresh)
+        fixtures, fixtures_stale = await fpl_client.get_fixtures(force_refresh=force_refresh)
+        is_stale = is_stale or fixtures_stale
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
         curr_gw = curr_gw or 1
@@ -525,10 +526,10 @@ class ManagerStateService:
             import asyncio
 
             calls = [
-                fpl_client.get_manager_entry(profile.manager_id),
-                fpl_client.get_manager_picks(profile.manager_id, curr_gw),
-                fpl_client.get_manager_history(profile.manager_id),
-                fpl_client.get_manager_transfers(profile.manager_id),
+                fpl_client.get_manager_entry(profile.manager_id, force_refresh=force_refresh),
+                fpl_client.get_manager_picks(profile.manager_id, curr_gw, force_refresh=force_refresh),
+                fpl_client.get_manager_history(profile.manager_id, force_refresh=force_refresh),
+                fpl_client.get_manager_transfers(profile.manager_id, force_refresh=force_refresh),
             ]
             results = await asyncio.gather(*calls, return_exceptions=True)
             values: list[Any] = []
@@ -548,7 +549,7 @@ class ManagerStateService:
                 deadline = ev.deadline_time
                 break
 
-        return self.build_effective_state(
+        state = self.build_effective_state(
             profile_data=profile,
             bootstrap=boot,
             fixtures=fixtures,
@@ -561,6 +562,22 @@ class ManagerStateService:
             deadline_utc=deadline,
             is_stale=is_stale,
         )
+
+        keys = ["bootstrap-static", "fixtures:all"]
+        if profile.manager_id:
+            keys += [
+                f"entry:{profile.manager_id}",
+                f"entry:{profile.manager_id}:event:{curr_gw}:picks",
+                f"entry:{profile.manager_id}:history",
+                f"entry:{profile.manager_id}:transfers",
+            ]
+        timestamps = [fpl_client._cache_timestamps.get(key) for key in keys]
+        known = [stamp for stamp in timestamps if stamp is not None]
+        if known:
+            state.source_timestamp = min(known).isoformat()
+        if profile.manager_id and manager_picks is None:
+            state.error_message = "Official published squad unavailable; saved manual squad was not substituted"
+        return state
 
 
 manager_state_service = ManagerStateService()

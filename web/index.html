@@ -57,7 +57,7 @@
     <p>{{ basicSquadData.is_stale ? 'Cached published team; refresh failed or in progress.' : 'Published picks, not optimized recommendations.' }}</p>
     <div data-testid="basic-starters"><span v-for="p in basicSquadData.starters" :key="p.element" class="inline-block p-2">{{ p.web_name }}</span></div>
     <div data-testid="basic-bench">Bench: <span v-for="p in basicSquadData.bench" :key="p.element" class="inline-block p-2">{{ p.web_name }}</span></div>
-    <p>Fresh advice: calculating separately.</p>
+    <p>Source data as of: {{ basicSquadData.data_as_of || 'Unknown' }}. Fresh advice: calculating separately.</p>
   </section>
   <!-- ========================================== -->
   <!-- TOP OPERATIONAL HEADER                     -->
@@ -869,6 +869,7 @@
         <div v-for="(m, i) in chatMessages" :key="i" :class="m.role === 'user' ? 'text-right' : 'text-left'">
           <div :class="m.role === 'user' ? 'bg-emerald-600/20 text-emerald-200 border-emerald-500/40 inline-block' : 'bg-zinc-950 text-zinc-200 border-zinc-800 inline-block'" class="p-3 rounded-xl border max-w-sm text-xs text-left">
             <div class="font-bold text-[10px] text-zinc-400 mb-1">{{ m.role === 'user' ? 'You' : 'FPL Oracle Expert' }}</div>
+            <p v-if="m.historical" class="text-xs opacity-70">Previous session history, not current advice</p>
             <div class="prose-rendered" v-html="renderMarkdown(m.content)"></div>
           </div>
         </div>
@@ -909,6 +910,7 @@
       </div>
 
       <div class="space-y-3 text-xs">
+        <button v-if="profile.bank_override_enabled || profile.ft_override_enabled" @click="resetFinancialOverrides" class="text-amber-400 underline">Use official bank and free transfers (clear overrides)</button>
         <div class="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800/80 space-y-1">
           <div class="text-zinc-400 font-semibold flex justify-between">
             <span>FPL Manager Account:</span>

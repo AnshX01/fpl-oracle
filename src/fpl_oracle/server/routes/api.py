@@ -225,15 +225,15 @@ def get_sync_status():
 
 
 @router.get("/squad/basic")
-async def get_basic_squad():
-    state = await manager_state_service.get_current_state()
+async def get_basic_squad(refresh: bool = False):
+    state = await manager_state_service.get_current_state(force_refresh=refresh)
     squad = state.to_squad_dataframe()
     if len(squad) != 15 or squad["element"].nunique() != 15:
         return {
             "status": "unavailable",
             "starters": [],
             "bench": [],
-            "reason": "No complete configured squad",
+            "reason": state.error_message or "No complete configured squad",
             "is_stale": state.is_stale,
         }
     starters = squad[squad["is_starter"]].to_dict("records")

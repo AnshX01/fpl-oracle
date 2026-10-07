@@ -39,7 +39,7 @@ class ProjectionEngine:
         self._cache: dict[str, pd.DataFrame] = {}
 
     def load_or_train(self, X: pd.DataFrame | None = None, Y: pd.DataFrame | None = None):
-        """Load trained model weights from disk or train if missing."""
+        """Load and verify existing weights; explicit training is a separate operation."""
         weights = [
             (self.minutes_model, self.models_dir / "minutes_model.pkl"),
             (self.attacking_model, self.models_dir / "attacking_model.pkl"),
@@ -63,7 +63,7 @@ class ProjectionEngine:
                 logger.error(f"[ModelIntegrity] Weight verification failed: {ve}")
                 raise
             except Exception as e:
-                logger.warning(f"Error loading models from disk: {e}. Retraining...")
+                logger.warning(f"Error loading existing model bundle: {e}")
 
         raise RuntimeError(
             "Model bundle unavailable. Serving never retrains implicitly; run explicit candidate training."

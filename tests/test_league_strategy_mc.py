@@ -55,6 +55,10 @@ def test_monte_carlo_seeded_determinism():
     )
 
     assert res1["user_win_probability_pct"] == res2["user_win_probability_pct"]
+    assert res1["status"] == res2["status"]
+    if res1["status"] != "SIMULATION_SUCCESS":
+        assert res1["user_win_probability_pct"] is None
+        return
     assert res1["user_top3_probability_pct"] == res2["user_top3_probability_pct"]
     assert res1["expected_final_rank"] == res2["expected_final_rank"]
 

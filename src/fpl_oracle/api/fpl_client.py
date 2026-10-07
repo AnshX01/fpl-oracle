@@ -241,28 +241,36 @@ class FPLClient:
         ttl = SETTINGS.get("cache", {}).get("live_gw_ttl_seconds", 60)
         return await self._fetch_json(f"event/{gw}/live/", cache_key, ttl, force_refresh=force_refresh)
 
-    async def get_manager_entry(self, manager_id: int) -> tuple[ManagerEntry, bool]:
+    async def get_manager_entry(self, manager_id: int, force_refresh: bool = False) -> tuple[ManagerEntry, bool]:
         cache_key = f"entry:{manager_id}"
         ttl = 300
-        raw, is_stale = await self._fetch_json(f"entry/{manager_id}/", cache_key, ttl)
+        raw, is_stale = await self._fetch_json(f"entry/{manager_id}/", cache_key, ttl, force_refresh=force_refresh)
         return ManagerEntry.model_validate(raw), is_stale
 
-    async def get_manager_history(self, manager_id: int) -> tuple[ManagerHistory, bool]:
+    async def get_manager_history(self, manager_id: int, force_refresh: bool = False) -> tuple[ManagerHistory, bool]:
         cache_key = f"entry:{manager_id}:history"
         ttl = 300
-        raw, is_stale = await self._fetch_json(f"entry/{manager_id}/history/", cache_key, ttl)
+        raw, is_stale = await self._fetch_json(
+            f"entry/{manager_id}/history/", cache_key, ttl, force_refresh=force_refresh
+        )
         return ManagerHistory.model_validate(raw), is_stale
 
-    async def get_manager_picks(self, manager_id: int, gw: int) -> tuple[SquadPicks, bool]:
+    async def get_manager_picks(self, manager_id: int, gw: int, force_refresh: bool = False) -> tuple[SquadPicks, bool]:
         cache_key = f"entry:{manager_id}:event:{gw}:picks"
         ttl = 300
-        raw, is_stale = await self._fetch_json(f"entry/{manager_id}/event/{gw}/picks/", cache_key, ttl)
+        raw, is_stale = await self._fetch_json(
+            f"entry/{manager_id}/event/{gw}/picks/", cache_key, ttl, force_refresh=force_refresh
+        )
         return SquadPicks.model_validate(raw), is_stale
 
-    async def get_manager_transfers(self, manager_id: int) -> tuple[list[TransferHistoryItem], bool]:
+    async def get_manager_transfers(
+        self, manager_id: int, force_refresh: bool = False
+    ) -> tuple[list[TransferHistoryItem], bool]:
         cache_key = f"entry:{manager_id}:transfers"
         ttl = 300
-        raw, is_stale = await self._fetch_json(f"entry/{manager_id}/transfers/", cache_key, ttl)
+        raw, is_stale = await self._fetch_json(
+            f"entry/{manager_id}/transfers/", cache_key, ttl, force_refresh=force_refresh
+        )
         transfers = [TransferHistoryItem.model_validate(item) for item in raw]
         return transfers, is_stale
 

@@ -92,7 +92,7 @@ def capture(base_url):
                     ),
                 )
 
-                def route(req, mode=mode):
+                def route(req, request=None, *, mode=mode):
                     from urllib.parse import urlsplit
 
                     path = urlsplit(req.request.url).path

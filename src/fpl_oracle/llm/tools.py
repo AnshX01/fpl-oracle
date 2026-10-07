@@ -10,15 +10,12 @@ from typing import Any
 import pandas as pd
 
 from fpl_oracle.api.fpl_client import fpl_client
-from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.store import data_store
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.optimise.squad import squad_optimizer
-from fpl_oracle.optimise.transfers import transfer_optimizer
 from fpl_oracle.server.analysis import analysis_service
 
 logger = logging.getLogger("fpl_oracle.llm.tools")
@@ -152,47 +149,26 @@ class ToolExecutor:
             return {"error": str(e)}
 
     async def _tool_get_my_team(self, args: dict[str, Any]) -> dict[str, Any]:
-        profile = data_store.get_profile()
-        m_id = args.get("manager_id") or profile.manager_id
-        if not m_id:
-            return {
-                "status": "no_manager_id",
-                "message": "No manager ID configured. Please set in profile or pass manager_id.",
-            }
+        from fpl_oracle.domain.manager_state import manager_state_service
 
-        boot, _ = await fpl_client.get_bootstrap_static()
-        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        gw_to_fetch = curr_gw or 1
-
-        entry, _ = await fpl_client.get_manager_entry(m_id)
-        picks, _ = await fpl_client.get_manager_picks(m_id, gw_to_fetch)
-        history, _ = await fpl_client.get_manager_history(m_id)
-
-        elem_map = {e.id: e for e in boot.elements}
-        squad = []
-        for p in picks.picks:
-            elem = elem_map.get(p.element)
-            squad.append(
-                {
-                    "element": p.element,
-                    "web_name": elem.web_name if elem else f"Player {p.element}",
-                    "team": elem.team if elem else 0,
-                    "cost": (elem.now_cost / 10.0) if elem else 0.0,
-                    "is_captain": p.is_captain,
-                    "is_vice_captain": p.is_vice_captain,
-                    "multiplier": p.multiplier,
-                }
-            )
-
-        bank_m = (picks.entry_history.bank / 10.0) if picks.entry_history else 0.0
+        state = await manager_state_service.get_current_state()
+        if args.get("manager_id") is not None and args["manager_id"] != state.manager_id:
+            return {"status": "unavailable", "reason": "Requested manager differs from configured squad"}
+        if len(state.squad) != 15:
+            return {"status": "unavailable", "reason": state.error_message or "Configured squad unavailable"}
         return {
-            "manager_name": f"{entry.player_first_name} {entry.player_last_name}",
-            "team_name": entry.name,
-            "overall_points": entry.summary_overall_points,
-            "overall_rank": entry.summary_overall_rank,
-            "bank_millions": bank_m,
-            "chips_used": [c.name for c in history.chips],
-            "squad": squad,
+            "manager_name": state.manager_name,
+            "team_name": state.team_name,
+            "overall_points": state.overall_points,
+            "overall_rank": state.overall_rank,
+            "bank_millions": state.bank_millions,
+            "free_transfers": state.free_transfers,
+            "bank_source": state.bank_source,
+            "ft_source": state.ft_source,
+            "chips_used": state.chips_used,
+            "squad": [p.model_dump(mode="json") for p in state.squad],
+            "is_stale": state.is_stale,
+            "data_as_of": state.source_timestamp,
         }
 
     async def _tool_get_projections(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -232,92 +208,19 @@ class ToolExecutor:
         return {"gameweek": target_gw, "horizon": horizon, "players": results}
 
     async def _tool_optimise_transfers(self, args: dict[str, Any]) -> dict[str, Any]:
-        profile = data_store.get_profile()
-        boot, _ = await fpl_client.get_bootstrap_static()
-        fixtures, _ = await fpl_client.get_fixtures()
-        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
-        effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
+        from fpl_oracle.server.routes.api import OptimizeRequest, run_optimizer
 
-        horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
-        target_df = horizon_proj.get(target_gw, pd.DataFrame())
-
-        # Load user squad or generate standard template if not loaded
-        m_id = profile.manager_id
-        current_squad_df = None
-        bank = 5.0  # default £0.5m
-        ft = profile.free_transfers or 1
-
-        if m_id and curr_gw:
-            try:
-                picks, _ = await fpl_client.get_manager_picks(m_id, curr_gw)
-                picks_ids = [p.element for p in picks.picks]
-                current_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-                if picks.entry_history:
-                    bank = picks.entry_history.bank
-            except Exception:
-                pass
-
-        if current_squad_df is None or len(current_squad_df) < 15:
-            # Fallback to a valid 15-man squad within budget using MILP solver
-            squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
-            current_squad_df = squad_res["squad"].copy()
-
-        opt_res = transfer_optimizer.evaluate_transfer_options(
-            current_squad_df=current_squad_df,
-            player_pool_df=target_df,
-            bank=bank,
-            free_transfers=ft,
-            horizon_projections=horizon_proj,
-            current_gw=effective_curr_gw,
-            target_gw=target_gw,
-            locked_in_ids=args.get("locked_in"),
-            locked_out_ids=args.get("locked_out"),
-        )
-        return {
-            "decision": opt_res["recommended_plan"]["recommendation_summary"],
-            "hit_verdict": opt_res["hit_verdict"],
-            "candidate_plans": [
-                {
-                    "type": p["plan_type"],
-                    "summary": p["recommendation_summary"],
-                    "net_xp": p["net_expected_points"],
-                    "gain": p["expected_gain"],
-                    "hits": p["hits"],
-                }
-                for p in opt_res["candidate_plans"]
-            ],
-            "roadmap": opt_res["transfer_roadmap"],
-        }
+        return await run_optimizer(OptimizeRequest(locked_in=args.get("locked_in"), locked_out=args.get("locked_out")))
 
     async def _tool_plan_chips(self, args: dict[str, Any]) -> dict[str, Any]:
-        profile = data_store.get_profile()
-        boot, _ = await fpl_client.get_bootstrap_static()
-        fixtures, _ = await fpl_client.get_fixtures()
-        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
-        effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
+        from fpl_oracle.server.routes.api import get_chip_strategy
 
-        horizon_proj = await analysis_service.projections(target_gw, 8, boot, fixtures)
-        pool_df = horizon_proj.get(target_gw, pd.DataFrame())
-
-        hist = None
-        if profile.manager_id:
-            try:
-                hist, _ = await fpl_client.get_manager_history(profile.manager_id)
-            except Exception:
-                pass
-
-        squad_df = squad_optimizer.solve_best_squad(player_pool_df=pool_df, budget=1000.0)["squad"]
-        chip_res = chip_planner.generate_chip_strategy(
-            current_gw=effective_curr_gw,
-            current_squad_df=squad_df,
-            horizon_projections=horizon_proj,
-            fixtures=fixtures,
-            bootstrap=boot,
-            manager_history=hist,
-        )
-        return {"set_1_warning": chip_res["set_1_deadline_warning"], "chip_table": chip_res["chip_plan_table"]}
+        result = await get_chip_strategy()
+        return {
+            **result,
+            "chip_table": result.get("chip_plan_table", []),
+            "set_1_warning": result.get("set_1_deadline_warning"),
+        }
 
     async def _tool_captain_options(self, args: dict[str, Any]) -> dict[str, Any]:
         boot, _ = await fpl_client.get_bootstrap_static()
@@ -325,9 +228,8 @@ class ToolExecutor:
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         gw = args.get("gameweek") or next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
 
-        gw_df = projection_engine.predict_gameweek(
-            gw, boot, fixtures, reconciled_inputs=news_analyzer.get_reconciled_inputs(boot, gw)
-        )
+        horizon = await analysis_service.projections(gw, 8, boot, fixtures)
+        gw_df = horizon.get(gw, pd.DataFrame())
         top5 = gw_df.sort_values(by="expected_points", ascending=False).head(5)
 
         return {

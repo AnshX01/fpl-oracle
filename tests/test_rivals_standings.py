@@ -242,9 +242,8 @@ def _make_dummy_projections():
 
 
 @pytest.mark.anyio
-async def test_decision_card_missing_manager_shows_unavailable():
+async def test_decision_card_missing_manager_shows_unavailable(configured_advisor):
     """Verify decision card reflects explicit unavailable state when manager is missing from standings."""
-    from unittest.mock import MagicMock
 
     from fpl_oracle.briefing.decision_card import decision_card_generator
     from fpl_oracle.data.store import ProfileData
@@ -256,11 +255,7 @@ async def test_decision_card_missing_manager_shows_unavailable():
         manager_id=99999,
         target_league_id=555,
     )
-    mock_state = MagicMock()
-    mock_state.manager_id = 99999
-    mock_state.overall_points = 500
-    mock_state.squad = [1]
-    mock_state.to_squad_dataframe.return_value = single_proj
+    mock_state = configured_advisor[0].model_copy(update={"manager_id":99999,"overall_points":500})
 
     standings_payload = {
         "league_id": 555,
@@ -289,9 +284,8 @@ async def test_decision_card_missing_manager_shows_unavailable():
 
 
 @pytest.mark.anyio
-async def test_decision_card_leader_no_close_chasers():
+async def test_decision_card_leader_no_close_chasers(configured_advisor):
     """Verify decision card reflects 'leader, no close chasers' state without forcing 10 rivals."""
-    from unittest.mock import MagicMock
 
     from fpl_oracle.briefing.decision_card import decision_card_generator
     from fpl_oracle.data.store import ProfileData
@@ -303,11 +297,7 @@ async def test_decision_card_leader_no_close_chasers():
         manager_id=101,
         target_league_id=555,
     )
-    mock_state = MagicMock()
-    mock_state.manager_id = 101
-    mock_state.overall_points = 600
-    mock_state.squad = [1]
-    mock_state.to_squad_dataframe.return_value = single_proj
+    mock_state = configured_advisor[0].model_copy(update={"manager_id":101,"overall_points":600})
 
     standings_payload = {
         "league_id": 555,

@@ -22,6 +22,15 @@ class AnalysisService:
         self._plan_tasks = {}
         self._plans = {}
 
+    async def invalidate(self):
+        """Wait for existing inference to finish, then drop dependent served caches."""
+        async with self._projection_lock:
+            projection_engine._cache.clear()
+            self._snapshots.clear()
+            self._plans.clear()
+            self._news_at = 0.0
+            self._news_key = None
+
     async def projections(self, start_gw, horizon, bootstrap, fixtures):
         horizon = max(horizon, 8)
         async with self._projection_lock:
@@ -70,6 +79,10 @@ class AnalysisService:
                     fixtures,
                     reconciled_inputs_by_gw=inputs,
                 )
+                current_history = hashlib.sha256(hist.read_bytes()).hexdigest() if hist.exists() else None
+                if current_history != key_body["history"] or model_registry.get_active_version() != key_body["model"]:
+                    projection_engine._cache.clear()
+                    raise RuntimeError("Model or history changed during inference; snapshot not published")
                 self._snapshots = {
                     key: {
                         "snapshot_id": key,
@@ -91,8 +104,10 @@ class AnalysisService:
             return result
 
     async def joint_plan(self, **kwargs):
+        from fpl_oracle.data.store import data_store
         from fpl_oracle.optimise.transfers import transfer_optimizer
 
+        kwargs.setdefault("risk_preference", getattr(data_store.get_profile(), "risk_preference", "balanced") or "balanced")
         for name in ("locked_in_ids", "locked_out_ids", "excluded_team_ids"):
             kwargs.setdefault(name, set())
 

@@ -385,7 +385,28 @@ const app = createApp({
     }
   },
 
+  watch: {
+    activeTab() { this.saveSessionHistory(); },
+    chatMessages: { deep: true, handler() { this.saveSessionHistory(); } }
+  },
+
   methods: {
+    restoreSessionHistory() {
+      try {
+        const saved = JSON.parse(localStorage.getItem('fpl_oracle_session_v1') || 'null');
+        if (!saved || saved.version !== 1) return;
+        if (['overview', 'team', 'transfers', 'league'].includes(saved.activeTab)) this.activeTab = saved.activeTab;
+        if (Array.isArray(saved.chatMessages)) this.chatMessages = saved.chatMessages.slice(-50).filter(m =>
+          m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').map(m =>
+          ({ role: m.role, content: m.content, historical: true }));
+      } catch (e) { /* Storage may be unavailable or invalid; never restore advice as current. */ }
+    },
+    saveSessionHistory() {
+      try {
+        localStorage.setItem('fpl_oracle_session_v1', JSON.stringify({ version: 1, activeTab: this.activeTab,
+          chatMessages: this.chatMessages.slice(-50), savedAt: new Date().toISOString() }));
+      } catch (e) { /* Read-only/private storage does not block live data. */ }
+    },
     // Theme Management
     initTheme() {
       const saved = localStorage.getItem('fpl_oracle_theme');
@@ -590,13 +611,22 @@ const app = createApp({
       } catch (e) {}
     },
 
+    async resetFinancialOverrides() {
+      const res = await fetch('/api/profile', { method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({bank: null, free_transfers: null}) });
+      if (!res.ok) { this.triggerToast('Could not reset overrides.'); return; }
+      await this.refreshAll(true);
+      this.triggerToast('Official bank and free transfers restored.');
+    },
+
     async saveProfile() {
       try {
-        await fetch('/api/profile', {
+        const res = await fetch('/api/profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.profile)
+          body: JSON.stringify({risk_preference: this.profile.risk_preference, llm_provider: this.profile.llm_provider})
         });
+        if (!res.ok) throw new Error(`Settings HTTP ${res.status}`);
         this.showSettingsModal = false;
         this.triggerToast("Settings saved. Refreshing analysis...");
         await this.refreshAll();
@@ -818,11 +848,11 @@ const app = createApp({
       }
     },
 
-    async loadBasicSquad() {
+    async loadBasicSquad(refresh = false) {
       this.basicSquadLoading = true;
       this.basicSquadError = null;
       try {
-        const res = await fetch('/api/squad/basic');
+        const res = await fetch(`/api/squad/basic${refresh ? '?refresh=true' : ''}`);
         if (!res.ok) throw new Error(`Basic squad HTTP ${res.status}`);
         this.basicSquadData = await res.json();
       } catch (e) {
@@ -831,9 +861,10 @@ const app = createApp({
       } finally { this.basicSquadLoading = false; }
     },
 
-    async refreshAll() {
+    async refreshAll(refresh = false) {
+      // A forced reopen refresh completes before advice requests use cached upstream data.
       // Render basic data before expensive requests enter the event loop.
-      await Promise.all([this.loadBasicSquad(), this.loadGameState(), this.loadProfile()]);
+      await Promise.all([this.loadBasicSquad(refresh), this.loadGameState(), this.loadProfile()]);
       await this.$nextTick();
       await Promise.all([
         this.loadHealth(),
@@ -855,7 +886,8 @@ const app = createApp({
 
   mounted() {
     this.initTheme();
-    this.refreshAll();
+    this.restoreSessionHistory();
+    this.refreshAll(true);
   }
 });
 

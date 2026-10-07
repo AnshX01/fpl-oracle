@@ -1,19 +1,21 @@
-# ⚽ FPL Oracle — 2026/27 Season Expert & Decision Engine
+> Work in progress: this branch is a repair checkpoint, not a certified release. Read [CHECKPOINT_STATUS.md](CHECKPOINT_STATUS.md). Original report/model metrics have not been recertified. Do not infer a full-suite pass from examples below. Refresh performs inference, not implicit retraining.
+
+# FPL Oracle - 2026/27 decision support checkpoint
 
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 Testing status: see current CI results and the scoped repair checkpoints below; no full-suite pass is claimed.
-[![2026/27 Rules: Verified](https://img.shields.io/badge/FPL%20Rules-2026%2F27%20Verified-orange.svg)]()
 
-> **FPL Oracle** is an autonomous, machine-learning-driven Fantasy Premier League decision engine and conversational AI expert designed to help managers dominate their mini-leagues. Running 100% locally on your machine, it couples a decomposed ML projection engine with a stateful multi-gameweek beam-search transfer optimizer, correlated clean-sheet Monte Carlo simulation, and an Atlas/Council decision dashboard.
+
+> **FPL Oracle** is an autonomous, machine-learning-driven Fantasy Premier League decision engine and conversational AI expert for comparing feasible actions for a configured squad. Running 100% locally on your machine, it couples a decomposed ML projection engine with a stateful multi-gameweek beam-search transfer optimizer, correlated clean-sheet Monte Carlo simulation, and an Atlas/Council decision dashboard.
 
 ---
 
-## 🏆 Key Capabilities & 2026/27 Rules Compliance
+## Implemented paths (see CHECKPOINT_STATUS.md for remaining validation)
 
 1. **Decomposed ML Projection Engine**:
    - Predicts individual scoring components: Minutes $P(\text{start})$, $P(\ge 60)$, Attacking ($xG, xA$), Clean Sheets, Defensive Contribution (DefCon +2), Cards, Saves, and Rebalanced BPS.
-   - Generates calibrated point distributions ($P_{10}, P_{50}, P_{90}, \text{variance}$) rather than flat point estimates.
+   - Generates point distributions (coverage validation is still required) ($P_{10}, P_{50}, P_{90}, \text{variance}$) rather than flat point estimates.
 2. **2026/27 Official Rule Verification**:
    - **8 Chips Total (2 Distinct Sets)**: 4 chips in Set 1 (GW1–19, hard cutoff at GW19 deadline), 4 chips in Set 2 (GW20–38).
    - **Assistant Manager Chip**: Confirmed removed from 2026/27 game settings.
@@ -46,7 +48,7 @@ Testing status: see current CI results and the scoped repair checkpoints below; 
 
 ## ⚙️ Complete Setup: Baseline, Repaired Model & Integrated LLM Extraction
 
-FPL Oracle runs **100% free and locally** on your machine. You can run the entire pipeline out of the box using public official FPL endpoints without any API keys, or optionally enable Google Gemini's generous Free Tier for AI press conference extraction and chat.
+FPL Oracle runs **locally with a no-key public-data path** on your machine. You can run the entire pipeline out of the box using public official FPL endpoints without any API keys, or optionally enable an optional Google Gemini account tier for AI press conference extraction and chat.
 
 ### 1. Environment Configuration (`.env`)
 All configuration, manager IDs, and API keys reside exclusively in the local, gitignored `.env` file. There are **zero credentials or ID inputs in the web interface** for privacy and security.
@@ -70,9 +72,9 @@ FPL_MANAGER_ID=1234567
 FPL_TARGET_LEAGUE_ID=7654321
 
 # ==============================================================================
-# Google Gemini Free-Tier Integration (Optional, 100% Free)
+# Google Gemini Free-Tier Integration (Optional; verify account quota and pricing)
 # ==============================================================================
-# Obtain a free API key with no billing required: https://aistudio.google.com/
+# Check API key availability, quota and billing terms: https://aistudio.google.com/
 GEMINI_API_KEY=your_free_key_here
 
 # Safety confirmation safeguard: MUST be set to true to enable Gemini Free Tier.
@@ -109,7 +111,7 @@ NEWS_FETCH_INTERVAL_MINUTES=60
 # 1. Install dependencies (Python 3.11 recommended)
 pip install -e .
 
-# 2. Run the complete automated test suite (77 tests, ~3 min)
+# 2. Run the automated test suite (duration depends on network/solver tests)
 pytest tests/ -v
 
 # 3. Train or evaluate the 6 LightGBM component models
@@ -248,25 +250,7 @@ Before every gameweek, verify that all systems are healthy:
 ```bash
 python run.py verify
 ```
-Expected output:
-```
-==================================================
-  FPL ORACLE — PRE-FLIGHT VERIFICATION
-==================================================
-[1/5] Testing Live FPL API Connectivity...
-[PASS] API connected. Season 2026/27 live. Current GW: 5, Next GW: 6.
-[2/5] Checking SQLite Database & Snapshots...
-[PASS] Database operational. 89141 historical records loaded.
-[3/5] Loading Machine Learning Models...
-[PASS] All 6 component ML models loaded successfully.
-[4/5] Running Pytest Unit Test Suite...
-[PASS] All 8 unit tests passed.
-[5/5] Re-running Historical Backtest Harness...
-[PASS] Backtest passed. Oracle achieved 464.0 pts vs 167.3 global avg.
-==================================================
-ALL CHECKS PASSED: FPL ORACLE IS FULLY OPERATIONAL!
-==================================================
-```
+The command reports the checks it actually ran. Treat failures and unavailable data as blockers for their affected advice; do not interpret a stored example as a current pass.
 
 ---
 
@@ -281,6 +265,6 @@ In accordance with the project's evidence-gated engineering standards:
 
 ## 📜 Documentation & Decisions
 
-- See [SETUP.md](file:///C:/Users/anshw/Documents/fpl-expert/SETUP.md) for full setup instructions, API key provisioning, and troubleshooting.
-- See [DECISIONS.md](file:///C:/Users/anshw/Documents/fpl-expert/DECISIONS.md) for detailed rationale on official rule constraints, mathematical formulations, and top limitations.
-- See [reports/repair_audit.md](file:///C:/Users/anshw/Documents/fpl-expert/reports/repair_audit.md) and [reports/gap_closure.md](file:///C:/Users/anshw/Documents/fpl-expert/reports/gap_closure.md) for complete verification audit trails.
+- See [SETUP.md](SETUP.md) for full setup instructions, API key provisioning, and troubleshooting.
+- See [DECISIONS.md](DECISIONS.md) for detailed rationale on official rule constraints, mathematical formulations, and top limitations.
+- See [reports/repair_audit.md](reports/repair_audit.md) and [reports/gap_closure.md](reports/gap_closure.md) for complete verification audit trails.

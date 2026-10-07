@@ -56,3 +56,7 @@ reports/evidence_postcommit/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Durable local runtime retrain state (not a shared project artifact)
+data/retraining_state.json
+data/retraining_state.json.tmp

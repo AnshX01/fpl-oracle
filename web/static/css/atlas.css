@@ -250,3 +250,7 @@ html.light .text-blue-400 { color: #1d4ed8 !important; }
 
 html.light header, html.light nav, html.light [class*="bg-[#"] { background-color: var(--bg-card-elevated) !important; }
 html.light [class*="bg-zinc-800"], html.light [class*="bg-zinc-950"], html.light [class*="bg-zinc-900"] { background-color: var(--bg-card-elevated) !important; }
+
+html.light .text-emerald-300, html.light .text-emerald-200 { color: #065f46 !important; }
+html.light .text-amber-300, html.light .text-amber-200 { color: #78350f !important; }
+html.light .bg-emerald-900\/30, html.light .bg-emerald-900\/40 { background-color: #d1fae5 !important; }

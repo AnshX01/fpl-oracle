@@ -392,6 +392,7 @@ class ModelRegistry:
         active_mae: float | None = None,
         rolling_origins: list[dict[str, Any]] | None = None,
         training_data_df: pd.DataFrame | None = None,
+        training_provenance: dict[str, Any] | None = None,
         recipe_id: str = "fpl_oracle_canonical_v1",
         new_version_tag: str | None = None,
         notes: str = "",
@@ -490,6 +491,7 @@ class ModelRegistry:
                 "git_commit": git_commit,
                 "recipe_id": recipe_id,
                 "training_data_hash": training_data_hash,
+                "training_provenance": training_provenance,
                 "max_gw": max_gw,
                 "feature_list_hash": FEATURE_SCHEMA_HASH,
                 "metric_applies_to": "served_weights",
@@ -598,6 +600,7 @@ class ModelRegistry:
         calibration_data: dict[str, Any] | Path | None = None,
         rolling_origins: list[dict[str, Any]] | None = None,
         training_data_df: pd.DataFrame | None = None,
+        training_provenance: dict[str, Any] | None = None,
         recipe_id: str = "fpl_oracle_canonical_v1",
     ) -> dict[str, Any]:
         """
@@ -682,6 +685,7 @@ class ModelRegistry:
             rolling_origins=origins_to_check,
             training_data_df=training_data_df,
             recipe_id=recipe_id,
+            training_provenance=training_provenance,
             new_version_tag=new_version_tag,
             notes=notes,
         )

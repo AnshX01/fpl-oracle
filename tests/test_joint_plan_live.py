@@ -296,7 +296,7 @@ def test_dynamic_valuation_replaces_fixed_constants(small_reference_squad_and_po
     assert vals_b["3xc"] == 7.2
 
 
-def test_live_api_endpoint_invokes_joint_planner():
+def test_live_api_endpoint_invokes_joint_planner(configured_advisor):
     """
     Live API Endpoint Invocation Test:
     Calls /api/transfers and /api/chips, asserting that the joint planner is invoked
@@ -336,7 +336,7 @@ def test_live_api_endpoint_invokes_joint_planner():
     asyncio.run(_run())
 
 
-def test_cross_surface_consistency():
+def test_cross_surface_consistency(configured_advisor):
     """
     Cross-Surface Consistency Test:
     Asserts that given the same manager squad and projections, /api/transfers and

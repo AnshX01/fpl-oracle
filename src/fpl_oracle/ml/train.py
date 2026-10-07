@@ -388,6 +388,26 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # 7. Verify and promote or engage automated rollback
     cal_dict = candidate_ensemble.get_calibration_dict()
+
+    def block_provenance(block_meta):
+        return {
+            "rows": len(block_meta),
+            "by_season": {
+                str(season): {
+                    "first_gw": int(group["round"].min()),
+                    "last_gw": int(group["round"].max()),
+                    "rows": len(group),
+                }
+                for season, group in block_meta.groupby("season")
+            },
+        }
+
+    provenance = {
+        "fit": block_provenance(meta_train[fit_mask]),
+        "calibration": block_provenance(meta_train[cal_mask]),
+        "validation": block_provenance(meta[~train_mask]),
+        "corpus": block_provenance(meta),
+    }
     promote_res = model_registry.verify_and_promote(
         candidate_models=candidate_models,
         candidate_metrics=cand_metrics,
@@ -396,10 +416,12 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         notes="Automated retrain pipeline with true rolling origins",
         calibration_data=cal_dict,
         rolling_origins=rolling_origins,
-        training_data_df=X,
+        training_data_df=X_fit,
+        training_provenance=provenance,
     )
 
-    if not promote_res.get("promoted", True):
+    X.attrs["training_outcome"] = {**promote_res, "training_provenance": provenance}
+    if not promote_res.get("promoted", False):
         logger.warning(f"[ModelRollback] Retrain rejected: {promote_res.get('reason')}")
         logger.info("Retaining existing production models. Aborting full fit.")
         return X, Y

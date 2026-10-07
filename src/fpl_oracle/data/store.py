@@ -363,10 +363,10 @@ class DataStore:
                 llm_provider=str(profile.llm_provider or "gemini"),
                 bank_override_enabled=bool(profile.bank_override_enabled)
                 if profile.bank_override_enabled is not None
-                else None,
+                else False,
                 ft_override_enabled=bool(profile.ft_override_enabled)
                 if profile.ft_override_enabled is not None
-                else None,
+                else False,
                 bank=float(profile.bank if profile.bank is not None else 0.0),
                 free_transfers=int(profile.free_transfers if profile.free_transfers is not None else 1),
                 manual_squad=str(profile.manual_squad) if profile.manual_squad else None,

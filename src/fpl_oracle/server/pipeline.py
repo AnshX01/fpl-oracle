@@ -17,12 +17,12 @@ from fpl_oracle.api.rules_checker import rules_checker
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.store import data_store
+from fpl_oracle.domain.manager_state import manager_state_service
 from fpl_oracle.league.montecarlo import monte_carlo_simulator
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
-from fpl_oracle.optimise.transfers import transfer_optimizer
 from fpl_oracle.server.analysis import analysis_service
 
 logger = logging.getLogger("fpl_oracle.pipeline")
@@ -101,15 +101,15 @@ class SyncPipeline:
             await self._broadcast(
                 "sync_upstream", 10, "Fetching live Premier League API bootstrap, fixtures, and event status..."
             )
-            boot, _ = await fpl_client.get_bootstrap_static(force_refresh=True)
+            await analysis_service.invalidate()
+            state = await manager_state_service.get_current_state(force_refresh=True)
+            boot, _ = await fpl_client.get_bootstrap_static()
             fixtures, _ = await fpl_client.get_fixtures()
-            curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-
-            if profile.manager_id and curr_gw:
-                await fpl_client.get_manager_entry(profile.manager_id)
-                await fpl_client.get_manager_picks(profile.manager_id, curr_gw)
-                await fpl_client.get_manager_history(profile.manager_id)
-                await fpl_client.get_manager_transfers(profile.manager_id)
+            curr_gw, next_gw = state.current_gw, state.target_gw
+            if len(state.squad) != 15:
+                raise ValueError(state.error_message or "Configured squad unavailable")
+            if state.is_stale:
+                raise ValueError("Live refresh failed; cached published data remains marked stale")
 
             # ------------------------------------------------------------------
             # Stage 2: Live Rules Verification & Game State
@@ -164,51 +164,20 @@ class SyncPipeline:
             await self._broadcast(
                 "optimization", 65, "Solving mathematical MILP for squad, starting XI, and transfer roadmap..."
             )
-            # Check manager or manual squad
-            user_squad_df = None
-            bank = 5.0
-            free_transfers = profile.free_transfers or 1
+            user_squad_df = state.to_squad_dataframe()
+            bank = state.bank_tenths
+            free_transfers = state.free_transfers
             history_obj = None
-
-            if profile.manager_id and target_df is not None and not target_df.empty:
-                try:
-                    if curr_gw:
-                        picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw)
-                        transfers_history, _ = await fpl_client.get_manager_transfers(profile.manager_id)
-                        history_obj, _ = await fpl_client.get_manager_history(profile.manager_id)
-                        if picks.entry_history:
-                            bank = picks.entry_history.bank
-                        picks_ids = [p.element for p in picks.picks]
-                        user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-                        user_squad_df = transfer_optimizer.compute_squad_selling_prices(
-                            user_squad_df, transfers_history, boot
-                        )
-                        auto_ft = transfer_optimizer.calculate_banked_free_transfers(history_obj)
-                        if profile.free_transfers is None or profile.free_transfers == 1:
-                            free_transfers = auto_ft
-                except Exception as e:
-                    logger.warning("Error fetching manager picks for optimization: %s", e)
-
-            if (user_squad_df is None or len(user_squad_df) < 15) and profile.manual_squad and target_df is not None:
-                try:
-                    manual_ids = (
-                        json.loads(profile.manual_squad)
-                        if isinstance(profile.manual_squad, str)
-                        else profile.manual_squad
-                    )
-                    if manual_ids and len(manual_ids) == 15:
-                        user_squad_df = target_df[target_df["element"].isin(manual_ids)].copy()
-                        bank = (profile.bank or 0.0) * 10.0
-                        user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
-                except Exception:
-                    pass
-
-            if (user_squad_df is None or len(user_squad_df) < 15) and target_df is not None and not target_df.empty:
-                from fpl_oracle.optimise.squad import squad_optimizer
-
-                squad_res = squad_optimizer.solve_best_squad(target_df, budget=1000.0)
-                user_squad_df = squad_res["squad"].copy()
-                user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
+            if state.manager_id:
+                history_obj, _ = await fpl_client.get_manager_history(state.manager_id)
+            if target_df is None or target_df.empty:
+                raise ValueError("Projection snapshot unavailable")
+            projected_ids = set(target_df["element"])
+            if not set(user_squad_df["element"]).issubset(projected_ids):
+                raise ValueError("Projection snapshot is missing configured squad players")
+            for column in target_df.columns:
+                if column not in ("element", "selling_price", "purchase_price", "price_provenance"):
+                    user_squad_df[column] = user_squad_df["element"].map(target_df.set_index("element")[column])
 
             # ------------------------------------------------------------------
             # Stage 5 & 6: Unified Joint Transfer & Chip Optimization (G10)
@@ -216,9 +185,8 @@ class SyncPipeline:
             await self._broadcast(
                 "optimization", 65, "Solving mathematical MILP for squad, starting XI, and transfer roadmap..."
             )
-            chips_status = chip_planner.get_remaining_chips(history_obj)
-            available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
-            chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
+            available_chips = state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2
+            chips_used = [c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)]
 
             opt_res = {}
             lineup_res = {}
@@ -240,7 +208,8 @@ class SyncPipeline:
                 )
 
             await self._broadcast("chips", 75, "Running joint DP/beam search across Set 1 & Set 2 chip calendars...")
-            chips_plan = chip_planner.generate_chip_strategy(
+            chips_plan = await asyncio.to_thread(
+                chip_planner.generate_chip_strategy,
                 current_gw=effective_curr_gw,
                 current_squad_df=user_squad_df if user_squad_df is not None else target_df,
                 horizon_projections=projections,
@@ -255,10 +224,10 @@ class SyncPipeline:
             await self._broadcast(
                 "league", 85, "Simulating mini-league trajectories and rival differential ownership..."
             )
-            t_league = profile.target_league_id or 314
+            t_league = profile.target_league_id
             league_res = None
             try:
-                standings_data = await league_standings_manager.get_league_standings(t_league)
+                standings_data = await league_standings_manager.get_league_standings(t_league) if t_league else None
                 if standings_data and standings_data.get("standings") and user_squad_df is not None:
                     rivals_res = await rival_analyzer.analyze_rivals(
                         standings=standings_data["standings"],
@@ -273,7 +242,8 @@ class SyncPipeline:
                             user_pts = float(entry.summary_overall_points or 0)
                         except Exception:
                             pass
-                    league_res = monte_carlo_simulator.simulate_league(
+                    league_res = await asyncio.to_thread(
+                        monte_carlo_simulator.simulate_league,
                         user_points=user_pts,
                         user_squad_df=user_squad_df,
                         rival_squads=rivals_res.get("rival_squads", []),
@@ -294,7 +264,7 @@ class SyncPipeline:
                 briefing_data = await weekly_briefing_generator.generate_briefing(profile.manager_id)
             except Exception as e:
                 logger.warning("Briefing generation warning: %s", e)
-                briefing_data = {"markdown": "# Briefing\nBriefing generated."}
+                briefing_data = {"markdown": None, "error": str(e)}
 
             self._last_completed_at = datetime.now(UTC)
             self._last_result_summary = {
@@ -303,12 +273,19 @@ class SyncPipeline:
                 "game_state_phase": game_state.phase.value,
                 "players_projected": len(target_df) if target_df is not None else 0,
                 "transfer_plan": opt_res.get("recommended_plan", "ROLL"),
-                "captain": lineup_res.get("captain", {}).get("web_name", "None"),
+                "captain": opt_res.get("recommended_plan", {})
+                .get("lineup", lineup_res)
+                .get("captain", {})
+                .get("web_name", "None"),
                 "news_articles": len(analyzed_news),
                 "chips_plan": chips_plan.get("joint_schedule", {}),
                 "joint_plan": opt_res,
                 "league_sim": league_res,
                 "briefing_ready": bool(briefing_data.get("markdown")),
+                "data_as_of": state.source_timestamp,
+                "bank_tenths": state.bank_tenths,
+                "free_transfers": state.free_transfers,
+                "snapshot_id": target_df.attrs.get("snapshot_id"),
             }
 
             await self._broadcast(
@@ -326,7 +303,7 @@ class SyncPipeline:
     def trigger_sync(self) -> dict[str, Any]:
         """Explicitly trigger background analysis pipeline. Returns run ID."""
         run_id = f"run_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}"
-        if not self._is_running:
+        if not self._is_running and (self._task is None or self._task.done()):
             try:
                 loop = asyncio.get_running_loop()
                 self._task = loop.create_task(self.run_pipeline())

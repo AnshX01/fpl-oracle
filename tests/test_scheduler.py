@@ -51,14 +51,15 @@ async def test_scheduler_job_registration():
         "retrain_trigger",
         "deadline_alert",
         "holdout_forward",
+        "history_refresh",
     ]
     for j_id in expected_ids:
         assert j_id in registered_ids
 
     status = get_jobs_status()
     assert status["scheduler_running"] is True
-    assert status["total_jobs"] == 6
-    assert len(status["jobs"]) == 6
+    assert status["total_jobs"] == 7
+    assert len(status["jobs"]) == 7
     stop_scheduler()
 
 

@@ -5,7 +5,6 @@ hourly price snapshot logging, post-GW automated retrain triggers with rollback,
 and pre-deadline briefing refresh alerts.
 """
 
-import asyncio
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -59,8 +58,18 @@ class JobExecutionTracker:
                 "duration_seconds": 0.0,
                 "details": "Awaiting initial execution",
             },
+            "history_refresh": {
+                "name": "Finalized Current-Season History Refresh",
+                "schedule": "Hourly",
+                "status": "IDLE",
+                "last_run": None,
+                "next_run": None,
+                "run_count": 0,
+                "duration_seconds": 0.0,
+                "details": "Awaiting initial execution",
+            },
             "retrain_trigger": {
-                "name": "Post-GW Bonus Finalization Retrain",
+                "name": "Finalized-GW Candidate Retrain",
                 "schedule": "Every 15 minutes",
                 "status": "IDLE",
                 "last_run": None,
@@ -223,39 +232,9 @@ async def retrain_trigger_job():
     tracker.update_job_start(job_id)
 
     try:
-        ev_data, _ = await fpl_client.get_event_status()
-        status_list = ev_data.get("status", []) if isinstance(ev_data, dict) else getattr(ev_data, "status", [])
-        curr_gw, _ = await fpl_client.get_current_and_next_gw()
+        from fpl_oracle.server.retraining import retrain_finalized_gameweeks
 
-        # Check if bonus points are finalized across all finished elements
-        bonus_finalized = False
-        if status_list and len(status_list) > 0 and curr_gw:
-            matching = [
-                s for s in status_list if (s.get("event") if isinstance(s, dict) else getattr(s, "event", 0)) == curr_gw
-            ]
-            if matching:
-                bonus_finalized = all(
-                    bool(s.get("bonus_added") if isinstance(s, dict) else getattr(s, "bonus_added", False))
-                    for s in matching
-                )
-
-        details = ""
-        if bonus_finalized and curr_gw and curr_gw not in tracker.retrained_gameweeks:
-            logger.info(
-                f"[Scheduler] GW{curr_gw} bonus points finalized! Triggering automated retrain with rollback guard..."
-            )
-            from fpl_oracle.data.historical import historical_manager
-            from fpl_oracle.ml.train import train_all_models
-
-            await historical_manager.refresh_current_season()
-
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, train_all_models)
-            tracker.retrained_gameweeks.add(curr_gw)
-            active_v = model_registry.get_active_version()
-            details = f"Retrained on GW{curr_gw} completion with rollback verification. Active version: {active_v.get('version')}"
-        else:
-            details = f"GW{curr_gw} bonus finalized: {bonus_finalized}. Retrain not required (already retrained or in progress)."
+        details = await retrain_finalized_gameweeks()
 
         dur = (datetime.now(UTC) - start_t).total_seconds()
         data_store.record_job_finish(run_id, "SUCCESS", dur, details)
@@ -474,7 +453,7 @@ def start_scheduler():
 
         try:
             scheduler.start()
-            logger.info("[Scheduler] All 6 automated background jobs registered and scheduler started.")
+            logger.info("[Scheduler] All 7 automated background jobs registered and scheduler started.")
         except RuntimeError:
             logger.warning(
                 "[Scheduler] No running asyncio event loop. Scheduler jobs registered; starting deferred until event loop starts."

@@ -3,6 +3,7 @@ Weekly Gameweek Briefing Automation.
 Generates an executive, data-backed pre-deadline briefing card and markdown export.
 """
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -11,13 +12,13 @@ import pandas as pd
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.store import data_store
+from fpl_oracle.domain.manager_state import manager_state_service
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.optimise.transfers import transfer_optimizer
 from fpl_oracle.server.analysis import analysis_service
 from fpl_oracle.server.safe_json import safe_json_serialize
 
@@ -28,7 +29,21 @@ class WeeklyBriefingGenerator:
 
     async def generate_briefing(self, manager_id: int | None = None) -> dict[str, Any]:
         profile = data_store.get_profile()
-        m_id = manager_id or profile.manager_id
+        state = await manager_state_service.get_current_state()
+        m_id = state.manager_id
+        if manager_id is not None and manager_id != m_id:
+            return {
+                "status": "unavailable",
+                "markdown": None,
+                "reason": "Requested manager does not match configured squad",
+            }
+        if len(state.squad) != 15:
+            return {
+                "status": "unavailable",
+                "markdown": None,
+                "reason": state.error_message or "Configured squad unavailable",
+                "is_stale": state.is_stale,
+            }
 
         boot, is_stale = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
@@ -38,51 +53,50 @@ class WeeklyBriefingGenerator:
 
         # Deadline time for next gameweek
         next_event = next((e for e in boot.events if e.id == target_gw), None)
-        deadline_str = next_event.deadline_time if next_event else "2026-10-10T10:00:00Z"
+        deadline_str = next_event.deadline_time if next_event else "Unknown"
 
         # Predictions for next 5 gameweeks
         horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
-        # Load user squad
-        bank = 5.0
-        ft = profile.free_transfers or 1
-        user_squad_df = None
+        user_squad_df = state.to_squad_dataframe()
+        if target_df.empty or not set(user_squad_df["element"]).issubset(set(target_df["element"])):
+            return {
+                "status": "unavailable",
+                "markdown": None,
+                "reason": "Projection snapshot missing configured players",
+            }
+        for column in target_df.columns:
+            if column not in ("element", "selling_price", "purchase_price", "price_provenance"):
+                user_squad_df[column] = user_squad_df["element"].map(target_df.set_index("element")[column])
         user_history = None
-
-        if m_id and curr_gw:
-            try:
-                picks, _ = await fpl_client.get_manager_picks(m_id, curr_gw)
-                picks_ids = [p.element for p in picks.picks]
-                user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-                if picks.entry_history:
-                    bank = picks.entry_history.bank
-                user_history, _ = await fpl_client.get_manager_history(m_id)
-            except Exception:
-                pass
-
-        if user_squad_df is None or len(user_squad_df) < 15:
-            from fpl_oracle.optimise.squad import squad_optimizer
-
-            squad_res = squad_optimizer.solve_best_squad(player_pool_df=target_df, budget=1000.0)
-            user_squad_df = squad_res["squad"].copy()
-
-        # 1. Lineup & Captaincy
-        lineup_res = lineup_optimizer.select_lineup_and_captain(user_squad_df)
-
-        # 2. Transfer Optimization
-        transfers_res = transfer_optimizer.evaluate_transfer_options(
+        if m_id:
+            user_history, history_stale = await fpl_client.get_manager_history(m_id)
+            is_stale = is_stale or history_stale
+        is_stale = is_stale or state.is_stale
+        available_chips = state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2
+        chips_used = [c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)]
+        transfers_res = await analysis_service.joint_plan(
             current_squad_df=user_squad_df,
             player_pool_df=target_df,
-            bank=bank,
-            free_transfers=ft,
+            bank=state.bank_tenths,
+            free_transfers=state.free_transfers,
             horizon_projections=horizon_proj,
             current_gw=effective_curr_gw,
             target_gw=target_gw,
+            available_chips=available_chips,
+            chips_already_used=chips_used,
+            risk_preference=profile.risk_preference or "balanced",
         )
-
-        # 3. Chip Strategy
-        chip_res = chip_planner.generate_chip_strategy(
+        lineup_res = transfers_res["recommended_plan"].get("lineup")
+        if not lineup_res:
+            lineup_res = await asyncio.to_thread(
+                lineup_optimizer.select_lineup_and_captain,
+                user_squad_df,
+                risk_preference=profile.risk_preference or "balanced",
+            )
+        chip_res = await asyncio.to_thread(
+            chip_planner.generate_chip_strategy,
             current_gw=effective_curr_gw,
             current_squad_df=user_squad_df,
             horizon_projections=horizon_proj,
@@ -90,6 +104,8 @@ class WeeklyBriefingGenerator:
             bootstrap=boot,
             manager_history=user_history,
         )
+        chip_res["recommended_chip"] = transfers_res["recommended_chip"]
+        chip_res["chip_comparison_table"] = transfers_res["chip_comparison_table"]
 
         # 4. Price Changes Tonight
         price_preds = price_change_predictor.analyze_price_changes(boot)
@@ -161,7 +177,7 @@ class WeeklyBriefingGenerator:
 ## 1. Executive Summary & Core Decisions
 - **Captain:** **{cap["web_name"]}** ({cap["expected_points"]} projected points, {cap["multiplier"]}x multiplier).
 - **Vice-Captain:** **{vc["web_name"]}** ({vc["expected_points"]} projected points).
-- **Transfers Decision:** {rec_plan["recommendation_summary"]}
+- **Transfers Decision:** {rec_plan.get("recommendation_summary", rec_plan.get("plan_type", "Unavailable"))}
 - **Hit Verdict:** {transfers_res["hit_verdict"]}
 - **Starting Formation:** {lineup_res["formation"]} (Projected starting points: **{lineup_res["starters_expected_points"]}** xP).
 
@@ -173,11 +189,11 @@ class WeeklyBriefingGenerator:
 """
         for _, s in lineup_res["starters"].iterrows():
             is_c = " (C)" if s["element"] == cap["element"] else (" (VC)" if s["element"] == vc["element"] else "")
-            markdown += f"- **{s['web_name']}** ({s['position']}) — {s['expected_points']} xP [Floor: {s.get('p10', 0.0)}, Ceiling: {s.get('p90', 0.0)}, DefCon: +{s.get('exp_defcon_pts', 0.0)}]{is_c}\n"
+            markdown += f"- **{s['web_name']}** ({s['position']}) - {s['expected_points']} xP [Floor: {s.get('p10', 0.0)}, Ceiling: {s.get('p90', 0.0)}, DefCon: +{s.get('exp_defcon_pts', 0.0)}]{is_c}\n"
 
         markdown += "\n### Bench Substitutes (in priority order):\n"
         for idx, (_, b) in enumerate(lineup_res["bench"].iterrows(), 1):
-            markdown += f"{idx}. **{b['web_name']}** ({b['position']}) — {b['expected_points']} xP\n"
+            markdown += f"{idx}. **{b['web_name']}** ({b['position']}) - {b['expected_points']} xP\n"
 
         markdown += f"""
 ---
@@ -219,7 +235,10 @@ class WeeklyBriefingGenerator:
             "deadline_time": deadline_str,
             "is_stale": is_stale,
             "stale": is_stale,
-            "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+            "data_as_of": state.source_timestamp,
+            "snapshot_id": target_df.attrs.get("snapshot_id"),
+            "bank_tenths": state.bank_tenths,
+            "free_transfers": state.free_transfers,
             "captain": cap,
             "vice_captain": vc,
             "lineup": lineup_res,
