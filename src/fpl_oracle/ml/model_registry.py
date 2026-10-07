@@ -19,6 +19,7 @@ import pandas as pd
 
 from fpl_oracle.config import MODELS_DIR, REPORTS_DIR
 from fpl_oracle.data.store import data_store
+from fpl_oracle.ml.bundle_lock import bundle_locked
 from fpl_oracle.ml.components.attacking import AttackingModel
 from fpl_oracle.ml.components.bonus import BonusModel
 from fpl_oracle.ml.components.cards_saves import CardsSavesModel
@@ -231,11 +232,38 @@ class ModelRegistry:
             hashes["calibration.json"] = self.calculate_file_hash(cal_path)
         return hashes
 
+    @bundle_locked
+    def recover_interrupted_swap(self):
+        journal = self.models_dir / "promotion_journal.json"
+        if not journal.exists():
+            return
+        record = json.loads(journal.read_text(encoding="utf-8"))
+        active = self.load_manifest().get("active_version")
+        if active != record["new_version"]:
+            previous = self.versions_dir / record["previous_version"]
+            for filename in record["files"]:
+                source = previous / filename
+                if not source.exists():
+                    raise ValueError("Interrupted promotion cannot recover previous bundle")
+                temporary = self.models_dir / (filename + ".recover")
+                shutil.copy2(source, temporary)
+                os.replace(temporary, self.models_dir / filename)
+        # Validate the selected manifest before declaring recovery complete.
+        manifest = self.load_manifest()
+        version = next(v for v in manifest["versions"] if v["version"] == manifest["active_version"])
+        for filename, expected in version["file_hashes"].items():
+            if self.calculate_file_hash(self.models_dir / filename) != expected:
+                raise ValueError("Interrupted bundle recovery failed integrity check")
+        journal.unlink()
+
+    @bundle_locked
     def verify_weight_integrity(self, weights_dir: Path | None = None) -> tuple[bool, str]:
         """
         Verify that weight files in directory match the SHA256 hashes in manifest.
         Raises ValueError if tampering or missing files detected.
         """
+        if weights_dir is None or weights_dir == self.models_dir:
+            self.recover_interrupted_swap()
         target_dir = weights_dir or self.models_dir
         active = self.get_active_version()
         expected_hashes = active.get("file_hashes")
@@ -338,11 +366,7 @@ class ModelRegistry:
             custom_json_path=custom_json_path,
             custom_md_path=custom_md_path,
         )
-        return {
-            "ml_mae": float(metrics["ml_mae"]),
-            "ml_spearman": float(metrics["ml_spearman"]),
-            "base_mae": float(metrics["base_mae"]),
-        }
+        return metrics
 
     @staticmethod
     def _load_bundle_ensemble(path):
@@ -353,6 +377,7 @@ class ModelRegistry:
             raise ValueError("Bundle calibration unavailable")
         return ens
 
+    @bundle_locked
     def evaluate_production_weights(
         self, X_val: pd.DataFrame, Y_val: pd.DataFrame, rolling_origins: list[dict[str, Any]] | None = None
     ) -> dict[str, float] | None:
@@ -384,6 +409,7 @@ class ModelRegistry:
             logger.warning(f"Existing production weights evaluation failed ({e}); treating as schema upgrade.")
             return None
 
+    @bundle_locked
     def promote_candidate_bundle(
         self,
         candidate_models: dict[str, Any],
@@ -536,6 +562,13 @@ class ModelRegistry:
 
             # 10. Atomic swap into production self.models_dir using .tmp + os.replace
             files_to_swap = [fname for _, fname, _ in COMPONENT_WEIGHTS] + ["calibration.json"]
+            journal_path = self.models_dir / "promotion_journal.json"
+            journal_tmp = journal_path.with_suffix(".json.tmp")
+            journal_tmp.write_text(
+                json.dumps(dict(new_version=ver_tag, previous_version=active_ver_name, files=files_to_swap)),
+                encoding="utf-8",
+            )
+            os.replace(journal_tmp, journal_path)
             for fname in files_to_swap:
                 src_file = staging_dir / fname
                 tmp_target = self.models_dir / f"{fname}.tmp"
@@ -553,6 +586,7 @@ class ModelRegistry:
 
             # 12. Run immediate post-promotion integrity verification
             self.verify_weight_integrity(self.models_dir)
+            journal_path.unlink(missing_ok=True)
 
             # 13. Synchronize reports (only when promoting to production MODELS_DIR)
             if self.models_dir == MODELS_DIR:
@@ -589,6 +623,7 @@ class ModelRegistry:
             shutil.rmtree(staging_dir, ignore_errors=True)
             raise
 
+    @bundle_locked
     def verify_and_promote(
         self,
         candidate_models: dict[str, Any],
@@ -690,6 +725,7 @@ class ModelRegistry:
             notes=notes,
         )
 
+    @bundle_locked
     def rollback_to_version(self, target_version: str) -> dict[str, Any]:
         """Manually restore an archived model version to production."""
         target_dir = self.versions_dir / target_version

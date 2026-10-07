@@ -14,6 +14,7 @@ import pandas as pd
 from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.config import MODELS_DIR
 from fpl_oracle.data.features import FEATURE_COLUMNS, feature_engineering
+from fpl_oracle.ml.bundle_lock import bundle_locked
 from fpl_oracle.ml.components.attacking import AttackingModel
 from fpl_oracle.ml.components.bonus import BonusModel
 from fpl_oracle.ml.components.cards_saves import CardsSavesModel
@@ -36,8 +37,10 @@ class ProjectionEngine:
         self.bonus_model = BonusModel()
         self.cards_saves_model = CardsSavesModel()
         self.is_loaded = False
+        self.loaded_version = None
         self._cache: dict[str, pd.DataFrame] = {}
 
+    @bundle_locked
     def load_or_train(self, X: pd.DataFrame | None = None, Y: pd.DataFrame | None = None):
         """Load and verify existing weights; explicit training is a separate operation."""
         weights = [
@@ -57,6 +60,10 @@ class ProjectionEngine:
                 for model, path in weights:
                     loaded = model.load(path)
                     model.__dict__.update(loaded.__dict__)
+                if not scoring_ensemble.load_calibration(self.models_dir / "calibration.json"):
+                    raise ValueError("Verified model calibration could not be loaded")
+                self.loaded_version = model_registry.get_active_version().get("version")
+                self._cache.clear()
                 self.is_loaded = True
                 return
             except ValueError as ve:
@@ -69,6 +76,7 @@ class ProjectionEngine:
             "Model bundle unavailable. Serving never retrains implicitly; run explicit candidate training."
         )
 
+    @bundle_locked
     def train(self, X: pd.DataFrame, Y: pd.DataFrame):
         logger.info(f"Training ML component models on {len(X)} records...")
         self.minutes_model.fit(X, Y)
@@ -92,6 +100,7 @@ class ProjectionEngine:
         self.is_loaded = True
         logger.info("All component models successfully trained and persisted.")
 
+    @bundle_locked
     def predict_gameweek(
         self,
         target_gw: int,
@@ -104,7 +113,8 @@ class ProjectionEngine:
         Generate expected points for all players for a specific gameweek.
         Handles double gameweeks and blank gameweeks.
         """
-        if not self.is_loaded:
+        current_version = model_registry.get_active_version().get("version")
+        if not self.is_loaded or (self.loaded_version is not None and self.loaded_version != current_version):
             self.load_or_train()
 
         if reconciled_inputs is not None:
@@ -264,6 +274,7 @@ class ProjectionEngine:
 
         return dgw_grouped
 
+    @bundle_locked
     def predict_multi_gameweeks(
         self,
         start_gw: int,

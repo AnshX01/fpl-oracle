@@ -77,3 +77,22 @@ def test_interrupted_running_record_recovers(policy):
     )
     asyncio.run(retraining.retrain_finalized_gameweeks())
     assert policy.call_count == 1
+
+
+def test_committed_promotion_is_reconciled_without_second_fit(policy, monkeypatch):
+    retraining.STATE_PATH.write_text(
+        json.dumps(
+            dict(
+                schema_version=1,
+                gameweeks={"2026-27:5": dict(status="running", operation_id="same-operation", covered_gameweeks=[5])},
+            )
+        )
+    )
+    monkeypatch.setattr(
+        retraining.model_registry,
+        "get_active_version",
+        lambda: dict(version="new", training_provenance=dict(operation_id="same-operation")),
+    )
+    assert "Recovered" in asyncio.run(retraining.retrain_finalized_gameweeks())
+    assert policy.call_count == 0
+    assert json.loads(retraining.STATE_PATH.read_text())["gameweeks"]["2026-27:5"]["status"] == "promoted"

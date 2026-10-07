@@ -1,4 +1,4 @@
-> Work in progress: this branch is a repair checkpoint, not a certified release. Read [CHECKPOINT_STATUS.md](CHECKPOINT_STATUS.md). Original report/model metrics have not been recertified. Do not infer a full-suite pass from examples below. Refresh performs inference, not implicit retraining.
+> See [DELIVERY_STATUS.md](DELIVERY_STATUS.md) for Windows startup, verified repairs, actual model results and remaining limits. This source delivery is not a full-quality certification.
 
 # FPL Oracle - 2026/27 decision support checkpoint
 

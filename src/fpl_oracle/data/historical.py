@@ -133,7 +133,12 @@ class HistoricalDataManager:
                 [(e, r) not in replaced for e, r in zip(current["element"], current["round"], strict=True)]
             ]
         merged = self._clean_and_standardize(pd.concat([past, current, fresh], ignore_index=True))
-        merged = merged.drop_duplicates(["season", "element", "fixture", "round"], keep="last")
+        # Past cached corpora may lack fixture identity and contain genuine DGW
+        # rows. Never deduplicate those by a null/zero fixture key.
+        past_rows = merged[merged["season"] != "2026-27"]
+        current_rows = merged[merged["season"] == "2026-27"].drop_duplicates(
+            ["season", "element", "fixture", "round"], keep="last")
+        merged = pd.concat([past_rows, current_rows], ignore_index=True)
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.output_file.with_suffix(".csv.tmp")
         merged.to_csv(tmp, index=False)
@@ -197,8 +202,10 @@ class HistoricalDataManager:
         team_id_to_name = {t.id: t.name for t in bootstrap.teams}
         pos_id_to_pos = {et.id: et.singular_name_short for et in bootstrap.element_types}
 
-        # Elements that have played or scored points
-        active_elements = [e for e in bootstrap.elements if e.minutes > 0 or e.total_points > 0]
+        # Include the full registered population. Filtering on realized season
+        # minutes/points conditions the training corpus on future participation
+        # and drops the zero-point population in low-minutes interval evaluation.
+        active_elements = list(bootstrap.elements)
         logger.info(f"Fetching element match histories for {len(active_elements)} active players...")
 
         records = []

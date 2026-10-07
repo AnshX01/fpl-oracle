@@ -1,0 +1,254 @@
+{
+  "evaluated_at": "2026-10-07T08:56:40.491305+00:00",
+  "sample_count": 13973,
+  "ml_mae": 0.961,
+  "ml_rmse": 1.974,
+  "ml_spearman": 0.699,
+  "ml_pearson": 0.554,
+  "base_mae": 1.005,
+  "base_rmse": 2.142,
+  "base_spearman": 0.699,
+  "baselines": {
+    "weighted_recent_form": {
+      "mae": 1.007,
+      "rmse": 2.142,
+      "spearman": 0.699
+    },
+    "season_average": {
+      "mae": 1.005,
+      "rmse": 2.124,
+      "spearman": 0.688
+    },
+    "fixture_adjusted": {
+      "mae": 1.142,
+      "rmse": 2.487,
+      "spearman": 0.711
+    }
+  },
+  "mae_improvement_pct": 4.57,
+  "rmse_improvement_pct": 7.84,
+  "verdict": "The ML Projection Engine achieves an MAE of 0.961 and RMSE of 1.974 with a Spearman rank correlation of 0.699 (vs 0.699 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
+  "positions": {
+    "GKP": {
+      "count": 1592,
+      "ml_mae": 0.618,
+      "ml_rmse": 1.494,
+      "base_mae": 0.628,
+      "base_rmse": 1.597,
+      "improvement_mae_pct": 1.59
+    },
+    "DEF": {
+      "count": 4534,
+      "ml_mae": 1.123,
+      "ml_rmse": 2.19,
+      "base_mae": 1.178,
+      "base_rmse": 2.359,
+      "improvement_mae_pct": 4.67
+    },
+    "MID": {
+      "count": 6263,
+      "ml_mae": 0.903,
+      "ml_rmse": 1.865,
+      "base_mae": 0.956,
+      "base_rmse": 2.043,
+      "improvement_mae_pct": 5.54
+    },
+    "FWD": {
+      "count": 1584,
+      "ml_mae": 1.075,
+      "ml_rmse": 2.159,
+      "base_mae": 1.101,
+      "base_rmse": 2.344,
+      "improvement_mae_pct": 2.36
+    }
+  },
+  "calibration": {
+    "interval_80_coverage_pct": 83.64,
+    "below_p10_pct": 10.33,
+    "above_p90_pct": 6.03,
+    "pinball_loss_p10": 0.145,
+    "pinball_loss_p50": 0.476,
+    "pinball_loss_p90": 0.3777,
+    "avg_interval_width": 3.14,
+    "calibration_verdict": "CONSERVATIVE INTERVAL (83.64% vs 80% nominal)"
+  },
+  "rolling_origins": [
+    {
+      "season": "Holdout 2024-25 (trained on 2023-24)",
+      "train_size": 21427,
+      "test_size": 27605,
+      "mae": 0.992,
+      "rmse": 2.101,
+      "spearman": 0.682,
+      "base_recent_mae": 1.046,
+      "base_season_mae": 1.041,
+      "base_fixture_mae": 1.228,
+      "best_baseline_mae": 1.041,
+      "gain_vs_baseline": 0.049,
+      "interval_80_coverage_pct": 81.21,
+      "position_coverage": {
+        "GKP": 81.25,
+        "DEF": 84.62,
+        "MID": 79.31,
+        "FWD": 78.76
+      },
+      "minutes_bucket_coverage": {
+        "low": 81.8,
+        "mid": 81.65,
+        "high": 78.64
+      }
+    },
+    {
+      "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
+      "train_size": 29725,
+      "test_size": 29757,
+      "mae": 0.933,
+      "rmse": 1.991,
+      "spearman": 0.708,
+      "base_recent_mae": 0.995,
+      "base_season_mae": 0.99,
+      "base_fixture_mae": 1.094,
+      "best_baseline_mae": 0.99,
+      "gain_vs_baseline": 0.057,
+      "interval_80_coverage_pct": 84.22,
+      "position_coverage": {
+        "GKP": 88.59,
+        "DEF": 82.26,
+        "MID": 84.21,
+        "FWD": 85.55
+      },
+      "minutes_bucket_coverage": {
+        "low": 87.64,
+        "mid": 78.27,
+        "high": 78.29
+      }
+    },
+    {
+      "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
+      "train_size": 57330,
+      "test_size": 3216,
+      "mae": 1.23,
+      "rmse": 2.281,
+      "spearman": 0.629,
+      "base_recent_mae": 1.299,
+      "base_season_mae": 1.296,
+      "base_fixture_mae": 1.475,
+      "best_baseline_mae": 1.296,
+      "gain_vs_baseline": 0.066,
+      "interval_80_coverage_pct": 76.74,
+      "position_coverage": {
+        "GKP": 75.28,
+        "DEF": 79.53,
+        "MID": 75.14,
+        "FWD": 76.38
+      },
+      "minutes_bucket_coverage": {
+        "low": 74.97,
+        "mid": 78.78,
+        "high": 78.94
+      }
+    }
+  ],
+  "ablation": {
+    "probe_type": "inference_neutral_prior_replacement_sensitivity_probe",
+    "description": "Inference-time sensitivity probe measuring model responsiveness to neutral priors without retraining. True ablation is in reports/ablation.json.",
+    "full_mae": 0.961,
+    "full_rmse": 1.974,
+    "full_spearman": 0.699,
+    "ablated_mae": 1.127,
+    "ablated_rmse": 2.003,
+    "ablated_spearman": 0.657,
+    "mae_gain_pct": 14.73,
+    "odds_candidate_mae": "N/A (External odds omitted to preserve Rule 0.4 zero-cost API guarantee)",
+    "odds_candidate_rmse": "N/A",
+    "odds_candidate_spearman": "N/A",
+    "odds_verdict": "Candidate evaluated: Implied continuous team ratings provide honest match strength without external betting odds; external odds API kept out of production to maintain zero-cost API guarantee."
+  },
+  "partial_dependence": {
+    "star_player_vs_tough_defence": 3.8,
+    "star_player_vs_avg_defence": 4.02,
+    "star_player_vs_weak_defence": 4.14,
+    "mid_player_vs_tough_defence": 2.88,
+    "mid_player_vs_avg_defence": 3.18,
+    "mid_player_vs_weak_defence": 3.35,
+    "low_player_vs_tough_defence": 0.74,
+    "low_player_vs_avg_defence": 0.85,
+    "low_player_vs_weak_defence": 0.91,
+    "home_advantage_premium_pts": 0.04
+  },
+  "upcoming_projections": [
+    {
+      "position": "MID",
+      "name": "Bruno Borges Fernandes",
+      "team": "Man Utd",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.6,
+      "drivers": "Form projection 6.60 xP, position role MID"
+    },
+    {
+      "position": "FWD",
+      "name": "Erling Haaland",
+      "team": "Man City",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.14,
+      "drivers": "Form projection 6.14 xP, position role FWD"
+    },
+    {
+      "position": "FWD",
+      "name": "Jo\u00e3o Pedro Junqueira de Jesus",
+      "team": "Chelsea",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.08,
+      "drivers": "Form projection 6.08 xP, position role FWD"
+    },
+    {
+      "position": "MID",
+      "name": "Cole Palmer",
+      "team": "Chelsea",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 5.85,
+      "drivers": "Form projection 5.85 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Mohamed Salah",
+      "team": "Liverpool",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 5.83,
+      "drivers": "Form projection 5.83 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Bryan Mbeumo",
+      "team": "Man Utd",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 5.74,
+      "drivers": "Form projection 5.74 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Morgan Gibbs-White",
+      "team": "Nott'm Forest",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 5.74,
+      "drivers": "Form projection 5.74 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Mamadou Sangar\u00e9",
+      "team": "Brentford",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 5.46,
+      "drivers": "Form projection 5.46 xP, position role MID"
+    }
+  ],
+  "gate_verdict": {}
+}

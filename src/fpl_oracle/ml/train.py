@@ -158,7 +158,7 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
     return results
 
 
-def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
+def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     logger.info("=== Starting FPL Oracle ML Training Pipeline ===")
 
     # 1. Load historical master dataset
@@ -403,6 +403,7 @@ def train_all_models() -> tuple[pd.DataFrame, pd.DataFrame]:
         }
 
     provenance = {
+        "operation_id": operation_id,
         "fit": block_provenance(meta_train[fit_mask]),
         "calibration": block_provenance(meta_train[cal_mask]),
         "validation": block_provenance(meta[~train_mask]),

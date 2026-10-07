@@ -46,10 +46,31 @@ async def retrain_finalized_gameweeks():
         # One refresh can contain several previously completed GWs; one candidate covers them.
         key = f"2026-27:{pending[-1]}"
         previous = state["gameweeks"].get(key, {})
+        active = model_registry.get_active_version()
+        operation_id = previous.get("operation_id")
+        if (
+            previous.get("status") == "running"
+            and operation_id
+            and (active.get("training_provenance") or {}).get("operation_id") == operation_id
+        ):
+            recovered = dict(
+                status="promoted",
+                recovered_after_interrupt=True,
+                active_version=active["version"],
+                completed_at=datetime.now(UTC).isoformat(),
+            )
+            for g in previous.get("covered_gameweeks", pending):
+                state["gameweeks"][f"2026-27:{g}"] = recovered
+            _save(state)
+            return "Recovered completed model promotion after interruption"
         retry_at = previous.get("retry_after")
         if retry_at and datetime.now(UTC) < datetime.fromisoformat(retry_at):
             return "Previous training failed; waiting for bounded retry"
+        import uuid
+
+        operation_id = str(uuid.uuid4())
         state["gameweeks"][key] = {
+            "operation_id": operation_id,
             "status": "running",
             "started_at": datetime.now(UTC).isoformat(),
             "covered_gameweeks": pending,
@@ -62,7 +83,7 @@ async def retrain_finalized_gameweeks():
                 raise RuntimeError("History refresh incomplete; candidate not trained")
             from fpl_oracle.ml.train import train_all_models
 
-            X, _ = await asyncio.to_thread(train_all_models)
+            X, _ = await asyncio.to_thread(train_all_models, operation_id=operation_id)
             result = X.attrs.get("training_outcome")
             if not result or "promoted" not in result:
                 raise RuntimeError("Training returned no verified promotion/rejection outcome")

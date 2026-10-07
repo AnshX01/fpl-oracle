@@ -1667,7 +1667,7 @@ class TransferOptimizer:
             elif not first["transfers_in"]:
                 plan["plan_type"] = "ROLL_TRANSFER"
             else:
-                plan["plan_type"] = "1_TRANSFER"
+                plan["plan_type"] = "1_TRANSFER" if len(first["transfers_in"]) == 1 else "2_TRANSFERS"
             gain = round(state["score"] - hold_score, 2)
             candidates.append(
                 dict(
@@ -1693,7 +1693,7 @@ class TransferOptimizer:
             )
             plan["horizon_gain_vs_roll"] = round(plan["accumulated_discounted_net_xp"] - hold_score, 2)
             plan["horizon_hit_cost"] = plan["horizon_hits"] * self.hit_penalty
-            plan["expected_gain"] = candidate["net_gain_vs_hold"]
+            plan["expected_gain"] = round(plan["net_expected_points"] - hold_plan["net_expected_points"], 2)
             plan["robustness_score"] = None
             plan["is_no_regret"] = False
 
@@ -1719,7 +1719,7 @@ class TransferOptimizer:
             "chip_action": recommended_action,
             "recommended_plan": recommended_plan,
             "hold_plan": hold_plan,
-            "roll_plan": base_res.get("roll_plan"),
+            "roll_plan": hold_plan,
             "candidate_plans": [c["plan"] for c in candidates],
             "chip_comparison_table": candidates,
             "best_candidate": best_cand,
@@ -1735,7 +1735,7 @@ class TransferOptimizer:
             "transfer_roadmap": self._generate_dynamic_roadmap(
                 recommended_plan["trajectory"], horizon_gws, clean_projections, player_maps
             ),
-            "hit_verdict": base_res.get("hit_verdict", ""),
+            "hit_verdict": f"Selected trajectory costs {recommended_plan['horizon_hits']} hit(s) over {len(horizon_gws)} gameweeks.",
             "target_gameweek": target_gw,
             "available_free_transfers": free_transfers,
             "is_joint_plan": True,
