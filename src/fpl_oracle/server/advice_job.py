@@ -61,8 +61,12 @@ class AdvicePublisher:
     async def run(self):
         from fpl_oracle.api.fpl_client import fpl_client
         from fpl_oracle.data.store import data_store
+        from fpl_oracle.ml.holdout import compute_manifest_sha256
+        from fpl_oracle.ml.model_registry import model_registry
         from fpl_oracle.server.routes.api import get_contingency_plans, get_squad
 
+        model_before = model_registry.get_active_version()
+        manifest_before = compute_manifest_sha256()
         original_key = self.current["profile_key"]
         token = read_context.set({})
         try:
@@ -81,13 +85,17 @@ class AdvicePublisher:
                     raise ValueError("Captain mismatch in core publication")
                 if profile_key(data_store.get_profile()) != original_key:
                     raise ValueError("Profile changed during calculation; refresh")
+                if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
+                    raise ValueError("Model changed during core calculation; refresh")
+                if {r["element"] for r in squad.get("starters", [])} != {r["element"] for r in card.get("xi", [])}:
+                    raise ValueError("Lineup mismatch in core publication")
                 context = read_context.get() or {}
                 # Timestamp changes alone are not changed content. Guard real facts.
                 from fpl_oracle.api.cache import cache_manager
 
                 for key, (value, _, _) in context.items():
                     live = cache_manager.get_with_meta(key)
-                    if live and live[0] != value:
+                    if live is None or live[0] != value:
                         raise ValueError("Source content changed during calculation; refresh")
                 snapshot = hashlib.sha256(
                     json.dumps({k: v[0] for k, v in context.items()}, sort_keys=True, default=str).encode()

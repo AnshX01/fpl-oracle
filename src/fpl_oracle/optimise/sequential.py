@@ -63,6 +63,7 @@ def search_sequences(
     terminal_costs=None,
     beam_width=32,
     chips_by_set=None,
+    previous_chip=None,
 ):
 
     costs = terminal_costs or {}
@@ -121,7 +122,10 @@ def search_sequences(
             # Global top-two pruning unfairly denied conserved chips future use.
             if id(state) in restructure_ids:
                 for chip in sorted(remaining & {"freehit", "wildcard"}):
-                    if chip == "freehit" and state["history"] and state["history"][-1].get("chip") == "freehit":
+                    if chip == "freehit" and (
+                        (state["history"] and state["history"][-1].get("chip") == "freehit")
+                        or (not state["history"] and previous_chip == "freehit")
+                    ):
                         continue
                     budget = state["bank"] + sum(
                         optimizer.calculate_selling_price(state["purchase"][e], int(maps[gw][e]["value"]))

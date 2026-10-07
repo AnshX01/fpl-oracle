@@ -67,9 +67,31 @@ def test_capture_reuses_immutable_index_without_fetching(tmp_path, monkeypatch):
     from fpl_oracle.league.forward import capture_forward
 
     monkeypatch.setattr(data_store, "get_profile", lambda: SimpleNamespace(manager_id=1, target_league_id=2))
-    saved = dict(path="forecast.json", forecast_id="original")
+    from fpl_oracle.league.validation import freeze_forecast
+
+    now = datetime.now(UTC)
+    saved = freeze_forecast(
+        dict(
+            deadline_utc=(now + timedelta(hours=1)).isoformat(),
+            source_kind="official_forward",
+            snapshot_id="test",
+            owner_manager_id=1,
+            league_id=2,
+            observed_manager_ids=[1, 2],
+            target_gameweek=6,
+            probability=0.5,
+        ),
+        tmp_path,
+        now,
+    )
     (tmp_path / "gw6-1-2.index.json").write_text(json.dumps(saved))
     assert asyncio.run(capture_forward(6, tmp_path)) == saved
+    with open(saved["path"], "w") as output:
+        output.write("{}")
+    import pytest
+
+    with pytest.raises(ValueError, match="hash"):
+        asyncio.run(capture_forward(6, tmp_path))
 
 
 def test_capture_rejects_already_passed_deadline(tmp_path, monkeypatch):
@@ -89,3 +111,24 @@ def test_capture_rejects_already_passed_deadline(tmp_path, monkeypatch):
     monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=([], False)))
     with pytest.raises(ValueError, match="too late"):
         asyncio.run(capture_forward(6, tmp_path))
+
+
+def test_legacy_player_freeze_failure_does_not_disable_league_capture(monkeypatch):
+    from fpl_oracle.league import forward
+    from fpl_oracle.ml import holdout
+    from fpl_oracle.server import jobs
+
+    state = SimpleNamespace(stale=False, seconds_to_deadline=3600)
+    monkeypatch.setattr(jobs.game_state_manager, "get_game_state", AsyncMock(return_value=state))
+    monkeypatch.setattr(jobs.fpl_client, "get_current_and_next_gw", AsyncMock(return_value=(5, 6)))
+    monkeypatch.setattr(holdout, "ensure_holdout_log_initialized", lambda: None)
+    monkeypatch.setattr(holdout, "freeze_predictions", AsyncMock(side_effect=ValueError("legacy freeze retained")))
+    capture = AsyncMock(return_value=dict(status="captured"))
+    score = AsyncMock(return_value=dict(count=0))
+    monkeypatch.setattr(forward, "capture_forward", capture)
+    monkeypatch.setattr(forward, "score_pending", score)
+    monkeypatch.setattr(jobs.data_store, "record_job_start", lambda *a: 1)
+    monkeypatch.setattr(jobs.data_store, "record_job_finish", lambda *a: None)
+    asyncio.run(jobs.holdout_forward_job())
+    capture.assert_awaited_once_with(6)
+    score.assert_awaited_once()

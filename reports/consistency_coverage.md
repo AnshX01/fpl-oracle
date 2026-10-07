@@ -57,3 +57,24 @@ Latest overlapping partition:29 tests passed76.73s (matrix, chat/pipeline,CLI an
 Final selected partition:45 tests passed97.35s, covering expanded surface matrix, pinned-read/revision guard, refresh continuity, joint planning andCLI. JavaScript atomic publication, timeout, superseded response and auxiliary nonblocking scenarios pass. Lint clean;74 source files type-check clean. This is not the full suite.
 
 Constraint cases verifykeep-owned,exclude-buy andexclude-team cannot pollute the unconstrained cached default;chat locked-in/out mirrors constrained optimizer. GET andadvice POST revision changes both return409. Fixture staleness is now propagated across all six advice surfaces even when manager state is fresh. Full arbitrary news/rival/provider failure and all concurrent state mutations remain unverified.
+
+## October7 durable-core and final research follow-up
+
+Earlier sections are historical checkpoints, not current recommended transfers.
+The old90-second all-six barrier has been replaced by a durable coalesced core job.
+The selected XI/card/PlanA publish atomically; model/profile/source changes or XI
+mismatch block publication. Expensive league/chip-calendar/PlanB/C research is separate.
+Actual core HTTP run52.22s on this host; no native Windows promise. Previous published
+bbd3d53 is available to user; later local changes are not yet published.
+
+New tests cover actual previous FreeHit acrossGW19/20, initial unlimited deadline FT,
+immutable forecast retry/corruption/legacy-finally path, same-input expiry comparison,
+legal PlanC trade/points/hits, and XI mismatch despite matching captain. A322-test full
+run passed340.29s before last few corrections; the stable final-tree run is separately
+tracked. Do not combine old partition totals or claim final certification yet.
+
+Real forward league evidence is still absent. Captures in the research directory are
+not production app captures. Historic synthetic proxy Brier is not deployed-calibration
+proof. Title odds and global optimum remain unsupported. Windows final-version
+readback, arbitrary combinations and full historical deadline-grounded advisor replay
+remain outside the evidence presently available.

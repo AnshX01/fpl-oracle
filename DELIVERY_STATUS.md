@@ -45,3 +45,30 @@ A finite concurrent case matrix andfocused chat/pipeline/price/hit/constraint/re
 Actual Windows advice requests failed with PuLP4.0: direct `LpVariable(..., cat=...)` is removed, and bundled CBC also changed. The project now pins tested `pulp==3.3.2`. Existing Windows environments are corrected by start.ps1, which performs an actual binary CBC solve before starting the server. Import-only checks are not proof of advice runtime readiness. The user's immediate correction is limited to installing PuLP3.3.2 in the existing .venv; .env and user data remain unchanged. Native Windows readback is still required.
 
 October 7 second checkpoint: durable shared core publication replaces the 90-second six-surface discard path. Official FT and consecutive-FH rules corrected. Detailed league/chip-calendar/conditional alternatives load separately. 55 focused Python tests, JavaScript publication test and official-input HTTP readback pass; native Windows readback pending. Long-term tail and empirical probability evidence remain unfinished.
+
+## Final local implementation, not yet published
+
+The current local work adds automatic immutable observed-manager forward forecasts,
+finalized cumulative-history scoring, a paired persistence baseline and an honest
+calibration gate. It also adds on-demand same-input GW19 expiry sensitivity and
+full-plan changing-rival stress comparison. The stress draw rates are prominently
+labeled uncalibrated and are never recommendation/title probabilities. Native
+Windows final-code readback and genuine future scored forecasts are still needed.
+
+PlanB/C remain available separately from fast core startup. PlanC now solves a legal
+single-transfer full squad and computes XI/captain/hits rather than using unrelated
+outs and a fabricated points delta. Core guards source/model/profile/XI changes.
+Actual prior-GW FreeHit blocks next-GW FreeHit. Legacy FT helper shares canonical
+initial-deadline replay. Private forward evidence is ignored by Git.
+
+Development evidence: actual core HTTP52.22s, detailed alternatives47.06s,
+changing-rival stress67.76s; these are not laptop timing claims. Source-backed
+research capture/retry/hash checks pass and scoring properly waits for finalization.
+A322-test full run passed340.29s before the last few corrections. A final stable
+full run is in progress and must be checked separately before final publication.
+Ruff(src/tests/scripts),mypy78sourcefiles,JavaScript publication and12dark/light
+state captures pass. Model weights/manifest,legacyGW6freeze and.env preserved.
+No threshold relaxation or model promotion. No actual FPL action.
+
+The user's later instruction forbids intermediate pushes. Local commits are retained;
+remote remainsbbd3d53 until whole-work readiness and one final publication decision.

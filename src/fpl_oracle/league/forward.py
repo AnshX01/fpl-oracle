@@ -5,6 +5,7 @@ are part of its eventual forecast error, never substituted counterfactual labels
 """
 
 import asyncio
+import hashlib
 import json
 from datetime import UTC, datetime
 
@@ -12,8 +13,43 @@ import numpy as np
 
 from fpl_oracle.league.validation import freeze_forecast, score_forecast, validation_summary
 
+_capture_lock = asyncio.Lock()
+
+
+def read_index(index, directory, target_gw, owner, league):
+    saved = json.loads(index.read_text())
+    path = directory / (saved["forecast_id"] + ".json")
+    record = json.loads(path.read_text())
+    digest = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+    if digest != saved["forecast_id"]:
+        raise ValueError("Stored forecast content hash mismatch")
+    if (
+        record.get("schema_version"),
+        record.get("source_kind"),
+        record.get("target_gameweek"),
+        record.get("owner_manager_id"),
+        record.get("league_id"),
+    ) != (1, "official_forward", target_gw, owner, league):
+        raise ValueError("Stored forecast index has wrong scope or provenance")
+    frozen = datetime.fromisoformat(record["frozen_at"].replace("Z", "+00:00"))
+    deadline = datetime.fromisoformat(record["deadline_utc"].replace("Z", "+00:00"))
+    if frozen.tzinfo is None or deadline.tzinfo is None or frozen >= deadline:
+        raise ValueError("Stored forecast is not pre-deadline evidence")
+    return dict(saved, path=str(path))
+
 
 async def capture_forward(target_gw, directory=None, samples=512):
+    from fpl_oracle.api.read_context import read_context
+
+    async with _capture_lock:
+        token = read_context.set({})
+        try:
+            return await _capture_forward(target_gw, directory, samples)
+        finally:
+            read_context.reset(token)
+
+
+async def _capture_forward(target_gw, directory=None, samples=512):
     from fpl_oracle.api.fpl_client import fpl_client
     from fpl_oracle.config import BASE_DIR
     from fpl_oracle.data.store import data_store
@@ -32,7 +68,7 @@ async def capture_forward(target_gw, directory=None, samples=512):
     directory.mkdir(parents=True, exist_ok=True)
     index = directory / f"gw{target_gw}-{profile.manager_id}-{profile.target_league_id}.index.json"
     if index.exists():
-        return json.loads(index.read_text())
+        return read_index(index, directory, target_gw, profile.manager_id, profile.target_league_id)
     boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
     fixtures, fs = await fpl_client.get_fixtures(force_refresh=True)
     event = next((e for e in boot.events if e.id == target_gw), None)
@@ -42,8 +78,8 @@ async def capture_forward(target_gw, directory=None, samples=512):
     if datetime.now(UTC) >= deadline:
         raise ValueError("Forward capture is too late")
     standings = await league_standings_manager.get_league_standings(profile.target_league_id)
-    if standings.get("coverage", {}).get("partial"):
-        raise ValueError("Partial standings not accepted")
+    if standings.get("is_stale") or standings.get("coverage", {}).get("partial"):
+        raise ValueError("Stale or partial standings not accepted")
     owner = next((r for r in standings.get("standings", []) if r.get("entry") == profile.manager_id), None)
     if not owner:
         raise ValueError("Owner absent from official league")
@@ -118,8 +154,22 @@ async def capture_forward(target_gw, directory=None, samples=512):
         persistence_baseline_probability=float(all(rosters[0]["points"] > r["points"] for r in rosters[1:])),
         rosters=rosters,
     )
+    from fpl_oracle.api.cache import cache_manager
+    from fpl_oracle.api.read_context import read_context
+
+    for key, (value, _, _) in (read_context.get() or {}).items():
+        live = cache_manager.get_with_meta(key)
+        if live is None or live[0] != value:
+            raise ValueError("Source changed during forward capture")
+    if (data_store.get_profile().manager_id, data_store.get_profile().target_league_id) != (
+        profile.manager_id,
+        profile.target_league_id,
+    ):
+        raise ValueError("Profile changed during forward capture")
     saved = freeze_forecast(payload, directory)
-    index.write_text(json.dumps(saved, indent=2))
+    temporary = index.with_suffix(".tmp")
+    temporary.write_text(json.dumps(saved, indent=2))
+    temporary.replace(index)
     return saved
 
 

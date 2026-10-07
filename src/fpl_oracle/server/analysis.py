@@ -125,7 +125,7 @@ class AnalysisService:
         if cached and time.monotonic() - cached[0] < 300:
             return cached[1]
         standings = await league_standings_manager.get_league_standings(profile.target_league_id)
-        if standings.get("coverage", {}).get("partial"):
+        if standings.get("is_stale") or standings.get("coverage", {}).get("partial"):
             return None
         rows = standings.get("standings", [])
         user = next((r for r in rows if r.get("entry") == profile.manager_id), None)
@@ -135,6 +135,8 @@ class AnalysisService:
         if stale:
             return None
         result = await rival_analyzer.analyze_rivals(rows, profile.manager_id, target_gw, boot)
+        if result.get("is_stale"):
+            return None
         context = dict(
             user_points=user["total"],
             rivals=[
@@ -255,11 +257,26 @@ class AnalysisService:
         return await asyncio.to_thread(compare_plan_scenarios, states, context, maps)
 
     async def expiry_sensitivity(self):
+        from fpl_oracle.api.read_context import read_context
+
+        token = read_context.set({})
+        try:
+            return await self._expiry_sensitivity()
+        finally:
+            read_context.reset(token)
+
+    async def _expiry_sensitivity(self):
         """On-demand model stress through chip expiry. Never blocks core advice."""
         from fpl_oracle.api.fpl_client import fpl_client
+        from fpl_oracle.data.store import data_store
         from fpl_oracle.domain.manager_state import manager_state_service
+        from fpl_oracle.ml.holdout import compute_manifest_sha256
         from fpl_oracle.optimise.transfers import transfer_optimizer
+        from fpl_oracle.server.advice_job import profile_key
 
+        model_before = model_registry.get_active_version()
+        manifest_before = compute_manifest_sha256()
+        owner_before = profile_key(data_store.get_profile())
         state = await manager_state_service.get_current_state()
         start = state.target_gw
         if start > 19:
@@ -281,6 +298,7 @@ class AnalysisService:
             chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
             chips_already_used=[c["name"] for c in state.chips_used if c["event"] <= 19],
             rival_context=await self.league_context(start),
+            previous_chip=next((c["name"] for c in state.chips_used if c["event"] == start - 1), None),
             num_mc_scenarios=0,
         )
         short, extended = await asyncio.to_thread(
@@ -289,6 +307,18 @@ class AnalysisService:
                 transfer_optimizer.evaluate_joint_transfer_and_chip_plan(**kwargs, horizon_len=20 - start),
             )
         )
+
+        if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
+            raise ValueError("Model changed during expiry research; result not published")
+        if profile_key(data_store.get_profile()) != owner_before:
+            raise ValueError("Profile changed during expiry research; result not published")
+        from fpl_oracle.api.cache import cache_manager
+        from fpl_oracle.api.read_context import read_context
+
+        for key, (value, _, _) in (read_context.get() or {}).items():
+            live = cache_manager.get_with_meta(key)
+            if live is None or live[0] != value:
+                raise ValueError("Sources changed during expiry research; result not published")
 
         def summarize(plan):
             return dict(
@@ -322,6 +352,13 @@ class AnalysisService:
         from fpl_oracle.data.store import data_store
         from fpl_oracle.optimise.transfers import transfer_optimizer
 
+        if "previous_chip" not in kwargs:
+            from fpl_oracle.domain.manager_state import manager_state_service
+
+            state = await manager_state_service.get_current_state()
+            kwargs["previous_chip"] = next(
+                (c["name"] for c in state.chips_used if c["event"] == kwargs["target_gw"] - 1), None
+            )
         if "rival_context" not in kwargs:
             try:
                 kwargs["rival_context"] = await self.league_context(kwargs["target_gw"])

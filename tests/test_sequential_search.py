@@ -96,7 +96,7 @@ def test_freehit_reverts_and_wildcard_persists(monkeypatch):
         assert 16 in state["history"][0]["elements"]
         assert (16 in state["history"][1]["elements"]) == (chip == "wildcard")
         assert all(r["hits"] == 0 for r in state["history"])
-        assert state["history"][0]["banked_ft"] == 4
+        assert state["history"][0]["banked_ft"] == 3
 
 
 def test_gap_utility_is_bounded_and_does_not_change_captain():
@@ -161,3 +161,8 @@ def test_league_context_uses_roster_not_captain(monkeypatch):
 
     context = asyncio.run(AnalysisService().league_context(6))
     assert context == dict(user_points=100, rivals=[dict(points=150, elements=[1])])
+
+
+def test_actual_previous_freehit_blocks_first_future_deadline():
+    states, _, _ = run([20], ["freehit"], previous_chip="freehit")
+    assert all(state["first_chip"] is None for state in states)

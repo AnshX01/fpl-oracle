@@ -316,7 +316,7 @@ def test_compute_squad_selling_prices_and_free_transfers():
         {"event": 5, "event_transfers": 0},
     ]
     ft = transfer_optimizer.compute_available_free_transfers(entry_history=history, current_gw=5)
-    assert ft == 5
+    assert ft == 4
 
 
 def test_identical_horizon_branch_comparison():
@@ -513,7 +513,7 @@ def test_dynamic_roadmap_generation():
     for step in roadmap:
         assert "gameweek" in step
         assert "status" in step
-        assert step["status"] in ["FIRM", "PROBABLE", "CONTINGENT_ON_NEWS"]
+        assert step["status"] in ["CONDITIONAL_CANDIDATE", "CONTINGENT_ON_NEWS"]
         assert "action" in step
         assert "captain" in step
         assert "strategic_focus" in step

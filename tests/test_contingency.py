@@ -203,3 +203,41 @@ def test_pre_deadline_checklist(mock_squad_and_pool, dummy_bootstrap):
     assert "Autosub Hierarchy Order" in items
     assert "Chip Set 1 Expiry Deadline" in items
     assert "Pre-Deadline Lock Time" in items
+
+
+def test_plan_c_legal_trade_and_hit_math(configured_advisor):
+    state, owned, horizon = configured_advisor
+    replacement = owned.iloc[8].to_dict()
+    replacement.update(element=999, web_name="Alternative", team=29, p90=20, expected_points=6.2, value=40)
+    pool = pd.concat([owned, pd.DataFrame([replacement])], ignore_index=True)
+    primary = dict(
+        plan_type="WILDCARD",
+        transfers_in=[dict(element=900, web_name="Unrelated")] * 10,
+        transfers_out=[dict(element=e) for e in owned.element[:10]],
+        net_expected_points=75,
+        recommendation_summary="Conditional",
+    )
+    plans = contingency_engine.generate_contingency_plans(owned, pool, 10, 0, {6: pool}, 5, 6, primary_plan=primary)
+    plan = plans["plan_c"]
+    assert plan["plan_type"] == "1_TRANSFER"
+    assert len(plan["transfers_in"]) == len(plan["transfers_out"]) == 1
+    assert plan["hits"] == 1 and plan["hit_cost"] == 4
+    ins = plan["transfers_in"][0]["element"]
+    out = plan["transfers_out"][0]["element"]
+    by_id = pool.set_index("element")
+    assert by_id.loc[ins, "position"] == by_id.loc[out, "position"]
+    result = set(owned.element) - {out} | {ins}
+    frame = pool[pool.element.isin(result)]
+    assert frame.team.value_counts().max() <= 3
+    assert plan["remaining_bank"] >= 0
+    from fpl_oracle.optimise.lineup import lineup_optimizer
+
+    xp = (
+        lineup_optimizer.select_lineup_and_captain(frame, risk_preference="aggressive")[
+            "total_gameweek_expected_points"
+        ]
+        - 4
+    )
+    assert plan["net_expected_points"] == round(xp, 2)
+    assert plan["delta_vs_plan_a"] == round(xp - 75, 2)
+    assert plans["plan_b"]["net_expected_points"] != 75

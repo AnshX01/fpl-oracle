@@ -38,6 +38,9 @@ const app = createApp({
       health: {},
       gameState: {},
       systemStatus: {},
+      rivalStress: null,
+      rivalStressLoading: false,
+      rivalStressError: null,
       expiryResearch: null,
       expiryResearchLoading: false,
       expiryResearchError: null,
@@ -66,6 +69,8 @@ const app = createApp({
       contingencyPlans: {},
       plansLoading: false,
       plansError: null,
+      detailedPlansLoading: false,
+      detailedPlansError: null,
       selectedPlanKey: 'plan_a',
       contingencyMatrix: [],
       priceChanges: { rises: [], falls: [] },
@@ -401,6 +406,33 @@ const app = createApp({
   },
 
   methods: {
+    async loadDetailedPlans() {
+      if(this.detailedPlansLoading)return;
+      const generation=this.snapshotGeneration;
+      this.detailedPlansLoading=true;this.detailedPlansError=null;
+      try {
+        const response=await fetch('/api/contingency/plans?detailed=true');
+        if(!response.ok)throw new Error(`Detailed plans HTTP ${response.status}`);
+        const plans=await response.json();
+        if(generation!==this.snapshotGeneration)return;
+        const primary=this.contingencyPlans?.plan_a;
+        if(!primary || JSON.stringify(primary.transfers_in.map(p=>p.element))!==JSON.stringify(plans.plan_a?.transfers_in?.map(p=>p.element)) ||
+           JSON.stringify(primary.transfers_out.map(p=>p.element))!==JSON.stringify(plans.plan_a?.transfers_out?.map(p=>p.element)) || primary.plan_type!==plans.plan_a.plan_type)
+          throw new Error('Primary plan changed. Refresh core advice before loading alternatives.');
+        this.contingencyPlans={...plans,plan_a:primary};
+      } catch(error){this.detailedPlansError=String(error);}
+      finally{this.detailedPlansLoading=false;}
+    },
+    async loadRivalStress() {
+      if(this.rivalStressLoading)return;
+      this.rivalStressLoading=true;this.rivalStressError=null;
+      try {
+        const response=await fetch('/api/league/scenarios');
+        if(!response.ok)throw new Error(`Rival stress HTTP ${response.status}`);
+        this.rivalStress=await response.json();
+      } catch(error){this.rivalStressError=String(error);}
+      finally{this.rivalStressLoading=false;}
+    },
     async loadExpiryResearch() {
       if (this.expiryResearchLoading) return;
       this.expiryResearchLoading=true; this.expiryResearchError=null;

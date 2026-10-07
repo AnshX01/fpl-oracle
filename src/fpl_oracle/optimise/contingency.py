@@ -173,70 +173,85 @@ class ContingencyEngine:
                 }
 
         if plan_b is None:
-            plan_b = {
-                "title": "Plan B (Conservative Roll): Bank Free Transfer",
-                "plan_type": "ROLL_TRANSFER",
-                "transfers_count": 0,
-                "transfers_in": [],
-                "transfers_out": [],
-                "hits": 0,
-                "hit_cost": 0.0,
-                "net_expected_points": plan_a_xp,
-                "delta_vs_plan_a": 0.0,
-                "trigger_condition": "Late uncertainty across multiple fixture press conferences.",
-                "action_summary": "Roll transfer and bank additional FT for double gameweek flexibility.",
-            }
+            owned_line = lineup_optimizer.select_lineup_and_captain(current_squad_df, risk_preference=risk_preference)
+            owned_xp = float(owned_line["total_gameweek_expected_points"])
+            plan_b = dict(
+                title="Plan B: Hold owned squad while evidence is unresolved",
+                plan_type="ROLL_TRANSFER",
+                transfers_count=0,
+                transfers_in=[],
+                transfers_out=[],
+                hits=0,
+                hit_cost=0,
+                net_expected_points=round(owned_xp, 2),
+                delta_vs_plan_a=round(owned_xp - plan_a_xp, 2),
+                trigger_condition="Primary restructure or target cannot be confirmed before deadline.",
+                action_summary="No transfer or chip. Reassess current owned XI on verified news; no invented alternate gain.",
+            )
 
-        # Step 3: Plan C (Differential / Price Rise Contingency)
-        # Search for high-ceiling aggressive differential pick (P90 maximization)
-        high_ceiling_candidates = (
-            target_gw_df[(~target_gw_df["element"].isin(current_elements)) & (target_gw_df["value"] <= (bank + 80.0))]
-            .sort_values(by="p90", ascending=False)
-            .head(1)
+        # Plan C is a legal full-squad single-transfer alternative, not a cheap
+        # high-P90 player stapled onto unrelated Plan A transfer-outs.
+        pmap = {int(r["element"]): r for r in target_gw_df.to_dict("records")}
+        purchase = {
+            int(r["element"]): int(r.get("purchase_price", r["value"])) for r in current_squad_df.to_dict("records")
+        }
+        moves = transfer_optimizer._get_candidate_1_transfers(
+            current_elements, int(bank), purchase, target_gw_df, pmap, set(), set(), set(), max_per_pos=3
         )
-
-        if not high_ceiling_candidates.empty:
-            diff_cand = high_ceiling_candidates.iloc[0]
-            diff_xp = round(float(diff_cand.get("expected_points", 5.0)), 2)
-            diff_p90 = round(float(diff_cand.get("p90", 11.0)), 2)
-            plan_c = {
-                "title": f"Plan C (Differential Ceiling): Target {diff_cand['web_name']}",
-                "plan_type": "AGGRESSIVE_DIFFERENTIAL",
-                "transfers_count": 1,
-                "transfers_in": [
-                    {
-                        "element": int(diff_cand["element"]),
-                        "web_name": diff_cand["web_name"],
-                        "team": int(diff_cand["team"]),
-                        "position": diff_cand["position"],
-                        "cost": diff_cand["value"] / 10.0,
-                        "expected_points": diff_xp,
-                        "p90": diff_p90,
-                    }
-                ],
-                "transfers_out": plan_a_raw.get("transfers_out", []),
-                "hits": 0 if free_transfers >= 1 else 4,
-                "hit_cost": 0.0 if free_transfers >= 1 else 4.0,
-                "net_expected_points": round(plan_a_xp - 0.5, 2),
-                "delta_vs_plan_a": -0.5,
-                "p90_ceiling": diff_p90,
-                "trigger_condition": "Trailing in mini-league (chasing mode) or primary target undergoes sudden price rise before buy.",
-                "action_summary": f"High-ceiling play: {diff_cand['web_name']} brings P90 ceiling of {diff_p90} pts for mini-league chase.",
-            }
+        choices = []
+        for move in moves:
+            ids = (current_elements - set(move["transfers_out"])) | set(move["transfers_in"])
+            frame = pd.DataFrame([pmap[e] for e in sorted(ids)])
+            line = lineup_optimizer.select_lineup_and_captain(frame, risk_preference="aggressive")
+            hits = max(0, len(move["transfers_in"]) - free_transfers)
+            net = float(line["total_gameweek_expected_points"]) - 4 * hits
+            ceiling = (
+                sum(float(r.get("p90", r["expected_points"])) for _, r in line["starters"].iterrows())
+                + float(line["captain"].get("p90", line["captain"]["expected_points"]))
+                - 4 * hits
+            )
+            choices.append((ceiling, net, move))
+        if choices:
+            ceiling, net, move = max(choices, key=lambda choice: (choice[0], choice[1]))
+            ins = [
+                dict(
+                    element=e,
+                    web_name=pmap[e]["web_name"],
+                    position=pmap[e]["position"],
+                    team=pmap[e]["team"],
+                    cost=pmap[e]["value"] / 10,
+                    expected_points=pmap[e]["expected_points"],
+                )
+                for e in move["transfers_in"]
+            ]
+            outs = [
+                dict(
+                    element=e,
+                    web_name=pmap[e]["web_name"],
+                    position=pmap[e]["position"],
+                    team=pmap[e]["team"],
+                    sell_price=move["sell_prices"][e] / 10,
+                )
+                for e in move["transfers_out"]
+            ]
+            hits = max(0, len(ins) - free_transfers)
+            plan_c = dict(
+                title="Plan C: Legal higher-ceiling single-transfer alternative",
+                plan_type="1_TRANSFER",
+                transfers_count=len(ins),
+                transfers_in=ins,
+                transfers_out=outs,
+                hits=hits,
+                hit_cost=hits * 4,
+                net_expected_points=round(net, 2),
+                delta_vs_plan_a=round(net - plan_a_xp, 2),
+                p90_ceiling=round(ceiling, 2),
+                remaining_bank=round((bank + move["bank_delta"]) / 10, 2),
+                trigger_condition="User chooses higher-ceiling exposure after reviewing the points/hit trade-off.",
+                action_summary="Model ceiling comparison only; not an imminent-price claim or automatic instruction.",
+            )
         else:
-            plan_c = {
-                "title": "Plan C (Price Rise Safeguard): Pre-rise Early Lock",
-                "plan_type": "PRICE_PROTECTION",
-                "transfers_count": 1,
-                "transfers_in": plan_a_raw.get("transfers_in", []),
-                "transfers_out": plan_a_raw.get("transfers_out", []),
-                "hits": 0,
-                "hit_cost": 0.0,
-                "net_expected_points": plan_a_xp,
-                "delta_vs_plan_a": 0.0,
-                "trigger_condition": "Target player transfer velocity indicates imminent price rise tonight.",
-                "action_summary": "Execute transfer 24 hours early to protect squad value before price inflation.",
-            }
+            plan_c = dict(plan_b, title="Plan C: No legal differential candidate found")
 
         return {
             "plan_a": plan_a,

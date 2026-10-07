@@ -978,10 +978,13 @@ async def _selected_advice_context(pool, projections, boot, current_gw, target_g
 @router.get("/league/scenarios")
 async def get_rival_scenarios():
     """On-demand diagnostic scenarios. Not calibrated odds or known hidden moves."""
-    boot, _ = await fpl_client.get_bootstrap_static()
-    fixtures, _ = await fpl_client.get_fixtures()
+    boot, stale = await fpl_client.get_bootstrap_static()
+    fixtures, fixture_stale = await fpl_client.get_fixtures()
+    if stale or fixture_stale:
+        raise HTTPException(status_code=409, detail="Fresh sources required for rival stress")
     current, target = await fpl_client.get_current_and_next_gw()
-    target = target or 6
+    if not target:
+        raise HTTPException(status_code=409, detail="Upcoming official gameweek unavailable")
     projections = await analysis_service.projections(target, 8, boot, fixtures)
     joint, _, _, _ = await _selected_advice_context(projections[target], projections, boot, current, target)
     return safe_json_serialize(await analysis_service.rival_scenarios(joint, projections, target))

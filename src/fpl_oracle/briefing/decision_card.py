@@ -673,7 +673,7 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
             f"- **5-GW Horizon Net Gain:** +{t.get('net_gain_vs_roll', 0.0):.1f} pts",
             f"- **Hit Penalty:** -{t.get('hit_cost', 0)} pts ({t.get('hits_count', 0)} extra transfer(s))",
             f"- **Bank After:** £{t.get('bank_after', 0.0):.1f}m | **FTs Next Week:** {t.get('ft_remaining', 1)}",
-            f"- **No-Regret Status:** {'CONFIRMED (>=70% win-rate under noise)' if t.get('no_regret_flag') else 'Standard optimal'}",
+            f"- **No-Regret Status:** {'Model stability flag, not verified future success' if t.get('no_regret_flag') else 'Conditional model candidate'}",
             "",
             "## 3. Starting XI & Captaincy",
             f"**Formation:** {card.get('formation', '3-5-2')}",

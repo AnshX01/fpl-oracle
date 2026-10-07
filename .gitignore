@@ -60,3 +60,6 @@ Thumbs.db
 # Durable local runtime retrain state (not a shared project artifact)
 data/retraining_state.json
 data/retraining_state.json.tmp
+
+# Private forward manager evidence
+data/league_forward/

@@ -688,6 +688,10 @@
           </div>
         </div>
 
+        <div class="text-xs space-y-2">
+          <button @click="loadDetailedPlans" :disabled="detailedPlansLoading" class="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50">{{ detailedPlansLoading ? 'Calculating conditional alternatives...' : 'Calculate Plan B/C alternatives' }}</button>
+          <p v-if="detailedPlansError">{{ detailedPlansError }}</p>
+        </div>
         <!-- Active Plan Card -->
         <div v-if="activePlan" class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
           <div class="flex items-center justify-between flex-wrap gap-2">
@@ -713,7 +717,7 @@
         <div v-else class="p-6 rounded-xl bg-zinc-950 border border-zinc-800 text-center space-y-2">
           <div class="font-bold text-white text-sm">{{ plansLoading ? 'Loading contingency plans...' : 'No transfer plans available' }}</div>
           <p class="text-xs text-zinc-400">
-            {{ plansError || '{{ selectedPlanKey === "plan_a" ? "Verify your squad is configured and refresh recommendations." : "Plan A remains available. Detailed alternatives are not part of the fast core publication." }}' }}
+            {{ plansError || (selectedPlanKey === "plan_a" ? "Verify your squad is configured and refresh recommendations." : "Plan A remains available. Detailed alternatives are not part of the fast core publication.") }}
           </p>
         </div>
 
@@ -794,11 +798,26 @@
     <!-- ========================================== -->
     <section v-if="activeTab === 'league'" class="space-y-6">
       
+      <div class="council-card p-4 text-xs space-y-2">
+        <h3 class="font-semibold">Selected-plan rival stress comparison</h3>
+        <p class="font-semibold text-amber-600">Uncalibrated stress test only. The percentages below are simulated draw counts under assumptions, not your chance of winning. Do not choose a chip from these rates alone.</p>
+        <p>Compare full plan trajectories against holding rivals, one legal non-price-increasing transfer per week, and an optimistic restructure. These are possible cases, not predicted hidden choices or winning odds.</p>
+        <button @click="loadRivalStress" :disabled="rivalStressLoading" class="px-3 py-2 rounded bg-emerald-600 text-white disabled:opacity-50">{{ rivalStressLoading ? 'Calculating plan stress...' : 'Run plan stress comparison' }}</button>
+        <p v-if="rivalStressError">{{ rivalStressError }}</p>
+        <div v-for="scenario in (rivalStress?.scenarios || [])" :key="scenario.mode" class="border border-zinc-700 p-3 rounded space-y-1">
+          <p class="font-semibold">{{ scenario.mode }} - hypothetical, uncalibrated</p>
+          <p v-for="option in scenario.options" :key="option.first_chip || 'hold'">{{ option.first_chip || 'Hold now' }}: {{ option.uncalibrated_stress_beat_rate_pct }}% stress draw rate, NOT winning odds.</p>
+          <p>{{ scenario.assumptions }}</p>
+        </div>
+        <p v-if="rivalStress?.scenario_preference_changes">Preferred first chip changes across these rival cases. Do not treat a single percentage as the answer.</p>
+        <p v-if="rivalStress">{{ rivalStress.unresolved || rivalStress.reason }}</p>
+      </div>
+
       <div class="council-card p-6 space-y-5">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 class="font-bold text-xl text-white">Rivals</h2>
-            <p class="text-xs text-zinc-400">Rival ownership overlap, tactical game theory, and title probability.</p>
+            <p class="text-xs text-zinc-400">Observed rival ownership and hypothetical plan stress tests. No calibrated title odds.</p>
           </div>
           <div class="text-xs font-mono text-zinc-400">
             League: <strong class="text-white">{{ leagueData.league_name || 'My League' }}</strong>

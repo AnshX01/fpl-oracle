@@ -35,6 +35,7 @@ class LeagueStandingsManager:
         league_info: dict[str, Any] = {}
         pages_fetched = 0
         is_partial = False
+        any_stale = False
         partial_reason: str | None = None
 
         page = 1
@@ -45,7 +46,8 @@ class LeagueStandingsManager:
             # Retry with exponential backoff on transient network or API errors
             for attempt in range(3):
                 try:
-                    resp, _ = await fpl_client.get_classic_league_standings(league_id, page=page)
+                    resp, page_stale = await fpl_client.get_classic_league_standings(league_id, page=page)
+                    any_stale = any_stale or page_stale
                     if page == 1:
                         league_info = resp.league if isinstance(resp.league, dict) else resp.league.model_dump()
                     all_results.extend(resp.standings.results)
@@ -93,6 +95,7 @@ class LeagueStandingsManager:
 
         return {
             "league_id": league_id,
+            "is_stale": any_stale,
             "league_name": league_name,
             "total_teams": len(all_results),
             "coverage": {

@@ -67,3 +67,29 @@ def test_job_coalesces_survives_polling_and_deferred_league(monkeypatch):
 
 def test_changed_profile_fails_without_publishing(monkeypatch):
     asyncio.run(_changed_profile_fails_without_publishing(monkeypatch))
+
+
+def test_matching_captain_but_different_xi_is_rejected(monkeypatch):
+    async def run():
+        from fpl_oracle.briefing.decision_card import decision_card_generator
+        from fpl_oracle.data.store import data_store
+        from fpl_oracle.server.routes import api
+
+        profile = SimpleNamespace(manager_id=1, target_league_id=2)
+        monkeypatch.setattr(data_store, "get_profile", lambda: profile)
+        monkeypatch.setattr(
+            api, "get_squad", AsyncMock(return_value=dict(captain=dict(element=12), starters=[dict(element=12)]))
+        )
+        monkeypatch.setattr(
+            decision_card_generator,
+            "generate_decision_card",
+            AsyncMock(return_value=dict(captain=dict(element=12), xi=[dict(element=99)])),
+        )
+        monkeypatch.setattr(api, "get_contingency_plans", AsyncMock(return_value=dict(plan_a=dict(title="same"))))
+        publisher = AdvicePublisher()
+        publisher.start(profile_key(profile))
+        await publisher.task
+        assert publisher.public()["status"] == "failed"
+        assert "Lineup mismatch" in publisher.public()["error"]
+
+    asyncio.run(run())

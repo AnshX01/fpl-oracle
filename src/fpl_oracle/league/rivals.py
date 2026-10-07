@@ -157,6 +157,7 @@ class RivalAnalyzer:
         )
 
         rival_squads = []
+        stale_flags = []
         player_multipliers: dict[int, float] = defaultdict(float)
         player_started_counts: dict[int, int] = defaultdict(int)
         player_captained_counts: dict[int, int] = defaultdict(int)
@@ -185,8 +186,9 @@ class RivalAnalyzer:
             entry_id = entry_dict["entry"]
             async with sem:
                 try:
-                    picks_resp, _ = await fpl_client.get_manager_picks(entry_id, eval_gw)
-                    history_resp, _ = await fpl_client.get_manager_history(entry_id)
+                    picks_resp, picks_stale = await fpl_client.get_manager_picks(entry_id, eval_gw)
+                    history_resp, history_stale = await fpl_client.get_manager_history(entry_id)
+                    stale_flags.append(picks_stale or history_stale)
 
                     squad_elements = []
                     cap_elem = None
@@ -321,6 +323,7 @@ class RivalAnalyzer:
             "rival_points_window": RIVAL_POINTS_WINDOW,
             "user_rank_in_league": user_rank,
             "rival_squads": rival_squads,
+            "is_stale": any(stale_flags),
             "league_effective_ownership": eo_df.to_dict(orient="records") if not eo_df.empty else [],
             "template_players": template,
             "differential_players": differentials,

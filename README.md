@@ -221,7 +221,7 @@ When running `python run.py run`, navigate to `http://localhost:8000` for the si
 
 FPL Oracle's checked-in metrics are historical reports, not a fresh certification of the current code.
 
-- The recorded nominal 80% interval coverage is 71.28%, below the unchanged 75-85% acceptance gate.
+- The earlier 71.28% interval-coverage report used an incomplete player population and is not current served-weight evidence. See `DELIVERY_STATUS.md` and `reports/corrected_population_*` for the corrected audit; the 75-85% acceptance gate is unchanged.
 - The historical proxy replay is not a replay of the complete served advisor. Its Brier result does not certify the production mini-league simulation or the recommended actions.
 - The deterministic news benchmark does not establish Gemini accuracy. Each extractor needs its own measured passing evidence before production overrides.
 - Forward scoring requires a genuine pre-deadline prediction snapshot and finalized official actuals. Synthetic tests never count as forward performance.
@@ -268,3 +268,33 @@ In accordance with the project's evidence-gated engineering standards:
 - See [SETUP.md](SETUP.md) for full setup instructions, API key provisioning, and troubleshooting.
 - See [DECISIONS.md](DECISIONS.md) for detailed rationale on official rule constraints, mathematical formulations, and top limitations.
 - See [reports/repair_audit.md](reports/repair_audit.md) and [reports/gap_closure.md](reports/gap_closure.md) for complete verification audit trails.
+
+## Rolling advice and remaining evidence limits
+
+Normal startup keeps published FPL picks visible while one background job calculates
+and atomically publishes the recommended XI, captain, decision and primary plan.
+Detailed Plan B/C, changing-rival plan stress and GW19 chip-expiry research are
+separate actions. They must not block ready core advice. The advice is not submitted
+to FPL. Recompute before each deadline and on verified news changes.
+
+The expiry comparison uses the same current inputs over eight weeks and through
+GW19. It extrapolates current form/minutes/prices and cannot know future news,
+postponements or prices. The changing-rival comparison is hypothetical and may
+prefer different chips in different scenarios. Neither is calibrated title odds,
+a verified season-tail value, or proof of a global optimum.
+
+While the server is running, the existing 15-minute forward job records one
+immutable observed-manager forecast within24hours before the next deadline.
+It checks a fixed manager set's strict cumulative leader after that GW. Prior
+published picks/captain are hold assumptions, and unknown manager changes count
+as forecast error. Only finalized official cumulative manager history is scored.
+Private files live in `data/league_forward/`, separate from old player freezes,
+and must not be committed. The diagnostics show capture/scoring counts. No
+production forward league calibration evidence exists yet; Brier/reliability
+and paired baseline metrics are descriptive until disjoint chronological
+calibration/test evidence supports promotion. A local server that is switched
+off during that window cannot record a forecast.
+
+Native Windows laptop readiness still requires a real result after the final
+update. Development-host timings and browser viewport replay do not certify the
+laptop. Existing `.env`, history, model weights and legacy GW6 freeze are preserved.

@@ -63,7 +63,13 @@ def fixtures():
         "/api/squad/basic": squad,
         "/api/contingency/plans": {"plan_a": plan},
         "/api/decision-card": card,
-        "/api/game-state": {"current_gw": 5, "phase": "PRE_DEADLINE", "next_gw": 6, "seconds_to_deadline": 86400, "source_kind": "deterministic_fixture"},
+        "/api/game-state": {
+            "current_gw": 5,
+            "phase": "PRE_DEADLINE",
+            "next_gw": 6,
+            "seconds_to_deadline": 86400,
+            "source_kind": "deterministic_fixture",
+        },
         "/api/league": {"status": "empty", "standings": [], "simulation": None},
     }
 
@@ -97,7 +103,21 @@ def capture(base_url):
                     from urllib.parse import urlsplit
 
                     path = urlsplit(req.request.url).path
-                    if mode["value"] == "failure" and path in (
+                    if path == "/api/advice/start":
+                        if mode["value"] == "success":
+                            body = dict(
+                                id="fixture",
+                                status="ready",
+                                result=dict(
+                                    squadData=source["/api/squad"],
+                                    decisionCard=source["/api/decision-card"],
+                                    contingencyPlans=source["/api/contingency/plans"],
+                                ),
+                            )
+                        else:
+                            body = dict(id="fixture", status="failed", error="Intentional fixture failure", result=None)
+                        req.fulfill(content_type="application/json", body=json.dumps(body))
+                    elif mode["value"] == "failure" and path in (
                         "/api/squad",
                         "/api/decision-card",
                         "/api/contingency/plans",

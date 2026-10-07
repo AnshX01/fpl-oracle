@@ -27,7 +27,7 @@ REQUIRED_SECTION_HEADINGS = [
     "Who to captain",
     "Transfers to make",
     "Bench",
-    "Chip plan",
+    "Conditional chip candidate",
     "Rivals",
     "Why",
 ]

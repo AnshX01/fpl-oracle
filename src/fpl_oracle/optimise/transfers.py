@@ -348,33 +348,19 @@ class TransferOptimizer:
         Calculates exact available free transfers according to verified 2026/27 rules:
         - 1 FT granted per GW
         - Up to 4 extra FTs can be saved (maximum 5 FTs total banked)
-        - Starts at 1 in GW1
+        - Initial unlimited deadline grants one FT for the following gameweek
         """
         if not entry_history:
             return 1
 
-        banked = 1
-        for gw in range(1, current_gw + 1):
-            gw_entry = next(
-                (
-                    e
-                    for e in entry_history
-                    if (getattr(e, "event", None) or (isinstance(e, dict) and e.get("event"))) == gw
-                ),
-                None,
-            )
-            transfers_made = 0
-            if gw_entry:
-                transfers_made = (
-                    getattr(gw_entry, "event_transfers", 0)
-                    if not isinstance(gw_entry, dict)
-                    else gw_entry.get("event_transfers", 0)
-                )
+        from fpl_oracle.domain.manager_state import ManagerStateService
 
-            remaining = max(0, banked - transfers_made)
-            banked = min(5, remaining + 1)
-
-        return max(1, min(5, banked))
+        rows = [
+            e
+            for e in entry_history
+            if int((getattr(e, "event", 0) if not isinstance(e, dict) else e.get("event", 0)) or 0) <= current_gw
+        ]
+        return ManagerStateService.calculate_banked_free_transfers(rows, [])
 
     def _get_candidate_1_transfers(
         self,
@@ -1522,6 +1508,7 @@ class TransferOptimizer:
         num_mc_scenarios: int = 50,
         horizon_len: int | None = None,
         evaluate_rival_scenarios: bool = False,
+        previous_chip: str | None = None,
     ) -> dict[str, Any]:
         """
         Evaluates joint dynamic trajectory search combining multi-GW transfer planning
@@ -1596,6 +1583,7 @@ class TransferOptimizer:
             risk_preference,
             terminal_costs=chip_retention_values,
             chips_by_set=chips_by_set,
+            previous_chip=previous_chip,
         )
         # Compare complete trajectories with the same chip opportunities, not a
         # current-chip bonus against a chip-free continuation.
@@ -1792,9 +1780,9 @@ class TransferOptimizer:
             out_players = [pmap.get(eid, {}) for eid in t_out]
 
             if offset == 0:
-                status = "FIRM"
+                status = "CONDITIONAL_CANDIDATE"
             elif offset == 1:
-                status = "PROBABLE"
+                status = "CONTINGENT_ON_NEWS"
             else:
                 status = "CONTINGENT_ON_NEWS"
 

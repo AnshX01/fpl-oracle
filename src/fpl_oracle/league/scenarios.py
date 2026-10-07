@@ -10,6 +10,10 @@ def evolve_rival(rival, maps, mode):
     elements = set(rival["elements"])
     path = []
     for gw, pool in sorted(maps.items()):
+        if len(elements) != 15 or any(
+            not {"position", "value", "team", "expected_points"}.issubset(row) for row in pool.values()
+        ):
+            return None
         if not elements.issubset(pool):
             return None
         if mode == "one_transfer_per_week":
@@ -119,7 +123,23 @@ def compare_plan_scenarios(states, rival_context, maps, samples=512):
                 options=options,
             )
         )
+    ranked = []
+    for state in states:
+        chip = state["first_chip"]
+        rates = [
+            next(o["uncalibrated_stress_beat_rate_pct"] for o in row["options"] if o["first_chip"] == chip)
+            for row in scenario_rows
+        ]
+        if rates:
+            ranked.append(dict(first_chip=chip, worst_case_stress_rate=min(rates), best_case_stress_rate=max(rates)))
+    ranked.sort(key=lambda row: row["worst_case_stress_rate"], reverse=True)
+    winners = {
+        max(row["options"], key=lambda o: o["uncalibrated_stress_beat_rate_pct"])["first_chip"] for row in scenario_rows
+    }
     return dict(
+        robust_stress_ranking=ranked,
+        scenario_preference_changes=len(winners) > 1,
+        ranking_is_recommendation=False,
         status="hypothetical_stress_test",
         calibrated=False,
         championship_probability=False,
