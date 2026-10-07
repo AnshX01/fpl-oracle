@@ -241,22 +241,29 @@ class ToolExecutor:
         }
 
     async def _tool_captain_options(self, args: dict[str, Any]) -> dict[str, Any]:
-        boot, _ = await fpl_client.get_bootstrap_static()
-        fixtures, _ = await fpl_client.get_fixtures()
-        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        gw = args.get("gameweek") or next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+        from fpl_oracle.server.routes.api import get_squad
 
-        horizon = await analysis_service.projections(gw, 8, boot, fixtures)
-        gw_df = horizon.get(gw, pd.DataFrame())
-        top5 = gw_df.sort_values(by="expected_points", ascending=False).head(5)
-
+        squad = await get_squad()
+        if not squad.get("captain"):
+            return {"status": "unavailable", "reason": squad.get("reason", "Configured lineup unavailable")}
+        gw = squad["target_gameweek"]
+        if args.get("gameweek") is not None and args["gameweek"] != gw:
+            return {
+                "status": "unavailable",
+                "reason": "Requested gameweek differs from current configured recommendation",
+                "target_gameweek": gw,
+            }
+        captain, vice = squad["captain"], squad["vice_captain"]
+        candidates = sorted(squad["starters"], key=lambda p: p.get("expected_points", 0), reverse=True)[:5]
         return {
             "gameweek": gw,
-            "safe_captain": top5.iloc[0]["web_name"],
-            "differential_captain": top5.iloc[1]["web_name"] if len(top5) > 1 else top5.iloc[0]["web_name"],
-            "candidates": top5[["web_name", "position", "team", "expected_points", "p10", "p90"]].to_dict(
-                orient="records"
-            ),
+            "safe_captain": captain["web_name"],
+            "differential_captain": vice["web_name"],
+            "captain": captain,
+            "vice_captain": vice,
+            "candidates": candidates,
+            "is_stale": squad.get("is_stale", False),
+            "data_as_of": squad.get("data_as_of"),
         }
 
     async def _tool_league_analysis(self, args: dict[str, Any]) -> dict[str, Any]:

@@ -32,11 +32,21 @@ JavaScript behavioral checks cover atomic publication for matching revisions, re
 
 - The user's actual Windows startup after pulling03ddd3a.
 - Native Python3.14 dependency execution, not reproduced on this Python3.11 host.
-- End-to-end pipeline summary and chat tool output parity across the case matrix.
+- Full pipeline/chat parity across every case: focused captain, offline captain reply, missing squad, other-GW captain, selected pipeline action and forced transfer cases now pass, but are not the full matrix.
 - UI pixels and revision middleware tied to every matrix case, not merely fixture overview/pending/error captures.
-- Changed purchase/sale prices, locked-in/out constraints, exclusion rules, and explicit transfer-hit cases across every surface.
+- Locked-in/out constraints and exclusion rules across every surface. Focused purchase/sale-price and zero/oneFT single-transfer hit cases now pass across card, optimizer, PlanA, briefing and chat.
 - Mid-request state/model/history changes, concurrent forced refresh and failed upstream sources at every stage.
 - Rival/partial-league/news-provider failure variants across all surfaces.
 - Complete historical pre-deadline advisor replay with real squads/news/model versions.
 
 Test partitions overlap. Do not add their counts or claim the full test suite passed. A passing matrix bounds known cases, not every possible FPL state.
+
+## Additional focused follow-up
+
+Chat captain advice previously ranked the whole market and could recommend an unowned unaffordable player. It now uses configured canonical lineup/captain/vice. Offline chat no longer offers a separate speculative differential captain. Explicit different-GW captain requests and missing squad return unavailable.
+
+Pipeline selected chip schedule now comes from the joint trajectory; independent chip calendar is retained separately as context. Focused pipeline summary compares selected action, captain, bank/FT and target chip.
+
+Forced single-transfer tests use a profitable sale price and compare0FT (4-point hit) with1FT (no hit), bank after, move list and hits across card, optimizer, PlanA, briefing and chat. Cardft_used now means free transfers consumed, not total wildcard/free-hit changes. These tests do not cover every price history or constraints combination.
+
+Latest overlapping partition:29 tests passed76.73s (matrix, chat/pipeline,CLI andrefresh).74 source files type-check clean. No full-suite or Windows execution claim.

@@ -159,6 +159,8 @@ class OfflineExpertProvider:
         # 5. Captaincy questions
         if any(w in tokens for w in ["captain", "armband", "vice", "vc"]):
             res = await tool_executor.execute("captain_options", {})
+            if res.get("status") == "unavailable" or res.get("error"):
+                return "Captain advice unavailable: " + res.get("reason", res.get("error", "No verified lineup"))
             safe = res["safe_captain"]
             diff = res["differential_captain"]
             cands = res["candidates"]
@@ -168,11 +170,11 @@ class OfflineExpertProvider:
             ]
             return (
                 f"### Captaincy Recommendation for Gameweek {res['gameweek']}\n"
-                f"**The Decision:** Captain **{safe}** (Safe/Template) or **{diff}** (High-Variance Differential).\n\n"
+                f"**The Decision:** Captain **{safe}**. Vice-captain **{diff}**.\n\n"
                 f"**The Numbers:**\n" + "\n".join(lines) + "\n\n"
-                f"**The Why:** {safe} ranks highest in the 2026/27 ML model with an elite minutes expectation and attack volume. {diff} provides higher ceiling differential upside if you are chasing in your mini-league.\n"
-                f"**The Risk:** Guard against late press-conference rotation notes.\n"
-                f"**What would change the call:** If press conferences indicate minutes management, pivot immediately to your vice-captain."
+                "**The Why:** This is the same configured lineup and captain decision shown in your squad and decision card.\n"
+                "**The Risk:** Guard against late press-conference rotation notes.\n"
+                "**What would change the call:** If press conferences indicate minutes management, pivot immediately to your vice-captain."
             )
 
         # 6. Injury & Availability questions

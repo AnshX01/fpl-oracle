@@ -233,7 +233,9 @@ class DecisionCardGenerator:
             "in": transfers_in,
             "out": transfers_out,
             "bank_after": round(float(rec_plan.get("remaining_bank", effective_state.bank_millions)), 2),
-            "ft_used": 0 if is_roll else len(transfers_in),
+            "ft_used": 0
+            if is_roll or joint_res.get("recommended_chip") in ("wildcard", "freehit")
+            else min(effective_state.free_transfers, len(transfers_in)),
             "ft_remaining": max(
                 0,
                 int(effective_state.free_transfers)

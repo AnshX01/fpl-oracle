@@ -15,7 +15,6 @@ from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
 from fpl_oracle.api.rules_checker import rules_checker
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
-from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.data.store import data_store
 from fpl_oracle.domain.manager_state import manager_state_service
 from fpl_oracle.league.montecarlo import monte_carlo_simulator
@@ -209,8 +208,7 @@ class SyncPipeline:
                 )
 
             await self._broadcast("chips", 75, "Running joint DP/beam search across Set 1 & Set 2 chip calendars...")
-            chips_plan = await asyncio.to_thread(
-                chip_planner.generate_chip_strategy,
+            chips_plan = await analysis_service.chip_strategy(
                 current_gw=effective_curr_gw,
                 current_squad_df=user_squad_df if user_squad_df is not None else target_df,
                 horizon_projections=projections,
@@ -279,7 +277,13 @@ class SyncPipeline:
                 .get("captain", {})
                 .get("web_name", "None"),
                 "news_articles": len(analyzed_news),
-                "chips_plan": chips_plan.get("joint_schedule", {}),
+                "chips_plan": {
+                    row["gameweek"]: row["chip"]
+                    for row in opt_res.get("recommended_plan", {}).get("trajectory", [])
+                    if row.get("chip")
+                },
+                "chip_calendar_context": chips_plan.get("joint_schedule", {}),
+                "recommended_chip": opt_res.get("recommended_chip"),
                 "joint_plan": opt_res,
                 "league_sim": league_res,
                 "briefing_ready": bool(briefing_data.get("markdown")),

@@ -91,6 +91,9 @@ def test_concurrent_surface_case(configured_advisor, monkeypatch, bank, ft, chip
             == card["chip"]["chip_name"]
             == brief["chips"]["recommended_chip"]
         )
+        assert card["transfers"]["ft_used"] == (
+            0 if opt["recommended_chip"] in ("wildcard", "freehit") else min(ft, len(selected["transfers_in"]))
+        )
         assert selected["next_banked_ft"] == card["transfers"]["ft_next_gw"]
         assert (
             card["is_stale"]
@@ -149,5 +152,159 @@ def test_no_personal_advice_on_missing_source(configured_advisor, monkeypatch, m
             assert not result.get("recommended_plan"), (name, missing)
             assert not result.get("plan_a"), (name, missing)
             assert result.get("status") == "unavailable", (name, missing, result)
+
+    asyncio.run(run())
+
+
+def test_chat_captain_is_configured_lineup_not_market_leader(configured_advisor, monkeypatch):
+    from fpl_oracle.llm.tools import tool_executor
+
+    state, pool, horizon = configured_advisor
+    outsider = pool.iloc[0].copy()
+    outsider["element"] = 999999
+    outsider["web_name"] = "Unowned Market Leader"
+    outsider["expected_points"] = 100.0
+    outsider["value"] = 9999
+    import pandas as pd
+
+    market = pd.concat([pool, pd.DataFrame([outsider])], ignore_index=True)
+    monkeypatch.setattr(analysis_service, "projections", AsyncMock(return_value={6: market, 7: market.copy()}))
+    monkeypatch.setattr(
+        data_store,
+        "get_profile",
+        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+    )
+
+    async def run():
+        squad = await get_squad()
+        captain = await tool_executor.execute("captain_options", {})
+        assert captain["safe_captain"] == squad["captain"]["web_name"]
+        assert captain["captain"]["element"] == squad["captain"]["element"]
+        assert all(p["element"] in {r["element"] for r in squad["starters"]} for p in captain["candidates"])
+
+    asyncio.run(run())
+
+
+def test_pipeline_summary_uses_joint_selected_action(configured_advisor, monkeypatch):
+    from fpl_oracle.api.game_state import GameState, game_state_manager
+    from fpl_oracle.api.rules_checker import rules_checker
+    from fpl_oracle.server.pipeline import SyncPipeline
+
+    state, pool, horizon = configured_advisor
+    state.chips_remaining_set_1 = ["3xc"]
+    monkeypatch.setattr(
+        data_store,
+        "get_profile",
+        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+    )
+    monkeypatch.setattr(
+        game_state_manager, "get_game_state", AsyncMock(return_value=GameState(current_gw=5, next_gw=6))
+    )
+    monkeypatch.setattr(rules_checker, "verify", lambda boot: SimpleNamespace(verified=True))
+    monkeypatch.setattr(analysis_service, "invalidate", AsyncMock())
+    pipeline = SyncPipeline()
+
+    async def run():
+        opt = await run_optimizer(OptimizeRequest())
+        await pipeline.run_pipeline()
+        summary = pipeline.get_status()["summary"]
+        assert not pipeline.get_status()["last_error"]
+        assert summary["transfer_plan"]["plan_type"] == opt["recommended_plan"]["plan_type"]
+        assert summary["captain"] == opt["recommended_plan"]["lineup"]["captain"]["web_name"]
+        assert summary["recommended_chip"] == opt["recommended_chip"]
+        assert summary["bank_tenths"] == state.bank_tenths
+        assert summary["free_transfers"] == state.free_transfers
+        assert summary["chips_plan"].get(6) == opt["recommended_chip"]
+
+    asyncio.run(run())
+
+
+def test_offline_chat_matches_squad_captain(configured_advisor, monkeypatch):
+    from fpl_oracle.llm.provider import OfflineExpertProvider
+
+    monkeypatch.setattr(
+        data_store,
+        "get_profile",
+        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+    )
+
+    async def run():
+        squad = await get_squad()
+        text = await OfflineExpertProvider().chat(
+            messages=[{"role": "user", "content": "who should I captain?"}], system_prompt=""
+        )
+        assert f"Captain **{squad['captain']['web_name']}**" in text
+        assert f"Vice-captain **{squad['vice_captain']['web_name']}**" in text
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("ft", [0, 1])
+def test_profitable_replacement_hits_and_sale_prices_across_surfaces(configured_advisor, monkeypatch, ft):
+    import pandas as pd
+
+    from fpl_oracle.llm.tools import tool_executor
+
+    state, pool, horizon = configured_advisor
+    state.free_transfers = ft
+    state.bank_tenths = 0
+    old = state.squad[2]
+    old.purchase_price = old.now_cost - 2
+    old.selling_price = old.now_cost - 1
+    replacement = pool.iloc[2].copy()
+    replacement["element"] = 999998
+    replacement["web_name"] = "Fixture Replacement"
+    replacement["value"] = old.selling_price
+    replacement["expected_points"] = 25.0
+    market = pd.concat([pool, pd.DataFrame([replacement])], ignore_index=True)
+    monkeypatch.setattr(analysis_service, "projections", AsyncMock(return_value={6: market, 7: market.copy()}))
+    monkeypatch.setattr(
+        data_store,
+        "get_profile",
+        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+    )
+
+    async def run():
+        squad, card, opt, plans, brief, chat = await asyncio.gather(
+            get_squad(),
+            decision_card_generator.generate_decision_card(),
+            run_optimizer(OptimizeRequest()),
+            get_contingency_plans(),
+            weekly_briefing_generator.generate_briefing(),
+            tool_executor.execute("optimise_transfers", {}),
+        )
+        plan = opt["recommended_plan"]
+        assert [p["element"] for p in plan["transfers_in"]] == [999998]
+        assert plan["hits"] == 1 - ft
+        assert card["transfers"]["hit_cost"] == 4 * (1 - ft)
+        assert card["transfers"]["ft_used"] == ft
+        assert plan["remaining_bank"] == card["transfers"]["bank_after"]
+        for other in [plans["plan_a"], brief["transfers"]["recommended_plan"], chat["recommended_plan"]]:
+            assert other["transfers_in"] == plan["transfers_in"]
+            assert other["hits"] == plan["hits"]
+        assert squad["total_expected_points"] == brief["lineup"]["total_gameweek_expected_points"]
+
+    asyncio.run(run())
+
+
+def test_chat_captain_other_gw_and_missing_squad_are_explicit(configured_advisor, monkeypatch):
+    from fpl_oracle.llm.provider import OfflineExpertProvider
+    from fpl_oracle.llm.tools import tool_executor
+
+    state, _, _ = configured_advisor
+    monkeypatch.setattr(
+        data_store,
+        "get_profile",
+        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+    )
+
+    async def run():
+        other = await tool_executor.execute("captain_options", {"gameweek": 8})
+        assert other["status"] == "unavailable"
+        state.squad = []
+        text = await OfflineExpertProvider().chat(
+            messages=[{"role": "user", "content": "who should I captain?"}], system_prompt=""
+        )
+        assert text.startswith("Captain advice unavailable:")
 
     asyncio.run(run())
