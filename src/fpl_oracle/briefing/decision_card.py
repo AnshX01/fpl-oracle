@@ -47,7 +47,10 @@ class DecisionCardGenerator:
         # ----------------------------------------------------------------------
         # 1. Projections & Squad Resolution
         # ----------------------------------------------------------------------
-        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 8, boot, fixtures=fixtures)
+        reconciled_map = news_analyzer.get_reconciled_availabilities_map(boot, target_gw=target_gw)
+        horizon_proj = projection_engine.predict_multi_gameweeks(
+            target_gw, 8, boot, fixtures=fixtures, reconciled_availabilities=reconciled_map
+        )
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         user_squad_df = effective_state.to_squad_dataframe()
@@ -134,9 +137,20 @@ class DecisionCardGenerator:
         }
 
         # ----------------------------------------------------------------------
-        # 3. Transfer Recommendations (Stateful Beam Search)
+        # 3. Chip Strategy & Joint Optimization (G10)
         # ----------------------------------------------------------------------
-        transfers_res = transfer_optimizer.evaluate_transfer_options(
+        hist = None
+        if effective_state.manager_id:
+            try:
+                hist, _ = await fpl_client.get_manager_history(effective_state.manager_id)
+            except Exception as e:
+                logger.warning("Decision card manager history fetch warning: %s", e)
+
+        chips_status = chip_planner.get_remaining_chips(hist)
+        available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
+        chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
+
+        joint_res = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
             current_squad_df=user_squad_df,
             player_pool_df=target_df,
             bank=float(effective_state.bank_tenths),
@@ -144,9 +158,23 @@ class DecisionCardGenerator:
             horizon_projections=horizon_proj,
             current_gw=effective_curr_gw,
             target_gw=target_gw,
+            available_chips=available_chips,
+            chips_already_used=chips_used,
         )
 
-        rec_plan = transfers_res["recommended_plan"]
+        chip_strat = chip_planner.generate_chip_strategy(
+            current_gw=effective_curr_gw,
+            current_squad_df=user_squad_df,
+            horizon_projections=horizon_proj,
+            fixtures=fixtures,
+            bootstrap=boot,
+            manager_history=hist,
+        )
+
+        # ----------------------------------------------------------------------
+        # 4. Synchronized Transfer & Chip Decision (ONE Plan across surfaces)
+        # ----------------------------------------------------------------------
+        rec_plan = joint_res["recommended_plan"]
         t_in_raw = rec_plan.get("transfers_in", [])
         t_out_raw = rec_plan.get("transfers_out", [])
 
@@ -194,47 +222,29 @@ class DecisionCardGenerator:
             "action_summary": rec_plan.get("recommendation_summary", "Roll transfer for tactical flexibility."),
         }
 
-        # ----------------------------------------------------------------------
-        # 4. Chip Calendar & Recommendation
-        # ----------------------------------------------------------------------
-        hist = None
-        if effective_state.manager_id:
-            try:
-                hist, _ = await fpl_client.get_manager_history(effective_state.manager_id)
-            except Exception:
-                pass
+        # Synchronize chip decision directly with joint planner
+        chip_rec_now = bool(joint_res.get("recommended_chip") is not None)
+        active_chip_code = joint_res.get("recommended_chip")
+        from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
 
-        chip_strat = chip_planner.generate_chip_strategy(
-            current_gw=effective_curr_gw,
-            current_squad_df=user_squad_df,
-            horizon_projections=horizon_proj,
-            fixtures=fixtures,
-            bootstrap=boot,
-            manager_history=hist,
-        )
-
-        chip_rec_now = chip_strat.get("recommend_chip_this_gw", False)
-        active_chip_item = chip_strat.get("current_gw_chip_recommendation")
+        best_cand = joint_res.get("best_candidate", {})
+        active_chip_name = CHIP_DISPLAY_NAMES.get(active_chip_code, active_chip_code) if active_chip_code else None
 
         chip_decision = {
-            "recommend": bool(chip_rec_now),
-            "chip_name": active_chip_item["code"] if (chip_rec_now and active_chip_item) else None,
-            "chip_display_name": active_chip_item["chip"] if (chip_rec_now and active_chip_item) else None,
+            "recommend": chip_rec_now,
+            "chip_name": active_chip_code,
+            "chip_display_name": active_chip_name,
             "reason": (
-                active_chip_item["reasoning"]
-                if (chip_rec_now and active_chip_item)
+                best_cand.get("reason", "")
+                if chip_rec_now
                 else "No chip deployment recommended this gameweek. Save chips for confirmed DGWs."
             ),
             "next_best_window": (
-                active_chip_item.get("alternative_gw")
-                if active_chip_item
-                else (
-                    chip_strat.get("chip_plan_table", [{}])[0].get("recommended_gw")
-                    if chip_strat.get("chip_plan_table")
-                    else None
-                )
+                chip_strat.get("chip_plan_table", [{}])[0].get("recommended_gw")
+                if chip_strat.get("chip_plan_table")
+                else None
             ),
-            "gain_vs_hold": round(float(active_chip_item.get("expected_gain", 0.0)), 1) if active_chip_item else 0.0,
+            "gain_vs_hold": round(float(best_cand.get("gross_gain_vs_hold", 0.0)), 1) if chip_rec_now else 0.0,
             "set_1_deadline_warning": chip_strat.get("set_1_deadline_warning"),
         }
 

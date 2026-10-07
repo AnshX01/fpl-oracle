@@ -96,6 +96,9 @@ class FPLSettings(BaseModel):
         default=0.85, description="Away fixture multiplier for clean sheet probability"
     )
 
+    # Joint Multi-GW Planner Settings
+    planner_horizon: int = Field(default=5, description="Default planning horizon in gameweeks for joint search")
+
     def get_redacted_status(self) -> dict[str, Any]:
         """Return diagnostic status without exposing secrets or private IDs."""
         mgr_set = self.fpl_manager_id is not None
@@ -193,6 +196,7 @@ ODDS_API_KEY = app_config.odds_api_key
 DISCORD_WEBHOOK_URL = app_config.discord_webhook_url
 TELEGRAM_BOT_TOKEN = app_config.telegram_bot_token
 TELEGRAM_CHAT_ID = app_config.telegram_chat_id
+PLANNER_HORIZON = app_config.planner_horizon
 
 # Directory paths
 DATA_DIR = BASE_DIR / "data"

@@ -1,0 +1,22 @@
+Command: .venv\Scripts\python.exe -m pytest tests/test_joint_plan_live.py -v
+Exit Code: 0
+
+Output:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 7 items
+
+tests/test_joint_plan_live.py::test_exhaustive_reference_comparison PASSED [ 14%]
+tests/test_joint_plan_live.py::test_illegal_gw_chip_deployment PASSED    [ 28%]
+tests/test_joint_plan_live.py::test_free_hit_reversion_continuation PASSED [ 42%]
+tests/test_joint_plan_live.py::test_wildcard_zero_hits_and_persistence PASSED [ 57%]
+tests/test_joint_plan_live.py::test_dynamic_valuation_replaces_fixed_constants PASSED [ 71%]
+tests/test_joint_plan_live.py::test_live_api_endpoint_invokes_joint_planner PASSED [ 85%]
+tests/test_joint_plan_live.py::test_cross_surface_consistency PASSED     [100%]
+
+======================== 7 passed in 217.34s (0:03:37) ========================

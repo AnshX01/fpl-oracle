@@ -3,6 +3,7 @@ FastAPI REST API routes for FPL Oracle.
 """
 
 import json
+import logging
 from typing import Any
 
 import pandas as pd
@@ -18,6 +19,7 @@ from fpl_oracle.briefing.decision_card import decision_card_generator, format_de
 from fpl_oracle.briefing.review import post_gameweek_reviewer
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.chips.planner import chip_planner
+from fpl_oracle.config import PLANNER_HORIZON
 from fpl_oracle.data.fuzzy_match import fuzzy_matcher
 from fpl_oracle.data.store import data_store
 from fpl_oracle.domain.manager_state import manager_state_service
@@ -38,6 +40,8 @@ from fpl_oracle.optimise.transfers import transfer_optimizer
 from fpl_oracle.server.jobs import get_jobs_status, run_job_on_demand
 from fpl_oracle.server.pipeline import sync_pipeline
 from fpl_oracle.server.safe_json import SafeJSONResponse, safe_json_serialize
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", default_response_class=SafeJSONResponse)
 
@@ -471,6 +475,7 @@ async def get_projections(position: str | None = None, team_id: int | None = Non
 
 
 @router.post("/optimize")
+@router.post("/transfers")
 async def run_optimizer(req: OptimizeRequest | None = None):
     effective_state = await manager_state_service.get_current_state()
     boot, is_stale = await fpl_client.get_bootstrap_static()
@@ -478,29 +483,42 @@ async def run_optimizer(req: OptimizeRequest | None = None):
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
 
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
+    # News adjustment path: pass reconciled availabilities map
+    reconciled_map = news_analyzer.get_reconciled_availabilities_map(boot, target_gw=target_gw)
+    horizon_proj = projection_engine.predict_multi_gameweeks(
+        target_gw, PLANNER_HORIZON, boot, fixtures, reconciled_availabilities=reconciled_map
+    )
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
-    # Get user squad from single source of truth
-    user_squad_df = effective_state.to_squad_dataframe()
-    if user_squad_df.empty or len(user_squad_df) < 15:
-        from fpl_oracle.optimise.squad import squad_optimizer
-
-        user_squad_df = squad_optimizer.solve_best_squad(target_df, budget=1000.0)["squad"].copy()
-        user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
+    # Get user squad with real selling prices and actual free transfers
+    user_squad_df, bank_tenths, free_transfers = await _get_effective_user_squad(target_df, boot)
 
     locked_in = req.locked_in if req else None
     locked_out = req.locked_out if req else None
     excl_teams = req.excluded_teams if req else None
 
-    res = transfer_optimizer.evaluate_transfer_options(
+    # Manager history chips status
+    manager_hist = None
+    if effective_state.manager_id:
+        try:
+            manager_hist, _ = await fpl_client.get_manager_history(effective_state.manager_id)
+        except Exception as e:
+            logger.warning("Manager history fetch warning: %s", e)
+
+    chips_status = chip_planner.get_remaining_chips(manager_hist)
+    available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
+    chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
+
+    res = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
         current_squad_df=user_squad_df,
         player_pool_df=target_df,
-        bank=float(effective_state.bank_tenths),
-        free_transfers=int(effective_state.free_transfers),
+        bank=bank_tenths,
+        free_transfers=free_transfers,
         horizon_projections=horizon_proj,
         current_gw=curr_gw or 5,
         target_gw=target_gw,
+        available_chips=available_chips,
+        chips_already_used=chips_used,
         locked_in_ids=locked_in,
         locked_out_ids=locked_out,
         excluded_team_ids=excl_teams,
@@ -526,15 +544,20 @@ async def get_chip_strategy():
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
     target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
-    horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 8, boot, fixtures)
+
+    # News adjustment path: identical across all surfaces
+    reconciled_map = news_analyzer.get_reconciled_availabilities_map(boot, target_gw=target_gw)
+    horizon_proj = projection_engine.predict_multi_gameweeks(
+        target_gw, 8, boot, fixtures, reconciled_availabilities=reconciled_map
+    )
     pool_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     hist = None
     if effective_state.manager_id:
         try:
             hist, _ = await fpl_client.get_manager_history(effective_state.manager_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Manager history fetch warning: %s", e)
 
     squad_df, _, _ = await _get_effective_user_squad(pool_df, boot)
 

@@ -215,13 +215,23 @@ class SyncPipeline:
                 user_squad_df = squad_res["squad"].copy()
                 user_squad_df = transfer_optimizer.compute_squad_selling_prices(user_squad_df, None, boot)
 
+            # ------------------------------------------------------------------
+            # Stage 5 & 6: Unified Joint Transfer & Chip Optimization (G10)
+            # ------------------------------------------------------------------
+            await self._broadcast(
+                "optimization", 65, "Solving mathematical MILP for squad, starting XI, and transfer roadmap..."
+            )
+            chips_status = chip_planner.get_remaining_chips(history_obj)
+            available_chips = chips_status["set_1_remaining"] if target_gw <= 19 else chips_status["set_2_remaining"]
+            chips_used = chips_status["set_1_used"] if target_gw <= 19 else chips_status["set_2_used"]
+
             opt_res = {}
             lineup_res = {}
             if user_squad_df is not None and len(user_squad_df) == 15 and target_df is not None:
                 lineup_res = lineup_optimizer.select_lineup_and_captain(
                     user_squad_df, risk_preference=profile.risk_preference
                 )
-                opt_res = transfer_optimizer.evaluate_transfer_options(
+                opt_res = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
                     current_squad_df=user_squad_df,
                     player_pool_df=target_df,
                     bank=bank,
@@ -229,12 +239,11 @@ class SyncPipeline:
                     horizon_projections=projections,
                     current_gw=effective_curr_gw,
                     target_gw=target_gw,
+                    available_chips=available_chips,
+                    chips_already_used=chips_used,
                     risk_preference=profile.risk_preference or "balanced",
                 )
 
-            # ------------------------------------------------------------------
-            # Stage 6: Chip Strategy & Joint Beam Search
-            # ------------------------------------------------------------------
             await self._broadcast("chips", 75, "Running joint DP/beam search across Set 1 & Set 2 chip calendars...")
             chips_plan = chip_planner.generate_chip_strategy(
                 current_gw=effective_curr_gw,
@@ -302,6 +311,7 @@ class SyncPipeline:
                 "captain": lineup_res.get("captain", {}).get("web_name", "None"),
                 "news_articles": len(analyzed_news),
                 "chips_plan": chips_plan.get("joint_schedule", {}),
+                "joint_plan": opt_res,
                 "league_sim": league_res,
                 "briefing_ready": bool(briefing_data.get("markdown")),
             }
