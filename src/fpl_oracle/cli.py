@@ -12,8 +12,6 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from fpl_oracle.news.analyse import news_analyzer
-
 # Ensure utf-8 output on Windows
 if sys.platform == "win32":
     try:
@@ -22,7 +20,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-app = typer.Typer(help="FPL Oracle — Local ML-driven 2026/27 Fantasy Premier League Expert")
+app = typer.Typer(help="FPL Oracle - Local ML-driven 2026/27 Fantasy Premier League Expert")
 console = Console(force_terminal=True, legacy_windows=False)
 
 
@@ -31,50 +29,18 @@ def analyze():
     """Run full team, projection, and transfer analysis."""
 
     async def _run():
-        from fpl_oracle.api.fpl_client import fpl_client
-        from fpl_oracle.data.store import data_store
-        from fpl_oracle.ml.predict import projection_engine
-        from fpl_oracle.optimise.lineup import lineup_optimizer
+        import pandas as pd
 
-        console.print("[bold green]=== FPL Oracle 2026/27 Squad Analysis ===[/bold green]")
-        boot, _ = await fpl_client.get_bootstrap_static()
-        fixtures, _ = await fpl_client.get_fixtures()
-        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or 6
+        from fpl_oracle.server.routes.api import get_squad
 
-        console.print(
-            f"Current GW: [bold yellow]{curr_gw}[/bold yellow] | Next GW: [bold green]{target_gw}[/bold green]"
-        )
+        result = await get_squad()
+        if result.get("status") == "unavailable" or len(result.get("starters", [])) != 11:
+            console.print("Configured squad/advice unavailable; no template squad substituted.")
+            return
+        target_gw = result.get("target_gameweek", result.get("gameweek", result.get("target_gw", "Unknown")))
+        lineup = {**result, "starters": pd.DataFrame(result["starters"]), "bench": pd.DataFrame(result["bench"])}
 
-        horizon_proj = projection_engine.predict_multi_gameweeks(
-            target_gw,
-            5,
-            boot,
-            fixtures,
-            reconciled_inputs_by_gw={
-                g: news_analyzer.get_reconciled_inputs(boot, g) for g in range(target_gw, min(39, target_gw + 5))
-            },
-        )
-        target_df = horizon_proj[target_gw]
-
-        profile = data_store.get_profile()
-        user_squad_df = None
-        if profile.manager_id:
-            try:
-                picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw or 5)
-                picks_ids = [p.element for p in picks.picks]
-                user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-            except Exception:
-                pass
-
-        if user_squad_df is None or len(user_squad_df) < 15:
-            from fpl_oracle.optimise.squad import squad_optimizer
-
-            user_squad_df = squad_optimizer.solve_best_squad(target_df, budget=1000.0)["squad"].copy()
-
-        lineup = lineup_optimizer.select_lineup_and_captain(user_squad_df)
-
-        table = Table(title=f"Optimal Starting Lineup (GW {target_gw}) — Formation: {lineup['formation']}")
+        table = Table(title=f"Optimal Starting Lineup (GW {target_gw}) - Formation: {lineup['formation']}")
         table.add_column("Pos", style="cyan")
         table.add_column("Player", style="bold white")
         table.add_column("Cost", justify="right")
@@ -91,7 +57,7 @@ def analyze():
             table.add_row(
                 r["position"],
                 f"{r['web_name']}{badge}",
-                f"£{r['value'] / 10.0:.1f}m",
+                f"£{r.get('now_cost', r.get('value', 0) / 10.0):.1f}m",
                 f"{r['expected_points']:.2f}",
                 f"{r.get('p10', 0.0):.2f}",
                 f"{r.get('p90', 0.0):.2f}",
@@ -100,7 +66,7 @@ def analyze():
 
         console.print(table)
         console.print(
-            f"[bold]Total Projected Starting Points: [green]{lineup['starters_expected_points']:.2f} xP[/green][/bold]"
+            f"[bold]Total Projected Starting Points: [green]{lineup.get('starters_expected_points', lineup.get('total_expected_points', 0)):.2f} xP[/green][/bold]"
         )
 
     asyncio.run(_run())
@@ -111,43 +77,13 @@ def optimize():
     """Run mathematical MILP transfer optimizer."""
 
     async def _run():
-        from fpl_oracle.api.fpl_client import fpl_client
-        from fpl_oracle.ml.predict import projection_engine
-        from fpl_oracle.optimise.squad import squad_optimizer
-        from fpl_oracle.optimise.transfers import transfer_optimizer
+        from fpl_oracle.server.routes.api import OptimizeRequest, run_optimizer
 
-        console.print("[bold green]=== FPL Oracle Mathematical Transfer Optimizer ===[/bold green]")
-        boot, _ = await fpl_client.get_bootstrap_static()
-        fixtures, _ = await fpl_client.get_fixtures()
-        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or 6
-
-        horizon_proj = projection_engine.predict_multi_gameweeks(
-            target_gw,
-            5,
-            boot,
-            fixtures,
-            reconciled_inputs_by_gw={
-                g: news_analyzer.get_reconciled_inputs(boot, g) for g in range(target_gw, min(39, target_gw + 5))
-            },
-        )
-        target_df = horizon_proj[target_gw]
-
-        squad_df = squad_optimizer.solve_best_squad(target_df, budget=1000.0)["squad"].copy()
-
-        opt_res = transfer_optimizer.evaluate_transfer_options(
-            current_squad_df=squad_df,
-            player_pool_df=target_df,
-            bank=5.0,
-            free_transfers=1,
-            horizon_projections=horizon_proj,
-            current_gw=curr_gw or 5,
-            target_gw=target_gw,
-        )
+        opt_res = await run_optimizer(OptimizeRequest())
 
         console.print(
             Panel(
-                f"[bold]Recommendation:[/bold] {opt_res['recommended_plan']['recommendation_summary']}\n[bold]Hit Verdict:[/bold] {opt_res['hit_verdict']}",
+                f"[bold]Recommendation:[/bold] {opt_res['recommended_plan'].get('recommendation_summary', opt_res['recommended_plan'].get('plan_type', 'Unavailable'))}\n[bold]Hit Verdict:[/bold] {opt_res['hit_verdict']}",
                 title="Optimizer Decision",
                 border_style="green",
             )
@@ -179,34 +115,9 @@ def chips():
     """Display 2026/27 dual-set chip strategy plan."""
 
     async def _run():
-        from fpl_oracle.api.fpl_client import fpl_client
-        from fpl_oracle.chips.planner import chip_planner
-        from fpl_oracle.ml.predict import projection_engine
-        from fpl_oracle.optimise.squad import squad_optimizer
+        from fpl_oracle.server.routes.api import get_chip_strategy
 
-        console.print("[bold green]=== FPL Oracle 2026/27 Chip Strategy Plan ===[/bold green]")
-        boot, _ = await fpl_client.get_bootstrap_static()
-        fixtures, _ = await fpl_client.get_fixtures()
-        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-
-        horizon_proj = projection_engine.predict_multi_gameweeks(
-            next_gw or 6,
-            8,
-            boot,
-            fixtures,
-            reconciled_inputs_by_gw={
-                g: news_analyzer.get_reconciled_inputs(boot, g) for g in range(next_gw or 6, min(39, next_gw or 6 + 8))
-            },
-        )
-        squad_df = squad_optimizer.solve_best_squad(horizon_proj[next_gw or 6], budget=1000.0)["squad"]
-
-        chip_res = chip_planner.generate_chip_strategy(
-            current_gw=curr_gw or 5,
-            current_squad_df=squad_df,
-            horizon_projections=horizon_proj,
-            fixtures=fixtures,
-            bootstrap=boot,
-        )
+        chip_res = await get_chip_strategy()
 
         if chip_res.get("set_1_deadline_warning"):
             console.print(
