@@ -131,7 +131,7 @@ class FPLClient:
         if cache_key in self._in_flight:
             try:
                 result = await self._in_flight[cache_key]
-                remember(cache_key, *result, self._cache_timestamps.get(cache_key))
+                remember(cache_key, result[0], result[1], self._cache_timestamps.get(cache_key))
                 return result
             except Exception:
                 pass
@@ -141,7 +141,7 @@ class FPLClient:
         self._in_flight[cache_key] = task
         try:
             res = await task
-            remember(cache_key, *res, self._cache_timestamps.get(cache_key))
+            remember(cache_key, res[0], res[1], self._cache_timestamps.get(cache_key))
             return res
         finally:
             self._in_flight.pop(cache_key, None)

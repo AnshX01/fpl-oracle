@@ -108,7 +108,7 @@ async def upstream_snapshot_guard(request: Request, call_next):
     """Pin repeated upstream reads and reject an advice response changed during work."""
     from fpl_oracle.api.read_context import read_context
 
-    context = {}
+    context: dict = {}
     token = read_context.set(context)
     try:
         response = await call_next(request)
