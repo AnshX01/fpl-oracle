@@ -65,6 +65,15 @@ class FPLSettings(BaseModel):
     gated_active_opt_in: bool = Field(
         default=False, description="Explicit opt-in to apply candidate news to production"
     )
+    news_gate_min_precision: float = Field(
+        default=0.85, description="Minimum benchmark precision required to gate news into production"
+    )
+    news_gate_min_recall: float = Field(
+        default=0.80, description="Minimum benchmark recall required to gate news into production"
+    )
+    news_gate_max_false_ruled_out: float = Field(
+        default=0.02, description="Maximum benchmark false ruled-out rate allowed to gate news into production"
+    )
 
     # Optional Providers
     odds_api_key: str = Field(
@@ -180,6 +189,9 @@ GEMINI_FREE_TIER_CONFIRMED = app_config.gemini_free_tier_confirmed
 GEMINI_MODEL = app_config.gemini_model
 NEWS_RECOMMENDATION_MODE = app_config.news_recommendation_mode
 GATED_ACTIVE_OPT_IN = app_config.gated_active_opt_in
+NEWS_GATE_MIN_PRECISION = app_config.news_gate_min_precision
+NEWS_GATE_MIN_RECALL = app_config.news_gate_min_recall
+NEWS_GATE_MAX_FALSE_RULED_OUT = app_config.news_gate_max_false_ruled_out
 
 ANTHROPIC_API_KEY = app_config.anthropic_api_key
 OPENAI_API_KEY = app_config.openai_api_key

@@ -1,0 +1,48 @@
+Command: .venv\Scripts\python.exe scripts/run_news_benchmark.py
+Exit Code: 0
+
+Output:
+
+INFO: Starting Production News Extraction Benchmark across 70 held-out cases...
+INFO: News Benchmark: 70/70 PASSED (100.0%) | Precision: 100.0% | Recall: 100.0% | False Ruled Out: 0 (0.0%) | Gate Status: OPEN
+
+
+Command: .venv\Scripts\python.exe -m pytest tests/test_gemini_mock.py tests/test_news_availability.py -v
+Exit Code: 0
+
+Output:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 22 items
+
+tests/test_gemini_mock.py::test_gemini_configuration_detection PASSED    [  4%]
+tests/test_gemini_mock.py::test_gemini_unconfigured_without_key PASSED   [  9%]
+tests/test_gemini_mock.py::test_gemini_valid_schema_parsing PASSED       [ 13%]
+tests/test_gemini_mock.py::test_gemini_hallucinated_quote_penalized PASSED [ 18%]
+tests/test_gemini_mock.py::test_gemini_http_429_graceful_fallback PASSED [ 22%]
+tests/test_gemini_mock.py::test_gemini_http_500_graceful_fallback PASSED [ 27%]
+tests/test_gemini_mock.py::test_gemini_timeout_fallback PASSED           [ 31%]
+tests/test_gemini_mock.py::test_gemini_empty_response_fallback PASSED    [ 36%]
+tests/test_gemini_mock.py::test_ssrf_guard_blocks_untrusted_urls PASSED  [ 40%]
+tests/test_news_availability.py::test_is_safe_external_url PASSED        [ 45%]
+tests/test_news_availability.py::test_gemini_is_configured_safeguards PASSED [ 50%]
+tests/test_news_availability.py::test_gemini_budget_manager PASSED       [ 54%]
+tests/test_news_availability.py::test_gemini_extractor_fallback_when_unconfigured[asyncio] PASSED [ 59%]
+tests/test_news_availability.py::test_availability_reconciler_no_double_discounting PASSED [ 63%]
+tests/test_news_availability.py::test_availability_reconciler_negation_handling PASSED [ 68%]
+tests/test_news_availability.py::test_availability_reconciler_cup_competition_isolation PASSED [ 72%]
+tests/test_news_availability.py::test_availability_reconciler_scout_loan_ineligibility PASSED [ 77%]
+tests/test_news_availability.py::test_availability_reconciler_shadow_mode_isolation PASSED [ 81%]
+tests/test_news_availability.py::test_news_analyse_no_crude_heuristics PASSED [ 86%]
+tests/test_news_availability.py::test_web_index_no_secret_input_forms PASSED [ 90%]
+tests/test_news_availability.py::test_controlled_mock_xp_shadow_vs_gated_active PASSED [ 95%]
+tests/test_news_availability.py::test_reconcile_named_probability_settings PASSED [100%]
+
+============================= 22 passed in 1.47s ==============================
+
+

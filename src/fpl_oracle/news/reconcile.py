@@ -6,12 +6,19 @@ Enforces single-adjustment invariant (zero double-counting of availability/injur
 Supports API-Only, Shadow, and Gated-Active modes.
 """
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
-from fpl_oracle.config import NEWS_RECOMMENDATION_MODE
+from fpl_oracle.config import (
+    NEWS_GATE_MAX_FALSE_RULED_OUT,
+    NEWS_GATE_MIN_PRECISION,
+    NEWS_GATE_MIN_RECALL,
+    NEWS_RECOMMENDATION_MODE,
+    REPORTS_DIR,
+)
 from fpl_oracle.news.models import (
     EvidenceCategory,
     PlayerEvidence,
@@ -20,6 +27,49 @@ from fpl_oracle.news.models import (
 )
 
 logger = logging.getLogger("fpl_oracle.news.reconcile")
+
+
+def check_news_benchmark_gate(
+    extractor_name: str = "deterministic_fallback",
+) -> tuple[bool, str, dict[str, Any]]:
+    """
+    Verifies whether the active news extractor satisfies benchmark accuracy thresholds (Requirement G12).
+    News signals may only influence production expected points if:
+    - Precision >= NEWS_GATE_MIN_PRECISION (default 85%)
+    - Recall >= NEWS_GATE_MIN_RECALL (default 80%)
+    - False Ruled Out Rate <= NEWS_GATE_MAX_FALSE_RULED_OUT (default 2%)
+    """
+    bench_file = REPORTS_DIR / "news_benchmark.json"
+    if not bench_file.exists():
+        return False, "Benchmark artifact reports/news_benchmark.json missing", {}
+
+    try:
+        data = json.loads(bench_file.read_text(encoding="utf-8"))
+        extractors = data.get("extractors", {})
+        metrics = extractors.get(extractor_name, data)
+
+        precision = float(metrics.get("extraction_precision_pct", metrics.get("precision_pct", 0.0))) / 100.0
+        recall = float(metrics.get("extraction_recall_pct", metrics.get("recall_pct", 0.0))) / 100.0
+        false_ro_rate = float(metrics.get("false_ruled_out_rate_pct", metrics.get("false_ruled_out_rate", 0.0))) / 100.0
+
+        if precision < NEWS_GATE_MIN_PRECISION:
+            return False, f"Precision {precision:.1%} below gate threshold {NEWS_GATE_MIN_PRECISION:.1%}", metrics
+        if recall < NEWS_GATE_MIN_RECALL:
+            return False, f"Recall {recall:.1%} below gate threshold {NEWS_GATE_MIN_RECALL:.1%}", metrics
+        if false_ro_rate > NEWS_GATE_MAX_FALSE_RULED_OUT:
+            return (
+                False,
+                f"False ruled-out rate {false_ro_rate:.1%} exceeds tolerance {NEWS_GATE_MAX_FALSE_RULED_OUT:.1%}",
+                metrics,
+            )
+
+        return (
+            True,
+            f"Gate OPEN: Precision={precision:.1%}, Recall={recall:.1%}, False-RO={false_ro_rate:.1%}",
+            metrics,
+        )
+    except Exception as e:
+        return False, f"Error inspecting news benchmark gate: {e}", {}
 
 
 @dataclass
@@ -181,7 +231,14 @@ class AvailabilityReconciler:
                         )
                     break
 
-        applied_to_production = (self.mode == RecommendationMode.GATED_ACTIVE) and is_shadow_override
+        # Enforce benchmark accuracy gate before applying candidate news to production
+        gate_open = True
+        if self.mode == RecommendationMode.GATED_ACTIVE:
+            gate_open, gate_reason, _ = check_news_benchmark_gate()
+            if not gate_open:
+                rejected_signals.append(f"News gate closed: {gate_reason}")
+
+        applied_to_production = (self.mode == RecommendationMode.GATED_ACTIVE) and is_shadow_override and gate_open
 
         return ReconciledAvailability(
             element_id=elem_id,

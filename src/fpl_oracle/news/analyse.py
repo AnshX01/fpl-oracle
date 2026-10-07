@@ -13,7 +13,7 @@ from fpl_oracle.api.models import BootstrapStatic
 from fpl_oracle.news.extract import text_extractor
 from fpl_oracle.news.gemini_extractor import gemini_extractor
 from fpl_oracle.news.ingest import news_ingestion
-from fpl_oracle.news.models import PlayerEvidence
+from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence
 from fpl_oracle.news.reconcile import availability_reconciler
 
 logger = logging.getLogger("fpl_oracle.news.analyse")
@@ -43,20 +43,42 @@ class NewsAnalyzer:
             ]
 
             is_gemini_ready, _ = gemini_extractor.is_configured()
-            if is_gemini_ready and articles:
+            self._active_extractor = "gemini" if is_gemini_ready else "deterministic_fallback"
+
+            if articles:
                 for art in articles[:10]:
                     cleaned_text = text_extractor.clean_html(art["title"] + " " + art.get("summary", ""))
-                    try:
-                        extracted_payload = await gemini_extractor.extract_evidence_from_text(
-                            article_text=cleaned_text,
-                            article_url=art.get("link", ""),
-                            published_at=art.get("published_at"),
-                            candidate_players=roster_batch,
-                            target_gw=target_gw,
-                        )
-                        candidate_evidences.extend(extracted_payload.evidences)
-                    except Exception as e:
-                        logger.warning(f"Error extracting evidence via Gemini: {e}")
+                    if not cleaned_text:
+                        continue
+
+                    if is_gemini_ready:
+                        try:
+                            extracted_payload = await gemini_extractor.extract_evidence_from_text(
+                                article_text=cleaned_text,
+                                article_url=art.get("link", ""),
+                                published_at=art.get("published_at"),
+                                candidate_players=roster_batch,
+                                target_gw=target_gw,
+                            )
+                            candidate_evidences.extend(extracted_payload.evidences)
+                        except Exception as e:
+                            logger.warning(f"Error extracting evidence via Gemini: {e}")
+                    else:
+                        try:
+                            # Production path: deterministic fallback extractor
+                            for p in roster_batch:
+                                p_evs = text_extractor.extract_evidence_from_text(
+                                    text=cleaned_text,
+                                    player_name=str(p["web_name"]),
+                                    player_id=int(str(p["id"])),
+                                    target_gw=target_gw,
+                                )
+                                for ev in p_evs:
+                                    if ev.category != EvidenceCategory.UNKNOWN:
+                                        ev.source_url = art.get("link", "")
+                                        candidate_evidences.append(ev)
+                        except Exception as e:
+                            logger.warning(f"Error in deterministic fallback extraction: {e}")
         except Exception as e:
             logger.warning(f"Error ingesting news feeds: {e}")
 
@@ -114,6 +136,7 @@ class NewsAnalyzer:
                     "applied_to_production": reconciled.applied_to_production,
                     "is_shadow": not reconciled.applied_to_production,
                     "expected_minutes_limit": reconciled.expected_minutes_limit,
+                    "active_extractor": getattr(self, "_active_extractor", "deterministic_fallback"),
                 }
             )
 
