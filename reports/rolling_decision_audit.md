@@ -56,3 +56,14 @@ An opt-in expiry-window comparison uses identical current inputs for short and e
 - Plan B/C are available on demand without discarding ready core. Plan C now evaluates a legal same-position/budget/club-constrained complete squad, actual XI/captain and hit-adjusted net points. Removed fabricated -0.5 delta, unrelated primary transfer-outs and incorrect hit count. Hold fallback uses owned XI, not WC lineup. Behaviour regression verifies legal trade and points math.
 - Actual core HTTP readback52.22seconds on this host, XI/captain agreement; detailed API47.06seconds; stress67.76seconds. Actual forward capture/retry succeeds, finalized scoring remains pending. Browser1429/390 inspected for core, alternatives, research and diagnostics;12dark/light/missing/failure fixture captures rerun. These are not Windows performance promises.
 - A tracked full run passed322tests340.29seconds before the latest few corrections. Final stable-tree run is separately tracked; don't conflate the two. The independent synthetic proxy test passed123.77seconds and remains synthetic. Thresholds unchanged, no new weights promoted, no calibrated league probability enabled. Main untouched, no FPL actions.
+
+
+## Final frozen-tree regression, October7
+
+Commit59fe81e6fcab06937c586a7e06a6aed85e9f5c48:324passed350.21s,
+0failures/errors/skips,source/tests/scripts/web unchanged during run. Includes
+legalPlanC,XI-consistency,priorFH,immutableforwardforecast and cachedscore
+provenance regressions. JavaScript durable publication/hungauxiliary/stalegeneration
+checks pass. Model/legacyholdout bytes preserved;test-generated calibration/proxy
+outputs excluded. NativeWindows,complete historical advisor replay,empirical
+tail-value calibration and reliable winning odds remain unverified.

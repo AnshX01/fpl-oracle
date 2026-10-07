@@ -78,3 +78,14 @@ not production app captures. Historic synthetic proxy Brier is not deployed-cali
 proof. Title odds and global optimum remain unsupported. Windows final-version
 readback, arbitrary combinations and full historical deadline-grounded advisor replay
 remain outside the evidence presently available.
+
+
+## Final frozen-tree regression, October7
+
+Commit59fe81e6fcab06937c586a7e06a6aed85e9f5c48:324passed350.21s,
+0failures/errors/skips,source/tests/scripts/web unchanged during run. Includes
+legalPlanC,XI-consistency,priorFH,immutableforwardforecast and cachedscore
+provenance regressions. JavaScript durable publication/hungauxiliary/stalegeneration
+checks pass. Model/legacyholdout bytes preserved;test-generated calibration/proxy
+outputs excluded. NativeWindows,complete historical advisor replay,empirical
+tail-value calibration and reliable winning odds remain unverified.

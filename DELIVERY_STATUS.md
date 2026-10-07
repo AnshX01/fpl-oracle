@@ -64,11 +64,19 @@ initial-deadline replay. Private forward evidence is ignored by Git.
 Development evidence: actual core HTTP52.22s, detailed alternatives47.06s,
 changing-rival stress67.76s; these are not laptop timing claims. Source-backed
 research capture/retry/hash checks pass and scoring properly waits for finalization.
-A322-test full run passed340.29s before the last few corrections. A final stable
-full run is in progress and must be checked separately before final publication.
+Final frozen-source regression on59fe81e6fcab06937c586a7e06a6aed85e9f5c48:
+324 tests passed350.21s,0failures,0errors,0skips. Source/tests/scripts/web
+were unchanged for that run. This is host regression evidence, not native Windows certification.
 Ruff(src/tests/scripts),mypy78sourcefiles,JavaScript publication and12dark/light
 state captures pass. Model weights/manifest,legacyGW6freeze and.env preserved.
 No threshold relaxation or model promotion. No actual FPL action.
 
 The user's later instruction forbids intermediate pushes. Local commits are retained;
 remote remainsbbd3d53 until whole-work readiness and one final publication decision.
+
+Final audit: frozen forecast and cached-score provenance checks are included.
+Source tree remained unchanged for the full run. JavaScript delayed/hung/stale
+publication checks passed again. Model directory and legacy holdout bytes match
+the published checkpoint after excluding test-generated outputs. Visual captures
+remain deterministic or clearly labeled official-input research, not evidence of
+native Windows execution. No actual FPL actions or new publication occurred.
