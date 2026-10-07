@@ -505,6 +505,8 @@ const app = createApp({
 
     // Background Synchronization Pipeline
     async triggerSyncPipeline() {
+      this.squadData = {}; this.decisionCard = null; this.contingencyPlans = {};
+      this.chipData = {}; this.leagueData = {}; this.briefingData = {};
       this.pipelineRunning = true;
       this.pipelineProgress = 0;
       this.pipelineCurrentStage = "Triggering data refresh...";
@@ -862,6 +864,12 @@ const app = createApp({
     },
 
     async refreshAll(refresh = false) {
+      this.squadData = {};
+      this.decisionCard = null;
+      this.contingencyPlans = {};
+      this.chipData = {};
+      this.leagueData = {};
+      this.briefingData = {};
       // A forced reopen refresh completes before advice requests use cached upstream data.
       // Render basic data before expensive requests enter the event loop.
       await Promise.all([this.loadBasicSquad(refresh), this.loadGameState(), this.loadProfile()]);

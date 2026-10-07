@@ -103,6 +103,32 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
+@app.middleware("http")
+async def upstream_snapshot_guard(request: Request, call_next):
+    """Pin repeated upstream reads and reject an advice response changed during work."""
+    from fpl_oracle.api.read_context import read_context
+
+    context = {}
+    token = read_context.set(context)
+    try:
+        response = await call_next(request)
+        changed = [
+            key for key, (_, _, timestamp) in context.items() if fpl_client._cache_timestamps.get(key) != timestamp
+        ]
+        if changed and request.method == "GET" and request.url.path.startswith("/api/"):
+            return SafeJSONResponse(
+                status_code=409,
+                content={
+                    "status": "unavailable",
+                    "is_stale": True,
+                    "error": "Upstream data changed during analysis. Refresh the coherent snapshot.",
+                },
+            )
+        return response
+    finally:
+        read_context.reset(token)
+
+
 # CORS: Restrict to local loopback origins for local security
 ALLOWED_ORIGINS = [
     "http://localhost:8000",

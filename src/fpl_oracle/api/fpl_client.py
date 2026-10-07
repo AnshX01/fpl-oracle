@@ -115,17 +115,24 @@ class FPLClient:
         Fetch JSON from endpoint with coalescing, retries with jitter, and stale cache fallback.
         Returns (data, is_stale).
         """
+        from fpl_oracle.api.read_context import recalled, remember
+        pinned = recalled(cache_key)
+        if pinned is not None and not force_refresh:
+            return pinned
         if not force_refresh:
             cache_res = cache_manager.get_with_meta(cache_key)
             if cache_res is not None:
                 data, upd = cache_res
                 self._cache_timestamps[cache_key] = upd
+                remember(cache_key, data, False, upd)
                 return data, False
 
         # Request coalescing: if an identical request is already in flight, await it
         if cache_key in self._in_flight:
             try:
-                return await self._in_flight[cache_key]
+                result = await self._in_flight[cache_key]
+                remember(cache_key, *result, self._cache_timestamps.get(cache_key))
+                return result
             except Exception:
                 pass
 
@@ -134,6 +141,7 @@ class FPLClient:
         self._in_flight[cache_key] = task
         try:
             res = await task
+            remember(cache_key, *res, self._cache_timestamps.get(cache_key))
             return res
         finally:
             self._in_flight.pop(cache_key, None)
