@@ -5,6 +5,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
+import numpy as np
 import pandas as pd
 
 from fpl_oracle.ml.model_registry import model_registry
@@ -162,6 +163,17 @@ class AnalysisService:
         from fpl_oracle.chips.planner import chip_planner
 
         squad = kwargs["current_squad_df"]
+        for frame in kwargs["horizon_projections"].values():
+            if (
+                frame.empty
+                or "element" not in frame
+                or "expected_points" not in frame
+                or not set(squad["element"]).issubset(set(frame["element"]))
+                or not np.isfinite(pd.to_numeric(frame["expected_points"], errors="coerce")).all()
+            ):
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=409, detail="Projection snapshot unavailable; no chip advice generated")
         prices = [
             {
                 "element": int(r["element"]),
@@ -221,7 +233,21 @@ class AnalysisService:
         # Different surfaces attach different projection columns and numeric
         # dtypes to the same owned squad. Canonicalize before cache-keying so
         # they share one CPU plan instead of several identical concurrent beams.
-        target = kwargs["horizon_projections"][kwargs["target_gw"]]
+        target = kwargs["horizon_projections"].get(kwargs["target_gw"], pd.DataFrame())
+        owned_ids = set(kwargs["current_squad_df"].get("element", []))
+        if (
+            target.empty
+            or "expected_points" not in target
+            or "element" not in target
+            or not owned_ids.issubset(set(target["element"]))
+            or not np.isfinite(pd.to_numeric(target["expected_points"], errors="coerce")).all()
+        ):
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=409,
+                detail="Projection snapshot unavailable or missing configured players; no current advice generated",
+            )
         owned = kwargs["current_squad_df"]
         identity_columns = [c for c in ("element", "purchase_price", "selling_price", "price_provenance") if c in owned]
         squad = owned[identity_columns].copy()

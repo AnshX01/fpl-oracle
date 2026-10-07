@@ -42,7 +42,8 @@ class DecisionCardGenerator:
             }
 
         boot, is_stale = await fpl_client.get_bootstrap_static()
-        fixtures, _ = await fpl_client.get_fixtures()
+        fixtures, fixtures_stale = await fpl_client.get_fixtures()
+        is_stale = is_stale or fixtures_stale or effective_state.is_stale
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         effective_curr_gw = curr_gw or game_state.current_gw or 1
         target_gw = next_gw or game_state.next_gw or (effective_curr_gw + 1 if effective_curr_gw < 38 else 38)
@@ -63,6 +64,19 @@ class DecisionCardGenerator:
                 "captain": None,
                 "reason": "Configured squad unavailable",
                 "is_stale": effective_state.is_stale,
+            }
+
+        if (
+            target_df.empty
+            or "element" not in target_df
+            or not set(user_squad_df["element"]).issubset(set(target_df["element"]))
+        ):
+            return {
+                "status": "unavailable",
+                "captain": None,
+                "transfers": None,
+                "reason": "Projection snapshot missing configured players",
+                "is_stale": True,
             }
 
         # Attach current projections to squad

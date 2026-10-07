@@ -585,8 +585,8 @@ async def run_optimizer(req: OptimizeRequest | None = None):
         locked_out_ids=locked_out,
         excluded_team_ids=excl_teams,
     )
-    res["stale"] = is_stale
-    res["is_stale"] = is_stale
+    res["stale"] = is_stale or effective_state.is_stale
+    res["is_stale"] = res["stale"]
     res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     res["manager_state"] = {
         "mode": effective_state.mode.value,
@@ -891,8 +891,8 @@ async def get_contingency_plans():
         risk_preference=profile.risk_preference or "balanced",
         primary_plan=joint["recommended_plan"],
     )
-    plans["stale"] = is_stale
-    plans["is_stale"] = is_stale
+    plans["stale"] = is_stale or state.is_stale
+    plans["is_stale"] = plans["stale"]
     plans["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
     return safe_json_serialize(plans)
 
