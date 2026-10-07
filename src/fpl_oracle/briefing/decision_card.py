@@ -514,7 +514,7 @@ class DecisionCardGenerator:
             in_names = ", ".join(p["web_name"] for p in transfers_in)
             out_names = ", ".join(p["web_name"] for p in transfers_out)
             two_line = (
-                f"Executing {out_names} -> {in_names} gains +{transfers_summary['expected_gain_gw']:.1f} xP this GW and +{transfers_summary['net_gain_vs_roll']:.1f} xP across the {len(joint_res["decision_scope"]["horizon_gameweeks"])}-GW horizon. "
+                f"Executing {out_names} -> {in_names} gains +{transfers_summary['expected_gain_gw']:.1f} xP this GW and +{transfers_summary['net_gain_vs_roll']:.1f} xP across the {len(joint_res['decision_scope']['horizon_gameweeks'])}-GW horizon. "
                 f"Lineup totals {lineup_res['total_gameweek_expected_points']:.1f} xP led by captain {captain_dict['web_name']}."
             )
 
