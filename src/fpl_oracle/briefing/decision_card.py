@@ -102,6 +102,7 @@ class DecisionCardGenerator:
             current_gw=effective_curr_gw,
             target_gw=target_gw,
             available_chips=available_chips,
+            chips_by_set={1: effective_state.chips_remaining_set_1, 2: effective_state.chips_remaining_set_2},
             chips_already_used=chips_used,
         )
 
@@ -513,7 +514,7 @@ class DecisionCardGenerator:
             in_names = ", ".join(p["web_name"] for p in transfers_in)
             out_names = ", ".join(p["web_name"] for p in transfers_out)
             two_line = (
-                f"Executing {out_names} -> {in_names} gains +{transfers_summary['expected_gain_gw']:.1f} xP this GW and +{transfers_summary['net_gain_vs_roll']:.1f} xP across the 5-GW horizon. "
+                f"Executing {out_names} -> {in_names} gains +{transfers_summary['expected_gain_gw']:.1f} xP this GW and +{transfers_summary['net_gain_vs_roll']:.1f} xP across the {len(joint_res["decision_scope"]["horizon_gameweeks"])}-GW horizon. "
                 f"Lineup totals {lineup_res['total_gameweek_expected_points']:.1f} xP led by captain {captain_dict['web_name']}."
             )
 

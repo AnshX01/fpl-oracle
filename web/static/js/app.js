@@ -246,7 +246,7 @@ const app = createApp({
         }
 
         const reasons = [
-          card.two_line_reasoning || "Optimized trajectory across 5-GW horizon based on empirical team and player form.",
+          card.two_line_reasoning || "Projected trajectory based on the served planning horizon.",
           chip.recommend ? chip.reason : `Starting XI led by captain ${card.captain?.web_name || 'Captain'} (${card.captain?.expected_points || 0.0} xP) in a ${card.formation || '3-5-2'} shape.`
         ];
 
@@ -254,7 +254,7 @@ const app = createApp({
           title: title,
           badge: badge,
           badgeClass: badgeClass,
-          gainText: `+${(t.net_gain_vs_roll || 0.0).toFixed(1)} pts (5-GW)`,
+          gainText: `+${(t.net_gain_vs_roll || 0.0).toFixed(1)} pts (${card.decision_scope?.horizon_gameweeks?.length ?? "unknown"}-GW)`,
           hitText: `${t.hit_cost ? '-' + t.hit_cost : '0'} hit pts`,
           bankText: Number.isFinite(t.bank_after) ? `£${t.bank_after.toFixed(1)}m in bank` : "Bank unavailable",
           ftText: `${t.ft_remaining ?? "unavailable"} FT left`,
@@ -590,7 +590,7 @@ const app = createApp({
           this.checklistItems = data.checklist || [];
           const passed = this.checklistItems.filter(i => i.status === 'PASS').length;
           this.checklistSummary = {
-            status: passed === this.checklistItems.length ? 'PASS' : 'WARN',
+            status: this.checklistItems.length === 5 && passed === 5 ? 'PASS' : 'WARN',
             passed_count: passed
           };
         }

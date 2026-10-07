@@ -85,6 +85,7 @@ class WeeklyBriefingGenerator:
             current_gw=effective_curr_gw,
             target_gw=target_gw,
             available_chips=available_chips,
+            chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
             chips_already_used=chips_used,
             risk_preference=profile.risk_preference or "balanced",
         )

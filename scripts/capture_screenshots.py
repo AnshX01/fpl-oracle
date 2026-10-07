@@ -54,7 +54,8 @@ def fixtures():
         },
         "captain": rows[0],
         "formation": "3-5-2",
-        "two_line_reasoning": "Deterministic fixture only.",
+        "two_line_reasoning": "Deterministic fixture only, not live manager data.",
+        "decision_scope": {"horizon_gameweeks": [6, 7, 8, 9, 10]},
         "caveats": [],
     }
     return {
@@ -62,7 +63,7 @@ def fixtures():
         "/api/squad/basic": squad,
         "/api/contingency/plans": {"plan_a": plan},
         "/api/decision-card": card,
-        "/api/game-state": {"next_gw": 6, "deadline_time": "2099-01-01T00:00:00Z"},
+        "/api/game-state": {"current_gw": 5, "phase": "PRE_DEADLINE", "next_gw": 6, "seconds_to_deadline": 86400, "source_kind": "deterministic_fixture"},
         "/api/league": {"status": "empty", "standings": [], "simulation": None},
     }
 
