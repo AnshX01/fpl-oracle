@@ -93,3 +93,56 @@ def test_deadline_formatting_rules():
 
     # < 1 hour -> Xm
     assert format_deadline_py(60 * 45) == "45m"
+
+
+def is_emoji_char(ch: str) -> bool:
+    cp = ord(ch)
+    return (
+        0x1F300 <= cp <= 0x1FAFF
+        or 0x2600 <= cp <= 0x27BF
+        or 0x2B50 <= cp <= 0x2B55
+        or 0x2300 <= cp <= 0x23FF
+        or 0xFE00 <= cp <= 0xFE0F
+    )
+
+
+def test_zero_emojis_in_web_ui():
+    """Verify web/index.html and web/static/js/app.js contain zero emojis."""
+    for file in [INDEX_HTML, APP_JS]:
+        content = file.read_text(encoding="utf-8")
+        emojis = [ch for ch in content if is_emoji_char(ch)]
+        assert not emojis, f"Found {len(emojis)} emoji characters in {file.name}: {emojis[:5]}"
+
+
+def test_zero_emojis_in_src():
+    """Verify all Python source files in src/ contain zero emojis."""
+    src_dir = ROOT / "src"
+    for py_file in src_dir.rglob("*.py"):
+        content = py_file.read_text(encoding="utf-8")
+        emojis = [ch for ch in content if is_emoji_char(ch)]
+        assert not emojis, f"Found {len(emojis)} emoji characters in {py_file}: {emojis[:5]}"
+
+
+def test_squad_availability_empty_state_honesty():
+    """Verify web/index.html requires loaded complete squad data before claiming all players fit."""
+    content = INDEX_HTML.read_text(encoding="utf-8")
+    # Must check !hasLoadedSquad and show squad unavailable message
+    assert "!hasLoadedSquad" in content
+    assert "Squad data unavailable" in content
+    # The claim must be contingent on flaggedSquadPlayers.length === 0, NOT an empty raw squad
+    assert "flaggedSquadPlayers.length === 0" in content
+    # No emoji checkmark next to all fit
+    assert "✅" not in content
+
+
+def test_absent_plan_truthfulness_in_app_js():
+    """Verify app.js does not recommend rolling or fake values when plan/squad is missing."""
+    content = APP_JS.read_text(encoding="utf-8")
+    assert "Transfer recommendations unavailable" in content
+    assert "Loading transfer recommendations..." in content
+    # When squad is missing, rolling must be guarded
+    assert "if (!this.hasLoadedSquad)" in content
+    assert "Cannot recommend rolling without a verified loaded squad" in content
+    # Distinguishes unavailable points from 0.0
+    assert "totalGameweekPoints()" in content
+    assert "return '—'" in content or 'return "—"' in content

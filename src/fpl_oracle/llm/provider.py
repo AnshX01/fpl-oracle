@@ -75,7 +75,7 @@ class OfflineExpertProvider:
                 worse = p2 if p1["expected_points"] >= p2["expected_points"] else p1
                 diff_xp = round(better["expected_points"] - worse["expected_points"], 2)
                 return (
-                    f"### ⚖️ Head-to-Head Comparison: {better['web_name']} vs {worse['web_name']} (GW{res['gameweek']})\n"
+                    f"### Head-to-Head Comparison: {better['web_name']} vs {worse['web_name']} (GW{res['gameweek']})\n"
                     f"**The Decision:** Start / Prioritize **{better['web_name']}** over **{worse['web_name']}** (+{diff_xp} net xP advantage).\n\n"
                     f"**The Numbers:**\n"
                     f"- **{better['web_name']}** (£{better['cost']}m): **{better['expected_points']} xP** (Floor P10: {better['p10']}, Ceiling P90: {better['p90']}, DefCon: +{better['defcon_pts']} pts)\n"
@@ -96,7 +96,7 @@ class OfflineExpertProvider:
                 )
             roadmap_table = "\n".join(rows)
             return (
-                f"### 🗺️ Multi-Gameweek Transfer Roadmap (Next 5 GWs)\n"
+                f"### Multi-Gameweek Transfer Roadmap (Next 5 GWs)\n"
                 f"**The Decision:** Sequential plan prioritizing fixture swings and strategic FT banking (up to 5 max in 2026/27).\n\n"
                 f"| Gameweek | Status | Action | Banked FT | Key Targets |\n"
                 f"|---|---|---|---|---|\n"
@@ -126,7 +126,7 @@ class OfflineExpertProvider:
             ]
             best_diff = top3[0]["web_name"] if top3 else "Selected player"
             return (
-                f"### 🚀 Top Differential {pos_filter}s (Under £{max_cost:.1f}m)\n"
+                f"### Top Differential {pos_filter}s (Under £{max_cost:.1f}m)\n"
                 f"**The Decision:** Target **{best_diff}** as your premier budget differential for the upcoming fixture swing.\n\n"
                 f"**The Numbers:**\n" + "\n".join(c_lines) + "\n\n"
                 "**The Why:** High baseline minutes reliability and substantial upside from the 2026/27 DefCon actions and attacking output.\n"
@@ -147,9 +147,9 @@ class OfflineExpertProvider:
 
             table_str = "\n".join(table_rows)
             return (
-                f"### 🃏 2026/27 Chip Strategy Plan\n"
+                f"### 2026/27 Chip Strategy Plan\n"
                 f"**The Decision:** Execute your 4 Set 1 chips before the Gameweek 19 deadline (Saturday 2 January 2027).\n\n"
-                f"⚠️ **{warning}**\n\n"
+                f"**[Warning]** {warning}\n\n"
                 f"| Chip | Recommended GW | Exp. Gain | Confidence | Tactical Role |\n"
                 f"|---|---|---|---|---|\n"
                 f"{table_str}\n\n"
@@ -167,7 +167,7 @@ class OfflineExpertProvider:
                 for c in cands[:3]
             ]
             return (
-                f"### 🎯 Captaincy Recommendation for Gameweek {res['gameweek']}\n"
+                f"### Captaincy Recommendation for Gameweek {res['gameweek']}\n"
                 f"**The Decision:** Captain **{safe}** (Safe/Template) or **{diff}** (High-Variance Differential).\n\n"
                 f"**The Numbers:**\n" + "\n".join(lines) + "\n\n"
                 f"**The Why:** {safe} ranks highest in the 2026/27 ML model with an elite minutes expectation and attack volume. {diff} provides higher ceiling differential upside if you are chasing in your mini-league.\n"
@@ -219,31 +219,31 @@ class OfflineExpertProvider:
                 t_name = news_res["team"]
                 if news_res.get("is_fit"):
                     return (
-                        f"### 🩺 Player Availability: **{p_name}** ({t_name})\n"
+                        f"### Player Availability: **{p_name}** ({t_name})\n"
                         f"**Status:** Fully Fit & Available (100% chance of playing).\n"
                         f"**Official FPL Signal:** No current injury or suspension flags reported in the Premier League database.\n"
                         f"**Expected Minutes:** Projected to start with full 100% match availability."
                     )
                 else:
                     return (
-                        f"### 🩺 Player Availability: **{p_name}** ({t_name})\n"
+                        f"### Player Availability: **{p_name}** ({t_name})\n"
                         f"**Status:** Flagged ({news_res['availability_status']}) with {news_res['chance_of_playing']}% chance of playing.\n"
                         f"**Official FPL Signal:** {news_res['news']}\n"
                         f"**Source:** {news_res['source']} (Confidence: 1.0)."
                     )
             else:
-                return f"### 🩺 Player Availability: Not Found\nI could not find active Premier League records for '{player_cand}'. No injury signals reported."
+                return f"### Player Availability: Not Found\nI could not find active Premier League records for '{player_cand}'. No injury signals reported."
 
         # 6. Mini-league questions
         if any(w in tokens for w in ["league", "rival", "rivals", "standings", "catch", "win", "rank"]):
             res = await tool_executor.execute("league_analysis", {})
             if "message" in res:
-                return f"### 🏆 Mini-League Intelligence\n{res['message']}"
+                return f"### Mini-League Intelligence\n{res['message']}"
 
             temps = [f"{p['web_name']} ({p['effective_ownership']}%)" for p in res.get("template_players", [])[:3]]
             diffs = [f"{p['web_name']} ({p['effective_ownership']}%)" for p in res.get("differentials", [])[:3]]
             return (
-                f"### 🏆 Mini-League Intelligence for {res['league_name']}\n"
+                f"### Mini-League Intelligence for {res['league_name']}\n"
                 f"**The Decision:** Exploit rival template vulnerabilities with targeted differentials.\n\n"
                 f"- **Top Template (High Rival EO):** {', '.join(temps)}\n"
                 f"- **Key Differentials (<20% EO):** {', '.join(diffs)}\n\n"
@@ -270,7 +270,7 @@ class OfflineExpertProvider:
             if exact_or_close:
                 p = exact_or_close[0]
                 return (
-                    f"### 📊 Player Profile & Projections: **{p['web_name']}**\n"
+                    f"### Player Profile & Projections: **{p['web_name']}**\n"
                     f"- **Position:** {p['position']} | **Cost:** £{p.get('cost', 5.0)}m\n"
                     f"- **Gameweek {proj_res.get('gameweek')} Projected Points:** **{p['expected_points_gw']} xP**\n"
                     f"- **Uncertainty:** Floor P10: {p.get('p10_floor', p.get('p10', '?'))}, Ceiling P90: {p.get('p90_ceiling', p.get('p90', '?'))}\n"
@@ -279,7 +279,7 @@ class OfflineExpertProvider:
                 )
             else:
                 return (
-                    f"### 🔍 Player Lookup: Not Found\n"
+                    f"### Player Lookup: Not Found\n"
                     f"I could not find any active Premier League player matching **'{entity}'** in the official 2026/27 database. "
                     f"This player is unknown or not registered in the current season. Unable to locate data or player records.\n"
                     f"Please verify the spelling or confirm the player is registered in FPL 2026/27."
@@ -293,7 +293,7 @@ class OfflineExpertProvider:
             rises = [f"**{p['web_name']}** ({p['urgency_message']})" for p in res.get("imminent_rises", [])[:3]]
             falls = [f"**{p['web_name']}** ({p['urgency_message']})" for p in res.get("imminent_falls", [])[:3]]
             return (
-                f"### 📈 Price Change Watch (Tonight's Projections)\n"
+                f"### Price Change Watch (Tonight's Projections)\n"
                 f"**Imminent Rises:** {', '.join(rises) if rises else 'None currently at threshold'}\n\n"
                 f"**Imminent Falls:** {', '.join(falls) if falls else 'None currently at threshold'}\n\n"
                 f"**Action:** Make scheduled transfers before 01:30 GMT to avoid losing purchasing power."
@@ -303,7 +303,7 @@ class OfflineExpertProvider:
         if any(w in tokens for w in ["transfer", "transfers", "hit", "hits", "sell", "buy", "haaland"]):
             res = await tool_executor.execute("optimise_transfers", {})
             if "error" in res:
-                return f"### 🔄 Transfer Strategy & Hit Analysis\nUnable to optimize transfers: {res['error']}"
+                return f"### Transfer Strategy & Hit Analysis\nUnable to optimize transfers: {res['error']}"
             rec = res["decision"]
             hit = res["hit_verdict"]
             plans = res.get("candidate_plans", [])
@@ -312,7 +312,7 @@ class OfflineExpertProvider:
             ]
 
             return (
-                f"### 🔄 Transfer Strategy & Hit Analysis\n"
+                f"### Transfer Strategy & Hit Analysis\n"
                 f"**The Decision:** {rec}\n\n"
                 f"**The Numbers (Candidate Plans Evaluated):**\n" + "\n".join(plan_lines) + "\n\n"
                 f"**Hit Verdict:** {hit}\n\n"
@@ -327,7 +327,7 @@ class OfflineExpertProvider:
         ]
 
         return (
-            f"### 🤖 FPL Oracle Expert Grounded Analysis (Season 2026/27)\n"
+            f"### FPL Oracle Expert Grounded Analysis (Season 2026/27)\n"
             f"I have analyzed the current gameweek based on live FPL API data and ML component projections.\n\n"
             f"**Top Projected Assets for Upcoming Gameweek {proj.get('gameweek')}:**\n"
             + "\n".join([f"- {p}" for p in top_players])

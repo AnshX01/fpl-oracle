@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-10-07T05:01:00Z",
+  "provenance": "local_private_live",
+  "screenshots": {
+    "dashboard_desktop": {
+      "file": "dashboard_desktop.png",
+      "size_bytes": 115855,
+      "dimensions": "1920x1080",
+      "state": "populated"
+    },
+    "decision_card_desktop": {
+      "file": "decision_card_desktop.png",
+      "size_bytes": 30834,
+      "state": "populated"
+    },
+    "dashboard_mobile": {
+      "file": "dashboard_mobile.png",
+      "size_bytes": 104504,
+      "dimensions": "390x844",
+      "state": "populated"
+    },
+    "decision_card_mobile": {
+      "file": "decision_card_mobile.png",
+      "size_bytes": 27536,
+      "dimensions": "390x844 element",
+      "state": "populated"
+    },
+    "dashboard_empty_squad_desktop": {
+      "file": "dashboard_empty_squad_desktop.png",
+      "size_bytes": 122109,
+      "dimensions": "1920x1080",
+      "state": "empty_squad_intentional"
+    },
+    "dashboard_empty_squad_mobile": {
+      "file": "dashboard_empty_squad_mobile.png",
+      "size_bytes": 111339,
+      "dimensions": "390x844",
+      "state": "empty_squad_intentional"
+    },
+    "dashboard_failed_api_desktop": {
+      "file": "dashboard_failed_api_desktop.png",
+      "size_bytes": 122668,
+      "dimensions": "1920x1080",
+      "state": "failed_api_intentional"
+    },
+    "dashboard_failed_api_mobile": {
+      "file": "dashboard_failed_api_mobile.png",
+      "size_bytes": 111706,
+      "dimensions": "390x844",
+      "state": "failed_api_intentional"
+    },
+    "dashboard_empty_league_desktop": {
+      "file": "dashboard_empty_league_desktop.png",
+      "size_bytes": 81998,
+      "dimensions": "1920x1080",
+      "state": "empty_league_intentional"
+    },
+    "dashboard_loading_desktop": {
+      "file": "dashboard_loading_desktop.png",
+      "size_bytes": 116699,
+      "dimensions": "1920x1080",
+      "state": "loading_intentional"
+    }
+  },
+  "verifications": {}
+}

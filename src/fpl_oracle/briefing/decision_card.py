@@ -577,7 +577,7 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
     ]
 
     if chip.get("set_1_deadline_warning"):
-        lines.append(f"- **Set 1 Expiry:** ⚠️ {chip['set_1_deadline_warning']}")
+        lines.append(f"- **Set 1 Expiry:** [Warning] {chip['set_1_deadline_warning']}")
 
     lines.extend(
         [

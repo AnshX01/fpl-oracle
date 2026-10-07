@@ -46,10 +46,14 @@ const app = createApp({
 
       // Core Squad & Lineup
       squadData: {},
+      squadLoading: false,
+      squadError: null,
       simulatedOutIds: [],
 
       // Transfers & Contingency Plans
       contingencyPlans: {},
+      plansLoading: false,
+      plansError: null,
       selectedPlanKey: 'plan_a',
       contingencyMatrix: [],
       priceChanges: { rises: [], falls: [] },
@@ -57,6 +61,7 @@ const app = createApp({
       // Unified Decision Card (D1, D2, D3)
       decisionCard: null,
       decisionCardLoading: false,
+      decisionCardError: null,
 
       // Chip Strategy & Roadmaps
       chipData: {},
@@ -110,17 +115,65 @@ const app = createApp({
       return this.theme === 'dark';
     },
 
+    hasLoadedSquad() {
+      return Boolean(this.squadData && this.squadData.starters && this.squadData.starters.length > 0);
+    },
+
+    flaggedSquadPlayers() {
+      if (!this.hasLoadedSquad) return [];
+      const allPlayers = (this.squadData.starters || []).concat(this.squadData.bench || []);
+      return allPlayers.filter(s => s.status !== 'a' || (s.chance_of_playing !== null && s.chance_of_playing < 100) || s.news_quote);
+    },
+
     activePlan() {
       if (!this.contingencyPlans) return null;
       return this.contingencyPlans[this.selectedPlanKey] || this.contingencyPlans.plan_a || null;
     },
 
     nextDecision() {
-      if (this.decisionCard) {
+      if (!this.hasLoadedSquad) {
+        if (this.decisionCardLoading || this.plansLoading || this.squadLoading) {
+          return {
+            title: "Loading recommendations...",
+            badge: "Loading",
+            badgeClass: "bg-zinc-800 text-zinc-400 border border-zinc-700",
+            gainText: "Evaluating",
+            hitText: "--",
+            bankText: "Bank unavailable",
+            ftText: "FT unavailable",
+            reasons: [
+              "Evaluating gameweek projections and multi-GW trajectories.",
+              "Solving optimal transfer and chip combinations."
+            ],
+            caveat: "Please wait while optimization runs.",
+            card: null,
+            isUnavailable: true
+          };
+        }
+        return {
+          title: "Transfer recommendations unavailable",
+          badge: "Unavailable",
+          badgeClass: "bg-zinc-900 text-zinc-400 border border-zinc-700",
+          gainText: "Unavailable",
+          hitText: "Unavailable",
+          bankText: "Bank unavailable",
+          ftText: "FT unavailable",
+          reasons: [
+            this.decisionCardError || this.plansError || this.squadError || "No verified squad data loaded.",
+            "Cannot provide transfer recommendations without verified squad and fixture data."
+          ],
+          caveat: "Configure manager ID or upload a squad in settings to generate recommendations.",
+          card: null,
+          isUnavailable: true
+        };
+      }
+
+      if (this.decisionCard && this.decisionCard.transfers) {
         const card = this.decisionCard;
         const chip = card.chip || {};
         const t = card.transfers || {};
         const isRoll = t.is_roll;
+
 
         let title = "";
         let badge = "";
@@ -157,25 +210,46 @@ const app = createApp({
           ftText: `${t.ft_remaining || 1} FT left`,
           reasons: reasons,
           caveat: (card.caveats && card.caveats.length > 0) ? card.caveats[0] : "Check Friday press conference updates for confirmed starter status.",
-          card: card
+          card: card,
+          isUnavailable: false
         };
       }
 
       const plan = this.activePlan;
       if (!plan) {
+        if (this.decisionCardLoading || this.plansLoading || this.squadLoading) {
+          return {
+            title: "Loading transfer recommendations...",
+            badge: "Loading",
+            badgeClass: "bg-zinc-800 text-zinc-400 border border-zinc-700",
+            gainText: "Evaluating",
+            hitText: "--",
+            bankText: (this.squadData && this.squadData.bank_millions !== undefined) ? `£${this.squadData.bank_millions}m in bank` : "Bank unavailable",
+            ftText: (this.squadData && this.squadData.free_transfers !== undefined) ? `${this.squadData.free_transfers} FT left` : "FT unavailable",
+            reasons: [
+              "Evaluating gameweek projections and multi-GW trajectories.",
+              "Solving optimal transfer and chip combinations."
+            ],
+            caveat: "Please wait while optimization runs.",
+            isUnavailable: true
+          };
+        }
+
+        const errDetail = this.decisionCardError || this.plansError || this.squadError;
         return {
-          title: "Save your free transfer",
-          badge: "Hold Transfer",
-          badgeClass: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40",
-          gainText: "+0.0 pts gain",
-          hitText: "0 hit pts",
-          bankText: `£${this.squadData.bank_millions || '0.0'}m in bank`,
-          ftText: `${this.squadData.free_transfers || 1} FT left`,
+          title: "Transfer recommendations unavailable",
+          badge: "Unavailable",
+          badgeClass: "bg-zinc-900 text-zinc-400 border border-zinc-700",
+          gainText: "Unavailable",
+          hitText: "Unavailable",
+          bankText: (this.squadData && this.squadData.bank_millions !== undefined) ? `£${this.squadData.bank_millions}m in bank` : "Bank unavailable",
+          ftText: (this.squadData && this.squadData.free_transfers !== undefined) ? `${this.squadData.free_transfers} FT left` : "FT unavailable",
           reasons: [
-            "Your starting XI projected points baseline is solid with no flagged absences.",
-            "Banking a free transfer builds tactical flexibility for upcoming fixture swings."
+            errDetail || "No transfer plan available. Verify squad configuration and network connection.",
+            "Cannot provide transfer recommendations without verified squad and fixture data."
           ],
-          caveat: "Check team news before the deadline in case late rotation emerges."
+          caveat: "Configure manager ID or upload a squad in settings to generate recommendations.",
+          isUnavailable: true
         };
       }
 
@@ -202,33 +276,65 @@ const app = createApp({
           caveat: `Subject to Friday press conference clearance and expected starting lineups.`
         };
       } else {
+        if (!this.hasLoadedSquad) {
+          return {
+            title: "Transfer recommendations unavailable",
+            badge: "Unavailable",
+            badgeClass: "bg-zinc-900 text-zinc-400 border border-zinc-700",
+            gainText: "Unavailable",
+            hitText: "Unavailable",
+            bankText: "Bank unavailable",
+            ftText: "FT unavailable",
+            reasons: [
+              "Cannot recommend rolling without a verified loaded squad.",
+              "Please configure your squad to generate valid recommendations."
+            ],
+            caveat: "No squad loaded.",
+            isUnavailable: true
+          };
+        }
         return {
           title: "Save your free transfer",
           badge: "Roll Free Transfer",
           badgeClass: "bg-blue-500/20 text-blue-400 border border-blue-500/40",
           gainText: "0.0 pts (Roll)",
           hitText: "0 hit pts",
-          bankText: `£${this.squadData.bank_millions || '0.0'}m in bank`,
+          bankText: `£${(this.squadData.bank_millions !== undefined ? this.squadData.bank_millions : 0.0).toFixed(1)}m in bank`,
           ftText: `${(this.squadData.free_transfers || 1) + 1} FTs next week`,
           reasons: [
             "Starting XI holds high expected output across all fixtures.",
             "Accumulating a second free transfer provides greater pivot leverage next week."
           ],
-          caveat: "Ensure vice-captain is locked on an early kickoff starter as backup."
+          caveat: "Ensure vice-captain is locked on an early kickoff starter as backup.",
+          isUnavailable: false
         };
       }
     },
 
     startersExpectedPoints() {
-      return (this.squadData.starters_expected_points || 0).toFixed(1);
+      if (!this.hasLoadedSquad || typeof this.squadData?.starters_expected_points !== 'number') return '—';
+      return (this.squadData.starters_expected_points).toFixed(1);
     },
 
     captainBonusPoints() {
-      return (this.squadData.captain_bonus_expected_points || 0).toFixed(1);
+      if (!this.hasLoadedSquad || typeof this.squadData?.captain_bonus_expected_points !== 'number') return '—';
+      return (this.squadData.captain_bonus_expected_points).toFixed(1);
     },
 
     totalGameweekPoints() {
-      return (this.squadData.total_expected_points || 0).toFixed(1);
+      if (!this.hasLoadedSquad || typeof this.squadData?.total_expected_points !== 'number') return '—';
+      return (this.squadData.total_expected_points).toFixed(1);
+    },
+
+    deadlineDisplay() {
+      if (!this.gameState || (!this.gameState.next_gw && !this.gameState.deadline_time && (this.gameState.seconds_to_deadline === null || this.gameState.seconds_to_deadline === undefined))) {
+        return 'Deadline: Unknown';
+      }
+      const formatted = this.formatDeadline(this.gameState.seconds_to_deadline, this.gameState.deadline_time);
+      if (formatted === 'Deadline unknown') {
+        return this.gameState.next_gw ? `GW${this.gameState.next_gw} Deadline: Unknown` : 'Deadline: Unknown';
+      }
+      return this.gameState.next_gw ? `GW${this.gameState.next_gw} Deadline: ${formatted}` : `Deadline: ${formatted}`;
     }
   },
 
@@ -453,17 +559,37 @@ const app = createApp({
     },
 
     async loadSquad() {
+      this.squadLoading = true;
+      this.squadError = null;
       try {
         const res = await fetch('/api/squad');
-        if (res.ok) this.squadData = await res.json();
-      } catch (e) {}
+        if (res.ok) {
+          this.squadData = await res.json();
+        } else {
+          this.squadError = `Squad unavailable (HTTP ${res.status})`;
+        }
+      } catch (e) {
+        this.squadError = "Network error loading squad.";
+      } finally {
+        this.squadLoading = false;
+      }
     },
 
     async loadContingencyPlans() {
+      this.plansLoading = true;
+      this.plansError = null;
       try {
         const res = await fetch('/api/contingency/plans');
-        if (res.ok) this.contingencyPlans = await res.json();
-      } catch (e) {}
+        if (res.ok) {
+          this.contingencyPlans = await res.json();
+        } else {
+          this.plansError = `Plans unavailable (HTTP ${res.status})`;
+        }
+      } catch (e) {
+        this.plansError = "Network error loading transfer plans.";
+      } finally {
+        this.plansLoading = false;
+      }
     },
 
     async loadContingencyMatrix() {
@@ -499,11 +625,17 @@ const app = createApp({
 
     async loadDecisionCard() {
       this.decisionCardLoading = true;
+      this.decisionCardError = null;
       try {
         const res = await fetch('/api/decision-card');
-        if (res.ok) this.decisionCard = await res.json();
+        if (res.ok) {
+          this.decisionCard = await res.json();
+        } else {
+          this.decisionCardError = `Decision card unavailable (HTTP ${res.status})`;
+        }
       } catch (e) {
         console.warn('Failed to fetch decision card:', e);
+        this.decisionCardError = "Network error loading decision card.";
       } finally {
         this.decisionCardLoading = false;
       }
@@ -654,4 +786,7 @@ const app = createApp({
   }
 });
 
-app.mount('#app');
+const vm = app.mount('#app');
+window.__fpl_vm__ = vm;
+
+

@@ -58,8 +58,8 @@
   <header class="border-b border-[#27272a] bg-[#09090b]/90 backdrop-blur sticky top-0 z-40 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
     <!-- Brand & Gameweek Status -->
     <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center font-black text-black shadow-md shadow-emerald-500/20 text-lg">
-        ⚽
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-emerald-400 flex items-center justify-center font-black text-black shadow-md shadow-emerald-500/20 text-xs tracking-wider">
+        FPL
       </div>
       <div>
         <div class="flex items-center gap-2">
@@ -67,50 +67,50 @@
           <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-semibold border border-emerald-500/30">2026/27</span>
         </div>
         <div class="text-xs text-zinc-400 flex items-center gap-2 mt-0.5">
-          <span>{{ gameState.current_gw ? 'GW' + gameState.current_gw : 'GW' }} {{ gameState.phase === 'LIVE' ? '🔴 Live' : (gameState.phase ? 'Finished' : 'Loading') }}</span>
+          <span>{{ gameState.current_gw ? 'GW' + gameState.current_gw : 'GW' }} <span v-if="gameState.phase === 'LIVE'" class="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] uppercase font-bold">Live</span><span v-else class="text-zinc-400">{{ gameState.phase ? gameState.phase : 'Loading' }}</span></span>
           <span class="w-1 h-1 rounded-full bg-zinc-600"></span>
-          <span class="text-emerald-400 font-medium">{{ gameState.next_gw ? 'GW' + gameState.next_gw + ' Deadline: ' : 'Deadline: ' }}{{ formatDeadline(gameState.seconds_to_deadline, gameState.deadline_time) }}</span>
+          <span class="text-emerald-400 font-medium">{{ deadlineDisplay }}</span>
         </div>
       </div>
     </div>
 
     <!-- Operational Action Buttons -->
     <div class="flex items-center flex-wrap gap-2 text-xs">
-      <!-- 🚨 Panic Crisis Solver -->
+      <!-- Panic Crisis Solver -->
       <button @click="openPanicModal" class="panic-btn-pulse px-3 py-1.5 rounded-md bg-red-600 hover:bg-red-500 text-white font-bold transition flex items-center gap-1.5 shadow">
-        <span>🚨</span>
+        <span class="px-1 rounded bg-black/30 text-[10px] uppercase font-mono tracking-wider">Alert</span>
         <span class="hidden sm:inline">Emergency</span>
         <span>Panic</span>
       </button>
 
-      <!-- 🛡️ Pre-Deadline Audit -->
-      <button @click="openChecklistModal" :class="checklistSummary.status === 'PASS' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'" class="px-3 py-1.5 rounded-md border font-semibold flex items-center gap-1.5 transition">
-        <span>{{ checklistSummary.status === 'PASS' ? '🛡️' : '⚠️' }}</span>
+      <!-- Pre-Deadline Audit -->
+      <button @click="openChecklistModal" :class="checklistSummary.status === 'PASS' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'" class="px-3 py-1.5 rounded-md border font-semibold flex items-center gap-1.5 transition font-mono">
+        <span class="text-[10px] uppercase font-bold">{{ checklistSummary.status === 'PASS' ? '[PASS]' : '[WARN]' }}</span>
         <span>Audit: {{ checklistSummary.passed_count ?? 0 }}/5</span>
       </button>
 
-      <!-- ⚡ Update Data (Sync Pipeline) -->
+      <!-- Update Data (Sync Pipeline) -->
       <button @click="triggerSyncPipeline" :disabled="pipelineRunning" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium transition flex items-center gap-1.5 disabled:opacity-50">
-        <span v-if="pipelineRunning" class="animate-spin text-emerald-400">⚙️</span>
-        <span v-else class="text-emerald-400">⚡</span>
+        <span v-if="pipelineRunning" class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping mr-1"></span>
+        <span v-else class="text-emerald-400 font-bold font-mono text-xs">SYNC</span>
         <span>{{ pipelineRunning ? 'Updating (' + pipelineProgress + '%)' : 'Update Data' }}</span>
       </button>
 
-      <!-- 💬 Ask About My Team (AI Chat Drawer) -->
-      <button @click="showChatDrawer = true" class="px-3 py-1.5 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-semibold transition flex items-center gap-1.5">
-        <span>💬</span>
-        <span>Ask AI</span>
+      <!-- Ask About My Team (AI Chat Drawer) -->
+      <button @click="showChatDrawer = true" class="px-3 py-1.5 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 font-semibold transition flex items-center gap-1.5 font-mono">
+        <span class="text-xs uppercase font-bold">AI</span>
+        <span>Ask Local</span>
       </button>
 
-      <!-- 🌓 Theme Toggle (Light / Dark) -->
-      <button @click="toggleTheme" class="p-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition" :title="isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'">
-        <span v-if="isDark">☀️</span>
-        <span v-else>🌙</span>
+      <!-- Theme Toggle (Light / Dark) -->
+      <button @click="toggleTheme" class="px-2.5 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition font-mono text-[11px]" :title="isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'">
+        <span v-if="isDark">LIGHT</span>
+        <span v-else>DARK</span>
       </button>
 
-      <!-- ⚙️ Manager Settings -->
+      <!-- Manager Settings -->
       <button @click="showSettingsModal = true" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium transition flex items-center gap-1.5">
-        <span>👤</span>
+        <span class="text-zinc-400 font-mono text-[11px]">ID</span>
         <span class="max-w-[100px] truncate">{{ squadData.team_name || 'Settings' }}</span>
       </button>
     </div>
@@ -157,33 +157,27 @@
   <nav class="border-b border-[#27272a] bg-[#09090b] px-4 flex items-center justify-between text-sm">
     <div class="flex space-x-1 overflow-x-auto max-w-6xl mx-auto w-full">
       <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
-        <span>⚡</span>
         <span>Overview</span>
       </button>
 
       <button @click="activeTab = 'team'" :class="activeTab === 'team' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
-        <span>🏟️</span>
-        <span>My team</span>
+        <span>My Team</span>
       </button>
 
       <button @click="activeTab = 'transfers'" :class="activeTab === 'transfers' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
-        <span>🔄</span>
         <span>Transfers</span>
       </button>
 
       <button @click="activeTab = 'league'" :class="activeTab === 'league' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-zinc-400 hover:text-zinc-200 font-medium'" class="py-3 px-5 border-b-2 transition whitespace-nowrap shrink-0 flex items-center gap-2">
-        <span>🏆</span>
-        <span>My league</span>
+        <span>My League</span>
       </button>
 
       <!-- Secondary Links -->
       <div class="ml-auto hidden md:flex items-center gap-2">
-        <button @click="showBriefingModal = true" class="text-xs text-zinc-400 hover:text-zinc-200 py-2 px-3 rounded hover:bg-zinc-800 transition flex items-center gap-1.5">
-          <span>📰</span>
+        <button @click="showBriefingModal = true" class="text-xs text-zinc-400 hover:text-zinc-200 py-2 px-3 rounded hover:bg-zinc-800 transition flex items-center gap-1.5 font-mono">
           <span>Weekly Report</span>
         </button>
-        <button @click="showSystemModal = true" class="text-xs text-zinc-400 hover:text-zinc-200 py-2 px-3 rounded hover:bg-zinc-800 transition flex items-center gap-1.5">
-          <span>⚙️</span>
+        <button @click="showSystemModal = true" class="text-xs text-zinc-400 hover:text-zinc-200 py-2 px-3 rounded hover:bg-zinc-800 transition flex items-center gap-1.5 font-mono">
           <span>Diagnostics</span>
         </button>
       </div>
@@ -200,12 +194,12 @@
     <!-- ========================================== -->
     <section v-if="activeTab === 'overview'" class="space-y-6">
       
-      <!-- 🎯 COUNCIL DECISION CARD: YOUR NEXT DECISION (D1, D2, D3) -->
+      <!-- COUNCIL DECISION CARD: YOUR NEXT DECISION (D1, D2, D3) -->
       <div id="decision-card" class="council-card p-6 border-l-4 border-l-emerald-500 space-y-4">
         <!-- Chip Recommendation Banner if Active -->
         <div v-if="nextDecision.card && nextDecision.card.chip && nextDecision.card.chip.recommend" class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <span class="text-base">⭐</span>
+            <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold">CHIP</span>
             <span><strong>Chip plan:</strong> Deploy <strong>{{ nextDecision.card.chip.chip_display_name }}</strong> this gameweek (+{{ nextDecision.card.chip.gain_vs_hold }} xP over hold baseline).</span>
           </div>
           <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-200 font-mono text-[10px]">Action Required</span>
@@ -214,7 +208,6 @@
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <span class="decision-badge" :class="nextDecision.badgeClass">
-              <span>🎯</span>
               <span>Your Next Decision</span>
             </span>
             <span class="text-xs text-zinc-400 font-mono">{{ gameState.next_gw ? 'Gameweek ' + gameState.next_gw : 'Upcoming' }} Recommendation</span>
@@ -224,7 +217,7 @@
               Model {{ nextDecision.card.model_version }}
             </span>
             <button @click="exportDecisionCard" class="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-medium transition flex items-center gap-1.5" title="Copy printable markdown decision card to clipboard">
-              <span>📋</span>
+              <span class="font-mono text-[10px] text-zinc-400">MD</span>
               <span>Export Card</span>
             </button>
           </div>
@@ -258,7 +251,7 @@
         <!-- Caveat & Action Bar -->
         <div class="pt-2 border-t border-zinc-800 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div class="text-amber-400/90 flex items-center gap-1.5">
-            <span>⚠️</span>
+            <span class="font-mono text-[10px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold">NOTE</span>
             <span>{{ nextDecision.caveat }}</span>
           </div>
           <div class="flex items-center gap-3">
@@ -271,7 +264,7 @@
         </div>
       </div>
 
-      <!-- 📊 PREDICTED POINTS SUMMARY & COLLAPSIBLE BREAKDOWN -->
+      <!-- PREDICTED POINTS SUMMARY & COLLAPSIBLE BREAKDOWN -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         
         <!-- Predicted Points Card -->
@@ -325,7 +318,7 @@
             <div class="flex items-center justify-between">
               <div>
                 <div class="text-lg font-bold text-white flex items-center gap-1.5">
-                  <span>⭐</span>
+                  <span class="px-1.5 py-0.5 rounded bg-emerald-500 text-black text-[10px] font-black font-mono">C</span>
                   <span>{{ squadData.captain.web_name }}</span>
                 </div>
                 <div class="text-xs text-zinc-400 font-mono">
@@ -340,11 +333,14 @@
 
             <div v-if="squadData.vice_captain" class="border-t border-zinc-800/80 pt-2 flex items-center justify-between text-xs">
               <div class="flex items-center gap-1.5 text-zinc-300">
-                <span class="text-blue-400">🛡️ VC:</span>
+                <span class="text-blue-400 font-bold font-mono">VC:</span>
                 <span>{{ squadData.vice_captain.web_name }}</span>
               </div>
               <span class="text-zinc-400 font-mono">{{ squadData.vice_captain.expected_points }} pts</span>
             </div>
+          </div>
+          <div v-else class="text-xs text-zinc-500 italic py-4 text-center">
+            Captain data unavailable.
           </div>
         </div>
 
@@ -371,19 +367,22 @@
         </div>
       </div>
 
-      <!-- 📋 SQUAD AVAILABILITY & INJURY RADAR (N7) -->
+      <!-- SQUAD AVAILABILITY & INJURY RADAR (N7) -->
       <div class="council-card p-5 space-y-3">
         <h3 class="font-bold text-sm text-white flex items-center justify-between">
-          <span>🩺 Squad Availability & News Alerts</span>
+          <span class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>Squad Availability & News Alerts</span>
+          </span>
           <span class="text-xs font-normal text-zinc-400">Verified official Premier League flags & manager press quotes</span>
         </h3>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div v-for="player in (squadData.starters || []).concat(squadData.bench || []).filter(s => s.status !== 'a' || s.chance_of_playing < 100 || s.news_quote)" :key="player.element" class="p-3 rounded-lg bg-zinc-950 border border-amber-500/30 flex items-start justify-between gap-2">
+          <div v-for="player in flaggedSquadPlayers" :key="player.element" class="p-3 rounded-lg bg-zinc-950 border border-amber-500/30 flex items-start justify-between gap-2">
             <div class="space-y-1.5 w-full">
               <div class="font-bold text-white flex items-center justify-between">
                 <div class="flex items-center gap-1.5">
-                  <span>⚠️</span>
+                  <span class="px-1 py-0.2 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold font-mono">FLAG</span>
                   <span>{{ player.web_name }}</span>
                   <span class="text-[10px] text-amber-400 font-mono">({{ player.chance_of_playing ?? 75 }}% chance)</span>
                 </div>
@@ -408,8 +407,16 @@
             </div>
           </div>
 
-          <div v-if="(squadData.starters || []).concat(squadData.bench || []).filter(s => s.status !== 'a' || s.chance_of_playing < 100 || s.news_quote).length === 0" class="col-span-2 p-3 rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 italic text-center">
-            ✅ All squad players are fully fit and available with 100% playing chance.
+          <!-- Truthful squad availability states -->
+          <div v-if="squadLoading" class="col-span-2 p-4 rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 italic text-center">
+            Loading squad availability data...
+          </div>
+          <div v-else-if="!hasLoadedSquad" class="col-span-2 p-4 rounded-lg bg-zinc-950/60 border border-zinc-800 text-zinc-400 italic text-center space-y-1">
+            <div class="text-zinc-300 font-medium">Squad data unavailable</div>
+            <div class="text-xs text-zinc-500">Configure manager ID in settings or import squad to evaluate player fitness and availability.</div>
+          </div>
+          <div v-else-if="flaggedSquadPlayers.length === 0" class="col-span-2 p-4 rounded-lg bg-zinc-950/60 border border-zinc-800 text-emerald-400 text-center font-medium">
+            All 15 squad players are fully fit and available with 100% playing chance.
           </div>
         </div>
       </div>
@@ -432,7 +439,7 @@
             Paste / Custom Squad
           </button>
           <button @click="showSettingsModal = true" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium transition">
-            🔒 Server Config
+            Server Config
           </button>
         </div>
       </div>
@@ -448,7 +455,7 @@
         <!-- Interactive Autosub Alert if a starter is simulated absent -->
         <div v-if="simulatedOutIds.length > 0" class="relative z-20 bg-amber-500/20 border border-amber-500/40 rounded-xl p-3 mb-4 flex items-center justify-between text-xs text-amber-200">
           <div class="flex items-center gap-2">
-            <span>🔄</span>
+            <span class="px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-300 text-[10px] font-bold font-mono">AUTOSUB</span>
             <span>
               Starter marked absent -> Reserve 1 ({{ (squadData.bench && squadData.bench[1]) ? squadData.bench[1].web_name : 'First Reserve' }}) automatically promoted to Starting XI!
             </span>
@@ -553,7 +560,7 @@
       <!-- BENCH DUGOUT -->
       <div class="council-card p-4 space-y-3">
         <h3 class="text-sm font-bold text-white flex items-center justify-between">
-          <span>🪑 Bench</span>
+          <span>Bench Dugout</span>
           <span class="text-xs font-normal text-zinc-400">1st outfield sub is automatically promoted if a starter plays 0 mins</span>
         </h3>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -577,7 +584,7 @@
       <!-- INJURY & ROTATION CONTINGENCY MATRIX -->
       <div class="council-card p-4 space-y-3">
         <h3 class="font-bold text-sm text-white flex items-center justify-between">
-          <span>🩺 Starter Injury & Rotation Matrix</span>
+          <span>Starter Injury & Rotation Matrix</span>
           <span class="text-xs font-normal text-zinc-400">What if a starter is ruled out: Autosub vs Emergency Transfer</span>
         </h3>
         <div class="overflow-x-auto">
@@ -634,16 +641,13 @@
           </div>
           <!-- 3-Way Plan Toggle -->
           <div class="flex rounded-lg bg-zinc-950 p-1 border border-zinc-800 text-xs font-bold">
-            <button @click="selectedPlanKey = 'plan_a'" :class="selectedPlanKey === 'plan_a' ? 'bg-emerald-600 text-black' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition flex items-center gap-1.5">
-              <span>🎯</span>
+            <button @click="selectedPlanKey = 'plan_a'" :class="selectedPlanKey === 'plan_a' ? 'bg-emerald-600 text-black' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition font-mono">
               <span>Plan A (Primary)</span>
             </button>
-            <button @click="selectedPlanKey = 'plan_b'" :class="selectedPlanKey === 'plan_b' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition flex items-center gap-1.5">
-              <span>🛡️</span>
+            <button @click="selectedPlanKey = 'plan_b'" :class="selectedPlanKey === 'plan_b' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition font-mono">
               <span>Plan B (Injury Pivot)</span>
             </button>
-            <button @click="selectedPlanKey = 'plan_c'" :class="selectedPlanKey === 'plan_c' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition flex items-center gap-1.5">
-              <span>🚀</span>
+            <button @click="selectedPlanKey = 'plan_c'" :class="selectedPlanKey === 'plan_c' ? 'bg-amber-500 text-black' : 'text-zinc-400 hover:text-white'" class="px-3.5 py-1.5 rounded-md transition font-mono">
               <span>Plan C (Differential)</span>
             </button>
           </div>
@@ -670,12 +674,21 @@
           </div>
         </div>
 
+        <!-- Fallback if Active Plan Unavailable -->
+        <div v-else class="p-6 rounded-xl bg-zinc-950 border border-zinc-800 text-center space-y-2">
+          <div class="font-bold text-white text-sm">{{ plansLoading ? 'Loading contingency plans...' : 'No transfer plans available' }}</div>
+          <p class="text-xs text-zinc-400">
+            {{ plansError || 'Verify your squad is configured and refresh recommendations.' }}
+          </p>
+        </div>
+
         <!-- Transfer Actions: IN vs OUT -->
         <div v-if="activePlan" class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <!-- Out -->
           <div class="p-4 rounded-xl bg-red-950/20 border border-red-900/40">
             <div class="text-xs font-bold text-red-400 mb-2 flex items-center gap-1.5">
-              <span>🔻 Transfer OUT</span>
+              <span class="px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-mono text-[10px] border border-red-800 font-bold">OUT</span>
+              <span>Transfer OUT</span>
               <span class="text-[10px] text-zinc-400">({{ (activePlan.transfers_out || []).length }} players)</span>
             </div>
             <div v-if="(activePlan.transfers_out || []).length === 0" class="text-xs text-zinc-500 italic py-2">
@@ -689,7 +702,8 @@
           <!-- In -->
           <div class="p-4 rounded-xl bg-emerald-950/20 border border-emerald-900/40">
             <div class="text-xs font-bold text-emerald-400 mb-2 flex items-center gap-1.5">
-              <span>🔺 Transfer IN</span>
+              <span class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 font-mono text-[10px] border border-emerald-800 font-bold">IN</span>
+              <span>Transfer IN</span>
               <span class="text-[10px] text-zinc-400">({{ (activePlan.transfers_in || []).length }} players)</span>
             </div>
             <div v-if="(activePlan.transfers_in || []).length === 0" class="text-xs text-zinc-500 italic py-2">
@@ -709,7 +723,7 @@
       <!-- PRICE CHANGE RADAR -->
       <div class="council-card p-5 space-y-3">
         <h3 class="font-bold text-sm text-white flex items-center justify-between">
-          <span>📈 Price Change Radar (Tonight's Midnight Market Predictor)</span>
+          <span>Price Change Radar (Tonight's Midnight Market Predictor)</span>
           <span class="text-xs font-normal text-zinc-400">Transfer velocity & net ownership changes</span>
         </h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -825,7 +839,7 @@
       <!-- Drawer Header -->
       <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
         <div class="flex items-center gap-2">
-          <span class="text-lg">💬</span>
+          <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold">AI</span>
           <h3 class="font-bold text-base text-white">Ask About My Team</h3>
         </div>
         <button @click="showChatDrawer = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
@@ -873,13 +887,12 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- MODAL: 🔒 SERVER CONFIGURATION & STATUS     -->
+  <!-- MODAL: SERVER CONFIGURATION & STATUS       -->
   <!-- ========================================== -->
   <div v-if="showSettingsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="council-card max-w-md w-full p-6 space-y-4 shadow-2xl">
       <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
         <h3 class="font-bold text-base text-white flex items-center gap-2">
-          <span>🔒</span>
           <span>Server Configuration Status</span>
         </h3>
         <button @click="showSettingsModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
@@ -920,7 +933,7 @@
         </div>
 
         <div class="p-2 text-[10px] text-zinc-500 bg-zinc-900/50 rounded border border-zinc-800">
-          🛡️ <strong>Privacy Notice</strong>: Personal IDs and API keys are stored solely in project-local <code>.env</code> and loaded server-side. No secret entry forms exist in the web client.
+          <strong>Privacy Notice</strong>: Personal IDs and API keys are stored solely in project-local <code>.env</code> and loaded server-side. No secret entry forms exist in the web client.
         </div>
       </div>
 
@@ -932,13 +945,13 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- MODAL: 🚨 PANIC CRISIS RESOLVER            -->
+  <!-- MODAL: EMERGENCY PANIC CRISIS RESOLVER     -->
   <!-- ========================================== -->
   <div v-if="showPanicModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="council-card max-w-xl w-full p-6 space-y-4 shadow-2xl border-red-500/50">
-      <div class="flex justify-between items-center border-b border-red-900/50 pb-3">
+      <div class="flex justify-between items-center border-red-900/50 pb-3 border-b">
         <h3 class="font-bold text-base text-red-400 flex items-center gap-2">
-          <span>🚨 Emergency Panic Re-Optimizer</span>
+          <span>Emergency Panic Re-Optimizer</span>
         </h3>
         <button @click="showPanicModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
       </div>
@@ -969,8 +982,9 @@
 
       <!-- Panic Results -->
       <div v-if="panicResult" class="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2 text-xs">
-        <div class="font-bold text-emerald-400 flex items-center gap-1.5">
-          <span>✅ Solution:</span>
+        <div class="font-bold text-emerald-400 flex items-center gap-1.5 font-mono">
+          <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px]">SOLUTION</span>
+          <span>Recommendation:</span>
         </div>
         <div class="text-zinc-200">{{ panicResult.recommendation }}</div>
         <div v-if="panicResult.lineup_action" class="grid grid-cols-2 gap-2 text-[11px] font-mono p-2 rounded bg-zinc-900 mt-2">
@@ -982,21 +996,21 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- MODAL: 🛡️ PRE-DEADLINE AUDIT CHECKLIST    -->
+  <!-- MODAL: PRE-DEADLINE AUDIT CHECKLIST        -->
   <!-- ========================================== -->
   <div v-if="showChecklistModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="council-card max-w-lg w-full p-6 space-y-4 shadow-2xl">
       <div class="flex justify-between items-center border-b border-zinc-800 pb-3">
         <h3 class="font-bold text-base text-white flex items-center gap-2">
-          <span>🛡️ 5-Point Pre-Deadline Operational Checklist</span>
+          <span>5-Point Pre-Deadline Operational Checklist</span>
         </h3>
         <button @click="showChecklistModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
       </div>
 
       <div class="space-y-2 text-xs">
         <div v-for="item in checklistItems" :key="item.category" class="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-start gap-3">
-          <div class="text-base mt-0.5">
-            {{ item.status === 'PASS' ? '✅' : '⚠️' }}
+          <div class="mt-0.5 font-mono font-bold text-xs">
+            <span :class="item.status === 'PASS' ? 'text-emerald-400' : 'text-amber-400'">{{ item.status === 'PASS' ? '[PASS]' : '[WARN]' }}</span>
           </div>
           <div class="flex-1">
             <div class="font-bold text-white flex items-center justify-between">
@@ -1011,7 +1025,7 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- MODAL: 📋 PASTE / UPLOAD CUSTOM SQUAD      -->
+  <!-- MODAL: PASTE / UPLOAD CUSTOM SQUAD         -->
   <!-- ========================================== -->
   <div v-if="showSquadModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="council-card max-w-xl w-full p-6 space-y-4 shadow-2xl">
@@ -1035,7 +1049,7 @@
           <div class="font-bold text-white flex items-center justify-between">
             <span>Matched: {{ matchResult.total_matched }}/15</span>
             <span :class="matchResult.is_valid_15 ? 'text-emerald-400' : 'text-amber-400'" class="font-mono">
-              {{ matchResult.is_valid_15 ? '✅ Valid 15 Squad' : '⚠️ Need 15 (2 GK, 5 DEF, 5 MID, 3 FWD)' }}
+              {{ matchResult.is_valid_15 ? 'Valid 15 Squad' : 'Need 15 (2 GK, 5 DEF, 5 MID, 3 FWD)' }}
             </span>
           </div>
           <button v-if="matchResult.is_valid_15" @click="saveManualSquad" :disabled="savingSquad" class="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs transition">
@@ -1047,21 +1061,21 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- MODAL: 📰 WEEKLY REPORT & REVIEW           -->
+  <!-- MODAL: WEEKLY REPORT & REVIEW             -->
   <!-- ========================================== -->
   <div v-if="showBriefingModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="council-card max-w-3xl w-full p-6 space-y-4 shadow-2xl max-h-[85vh] flex flex-col justify-between">
       <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
         <div class="flex gap-2 text-xs">
-          <button @click="briefingSubTab = 'preview'" :class="briefingSubTab === 'preview' ? 'bg-emerald-600 text-black font-bold' : 'text-zinc-400 hover:text-white'" class="px-3 py-1.5 rounded-md transition">
+          <button @click="briefingSubTab = 'preview'" :class="briefingSubTab === 'preview' ? 'bg-emerald-600 text-black font-bold' : 'text-zinc-400 hover:text-white'" class="px-3 py-1.5 rounded-md transition font-mono">
             Weekly Briefing
           </button>
-          <button @click="briefingSubTab = 'review'; loadReview()" :class="briefingSubTab === 'review' ? 'bg-emerald-600 text-black font-bold' : 'text-zinc-400 hover:text-white'" class="px-3 py-1.5 rounded-md transition">
+          <button @click="briefingSubTab = 'review'; loadReview()" :class="briefingSubTab === 'review' ? 'bg-emerald-600 text-black font-bold' : 'text-zinc-400 hover:text-white'" class="px-3 py-1.5 rounded-md transition font-mono">
             Post-Match Review
           </button>
         </div>
         <div class="flex items-center gap-2">
-          <button @click="copyBriefingMarkdown" class="text-xs px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium border border-zinc-700">
+          <button @click="copyBriefingMarkdown" class="text-xs px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium border border-zinc-700 font-mono">
             Copy Markdown
           </button>
           <button @click="showBriefingModal = false" class="text-zinc-400 hover:text-white text-lg font-bold">&times;</button>
@@ -1076,7 +1090,7 @@
   </div>
 
   <!-- ========================================== -->
-  <!-- MODAL: ⚙️ SYSTEM DIAGNOSTICS & TELEMETRY   -->
+  <!-- MODAL: SYSTEM DIAGNOSTICS & TELEMETRY     -->
   <!-- ========================================== -->
   <div v-if="showSystemModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="council-card max-w-xl w-full p-6 space-y-4 shadow-2xl">
@@ -1105,7 +1119,7 @@
   <!-- TOAST NOTIFICATION                         -->
   <!-- ========================================== -->
   <div v-if="showToast" class="fixed bottom-4 right-4 z-50 bg-emerald-600 text-black font-bold text-xs px-4 py-2.5 rounded-lg shadow-xl transition-all flex items-center gap-2">
-    <span>✅</span>
+    <span class="font-mono font-black">[OK]</span>
     <span>{{ toastMessage }}</span>
   </div>
 

@@ -150,11 +150,11 @@ class WeeklyBriefingGenerator:
         vc = lineup_res["vice_captain"]
         rec_plan = transfers_res["recommended_plan"]
 
-        markdown = f"""# ⚽ FPL Oracle — Gameweek {target_gw} Executive Briefing
+        markdown = f"""# FPL Oracle - Gameweek {target_gw} Executive Briefing
 
 **Generated:** {datetime.now(UTC).strftime("%A, %d %B %Y %H:%M UTC")}
 **Deadline:** {deadline_str}
-**Status:** {"⚠️ STALE DATA (API Unavailable)" if is_stale else "🟢 LIVE & SYNCHRONIZED"}
+**Status:** {"[STALE DATA] (API Unavailable)" if is_stale else "[LIVE & SYNCHRONIZED]"}
 
 ---
 
