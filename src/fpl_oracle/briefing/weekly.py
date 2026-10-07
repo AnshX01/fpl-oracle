@@ -33,7 +33,8 @@ class WeeklyBriefingGenerator:
         boot, is_stale = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or 6
+        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+        effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
         # Deadline time for next gameweek
         next_event = next((e for e in boot.events if e.id == target_gw), None)
@@ -49,9 +50,9 @@ class WeeklyBriefingGenerator:
         user_squad_df = None
         user_history = None
 
-        if m_id:
+        if m_id and curr_gw:
             try:
-                picks, _ = await fpl_client.get_manager_picks(m_id, curr_gw or 5)
+                picks, _ = await fpl_client.get_manager_picks(m_id, curr_gw)
                 picks_ids = [p.element for p in picks.picks]
                 user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
                 if picks.entry_history:
@@ -76,13 +77,13 @@ class WeeklyBriefingGenerator:
             bank=bank,
             free_transfers=ft,
             horizon_projections=horizon_proj,
-            current_gw=curr_gw or 5,
+            current_gw=effective_curr_gw,
             target_gw=target_gw,
         )
 
         # 3. Chip Strategy
         chip_res = chip_planner.generate_chip_strategy(
-            current_gw=curr_gw or 5,
+            current_gw=effective_curr_gw,
             current_squad_df=user_squad_df,
             horizon_projections=horizon_proj,
             fixtures=fixtures,
@@ -109,21 +110,38 @@ class WeeklyBriefingGenerator:
                 rivals_res = await rival_analyzer.analyze_rivals(
                     standings=standings["standings"],
                     user_manager_id=m_id,
-                    current_gw=curr_gw or 5,
+                    current_gw=effective_curr_gw,
                     bootstrap=boot,
                 )
                 user_total = 0
                 if m_id:
                     user_entry, _ = await fpl_client.get_manager_entry(m_id)
                     user_total = user_entry.summary_overall_points or 0
-                strategy = league_strategy_advisor.evaluate_strategy(
-                    user_rank=1, user_total_points=user_total, rivals_analysis=rivals_res, user_squad_df=user_squad_df
-                )
-                league_summary = {
-                    "league_name": standings["league_name"],
-                    "strategy_mode": strategy["mode_title"],
-                    "tactics": strategy["tactical_recommendations"],
-                }
+
+                user_rank = None
+                for row in standings.get("standings", []):
+                    if row.get("entry") == m_id:
+                        user_rank = row.get("rank")
+                        break
+
+                if user_rank is not None:
+                    strategy = league_strategy_advisor.evaluate_strategy(
+                        user_rank=user_rank,
+                        user_total_points=user_total,
+                        rivals_analysis=rivals_res,
+                        user_squad_df=user_squad_df,
+                    )
+                    league_summary = {
+                        "league_name": standings["league_name"],
+                        "strategy_mode": strategy["mode_title"],
+                        "tactics": strategy["tactical_recommendations"],
+                    }
+                else:
+                    league_summary = {
+                        "league_name": standings.get("league_name", f"League #{league_id}"),
+                        "strategy_mode": "Unavailable",
+                        "tactics": ["Manager not found in mini-league standings."],
+                    }
             except Exception:
                 pass
 

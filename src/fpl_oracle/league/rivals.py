@@ -18,60 +18,67 @@ import pandas as pd
 
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.models import BootstrapStatic
+from fpl_oracle.config import RIVAL_POINTS_WINDOW
 
 logger = logging.getLogger("fpl_oracle.league.rivals")
-
-RIVAL_POINTS_WINDOW = 20
-MAX_RIVALS_DEFAULT = 50
 
 
 def get_rival_set(
     standings: list[dict[str, Any]],
     user_manager_id: int | None,
-    points_window: int = RIVAL_POINTS_WINDOW,
+    points_window: int | None = None,
 ) -> tuple[list[dict[str, Any]], str, int | None]:
     """
-    Unified single source of truth for proximity rival selection (Requirement F5):
-    - ALL managers ranked ABOVE user (no artificial cap).
-    - Managers within points_window (20 pts) BELOW user (no artificial cap).
-    - If user is 1st or points gap is large, selects top 10 chasers.
-    - If user not in standings, returns top standings without arbitrary truncation.
+    Unified single source of truth for proximity rival selection (Requirement G8):
+    - Rivals = every manager ranked above user + every manager within points_window below.
+    - If user is first, the set is only those within points_window below, even if empty
+      (then status 'leader, no close chasers'), NEVER forced chasers.
+    - If manager is unknown or not found in standings, returns explicit 'unavailable' status.
     """
+    if points_window is None:
+        points_window = RIVAL_POINTS_WINDOW
+
     if not standings:
         return [], "EMPTY_STANDINGS", None
 
+    if user_manager_id is None:
+        return [], "unavailable", None
+
     # Find user entry
     user_idx = None
-    if user_manager_id:
-        for idx, entry in enumerate(standings):
-            if entry.get("entry") == user_manager_id:
-                user_idx = idx
-                break
+    for idx, entry in enumerate(standings):
+        if entry.get("entry") == user_manager_id:
+            user_idx = idx
+            break
 
-    if user_idx is not None:
-        user_entry = standings[user_idx]
-        user_rank = user_entry.get("rank", user_idx + 1)
-        user_pts = float(user_entry.get("total", 0))
+    if user_idx is None:
+        return [], "unavailable", None
 
-        # All managers above user (no cap)
-        above = [s for s in standings[:user_idx] if s.get("entry") != user_manager_id]
-        # Managers below user within exact 20 points window (no cap)
-        below = [
-            s
-            for s in standings[user_idx + 1 :]
-            if s.get("entry") != user_manager_id and (user_pts - float(s.get("total", 0))) <= points_window
-        ]
+    user_entry = standings[user_idx]
+    user_rank = user_entry.get("rank", user_idx + 1)
+    user_pts = float(user_entry.get("total", 0))
 
-        # If user is in 1st place, ensure at least top 10 chasers are included
-        if user_rank == 1 and len(below) < 10:
-            below = [s for s in standings[1 : min(len(standings), 11)] if s.get("entry") != user_manager_id]
+    # All managers above user (no cap)
+    above = [s for s in standings[:user_idx] if s.get("entry") != user_manager_id]
+    # Managers below user within exact points window (no cap)
+    below = [
+        s
+        for s in standings[user_idx + 1 :]
+        if s.get("entry") != user_manager_id and (user_pts - float(s.get("total", 0))) <= points_window
+    ]
 
-        selected = above + below
-        return selected, "PROXIMITY_WINDOW", user_rank
+    # If user is in 1st place, select ONLY chasers within points_window.
+    # If none in window, return status "leader, no close chasers", NEVER forced 10 chasers.
+    if user_rank == 1:
+        if not below:
+            return [], "leader, no close chasers", user_rank
+        return below, "PROXIMITY_WINDOW", user_rank
 
-    # Fallback: all entries without user
-    selected = [s for s in standings if s.get("entry") != user_manager_id]
-    return selected, "TOP_STANDINGS", None
+    selected = above + below
+    if not selected:
+        return [], "no_rivals_in_window", user_rank
+
+    return selected, "PROXIMITY_WINDOW", user_rank
 
 
 class RivalAnalyzer:
@@ -134,16 +141,18 @@ class RivalAnalyzer:
         bootstrap: BootstrapStatic,
         max_rivals_to_inspect: int | None = None,
         user_squad_df: pd.DataFrame | None = None,
+        points_window: int | None = None,
     ) -> dict[str, Any]:
         """
         Extract squad compositions for proximity rivals and compute effective ownership & exposure.
         """
         elem_map = {e.id: e for e in bootstrap.elements}
+        active_window = points_window if points_window is not None else RIVAL_POINTS_WINDOW
 
         selected_entries, selection_mode, user_rank = self.select_proximity_rivals(
             standings=standings,
             user_manager_id=user_manager_id,
-            points_window=RIVAL_POINTS_WINDOW,
+            points_window=active_window,
             max_rivals=max_rivals_to_inspect,
         )
 
@@ -223,7 +232,18 @@ class RivalAnalyzer:
         if tasks:
             await asyncio.gather(*tasks)
 
-        n_rivals = max(1, len(rival_squads))
+        n_rivals = len(rival_squads)
+        if n_rivals == 0:
+            return {
+                "rivals_analyzed_count": 0,
+                "rival_selection_mode": selection_mode,
+                "rival_points_window": active_window,
+                "user_rank_in_league": user_rank,
+                "rival_squads": [],
+                "league_effective_ownership": [],
+                "template_players": [],
+                "differential_players": [],
+            }
 
         # Build user ownership lookup if user squad provided
         user_eo_map: dict[int, float] = defaultdict(float)

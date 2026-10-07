@@ -160,7 +160,7 @@ class MonteCarloSimulator:
 
             cap = r.get("captain_element")
             if not cap and starters:
-                cap = max(starters, key=lambda eid: proj_map.get(eid, (3.0, 2.0, 1, "MID"))[0])
+                cap = starters[0]
 
             rival_entries.append(
                 {
@@ -198,7 +198,7 @@ class MonteCarloSimulator:
             trial_rival_rosters = [list(r["starters"]) for r in rival_entries]
             trial_rival_caps = [r["captain"] for r in rival_entries]
 
-            for gw_step in range(horizon_gws):
+            for _gw_step in range(horizon_gws):
                 # 1. Team-level clean sheet draws (Requirement F7: fixture-calibrated per team)
                 team_cs = {t: bool(rng.random() < team_p_cs.get(t, 0.30)) for t in all_unique_teams}
 
@@ -230,13 +230,7 @@ class MonteCarloSimulator:
                     gw_rival = sum(player_draws.get(elem, 0.0) * (2.0 if elem == r_cap else 1.0) for elem in r_roster)
                     trial_rival_pts[i] += gw_rival
 
-                    # 3. Model rival future behavior at subsequent steps (W2)
-                    if gw_step < horizon_gws - 1 and rival_behavior_model == "consensus_template":
-                        # Rival picks highest-xP captain for next GW
-                        if r_roster:
-                            trial_rival_caps[i] = max(
-                                r_roster, key=lambda eid: proj_map.get(eid, (3.0, 2.0, 1, "MID"))[0]
-                            )
+                    # Do not predict or bet on rivals' captains; only use known picks
 
             all_scores = [trial_user_pts] + trial_rival_pts
             rank = sum(1 for s in all_scores if s > trial_user_pts) + 1

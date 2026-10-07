@@ -83,6 +83,10 @@ class FPLSettings(BaseModel):
     telegram_bot_token: str = Field(default="", description="Optional Telegram bot token")
     telegram_chat_id: str = Field(default="", description="Optional Telegram chat ID")
 
+    # League & Rival Intelligence Settings
+    rival_points_window: int = Field(default=20, description="Points window below user for proximity rival selection")
+    max_standings_pages: int = Field(default=200, description="High safety limit for mini-league standings pagination")
+
     def get_redacted_status(self) -> dict[str, Any]:
         """Return diagnostic status without exposing secrets or private IDs."""
         mgr_set = self.fpl_manager_id is not None
@@ -140,6 +144,8 @@ def _load_settings_from_env() -> FPLSettings:
         discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL", "").strip(),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
+        rival_points_window=_parse_int(os.getenv("RIVAL_POINTS_WINDOW")) or 20,
+        max_standings_pages=_parse_int(os.getenv("MAX_STANDINGS_PAGES")) or 200,
     )
 
 
@@ -156,6 +162,8 @@ ANTHROPIC_API_KEY = app_config.anthropic_api_key
 OPENAI_API_KEY = app_config.openai_api_key
 FPL_MANAGER_ID = str(app_config.fpl_manager_id) if app_config.fpl_manager_id else ""
 FPL_TARGET_LEAGUE_ID = str(app_config.fpl_target_league_id) if app_config.fpl_target_league_id else ""
+RIVAL_POINTS_WINDOW = app_config.rival_points_window
+MAX_STANDINGS_PAGES = app_config.max_standings_pages
 TAVILY_API_KEY = app_config.tavily_api_key
 BRAVE_API_KEY = app_config.brave_api_key
 ODDS_API_KEY = app_config.odds_api_key

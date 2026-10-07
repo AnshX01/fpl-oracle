@@ -1,0 +1,27 @@
+Command: .venv\Scripts\python.exe -m pytest tests/test_rivals_standings.py tests/test_rival_set.py -v
+Exit Code: 0
+
+Output:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 12 items
+
+tests/test_rivals_standings.py::test_leader_case_no_close_chasers PASSED [  8%]
+tests/test_rivals_standings.py::test_leader_case_with_close_chasers PASSED [ 16%]
+tests/test_rivals_standings.py::test_missing_manager_returns_unavailable PASSED [ 25%]
+tests/test_rivals_standings.py::test_mocked_120_page_league[asyncio] PASSED [ 33%]
+tests/test_rivals_standings.py::test_partial_standings_hit_safety_limit[asyncio] PASSED [ 41%]
+tests/test_rivals_standings.py::test_partial_standings_failed_page_with_retry[asyncio] PASSED [ 50%]
+tests/test_rivals_standings.py::test_decision_card_missing_manager_shows_unavailable[asyncio] PASSED [ 58%]
+tests/test_rivals_standings.py::test_decision_card_leader_no_close_chasers[asyncio] PASSED [ 66%]
+tests/test_rival_set.py::test_rival_set_120_managers_exact_window PASSED [ 75%]
+tests/test_rival_set.py::test_rival_set_user_rank_1_no_chasers_in_window PASSED [ 83%]
+tests/test_rival_set.py::test_rival_set_user_rank_1_with_chasers_in_window PASSED [ 91%]
+tests/test_rival_set.py::test_ast_check_no_reintroduced_caps PASSED      [100%]
+
+============================= 12 passed in 18.69s =============================

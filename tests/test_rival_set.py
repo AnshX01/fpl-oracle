@@ -89,8 +89,8 @@ def test_rival_set_120_managers_exact_window():
     assert len(rivals) == 59
 
 
-def test_rival_set_user_rank_1():
-    """When user is in 1st place, at least top 10 chasers are included."""
+def test_rival_set_user_rank_1_no_chasers_in_window():
+    """When user is in 1st place and all chasers are outside window, return leader, no close chasers."""
     user_id = 7777
     standings = [{"entry": user_id, "player_name": "Leader", "rank": 1, "total": 600}]
     for r in range(2, 25):
@@ -105,9 +105,24 @@ def test_rival_set_user_rank_1():
 
     rivals, mode, user_rank = get_rival_set(standings, user_manager_id=user_id, points_window=20)
     assert user_rank == 1
-    # Fallback guarantees at least 10 chasers
-    assert len(rivals) >= 10
-    assert rivals[0]["rank"] == 2
+    assert rivals == []
+    assert mode == "leader, no close chasers"
+
+
+def test_rival_set_user_rank_1_with_chasers_in_window():
+    """When user is in 1st place, only chasers within window are included (never forced 10)."""
+    user_id = 7777
+    standings = [
+        {"entry": user_id, "player_name": "Leader", "rank": 1, "total": 600},
+        {"entry": 1002, "player_name": "Chaser 1", "rank": 2, "total": 595},  # 5 pts below
+        {"entry": 1003, "player_name": "Chaser 2", "rank": 3, "total": 585},  # 15 pts below
+        {"entry": 1004, "player_name": "Chaser 3", "rank": 4, "total": 570},  # 30 pts below (outside window)
+    ]
+    rivals, mode, user_rank = get_rival_set(standings, user_manager_id=user_id, points_window=20)
+    assert user_rank == 1
+    assert mode == "PROXIMITY_WINDOW"
+    assert len(rivals) == 2
+    assert [r["entry"] for r in rivals] == [1002, 1003]
 
 
 def test_ast_check_no_reintroduced_caps():

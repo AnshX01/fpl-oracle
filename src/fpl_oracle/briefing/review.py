@@ -28,7 +28,7 @@ class PostGameweekReviewer:
         m_id = manager_id or profile.manager_id
 
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = gameweek or (curr_gw or 5)
+        target_gw = gameweek or curr_gw or (next_gw - 1 if next_gw and next_gw > 1 else 1)
 
         boot, _ = await fpl_client.get_bootstrap_static()
         elem_map = {e.id: e for e in boot.elements}

@@ -205,7 +205,7 @@ class DecisionCardGenerator:
                 pass
 
         chip_strat = chip_planner.generate_chip_strategy(
-            current_gw=curr_gw or 5,
+            current_gw=effective_curr_gw,
             current_squad_df=user_squad_df,
             horizon_projections=horizon_proj,
             fixtures=fixtures,
@@ -265,66 +265,191 @@ class DecisionCardGenerator:
 
         if league_id:
             try:
+                is_gw_known = (curr_gw is not None) or (game_state.current_gw is not None)
                 standings_data = await league_standings_manager.get_league_standings(league_id)
-                if standings_data.get("standings"):
-                    rivals_res = await rival_analyzer.analyze_rivals(
-                        standings=standings_data["standings"],
-                        user_manager_id=effective_state.manager_id,
-                        current_gw=curr_gw or 5,
-                        bootstrap=boot,
-                    )
+                coverage_data = standings_data.get("coverage", {})
 
-                    user_pts = effective_state.overall_points
-                    user_rank = 1
-                    for row in standings_data["standings"]:
-                        if row.get("entry") == effective_state.manager_id:
-                            user_rank = row.get("rank", 1)
-                            break
-
-                    strategy = league_strategy_advisor.evaluate_strategy(
-                        user_rank=user_rank,
-                        user_total_points=user_pts,
-                        rivals_analysis=rivals_res,
-                        user_squad_df=user_squad_df,
-                    )
-
-                    # Monte Carlo
-                    proj_single = projection_engine.predict_gameweek(target_gw, boot, fixtures)
-                    mc_res = monte_carlo_simulator.simulate_league(
-                        user_points=user_pts,
-                        user_squad_df=user_squad_df,
-                        rival_squads=rivals_res.get("rival_squads", []),
-                        projections_df=proj_single,
-                        horizon_gws=5,
-                    )
-
-                    exposure_names = [p.get("web_name", "") for p in rivals_res.get("differential_players", [])[:3]]
-                    diff_names = [p.get("web_name", "") for p in rivals_res.get("template_players", [])[:3]]
-
+                if not is_gw_known:
                     rivals_dict = {
-                        "status": "configured",
+                        "status": "unavailable",
                         "league_name": standings_data.get("league_name", "Mini-League"),
-                        "posture": strategy.get("posture", "BALANCED_ATTACK"),
-                        "posture_reason": strategy.get(
-                            "rationale", "Maintain balanced upside with core template coverage."
-                        ),
-                        "nearest_above_gap": strategy.get("gap_to_leader"),
-                        "nearest_below_gap": strategy.get("gap_to_next"),
-                        "rival_count": len(rivals_res.get("rival_squads", [])),
-                        "exposure_players": exposure_names,
-                        "differential_players": diff_names,
+                        "posture": "UNAVAILABLE",
+                        "posture_reason": "Current gameweek is unknown.",
+                        "nearest_above_gap": None,
+                        "nearest_below_gap": None,
+                        "rival_count": 0,
+                        "exposure_players": [],
+                        "differential_players": [],
+                        "coverage": coverage_data,
                     }
-
                     win_prob_dict = {
-                        "status": "simulated",
-                        "p_first": round(float(mc_res.get("user_win_probability_pct", 0.0)), 1),
-                        "p_above_key_rivals": round(
-                            float(mc_res.get("p_above_key_rivals", mc_res.get("user_win_probability_pct", 0.0))), 1
-                        ),
-                        "expected_rank": round(float(mc_res.get("expected_final_rank", 1.0)), 1),
-                        "mc_se": round(float(mc_res.get("win_prob_se", 0.5)), 2),
-                        "simulation_note": "Joint Bernoulli Monte Carlo simulation (correlated clean-sheets & shared player draws).",
+                        "status": "unavailable",
+                        "p_first": None,
+                        "p_above_key_rivals": None,
+                        "expected_rank": None,
+                        "mc_se": None,
+                        "simulation_note": "Current gameweek is unknown.",
                     }
+                elif not standings_data.get("standings"):
+                    rivals_dict = {
+                        "status": "unavailable",
+                        "league_name": standings_data.get("league_name", "Mini-League"),
+                        "posture": "UNAVAILABLE",
+                        "posture_reason": "Mini-league standings are empty or unavailable.",
+                        "nearest_above_gap": None,
+                        "nearest_below_gap": None,
+                        "rival_count": 0,
+                        "exposure_players": [],
+                        "differential_players": [],
+                        "coverage": coverage_data,
+                    }
+                    win_prob_dict = {
+                        "status": "unavailable",
+                        "p_first": None,
+                        "p_above_key_rivals": None,
+                        "expected_rank": None,
+                        "mc_se": None,
+                        "simulation_note": "Standings are empty or unavailable.",
+                    }
+                else:
+                    user_rank = None
+                    user_row = None
+                    if effective_state.manager_id:
+                        for row in standings_data["standings"]:
+                            if row.get("entry") == effective_state.manager_id:
+                                user_rank = row.get("rank")
+                                user_row = row
+                                break
+
+                    if effective_state.manager_id is None or user_rank is None:
+                        rivals_dict = {
+                            "status": "unavailable",
+                            "league_name": standings_data.get("league_name", "Mini-League"),
+                            "posture": "UNAVAILABLE",
+                            "posture_reason": "Manager not found in mini-league standings."
+                            if effective_state.manager_id
+                            else "Manager ID not configured in .env.",
+                            "nearest_above_gap": None,
+                            "nearest_below_gap": None,
+                            "rival_count": 0,
+                            "exposure_players": [],
+                            "differential_players": [],
+                            "coverage": coverage_data,
+                        }
+                        win_prob_dict = {
+                            "status": "unavailable",
+                            "p_first": None,
+                            "p_above_key_rivals": None,
+                            "expected_rank": None,
+                            "mc_se": None,
+                            "simulation_note": "Manager not found in mini-league standings."
+                            if effective_state.manager_id
+                            else "Manager ID not configured.",
+                        }
+                    else:
+                        eval_gw = effective_curr_gw
+                        rivals_res = await rival_analyzer.analyze_rivals(
+                            standings=standings_data["standings"],
+                            user_manager_id=effective_state.manager_id,
+                            current_gw=eval_gw,
+                            bootstrap=boot,
+                        )
+
+                        user_pts = int(user_row.get("total", effective_state.overall_points)) if user_row is not None else int(effective_state.overall_points)
+                        selection_mode = rivals_res.get("rival_selection_mode", "")
+
+                        if selection_mode == "leader, no close chasers":
+                            strategy = league_strategy_advisor.evaluate_strategy(
+                                user_rank=user_rank,
+                                user_total_points=user_pts,
+                                rivals_analysis=rivals_res,
+                                user_squad_df=user_squad_df,
+                            )
+                            rivals_dict = {
+                                "status": "leader, no close chasers",
+                                "league_name": standings_data.get("league_name", "Mini-League"),
+                                "posture": strategy.get("posture", "CONSOLIDATE_LEAD"),
+                                "posture_reason": "Leader with no close chasers within points window.",
+                                "nearest_above_gap": 0,
+                                "nearest_below_gap": strategy.get("gap_to_next"),
+                                "rival_count": 0,
+                                "exposure_players": [],
+                                "differential_players": [],
+                                "coverage": coverage_data,
+                            }
+                            win_prob_dict = {
+                                "status": "leader, no close chasers",
+                                "p_first": 100.0,
+                                "p_above_key_rivals": 100.0,
+                                "expected_rank": 1.0,
+                                "mc_se": 0.0,
+                                "simulation_note": "Leader with no rivals within points window.",
+                            }
+                        else:
+                            strategy = league_strategy_advisor.evaluate_strategy(
+                                user_rank=user_rank,
+                                user_total_points=user_pts,
+                                rivals_analysis=rivals_res,
+                                user_squad_df=user_squad_df,
+                            )
+
+                            # Monte Carlo simulation
+                            proj_single = projection_engine.predict_gameweek(target_gw, boot, fixtures)
+                            mc_res = monte_carlo_simulator.simulate_league(
+                                user_points=user_pts,
+                                user_squad_df=user_squad_df,
+                                rival_squads=rivals_res.get("rival_squads", []),
+                                projections_df=proj_single,
+                                horizon_gws=5,
+                            )
+
+                            exposure_names = [
+                                p.get("web_name", "") for p in rivals_res.get("differential_players", [])[:3]
+                            ]
+                            diff_names = [p.get("web_name", "") for p in rivals_res.get("template_players", [])[:3]]
+
+                            rivals_dict = {
+                                "status": "configured",
+                                "league_name": standings_data.get("league_name", "Mini-League"),
+                                "posture": strategy.get("posture", "BALANCED_ATTACK"),
+                                "posture_reason": strategy.get(
+                                    "rationale", "Maintain balanced upside with core template coverage."
+                                ),
+                                "nearest_above_gap": strategy.get("gap_to_leader"),
+                                "nearest_below_gap": strategy.get("gap_to_next"),
+                                "rival_count": len(rivals_res.get("rival_squads", [])),
+                                "exposure_players": exposure_names,
+                                "differential_players": diff_names,
+                                "coverage": coverage_data,
+                            }
+
+                            if mc_res.get("status") == "NO_RIVALS_FOUND":
+                                win_prob_dict = {
+                                    "status": "no_rivals",
+                                    "p_first": None,
+                                    "p_above_key_rivals": None,
+                                    "expected_rank": None,
+                                    "mc_se": None,
+                                    "simulation_note": mc_res.get(
+                                        "message", "No rivals found in window for simulation."
+                                    ),
+                                }
+                            else:
+                                win_prob_dict = {
+                                    "status": "simulated",
+                                    "p_first": round(float(mc_res.get("user_win_probability_pct", 0.0)), 1),
+                                    "p_above_key_rivals": round(
+                                        float(
+                                            mc_res.get(
+                                                "p_above_key_rivals", mc_res.get("user_win_probability_pct", 0.0)
+                                            )
+                                        ),
+                                        1,
+                                    ),
+                                    "expected_rank": round(float(mc_res.get("expected_final_rank", 1.0)), 1),
+                                    "mc_se": round(float(mc_res.get("win_prob_se", 0.5)), 2),
+                                    "simulation_note": "Joint Bernoulli Monte Carlo simulation (correlated clean-sheets & shared player draws).",
+                                }
             except Exception as e:
                 logger.error(f"[DecisionCard] Error during rival/Monte Carlo simulation: {e}")
                 win_prob_dict = {

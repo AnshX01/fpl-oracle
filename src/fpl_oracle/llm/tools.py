@@ -197,7 +197,7 @@ class ToolExecutor:
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or 6
+        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
 
         query = (args.get("query") or "").strip().lower()
         horizon = min(8, max(1, args.get("horizon", 3)))
@@ -234,7 +234,8 @@ class ToolExecutor:
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or 6
+        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+        effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
         horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 5, boot, fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
@@ -245,9 +246,9 @@ class ToolExecutor:
         bank = 5.0  # default £0.5m
         ft = profile.free_transfers or 1
 
-        if m_id:
+        if m_id and curr_gw:
             try:
-                picks, _ = await fpl_client.get_manager_picks(m_id, curr_gw or 5)
+                picks, _ = await fpl_client.get_manager_picks(m_id, curr_gw)
                 picks_ids = [p.element for p in picks.picks]
                 current_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
                 if picks.entry_history:
@@ -266,7 +267,7 @@ class ToolExecutor:
             bank=bank,
             free_transfers=ft,
             horizon_projections=horizon_proj,
-            current_gw=curr_gw or 5,
+            current_gw=effective_curr_gw,
             target_gw=target_gw,
             locked_in_ids=args.get("locked_in"),
             locked_out_ids=args.get("locked_out"),
@@ -292,9 +293,11 @@ class ToolExecutor:
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+        effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
-        horizon_proj = projection_engine.predict_multi_gameweeks(next_gw or 6, 8, boot, fixtures)
-        pool_df = horizon_proj.get(next_gw or 6, pd.DataFrame())
+        horizon_proj = projection_engine.predict_multi_gameweeks(target_gw, 8, boot, fixtures)
+        pool_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         hist = None
         if profile.manager_id:
@@ -305,7 +308,7 @@ class ToolExecutor:
 
         squad_df = squad_optimizer.solve_best_squad(player_pool_df=pool_df, budget=1000.0)["squad"]
         chip_res = chip_planner.generate_chip_strategy(
-            current_gw=curr_gw or 5,
+            current_gw=effective_curr_gw,
             current_squad_df=squad_df,
             horizon_projections=horizon_proj,
             fixtures=fixtures,
@@ -317,7 +320,8 @@ class ToolExecutor:
     async def _tool_captain_options(self, args: dict[str, Any]) -> dict[str, Any]:
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
-        gw = args.get("gameweek") or (await fpl_client.get_current_and_next_gw())[1] or 6
+        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        gw = args.get("gameweek") or next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
 
         gw_df = projection_engine.predict_gameweek(gw, boot, fixtures)
         top5 = gw_df.sort_values(by="expected_points", ascending=False).head(5)
@@ -339,12 +343,13 @@ class ToolExecutor:
 
         standings = await league_standings_manager.get_league_standings(league_id)
         boot, _ = await fpl_client.get_bootstrap_static()
-        curr_gw, _ = await fpl_client.get_current_and_next_gw()
+        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        effective_curr_gw = curr_gw or (next_gw - 1 if next_gw and next_gw > 1 else 1)
 
         rivals_res = await rival_analyzer.analyze_rivals(
             standings=standings["standings"],
             user_manager_id=profile.manager_id,
-            current_gw=curr_gw or 5,
+            current_gw=effective_curr_gw,
             bootstrap=boot,
             max_rivals_to_inspect=None,
         )
@@ -376,8 +381,9 @@ class ToolExecutor:
         boot, _ = await fpl_client.get_bootstrap_static()
         fixtures, _ = await fpl_client.get_fixtures()
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
 
-        gw_df = projection_engine.predict_gameweek(next_gw or 6, boot, fixtures)
+        gw_df = projection_engine.predict_gameweek(target_gw, boot, fixtures)
         names = [n.strip().lower() for n in args.get("player_names", [])]
 
         matches = []
@@ -397,7 +403,7 @@ class ToolExecutor:
                     }
                 )
 
-        return {"gameweek": next_gw or 6, "comparisons": matches}
+        return {"gameweek": target_gw, "comparisons": matches}
 
     async def _tool_get_news(self, args: dict[str, Any]) -> dict[str, Any]:
         player_query = (args.get("player_name") or args.get("query") or "").strip().lower()

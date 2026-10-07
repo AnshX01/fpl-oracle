@@ -105,9 +105,9 @@ class SyncPipeline:
             fixtures, _ = await fpl_client.get_fixtures()
             curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
-            if profile.manager_id:
+            if profile.manager_id and curr_gw:
                 await fpl_client.get_manager_entry(profile.manager_id)
-                await fpl_client.get_manager_picks(profile.manager_id, curr_gw or 5)
+                await fpl_client.get_manager_picks(profile.manager_id, curr_gw)
                 await fpl_client.get_manager_history(profile.manager_id)
                 await fpl_client.get_manager_transfers(profile.manager_id)
 
@@ -122,7 +122,8 @@ class SyncPipeline:
             rules_ver = rules_checker.verify(boot)
             game_state = await game_state_manager.get_game_state()
 
-            target_gw = next_gw or (curr_gw + 1 if curr_gw else 6)
+            target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+            effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
             # ------------------------------------------------------------------
             # Stage 3: News Evidence Ingestion & Single Reconciliation
@@ -176,19 +177,20 @@ class SyncPipeline:
 
             if profile.manager_id and target_df is not None and not target_df.empty:
                 try:
-                    picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw or 5)
-                    transfers_history, _ = await fpl_client.get_manager_transfers(profile.manager_id)
-                    history_obj, _ = await fpl_client.get_manager_history(profile.manager_id)
-                    if picks.entry_history:
-                        bank = picks.entry_history.bank
-                    picks_ids = [p.element for p in picks.picks]
-                    user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
-                    user_squad_df = transfer_optimizer.compute_squad_selling_prices(
-                        user_squad_df, transfers_history, boot
-                    )
-                    auto_ft = transfer_optimizer.calculate_banked_free_transfers(history_obj)
-                    if profile.free_transfers is None or profile.free_transfers == 1:
-                        free_transfers = auto_ft
+                    if curr_gw:
+                        picks, _ = await fpl_client.get_manager_picks(profile.manager_id, curr_gw)
+                        transfers_history, _ = await fpl_client.get_manager_transfers(profile.manager_id)
+                        history_obj, _ = await fpl_client.get_manager_history(profile.manager_id)
+                        if picks.entry_history:
+                            bank = picks.entry_history.bank
+                        picks_ids = [p.element for p in picks.picks]
+                        user_squad_df = target_df[target_df["element"].isin(picks_ids)].copy()
+                        user_squad_df = transfer_optimizer.compute_squad_selling_prices(
+                            user_squad_df, transfers_history, boot
+                        )
+                        auto_ft = transfer_optimizer.calculate_banked_free_transfers(history_obj)
+                        if profile.free_transfers is None or profile.free_transfers == 1:
+                            free_transfers = auto_ft
                 except Exception as e:
                     logger.warning("Error fetching manager picks for optimization: %s", e)
 
@@ -225,7 +227,7 @@ class SyncPipeline:
                     bank=bank,
                     free_transfers=free_transfers,
                     horizon_projections=projections,
-                    current_gw=curr_gw or 5,
+                    current_gw=effective_curr_gw,
                     target_gw=target_gw,
                     risk_preference=profile.risk_preference or "balanced",
                 )
@@ -235,7 +237,7 @@ class SyncPipeline:
             # ------------------------------------------------------------------
             await self._broadcast("chips", 75, "Running joint DP/beam search across Set 1 & Set 2 chip calendars...")
             chips_plan = chip_planner.generate_chip_strategy(
-                current_gw=curr_gw or 5,
+                current_gw=effective_curr_gw,
                 current_squad_df=user_squad_df if user_squad_df is not None else target_df,
                 horizon_projections=projections,
                 fixtures=fixtures,
@@ -257,7 +259,7 @@ class SyncPipeline:
                     rivals_res = await rival_analyzer.analyze_rivals(
                         standings=standings_data["standings"],
                         user_manager_id=profile.manager_id,
-                        current_gw=curr_gw or 5,
+                        current_gw=effective_curr_gw,
                         bootstrap=boot,
                     )
                     user_pts = 0.0
