@@ -33,23 +33,17 @@ def test_monte_carlo_no_clean_sheet_double_count():
         ]
     )
 
-    # Run simulation with fixed seed
-    # We will test internal draws directly across 10,000 trials
-    rng = np.random.default_rng(42)
+    # Run real simulation method directly across 10,000 trials
     team_p_cs = mc.compute_team_clean_sheet_probabilities(projections)
     p_cs = team_p_cs[1]
     assert 0.30 <= p_cs <= 0.40
 
-    mu_base = max(0.0, mu_target - 4.0 * p_cs)
-    var_base = max(0.09, 4.0 - 16.0 * p_cs * (1.0 - p_cs))
-    sig_base = np.sqrt(var_base)
-
-    simulated_points = []
-    for _ in range(10000):
-        is_cs = rng.random() < p_cs
-        cs_pts = 4.0 if is_cs else 0.0
-        base = max(-1.0, float(rng.normal(mu_base, sig_base)))
-        simulated_points.append(max(0.0, base + cs_pts))
+    simulated_points = mc.simulate_player_trials(
+        projections.iloc[0].to_dict(),
+        team_p_cs=p_cs,
+        n_simulations=10000,
+        seed=42,
+    )
 
     sim_mean = float(np.mean(simulated_points))
     # Standard error for 10000 draws with std ~ 2 is ~ 0.02

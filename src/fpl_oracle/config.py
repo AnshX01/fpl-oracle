@@ -87,6 +87,15 @@ class FPLSettings(BaseModel):
     rival_points_window: int = Field(default=20, description="Points window below user for proximity rival selection")
     max_standings_pages: int = Field(default=200, description="High safety limit for mini-league standings pagination")
 
+    # Clean Sheet Intelligence Settings
+    default_clean_sheet_probability: float = Field(default=0.30, description="Baseline clean sheet prior probability")
+    clean_sheet_home_factor: float = Field(
+        default=1.15, description="Home fixture multiplier for clean sheet probability"
+    )
+    clean_sheet_away_factor: float = Field(
+        default=0.85, description="Away fixture multiplier for clean sheet probability"
+    )
+
     def get_redacted_status(self) -> dict[str, Any]:
         """Return diagnostic status without exposing secrets or private IDs."""
         mgr_set = self.fpl_manager_id is not None
@@ -125,6 +134,14 @@ def _load_settings_from_env() -> FPLSettings:
             return False
         return val.strip().lower() in ("true", "1", "yes")
 
+    def _parse_float(val: str | None, default: float) -> float:
+        if val:
+            try:
+                return float(val.strip())
+            except ValueError:
+                pass
+        return default
+
     return FPLSettings(
         fpl_manager_id=_parse_int(os.getenv("FPL_MANAGER_ID")),
         fpl_target_league_id=_parse_int(os.getenv("FPL_TARGET_LEAGUE_ID")),
@@ -146,6 +163,9 @@ def _load_settings_from_env() -> FPLSettings:
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
         rival_points_window=_parse_int(os.getenv("RIVAL_POINTS_WINDOW")) or 20,
         max_standings_pages=_parse_int(os.getenv("MAX_STANDINGS_PAGES")) or 200,
+        default_clean_sheet_probability=_parse_float(os.getenv("DEFAULT_CLEAN_SHEET_PROBABILITY"), 0.30),
+        clean_sheet_home_factor=_parse_float(os.getenv("CLEAN_SHEET_HOME_FACTOR"), 1.15),
+        clean_sheet_away_factor=_parse_float(os.getenv("CLEAN_SHEET_AWAY_FACTOR"), 0.85),
     )
 
 
@@ -164,6 +184,9 @@ FPL_MANAGER_ID = str(app_config.fpl_manager_id) if app_config.fpl_manager_id els
 FPL_TARGET_LEAGUE_ID = str(app_config.fpl_target_league_id) if app_config.fpl_target_league_id else ""
 RIVAL_POINTS_WINDOW = app_config.rival_points_window
 MAX_STANDINGS_PAGES = app_config.max_standings_pages
+DEFAULT_CLEAN_SHEET_PROBABILITY = app_config.default_clean_sheet_probability
+CLEAN_SHEET_HOME_FACTOR = app_config.clean_sheet_home_factor
+CLEAN_SHEET_AWAY_FACTOR = app_config.clean_sheet_away_factor
 TAVILY_API_KEY = app_config.tavily_api_key
 BRAVE_API_KEY = app_config.brave_api_key
 ODDS_API_KEY = app_config.odds_api_key

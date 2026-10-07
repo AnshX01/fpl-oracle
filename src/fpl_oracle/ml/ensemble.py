@@ -314,6 +314,11 @@ class ScoringEnsemble:
                 "exp_bonus_pts": np.round(exp_bonus_pts, 2),
                 "p_starts": np.round(p_starts, 3),
                 "p_min60": np.round(p_min60, 3),
+                "p_clean_sheet": np.round(components.get("p_clean_sheet", np.full(n, 0.30)), 4),
+                "p_play": np.round(p_play, 3),
+                "exp_gc_deduction": np.round(exp_gc_deduction, 2),
+                "exp_saves_pts": np.round(exp_saves_pts, 2),
+                "exp_card_deduction": np.round(exp_card_deduction, 2),
             }
         )
 

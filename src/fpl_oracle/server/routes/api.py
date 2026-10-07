@@ -628,11 +628,17 @@ async def get_league_intel(league_id: int | None = None):
 
     # Monte Carlo simulation
     fixtures, _ = await fpl_client.get_fixtures()
-    proj_df = projection_engine.predict_gameweek((curr_gw or 5) + 1, boot, fixtures)
+    sim_target_gw = (curr_gw + 1) if curr_gw else 2
+    projections_horizon = projection_engine.predict_multi_gameweeks(sim_target_gw, 5, boot, fixtures)
+    proj_df = projections_horizon.get(sim_target_gw)
 
     user_squad_df = effective_state.to_squad_dataframe()
     if user_squad_df.empty or len(user_squad_df) < 15:
-        user_squad_df = proj_df.sort_values(by="expected_points", ascending=False).head(15)
+        user_squad_df = (
+            proj_df.sort_values(by="expected_points", ascending=False).head(15)
+            if proj_df is not None and not proj_df.empty
+            else pd.DataFrame()
+        )
 
     mc_res = monte_carlo_simulator.simulate_league(
         user_points=user_pts,
@@ -640,6 +646,7 @@ async def get_league_intel(league_id: int | None = None):
         rival_squads=rivals_res["rival_squads"],
         projections_df=proj_df,
         horizon_gws=5,
+        projections_by_gw=projections_horizon,
     )
 
     strategy = league_strategy_advisor.evaluate_strategy(

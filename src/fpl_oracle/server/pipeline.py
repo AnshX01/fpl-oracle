@@ -275,6 +275,7 @@ class SyncPipeline:
                         rival_squads=rivals_res.get("rival_squads", []),
                         projections_df=target_df if target_df is not None else user_squad_df,
                         horizon_gws=5,
+                        projections_by_gw=projections,
                     )
             except Exception as e:
                 logger.warning("Monte Carlo simulation warning: %s", e)

@@ -171,9 +171,14 @@ class ProjectionEngine:
             "is_dgw",
             "opponent_difficulty",
             "chance_of_playing",
+            "was_home",
+            "is_home",
+            "opponent_team",
+            "fixture_id",
         ]
         for col in meta_cols:
-            res_df[col] = features_df[col].values
+            if col in features_df.columns:
+                res_df[col] = features_df[col].values
 
         # If a player has a Double Gameweek (2 fixtures in same GW), sum the expectations
         # Group by element
@@ -201,11 +206,40 @@ class ProjectionEngine:
                 "exp_bonus_pts": "sum",
                 "p_starts": "max",
                 "p_min60": "max",
+                "p_clean_sheet": "mean",
+                "was_home": "first",
+                "is_home": "first",
+                "opponent_team": "first",
+                "fixture_id": "first",
+                "p_play": "max",
+                "exp_gc_deduction": "sum",
+                "exp_saves_pts": "sum",
+                "exp_card_deduction": "sum",
             }
         )
 
         # Blank gameweek zeroing
-        dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, ["expected_points", "p10", "p50", "p90", "variance"]] = 0.0
+        bgw_zero_cols = [
+            "expected_points",
+            "p10",
+            "p50",
+            "p90",
+            "variance",
+            "exp_appearance",
+            "exp_goals_pts",
+            "exp_assists_pts",
+            "exp_cs_pts",
+            "exp_defcon_pts",
+            "exp_bonus_pts",
+            "p_starts",
+            "p_min60",
+            "p_clean_sheet",
+            "p_play",
+            "exp_gc_deduction",
+            "exp_saves_pts",
+            "exp_card_deduction",
+        ]
+        dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, [c for c in bgw_zero_cols if c in dgw_grouped.columns]] = 0.0
 
         self._cache[cache_key] = dgw_grouped.copy()
 

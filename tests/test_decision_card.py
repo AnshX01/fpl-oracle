@@ -10,11 +10,25 @@ Verifies:
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.briefing.decision_card import decision_card_generator, format_decision_card_markdown
 from fpl_oracle.server.routes.api import router as api_router
+
+
+@pytest.fixture(autouse=True)
+def clean_client():
+    yield
+    try:
+        if getattr(fpl_client, "_client", None) is not None and not fpl_client._client.is_closed:
+            import asyncio
+
+            asyncio.run(fpl_client.aclose())
+    except Exception:
+        pass
 
 
 def test_decision_card_generator_contract():
@@ -383,7 +397,16 @@ def test_decision_card_error_path_honest_reporting():
     """Verify that Monte Carlo exceptions emit status='error' with null metrics rather than swallowing."""
 
     async def _run():
+        from fpl_oracle.domain.manager_state import manager_state_service
+
+        current_state = await manager_state_service.get_current_state()
+        mock_state = current_state.model_copy(update={"manager_id": 1, "overall_points": 500})
+
         with (
+            patch(
+                "fpl_oracle.domain.manager_state.manager_state_service.get_current_state",
+                new=AsyncMock(return_value=mock_state),
+            ),
             patch(
                 "fpl_oracle.league.standings.league_standings_manager.get_league_standings",
                 new=AsyncMock(
@@ -394,6 +417,7 @@ def test_decision_card_error_path_honest_reporting():
                 "fpl_oracle.league.rivals.rival_analyzer.analyze_rivals",
                 new=AsyncMock(
                     return_value={
+                        "rival_selection_mode": "chasers_in_window",
                         "rival_squads": [
                             {"entry_id": 2, "player_name": "Rival Leader", "rank": 1, "total_points": 490, "squad": []}
                         ],

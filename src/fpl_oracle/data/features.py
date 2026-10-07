@@ -921,6 +921,7 @@ class FeatureEngineering:
         for f in gw_fixtures:
             team_fixtures[f.team_h].append(
                 {
+                    "id": f.id,
                     "opponent": f.team_a,
                     "was_home": 1.0,
                     "difficulty": float(f.team_h_difficulty or 3),
@@ -929,6 +930,7 @@ class FeatureEngineering:
             )
             team_fixtures[f.team_a].append(
                 {
+                    "id": f.id,
                     "opponent": f.team_h,
                     "was_home": 0.0,
                     "difficulty": float(f.team_a_difficulty or 3),
@@ -1014,6 +1016,10 @@ class FeatureEngineering:
                     "fixture_count": 0,
                     "is_bgw": 1,
                     "is_dgw": 0,
+                    "fixture_sub_index": 0,
+                    "fixture_id": 0,
+                    "opponent_team": 0,
+                    "is_home": 0.0,
                     **player_stats,
                     "was_home": 0.0,
                     "team_strength_attack": 1.30,
@@ -1173,6 +1179,9 @@ class FeatureEngineering:
                     "is_bgw": 0,
                     "is_dgw": 1 if len(fixtures_for_team) > 1 else 0,
                     "fixture_sub_index": fix_idx,
+                    "fixture_id": int(fix.get("id") or 0),
+                    "opponent_team": int(fix.get("opponent") or 0),
+                    "is_home": float(was_h),
                     **player_stats,
                     "was_home": float(was_h),
                     "team_strength_attack": my_att,

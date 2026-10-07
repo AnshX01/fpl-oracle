@@ -1,0 +1,40 @@
+Command: .venv\Scripts\python.exe -m pytest tests/test_monte_carlo_components.py tests/test_montecarlo_cs.py -v
+Exit Code: 0
+
+Output:
+============================= test session starts =============================
+platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: C:\Users\anshw\Documents\fpl-expert
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.3
+collecting ... collected 25 items
+
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[0.1-DEF] PASSED [  4%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[0.1-MID] PASSED [  8%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[0.1-FWD] PASSED [ 12%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[0.1-GKP] PASSED [ 16%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[1.0-DEF] PASSED [ 20%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[1.0-MID] PASSED [ 24%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[1.0-FWD] PASSED [ 28%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[1.0-GKP] PASSED [ 32%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[4.5-DEF] PASSED [ 36%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[4.5-MID] PASSED [ 40%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[4.5-FWD] PASSED [ 44%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[4.5-GKP] PASSED [ 48%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[8.0-DEF] PASSED [ 52%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[8.0-MID] PASSED [ 56%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[8.0-FWD] PASSED [ 60%]
+tests/test_monte_carlo_components.py::test_real_simulation_function_unbiased_across_positions_and_xp[8.0-GKP] PASSED [ 64%]
+tests/test_monte_carlo_components.py::test_midfielder_clean_sheet_correlation PASSED [ 68%]
+tests/test_monte_carlo_components.py::test_teammate_clean_sheet_shared_bernoulli PASSED [ 72%]
+tests/test_monte_carlo_components.py::test_horizon_simulation_per_gw_projections PASSED [ 76%]
+tests/test_monte_carlo_components.py::test_clean_sheet_model_derived_priority PASSED [ 80%]
+tests/test_monte_carlo_components.py::test_clean_sheet_config_fallback PASSED [ 84%]
+tests/test_monte_carlo_components.py::test_predict_retains_p_clean_sheet_and_fixtures PASSED [ 88%]
+tests/test_montecarlo_cs.py::test_monte_carlo_no_clean_sheet_double_count PASSED [ 92%]
+tests/test_montecarlo_cs.py::test_teammate_clean_sheet_perfect_correlation PASSED [ 96%]
+tests/test_montecarlo_cs.py::test_fixture_calibrated_clean_sheet_probabilities PASSED [100%]
+
+============================= 25 passed in 4.49s ==============================

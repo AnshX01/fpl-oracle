@@ -355,7 +355,11 @@ class DecisionCardGenerator:
                             bootstrap=boot,
                         )
 
-                        user_pts = int(user_row.get("total", effective_state.overall_points)) if user_row is not None else int(effective_state.overall_points)
+                        user_pts = (
+                            int(user_row.get("total", effective_state.overall_points))
+                            if user_row is not None
+                            else int(effective_state.overall_points)
+                        )
                         selection_mode = rivals_res.get("rival_selection_mode", "")
 
                         if selection_mode == "leader, no close chasers":
@@ -393,14 +397,14 @@ class DecisionCardGenerator:
                                 user_squad_df=user_squad_df,
                             )
 
-                            # Monte Carlo simulation
-                            proj_single = projection_engine.predict_gameweek(target_gw, boot, fixtures)
+                            # Monte Carlo simulation across multi-gameweek horizon
                             mc_res = monte_carlo_simulator.simulate_league(
                                 user_points=user_pts,
                                 user_squad_df=user_squad_df,
                                 rival_squads=rivals_res.get("rival_squads", []),
-                                projections_df=proj_single,
+                                projections_df=target_df,
                                 horizon_gws=5,
+                                projections_by_gw=horizon_proj,
                             )
 
                             exposure_names = [
