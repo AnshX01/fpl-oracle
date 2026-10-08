@@ -12,7 +12,9 @@
 
 ## Verification
 
-Recovered release checks: four JavaScript tests pass; lint and secret scan pass; 83 source files type-check cleanly. Screens and modals were recaptured and visually inspected at 390, 360, 320 and 1440 pixels using deterministic fixtures, with no console errors or horizontal overflow. Clean no-profile/no-.env mocked startup returned 200 for home, health, profile, squad basic and confirmation. PuLP 3.3.2/CBC solve passed. The frozen 389-test full regression is running. No final full pass or publication is claimed yet.
+Recovered release checks: four JavaScript tests pass; lint and secret scan pass; 83 source files type-check cleanly. Screens and modals were recaptured and visually inspected at 390, 360, 320 and 1440 pixels using deterministic fixtures, with no console errors or horizontal overflow. Clean no-profile/no-.env mocked startup returned 200 for home, health, profile, squad basic and confirmation. PuLP 3.3.2/CBC solve passed. Frozen final regression: 389 tests passed in 1083.54 seconds (18 minutes 3 seconds). Source, tests, scripts and UI hashes were unchanged during that run. Done, reload lock, Undo and different-team browser flows passed at 1440 and 390 pixels. Exclusive synthetic search runtime: 5 gameweeks took 24.50 seconds with score 388.9317; 14 gameweeks took 88.76 seconds with score 946.8773. Scores matched the prior reference. These timings measure one bounded search, not the full date-comparison workflow, startup or a Windows laptop. The wider search is slower. No five-second advice or speed improvement is claimed.
+
+Final source was rechecked after regression and runtime with no hash drift. Four JavaScript checks, lint and secret scan passed again. Final publication uses this unchanged source plus these release notes; GitHub commit and branch readback are reported with delivery.
 
 ## Evidence limits
 
