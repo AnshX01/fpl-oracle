@@ -544,6 +544,56 @@ class TransferOptimizer:
         cand_1_moves: list[dict[str, Any]],
         max_total: int = 5,
     ) -> list[dict[str, Any]]:
+        """Memoised: the chip and date comparison beams revisit identical squads with identical inputs."""
+        import copy
+
+        seeds = tuple((tuple(m["transfers_in"]), tuple(m["transfers_out"]), m["bank_delta"]) for m in cand_1_moves[:4])
+        key = (
+            id(pool_df),
+            id(player_map),
+            frozenset(elements),
+            bank,
+            tuple(sorted(purchase_prices.items())),
+            frozenset(locked_in),
+            frozenset(locked_out),
+            frozenset(excluded_teams),
+            seeds,
+            max_total,
+        )
+        cache = self.__dict__.setdefault("_cand2_cache", {})
+        hit = cache.get(key)
+        if hit is not None and hit[0] is pool_df and hit[1] is player_map:
+            return copy.deepcopy(hit[2])
+        result = self._get_candidate_2_transfers_uncached(
+            elements,
+            bank,
+            purchase_prices,
+            pool_df,
+            player_map,
+            locked_in,
+            locked_out,
+            excluded_teams,
+            cand_1_moves,
+            max_total,
+        )
+        if len(cache) > 20000:
+            cache.clear()
+        cache[key] = (pool_df, player_map, copy.deepcopy(result))
+        return result
+
+    def _get_candidate_2_transfers_uncached(
+        self,
+        elements: set[int],
+        bank: int,
+        purchase_prices: dict[int, int],
+        pool_df: pd.DataFrame,
+        player_map: dict[int, dict[str, Any]],
+        locked_in: set[int],
+        locked_out: set[int],
+        excluded_teams: set[Any],
+        cand_1_moves: list[dict[str, Any]],
+        max_total: int = 5,
+    ) -> list[dict[str, Any]]:
         moves_2: list[dict[str, Any]] = []
         if not cand_1_moves:
             return moves_2
