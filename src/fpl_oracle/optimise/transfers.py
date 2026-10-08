@@ -362,7 +362,110 @@ class TransferOptimizer:
         ]
         return ManagerStateService.calculate_banked_free_transfers(rows, [])
 
+    def _pool_arrays(self, pool_df: pd.DataFrame) -> dict[str, Any]:
+        """Column arrays for one projection frame, built once and reused by every candidate call."""
+        cache = self.__dict__.setdefault("_pool_array_cache", {})
+        hit = cache.get(id(pool_df))
+        if hit is not None and hit["frame"] is pool_df and hit["shape"] == pool_df.shape:
+            return hit
+        eligible = pool_df
+        if "simulation_unavailable" in pool_df:
+            eligible = pool_df[~pool_df["simulation_unavailable"].fillna(False).astype(bool)]
+        teams = eligible["team"].to_numpy()
+        codes_map: dict[Any, int] = {}
+        codes = np.fromiter((codes_map.setdefault(t, len(codes_map)) for t in teams), dtype=np.int64, count=len(teams))
+        hit = dict(
+            frame=pool_df,
+            shape=pool_df.shape,
+            element=eligible["element"].to_numpy(),
+            position=eligible["position"].to_numpy(),
+            value=eligible["value"].to_numpy(),
+            xp=eligible["expected_points"].to_numpy(),
+            team_codes=codes,
+            codes_map=codes_map,
+        )
+        if len(cache) > 64:
+            cache.clear()
+        cache[id(pool_df)] = hit
+        return hit
+
     def _get_candidate_1_transfers(
+        self,
+        elements: set[int],
+        bank: int,
+        purchase_prices: dict[int, int],
+        pool_df: pd.DataFrame,
+        player_map: dict[int, dict[str, Any]],
+        locked_in: set[int],
+        locked_out: set[int],
+        excluded_teams: set[Any],
+        max_per_pos: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Same candidates and order as the frame version, using cached column arrays."""
+        from pandas.core.sorting import nargsort
+
+        arrays = self._pool_arrays(pool_df)
+        element_arr, position_arr = arrays["element"], arrays["position"]
+        value_arr, xp_arr, code_arr = arrays["value"], arrays["xp"], arrays["team_codes"]
+        codes_map = arrays["codes_map"]
+        moves: list[dict[str, Any]] = []
+        sellable = [eid for eid in elements if eid not in locked_in]
+        team_counts: dict[Any, int] = {}
+        for eid in elements:
+            tm = player_map[eid]["team"]
+            team_counts[tm] = team_counts.get(tm, 0) + 1
+
+        base_mask = ~np.isin(element_arr, list(elements))
+        if locked_out:
+            base_mask &= ~np.isin(element_arr, list(locked_out))
+        if excluded_teams:
+            drop = [codes_map[t] for t in excluded_teams if t in codes_map]
+            if drop:
+                base_mask &= ~np.isin(code_arr, drop)
+        position_masks: dict[Any, Any] = {}
+
+        for sell_id in sellable:
+            sell_p = player_map.get(sell_id)
+            if not sell_p:
+                continue
+            sell_pos = sell_p["position"]
+            now_cost = int(sell_p.get("value", 50))
+            purch_cost = purchase_prices.get(sell_id, now_cost)
+            sell_price = self.calculate_selling_price(purch_cost, now_cost)
+            avail_budget = bank + sell_price
+            sell_team = sell_p["team"]
+
+            if sell_pos not in position_masks:
+                position_masks[sell_pos] = base_mask & (position_arr == sell_pos)
+            mask = position_masks[sell_pos] & (value_arr <= avail_budget)
+            idx = np.flatnonzero(mask)
+            if idx.size == 0:
+                continue
+            # Rank before the club-limit filter, exactly like the frame version, so ties keep the same order.
+            order = nargsort(xp_arr[idx], kind="quicksort", ascending=False, na_position="last")
+            ranked = idx[order]
+            full_teams = [codes_map[t] for t, c in team_counts.items() if c >= 3 and t != sell_team and t in codes_map]
+            if full_teams:
+                ranked = ranked[~np.isin(code_arr[ranked], full_teams)]
+            for pos_i in ranked[:max_per_pos]:
+                buy_id = int(element_arr[pos_i])
+                buy_value = int(value_arr[pos_i])
+                moves.append(
+                    {
+                        "plan_type": "1_TRANSFER",
+                        "transfers_in": [buy_id],
+                        "transfers_out": [sell_id],
+                        "sell_prices": {sell_id: sell_price},
+                        "buy_costs": {buy_id: buy_value},
+                        "bank_delta": sell_price - buy_value,
+                        "immediate_gain": float(xp_arr[pos_i]) - float(sell_p.get("expected_points", 0.0)),
+                    }
+                )
+
+        moves.sort(key=lambda m: float(m.get("immediate_gain", 0.0)), reverse=True)
+        return moves
+
+    def _get_candidate_1_transfers_frame(
         self,
         elements: set[int],
         bank: int,
