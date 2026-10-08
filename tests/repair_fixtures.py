@@ -61,7 +61,7 @@ def configured_advisor(monkeypatch):
     pool["p10"] = 1.0
     pool["p90"] = 9.0
     pool["exp_defcon_pts"] = 0.0
-    horizon = {g: pool.copy() for g in range(6, 14)}
+    horizon = {g: pool.copy() for g in range(6, 20)}
     monkeypatch.setattr(manager_state_service, "get_current_state", AsyncMock(return_value=state))
     monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(boot, False)))
     monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=(fixtures, False)))
