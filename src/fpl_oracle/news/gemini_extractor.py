@@ -212,7 +212,7 @@ class GeminiEvidenceExtractor:
                         raw_response_snippet="HTTP 429: Rate limited",
                     )
                 if resp.status_code != 200:
-                    logger.warning(f"[Gemini Error {resp.status_code}] {resp.text[:200]}")
+                    logger.warning("Gemini news HTTP failure: status=%s", resp.status_code)
                     return ExtractedNewsPayload(
                         article_url=article_url,
                         article_hash=article_hash,
@@ -272,14 +272,16 @@ class GeminiEvidenceExtractor:
                 )
 
         except Exception as e:
-            logger.warning(f"Gemini extraction exception: {e}. Gracefully falling back to official baseline.")
+            logger.warning(
+                "Gemini news extraction failed: type=%s; using official baseline", type(e).__name__, exc_info=True
+            )
             return ExtractedNewsPayload(
                 article_url=article_url,
                 article_hash=article_hash,
                 published_at=published_at,
                 fetched_at=now_iso,
                 evidences=[],
-                raw_response_snippet=f"Exception: {e}",
+                raw_response_snippet=f"Exception: {type(e).__name__}",
             )
 
 

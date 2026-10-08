@@ -151,6 +151,8 @@ const app = createApp({
 
       // Background Sync Pipeline
       adviceStage: '',
+      previousAdvice: null,
+      adviceNeedsRefresh: false,
       pipelineRunning: false,
       pipelineProgress: 0,
       pipelineCurrentStage: 'Ready',
@@ -799,6 +801,7 @@ const app = createApp({
       catch(e){this.triggerToast(e.message,'warn');}
     },
     async confirmFollowedAdvice() {
+      if(this.previousAdvice || this.adviceNeedsRefresh || this.decisionCardLoading)return;
       if(this.confirmTeamSaving)return;this.confirmTeamSaving=true;this.confirmTeamError='';
       try {const r=await fetch('/api/team/followed',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Could not confirm advice');this.showConfirmTeam=false;this.triggerToast('Done');await this.refreshAll();}
       catch(e){this.confirmTeamError=e.message;this.triggerToast(e.message,'warn');}finally{this.confirmTeamSaving=false;}
@@ -1080,7 +1083,6 @@ const app = createApp({
 
       try {
         const res = await fetch('/api/chat', {
-          signal: AbortSignal.timeout(170000),
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: q })
@@ -1220,6 +1222,7 @@ const app = createApp({
       this.snapshotBuffer = null;
       this.decisionCardLoading = true; this.squadLoading = true; this.plansLoading = true;
       this.adviceStage = "Checking...";
+      this.previousAdvice=null; this.adviceNeedsRefresh=false;
       this.decisionCardError = null; this.squadError = null; this.plansError = null;
       const generation = this.snapshotGeneration;
       try {
@@ -1229,6 +1232,7 @@ const app = createApp({
         if (!job.id) throw new Error(job.reason || 'Advice job could not start');
         while (job.status === 'calculating') {
           this.adviceStage = job.stage || 'Checking your next move';
+          this.previousAdvice = job.previous_result || null;
           await new Promise(resolve => setTimeout(resolve, 1500));
           if (generation !== this.snapshotGeneration) return;
           const response = await fetch(`/api/advice/status/${job.id}`);
@@ -1236,6 +1240,8 @@ const app = createApp({
           job = await response.json();
         }
         if (generation !== this.snapshotGeneration) return;
+        this.previousAdvice = job.previous_result || null;
+        if(job.status === 'refresh_required'){this.adviceNeedsRefresh=true;return;}
         if (job.status !== 'ready' || !job.result) throw new Error(job.error || 'Advice calculation stopped');
         Object.assign(this, {squadData:job.result.squadData, decisionCard:job.result.decisionCard,
           contingencyPlans:job.result.contingencyPlans});

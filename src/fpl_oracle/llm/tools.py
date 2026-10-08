@@ -4,7 +4,10 @@ Connects conversational queries directly to live ML projections, MILP optimizati
 chip strategies, news, and league simulations.
 """
 
+import json
 import logging
+import time
+from contextvars import ContextVar
 from typing import Any
 
 import pandas as pd
@@ -19,6 +22,9 @@ from fpl_oracle.optimise.price_change import price_change_predictor
 from fpl_oracle.server.analysis import analysis_service
 
 logger = logging.getLogger("fpl_oracle.llm.tools")
+
+chat_tool_cache = ContextVar("chat_tool_cache", default=None)
+
 
 TOOL_DEFINITIONS = [
     {
@@ -120,7 +126,25 @@ class ToolExecutor:
         pass
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        logger.info(f"Executing tool {tool_name} with args {arguments}")
+        cache = chat_tool_cache.get()
+        key = (tool_name, json.dumps(arguments, sort_keys=True))
+        if cache is not None and key in cache:
+            import copy
+
+            return copy.deepcopy(cache[key])
+        began = time.monotonic()
+        logger.info("Chat tool started: name=%s", tool_name)
+        try:
+            result = await self._execute(tool_name, arguments)
+            if cache is not None and not result.get("error"):
+                import copy
+
+                cache[key] = copy.deepcopy(result)
+            return result
+        finally:
+            logger.info("Chat tool finished: name=%s elapsed_seconds=%.1f", tool_name, time.monotonic() - began)
+
+    async def _execute(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         try:
             if tool_name == "get_my_team":
                 return await self._tool_get_my_team(arguments)
