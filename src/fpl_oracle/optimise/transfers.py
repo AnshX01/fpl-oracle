@@ -1727,8 +1727,10 @@ class TransferOptimizer:
         locked_out = set(locked_out_ids or [])
         excluded_teams = set(excluded_team_ids or [])
 
+        from fpl_oracle.optimise.progress import report_search_progress
         from fpl_oracle.optimise.sequential import search_sequences
 
+        report_search_progress("Comparing transfers through Gameweek " + str(horizon_gws[-1]))
         legal_chips = [c for c in active_chips if validate_chip_legality(c, target_gw, chips_already_used)[0]]
         sequences = search_sequences(
             self,
@@ -1755,11 +1757,14 @@ class TransferOptimizer:
         # joint pruning. Include them before choosing the action, not just in
         # a report after the decision.
         date_states = {}
+        date_total = sum(c in {"wildcard", "freehit"} for c in legal_chips) * len(horizon_gws)
+        dates_done = 0
         if measure_chip_values and horizon_gws[-1] == (19 if target_gw <= 19 else 38):
             for code in legal_chips:
                 if code not in {"wildcard", "freehit"}:
                     continue
                 for date in horizon_gws:
+                    report_search_progress(f"Comparing chip dates ({dates_done + 1} of {date_total})")
                     found = search_sequences(
                         self,
                         initial_elements,
@@ -1782,6 +1787,7 @@ class TransferOptimizer:
                         forced_chip_schedule={date: code},
                         **(search_quality or {}),
                     )
+                    dates_done += 1
                     date_states[(code, date)] = found
                     sequences += found
         sequences.sort(key=lambda state: state["score"], reverse=True)
@@ -1944,6 +1950,7 @@ class TransferOptimizer:
             else:
                 measurement_status = "measured_through_expiry"
                 for chip in [c for c in legal_chips if c != forced_current_chip]:
+                    report_search_progress("Checking " + CHIP_DISPLAY_NAMES[chip] + " against saving it")
                     without = search_sequences(
                         self,
                         initial_elements,
@@ -2065,6 +2072,7 @@ class TransferOptimizer:
                     )
                 import copy
 
+                report_search_progress("Checking the final chip plan")
                 equal_optimizer = copy.copy(self)
                 equal_optimizer.discount_factor = 1.0
                 equal_states = search_sequences(

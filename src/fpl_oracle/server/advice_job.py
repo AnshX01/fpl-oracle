@@ -86,6 +86,16 @@ class AdvicePublisher:
         manifest_before = compute_manifest_sha256()
         original_key = self.current["profile_key"]
         token = read_context.set({})
+        from fpl_oracle.optimise.progress import search_progress
+
+        loop = asyncio.get_running_loop()
+        publication = self.current
+
+        def update_stage(stage):
+            if self.current is publication and publication["status"] == "calculating":
+                publication["stage"] = stage
+
+        progress_token = search_progress.set(lambda stage: loop.call_soon_threadsafe(update_stage, stage))
         try:
 
             async def work():
@@ -156,6 +166,7 @@ class AdvicePublisher:
         except Exception as error:
             self.current.update(status="failed", stage="Calculation stopped", error=str(error), result=None)
         finally:
+            search_progress.reset(progress_token)
             read_context.reset(token)
 
     async def run_expiry(self, publication, cache_key):
