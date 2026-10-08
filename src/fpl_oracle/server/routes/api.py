@@ -122,6 +122,9 @@ async def get_team_confirmation():
     return safe_json_serialize(
         dict(
             state=state.model_dump(),
+            players=[
+                dict(element=e.id, name=e.web_name, price=e.now_cost, position=e.element_type) for e in boot.elements
+            ],
             saved=saved,
             locked=team_confirmation.locked(state),
             recommendation=recommendation,
@@ -388,6 +391,9 @@ async def get_basic_squad(refresh: bool = False):
             "reason": state.error_message or "No complete configured squad",
             "is_stale": state.is_stale,
         }
+    # Basic data is published picks, never an optimized XI or point forecast.
+    squad["now_cost"] = squad["now_cost"] / 10.0
+    squad["selling_price"] = squad["selling_price"] / 10.0
     starters = squad[squad["is_starter"]].to_dict("records")
     bench = squad[~squad["is_starter"]].sort_values("bench_order").to_dict("records")
     return safe_json_serialize(
@@ -396,6 +402,12 @@ async def get_basic_squad(refresh: bool = False):
             "starters": starters,
             "bench": bench,
             "captain": next((p for p in starters if p["is_captain"]), None),
+            "vice_captain": next((p for p in starters if p["is_vice_captain"]), None),
+            "team_confirmed": state.team_confirmed,
+            "published_gameweek": state.current_gw,
+            "total_squad_value": round(float(squad["now_cost"].sum()), 1),
+            "total_selling_value": round(float(squad["selling_price"].sum()), 1),
+            "total_team_value": round(float(squad["selling_price"].sum()) + state.bank_millions, 1),
             "bank_millions": state.bank_millions,
             "bank_source": state.bank_source,
             "free_transfers": state.free_transfers,
@@ -1362,7 +1374,9 @@ async def get_pre_deadline_checklist():
             dict(
                 item="Team",
                 status="PASS" if state.team_confirmed else "WARNING",
-                detail="Confirmed" if state.team_confirmed else "Confirm team",
+                detail="Updated team"
+                if state.team_confirmed
+                else "Based on your last published team. Made transfers since then? Update your team.",
             ),
             dict(
                 item="Bank",

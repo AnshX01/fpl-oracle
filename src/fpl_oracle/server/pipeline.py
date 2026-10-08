@@ -110,6 +110,15 @@ class SyncPipeline:
             if state.is_stale:
                 raise ValueError("Live refresh failed; cached published data remains marked stale")
 
+            # Done blocks recalculation until Undo or the next deadline.
+            from fpl_oracle.domain.team_confirmation import team_confirmation
+
+            if team_confirmation.locked(state):
+                self._last_completed_at = datetime.now(UTC)
+                self._last_result_summary = {"status": "followed", "gameweek": state.target_gw}
+                await self._broadcast("complete", 100, "Done. Next advice after the deadline.", done=True)
+                return
+
             # ------------------------------------------------------------------
             # Stage 2: Live Rules Verification & Game State
             # ------------------------------------------------------------------

@@ -2,7 +2,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');let config;
 vm.runInNewContext(fs.readFileSync('web/static/js/app.js','utf8'),{Vue:{createApp(c){config=c;return{mount(){return{}}}}},window:{},console});
 const starters=['GKP','DEF','DEF','DEF','MID','MID','MID','MID','FWD','FWD','FWD'].map((position,i)=>({element:i+1,position,web_name:'P'+(i+1)}));
 const bench=['GKP','FWD','DEF','MID'].map((position,i)=>({element:i+12,position,web_name:'B'+(i+12)}));
-const o={squadData:{starters,bench},simulatedOutIds:[1]};
+const o={displaySquad:{starters,bench},simulatedOutIds:[1]};
 let res=()=>config.computed.simulatedSubs.call(o);assert.equal(res().moves[0].in,'B12');
 o.simulatedOutIds=[2];assert.equal(res().moves[0].in,'B14');
 o.simulatedOutIds=[1,2,3];assert.equal(res().moves.length,2);assert.equal(res().unfilled,1);

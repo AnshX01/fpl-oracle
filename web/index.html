@@ -62,15 +62,10 @@
   <main class="container main">
 
     <div v-if="pipelineRunning" class="callout tone-info" role="status"><ui-icon name="loader-circle" class="spin"></ui-icon><span>{{ pipelineCurrentStage }} ({{ pipelineProgress }}%)</span></div>
-    <!-- Published picks, shown while fresh advice calculates -->
-    <glass-card v-if="hasBasicSquad && !hasLoadedSquad" data-testid="basic-squad" title="Published team loaded">
-      <p class="muted">{{ basicSquadData.is_stale ? 'Cached published team; refresh failed or in progress.' : 'Published picks, not optimized recommendations.' }}</p>
-      <div class="chips" data-testid="basic-starters"><ui-badge v-for="p in basicSquadData.starters" :key="p.element">{{ p.web_name }}</ui-badge></div>
-      <div class="chips" data-testid="basic-bench"><span class="subtle">Bench:</span> <ui-badge v-for="p in basicSquadData.bench" :key="p.element">{{ p.web_name }}</ui-badge></div>
-      
-    </glass-card>
-
-    <div class="callout tone-warn" v-if="!squadData?.team_confirmed && !followedLocked"><ui-icon name="circle-alert"></ui-icon><div class="stack-sm"><strong>Team not confirmed</strong><ui-button @click="openConfirmTeam">Confirm my team</ui-button></div></div>
+    <div v-if="usingPublishedTeam && !followedLocked" class="published-team-note" data-testid="published-team-note">
+      <span>{{ publishedTeamNote }} Team changed since then?</span>
+      <ui-button size="sm" variant="ghost" @click="openConfirmTeam().then(()=>confirmMode='different')">Update team</ui-button>
+    </div>
     <!-- ===================== OVERVIEW ===================== -->
     <section v-if="activeTab === 'overview'" class="panel" id="main-panel-overview" role="tabpanel" aria-label="Overview">
 
@@ -131,7 +126,7 @@
 
           
 
-          <div class="row wrap">
+          <div class="row wrap" v-if="!nextDecision.isUnavailable">
             <ui-button v-if="!nextDecision.isUnavailable" variant="primary" :loading="confirmTeamSaving" @click="confirmFollowedAdvice">Done</ui-button>
             <ui-button variant="ghost" @click="openConfirmTeam().then(()=>confirmMode='different')">Did something different</ui-button>
             <ui-button variant="primary" icon="arrow-right" @click="activeTab = 'transfers'">Transfers to make</ui-button>
@@ -139,7 +134,7 @@
         </template>
       </glass-card>
 
-      <div class="grid cols-3">
+      <div class="grid cols-3" v-if="!followedLocked">
         <glass-card title="Captain" lift>
           <div v-if="squadData.captain" class="stack-sm">
             <div class="row"><span class="mark">C</span><span class="stat-value">{{ squadData.captain.web_name }}</span></div>
@@ -148,11 +143,11 @@
             <p v-if="squadData.vice_captain" class="row muted"><span class="mark vc">VC</span> {{ squadData.vice_captain.web_name }} <span class="num subtle">{{ squadData.vice_captain.expected_points }} pts</span></p>
           </div>
           <div v-else-if="squadLoading" class="stack-sm reserve"><ui-skeleton width="60%" height="28px"></ui-skeleton><ui-skeleton width="80%"></ui-skeleton></div>
-          <div v-else class="empty"><strong>Captain unavailable</strong>Appears once your squad analysis finishes.</div>
+          <div v-else class="empty"><strong>Choosing your captain</strong>Your captain pick appears with your advice.</div>
         </glass-card>
 
         <glass-card :title="'GW' + (gameState.next_gw || '') + ' predicted points'" lift>
-          <p v-if="!hasLoadedSquad && !squadLoading" class="muted">Update your data to calculate expected points.</p>
+          <p v-if="!hasLoadedSquad && !squadLoading" class="muted">{{ decisionCardLoading ? 'Calculating your points...' : 'Points appear when your advice is ready.' }}</p>
           <div v-else class="stat"><span class="stat-value stat-big">{{ totalGameweekPoints }}</span><span class="stat-label">pts forecast</span></div>
           <p v-if="hasLoadedSquad" class="muted">Formation {{ squadData.formation || '—' }}</p>
           <ui-disclosure v-if="hasLoadedSquad" title="Arithmetic">
@@ -175,8 +170,8 @@
 
       <glass-card title="Squad" :subtitle="'Automatic strategy · First-set chips expire at GW19'">
         <div class="stats">
-          <div class="stat"><span class="stat-label">Squad value</span><span class="stat-value">{{ squadData.total_team_value != null ? '£' + squadData.total_team_value + 'm' : '—' }}</span></div>
-          <div class="stat"><span class="stat-label">Selling value</span><span class="stat-value">{{ squadData.total_selling_value != null ? '£' + squadData.total_selling_value + 'm' : '—' }}</span></div>
+          <div class="stat"><span class="stat-label">Squad value</span><span class="stat-value">{{ displaySquad.total_squad_value != null ? '£' + displaySquad.total_squad_value + 'm' : '—' }}</span></div>
+          <div class="stat"><span class="stat-label">Selling value</span><span class="stat-value">{{ displaySquad.total_selling_value != null ? '£' + displaySquad.total_selling_value + 'm' : '—' }}</span></div>
           <div class="stat"><span class="stat-label">In bank <ui-badge v-if="squadData.has_bank_override" tone="warn">override</ui-badge></span><span class="stat-value">{{ bankDisplay }}</span></div>
           <div class="stat"><span class="stat-label">Banked transfers <ui-badge v-if="squadData.has_ft_override" tone="warn">override</ui-badge></span><span class="stat-value">{{ ftDisplay }} <span class="subtle">(max 5)</span></span></div>
         </div>
@@ -184,7 +179,7 @@
 
       <glass-card title="Availability and news">
         <div v-if="squadLoading" class="stack-sm reserve"><ui-skeleton height="48px"></ui-skeleton><ui-skeleton height="48px"></ui-skeleton></div>
-        <div v-else-if="!hasLoadedSquad" class="empty"><strong>Squad data unavailable</strong>Set your manager ID in .env or import a squad to check fitness.</div>
+        <div v-else-if="!hasLoadedSquad && !hasBasicSquad" class="empty"><strong>Team unavailable</strong>Try Update again to load your players.</div>
         <template v-else>
           <div v-if="flaggedSquadPlayers.length" class="grid cols-2">
             <div v-for="player in flaggedSquadPlayers" :key="player.element" class="item-row" style="display:grid;gap:8px">
@@ -206,7 +201,7 @@
         </template>
       </glass-card>
 
-      <glass-card title="Chips">
+      <glass-card title="Chips" v-if="!followedLocked">
         <ui-disclosure title="Saving your chips" v-if="decisionCard?.resource_frontier?.length">
           
           <div v-for="row in decisionCard.resource_frontier" :key="row.chip" class="item-row">
@@ -238,7 +233,7 @@
           <ui-button size="sm" variant="ghost" icon="settings-2" @click="showSettingsModal = true">Settings</ui-button>
         </template>
 
-        <p v-if="!hasLoadedSquad" class="note"><ui-icon name="info" :size="16"></ui-icon>{{ squadError || (squadLoading ? 'Checking lineup...' : 'Lineup unavailable') }}</p>
+        <p v-if="!hasLoadedSquad && !hasBasicSquad" class="note"><ui-icon name="info" :size="16"></ui-icon>{{ squadError || (squadLoading ? 'Checking lineup...' : 'Lineup unavailable') }}</p>
 
         <div v-if="simulatedOutIds.length > 0" class="callout tone-warn" role="status">
           <ui-icon name="repeat"></ui-icon>
@@ -260,7 +255,7 @@
                 </span>
               </div>
               <div class="player-name" :title="p.web_name">{{ p.web_name }}</div>
-              <div class="player-meta">{{ p.expected_points }} predicted pts</div>
+              <div class="player-meta">{{ hasLoadedSquad ? p.expected_points + ' predicted pts' : 'Published pick' }}</div>
               <div class="player-meta">£{{ p.now_cost }}m</div>
               <div v-if="p.exp_defcon_pts > 0" class="player-meta">DefCon bonus active</div>
               <div class="fixtures">
@@ -273,15 +268,15 @@
       </glass-card>
 
       <glass-card title="Bench">
-        <div v-if="(squadData.bench || []).length" class="bench">
-          <div v-for="(p, idx) in squadData.bench" :key="p.element" class="player" style="width:auto">
+        <div v-if="(displaySquad.bench || []).length" class="bench">
+          <div v-for="(p, idx) in displaySquad.bench" :key="p.element" class="player" style="width:auto">
             <div class="player-top"><ui-badge>{{ idx === 0 ? 'GK reserve' : 'Sub ' + idx }}</ui-badge><span class="player-meta">{{ p.position }}</span></div>
             <div class="player-name" :title="p.web_name">{{ p.web_name }}</div>
-            <div class="player-meta">{{ p.expected_points }} pts · £{{ p.now_cost }}m</div>
+            <div class="player-meta"><span v-if="hasLoadedSquad">{{ p.expected_points }} pts · </span>£{{ p.now_cost }}m</div>
             <div class="fixtures"><span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}</span></div>
           </div>
         </div>
-        <div v-else class="empty"><strong>No bench loaded</strong>Update your data or import a full 15-player squad to see the bench.</div>
+        <div v-else class="empty"><strong>Bench loading</strong>Your published bench appears when your team loads.</div>
       </glass-card>
 
       <glass-card title="Injury and rotation matrix">
@@ -334,8 +329,8 @@
         </div>
 
         <div v-else class="empty">
-          <strong>No transfer plans available</strong>
-          {{ plansError || (selectedPlanKey === "plan_a" ? "Verify your squad is configured and refresh recommendations." : "Plan A remains available. Detailed alternatives are not part of the fast core publication.") }}
+          <strong>Transfer options are being prepared</strong>
+          {{ plansError || (selectedPlanKey === "plan_a" ? "Your transfer options appear when your advice is ready." : "Plan A remains available. Detailed alternatives are not part of the fast core publication.") }}
         </div>
 
         <div class="row">
@@ -482,18 +477,18 @@
   </ui-modal>
 
   <ui-modal :open="showChecklistModal" title="Pre-deadline checklist" @close="showChecklistModal = false">
-    <div v-if="!checklistItems.length" class="empty"><strong>No checklist yet</strong>It loads after the first data refresh.</div>
+    <div v-if="!checklistItems.length" class="empty"><strong>Preparing your checklist</strong>It appears when your advice is ready.</div>
     <div v-for="item in checklistItems" :key="item.category" class="item-row" style="align-items:flex-start">
       <div class="stack-sm"><strong>{{ item.title || item.item }}</strong><span class="muted">{{ item.detail }}</span></div>
       <ui-badge :tone="item.status === 'PASS' ? 'ok' : 'warn'" dot>{{ humanLabel(item.status) }}</ui-badge>
     </div>
   </ui-modal>
 
-  <ui-modal :open="showConfirmTeam" title="Confirm team" wide @close="showConfirmTeam=false">
+  <ui-modal :open="showConfirmTeam" title="Update your team" wide @close="showConfirmTeam=false">
     
     
     <p v-if="confirmTeamData?.saved" class="subtle">{{ confirmTeamData.saved.comparison }}</p>
-    <p v-if="confirmTeamData?.recommendation" class="subtle">Out {{ confirmTeamData.recommendation.outs.map(id => confirmTeamData.players.find(p => p.element === id)?.name || 'Unknown player').join(', ') || 'none' }}, in {{ confirmTeamData.recommendation.ins.map(id => confirmTeamData.players.find(p => p.element === id)?.name || 'Unknown player').join(', ') || 'none' }}.</p>
+    <p v-if="confirmTeamData?.recommendation && confirmTeamData?.players" class="subtle">Out {{ confirmTeamData.recommendation.outs.map(id => confirmTeamData.players.find(p => p.element === id)?.name || 'Unknown player').join(', ') || 'none' }}, in {{ confirmTeamData.recommendation.ins.map(id => confirmTeamData.players.find(p => p.element === id)?.name || 'Unknown player').join(', ') || 'none' }}.</p>
     <div class="row wrap">
       <ui-button variant="primary" :disabled="!confirmTeamData?.recommendation" :loading="confirmTeamSaving" @click="confirmFollowedAdvice">I followed the advice</ui-button>
       <ui-button @click="confirmMode='different'">I did something different</ui-button>
@@ -554,7 +549,7 @@
       <ui-tabs v-model="briefingSubTab" :items="briefingTabs" label="Report type" id-prefix="report"></ui-tabs>
       <ui-button size="sm" icon="copy" :loading="busy.copy" @click="copyBriefingMarkdown">Copy</ui-button>
     </div>
-    <div v-if="briefingSubTab === 'preview'" class="prose-rendered" v-html="renderMarkdown(briefingData.markdown || (aux.briefing.loading ? 'Preparing...' : aux.briefing.error || 'Report unavailable'))"></div>
+    <div v-if="briefingSubTab === 'preview'" class="prose-rendered" v-html="renderMarkdown(briefingData.markdown || (aux.briefing.loading ? 'Preparing...' : aux.briefing.error || 'Your weekly briefing appears when your advice is ready.'))"></div>
     <div v-if="briefingSubTab === 'review'" class="prose-rendered" v-html="renderMarkdown(reviewData.review_markdown || (aux.review.loading ? 'Loading...' : aux.review.error || 'No completed week'))"></div>
   </ui-modal>
 
