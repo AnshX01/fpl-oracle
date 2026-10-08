@@ -11,7 +11,8 @@ def evaluate_lineup(elements, player_map, risk="balanced", chip=None):
     players = [player_map[e] for e in sorted(elements)]
     groups = {
         p: sorted(
-            [r for r in players if r["position"] == p], key=lambda r: (-float(r["expected_points"]), int(r["element"]))
+            [r for r in players if r["position"] == p and not r.get("simulation_unavailable", False)],
+            key=lambda r: (-float(r["expected_points"]), int(r["element"])),
         )
         for p in ("GKP", "DEF", "MID", "FWD")
     }
@@ -20,6 +21,8 @@ def evaluate_lineup(elements, player_map, risk="balanced", chip=None):
     for formation in VALID_FORMATIONS:
         counts = dict(zip(("GKP", "DEF", "MID", "FWD"), (1, *formation), strict=True))
         for cap in players:
+            if cap.get("simulation_unavailable", False):
+                continue
             chosen = []
             for pos, count in counts.items():
                 options = groups[pos]
@@ -29,14 +32,18 @@ def evaluate_lineup(elements, player_map, risk="balanced", chip=None):
             if len(chosen) != 11 or not any(r["element"] == cap["element"] for r in chosen):
                 continue
             xp = float(cap["expected_points"])
-            if risk == "conservative":
+            if risk == "points":
+                score = xp
+            elif risk == "conservative":
                 score = 0.6 * xp + 0.4 * float(cap.get("p10", xp * 0.4))
             elif risk == "aggressive":
                 score = 0.4 * xp + 0.6 * float(cap.get("p90", xp * 1.8))
             else:
                 score = 0.7 * xp + 0.3 * float(cap.get("p90", xp * 1.8))
             starter_xp = sum(float(r["expected_points"]) for r in chosen)
-            objective = starter_xp + multiplier * score
+            objective = (
+                sum(float(r["expected_points"]) for r in players) if chip == "bboost" else starter_xp
+            ) + multiplier * score
             if best is None or objective > best[0]:
                 bench = sum(float(r["expected_points"]) for r in players) - starter_xp
                 gross = starter_xp + multiplier * xp + (bench if chip == "bboost" else 0)
@@ -64,6 +71,15 @@ def search_sequences(
     beam_width=32,
     chips_by_set=None,
     previous_chip=None,
+    candidate_limit=2,
+    two_transfer_limit=1,
+    per_position_limit=2,
+    restructure_parent_limit=1,
+    max_hits_per_move=1,
+    hit_cooldown_until=0,
+    enforce_hit_gain=True,
+    forced_current_chip=None,
+    forced_chip_schedule=None,
 ):
 
     costs = terminal_costs or {}
@@ -80,20 +96,37 @@ def search_sequences(
         )
     ]
     solve_cache: dict[Any, Any] = {}
+    ranking_pools = {}
+    ranking_maps = {}
+    for step, gw in enumerate(gameweeks):
+        frame = pools[gw].copy()
+        frame["expected_points"] = frame["element"].map(
+            {
+                e: sum(
+                    optimizer.discount_factor**j * float(maps[g].get(e, {}).get("expected_points", 0))
+                    for j, g in enumerate(gameweeks[step:])
+                )
+                for e in maps[gw]
+            }
+        )
+        ranking_pools[gw] = frame
+        ranking_maps[gw] = {int(row["element"]): dict(row) for _, row in frame.iterrows()}
     for step, gw in enumerate(gameweeks):
         next_states = []
         restructure_parents = {}
         for parent in states:
             group = (parent["first_chip"], parent["remaining"])
             restructure_parents.setdefault(group, []).append(parent)
-        restructure_ids = {id(parent) for parents in restructure_parents.values() for parent in parents[:1]}
+        restructure_ids = {
+            id(parent) for parents in restructure_parents.values() for parent in parents[:restructure_parent_limit]
+        }
         for state in states:
             remaining = state["remaining"]
             if step and gameweeks[step - 1] <= 19 < gw:
                 # Do not infer the owner's second set from first-set availability.
                 remaining = frozenset((chips_by_set or {}).get(2, []))
             moves = [dict(transfers_in=[], transfers_out=[], buy_costs={}, bank_delta=0)]
-            moves += optimizer._get_candidate_1_transfers(
+            immediate = optimizer._get_candidate_1_transfers(
                 state["elements"],
                 state["bank"],
                 state["purchase"],
@@ -102,19 +135,99 @@ def search_sequences(
                 locked_in,
                 locked_out,
                 excluded,
-                max_per_pos=2,
-            )[:2]
-            moves += optimizer._get_candidate_2_transfers(
-                elements=state["elements"],
-                bank=state["bank"],
-                purchase_prices=state["purchase"],
-                pool_df=pools[gw],
-                player_map=maps[gw],
-                locked_in=locked_in,
-                locked_out=locked_out,
-                excluded_teams=excluded,
-                cand_1_moves=moves[1:],
-            )[:1]
+                max_per_pos=per_position_limit,
+            )
+            horizon = optimizer._get_candidate_1_transfers(
+                state["elements"],
+                state["bank"],
+                state["purchase"],
+                ranking_pools[gw],
+                ranking_maps[gw],
+                locked_in,
+                locked_out,
+                excluded,
+                max_per_pos=per_position_limit,
+            )
+            # Keep immediate and future-value discovery paths. The beam still
+            # scores actual weekly lineups, costs and FT resources, not rank scores.
+            seen = set()
+            for move in immediate[:candidate_limit] + horizon[:candidate_limit]:
+                key = (tuple(move["transfers_in"]), tuple(move["transfers_out"]))
+                if key not in seen:
+                    seen.add(key)
+                    moves.append(move)
+            for frame, mapping, seeds in (
+                (pools[gw], maps[gw], immediate),
+                (ranking_pools[gw], ranking_maps[gw], horizon),
+            ):
+                pairs = optimizer._get_candidate_2_transfers(
+                    elements=state["elements"],
+                    bank=state["bank"],
+                    purchase_prices=state["purchase"],
+                    pool_df=frame,
+                    player_map=mapping,
+                    locked_in=locked_in,
+                    locked_out=locked_out,
+                    excluded_teams=excluded,
+                    cand_1_moves=seeds,
+                )
+                for move in pairs[:two_transfer_limit]:
+                    key = (tuple(sorted(move["transfers_in"])), tuple(sorted(move["transfers_out"])))
+                    if key not in seen:
+                        seen.add(key)
+                        moves.append(move)
+            try:
+                evaluate_lineup(state["elements"], maps[gw], risk)
+            except ValueError:
+                # A points shortlist is not a feasibility test. Solve a full
+                # legal-XI repair with all market candidates and priced hits.
+                sells = {
+                    e: optimizer.calculate_selling_price(state["purchase"][e], int(maps[gw][e]["value"]))
+                    for e in state["elements"]
+                }
+                repair_key = (
+                    "repair",
+                    gw,
+                    tuple(sorted(sells.items())),
+                    state["bank"],
+                    state["ft"],
+                    max_hits_per_move,
+                    hit_cooldown_until,
+                )
+                if repair_key not in solve_cache:
+                    try:
+                        solve_cache[repair_key] = squad_optimizer.solve_best_squad(
+                            pools[gw],
+                            state["bank"] + sum(sells.values()),
+                            locked_in_ids=list(locked_in),
+                            locked_out_ids=list(locked_out),
+                            excluded_team_ids=list(excluded),
+                            captain_mean_only=True,
+                            require_talisman=False,
+                            bench_weight=0,
+                            repair_elements=state["elements"],
+                            repair_sell_prices=sells,
+                            repair_free_transfers=state["ft"],
+                            repair_hit_penalty=optimizer.hit_penalty,
+                            repair_max_transfers=min(
+                                2, state["ft"] + (0 if gw < hit_cooldown_until else max_hits_per_move)
+                            ),
+                        )["squad"]
+                    except (ValueError, RuntimeError):
+                        solve_cache[repair_key] = None
+                repaired = solve_cache[repair_key]
+                if repaired is not None:
+                    new = set(int(e) for e in repaired["element"])
+                    ins, outs = new - state["elements"], state["elements"] - new
+                    buys = {e: int(maps[gw][e]["value"]) for e in ins}
+                    moves.append(
+                        dict(
+                            transfers_in=sorted(ins),
+                            transfers_out=sorted(outs),
+                            buy_costs=buys,
+                            bank_delta=sum(sells[e] for e in outs) - sum(buys.values()),
+                        )
+                    )
             branches = [(None, m) for m in moves]
             for chip in sorted(remaining & {"3xc", "bboost"}):
                 branches += [(chip, m) for m in moves]
@@ -153,6 +266,7 @@ def search_sequences(
                                 locked_in_ids=list(locked_in),
                                 locked_out_ids=list(locked_out),
                                 excluded_team_ids=list(excluded),
+                                captain_mean_only=risk == "points",
                             )["squad"]
                         except (ValueError, RuntimeError):
                             solve_cache[key] = None
@@ -176,6 +290,14 @@ def search_sequences(
                                 ),
                             )
                         )
+            scheduled = (forced_chip_schedule or {}).get(gw)
+            if scheduled:
+                branches = [(chip, move) for chip, move in branches if chip == scheduled]
+            else:
+                reserved = set((forced_chip_schedule or {}).values())
+                branches = [(chip, move) for chip, move in branches if chip not in reserved]
+            if step == 0 and forced_current_chip:
+                branches = [(chip, move) for chip, move in branches if chip == forced_current_chip]
             for chip, move in branches:
                 new = (state["elements"] - set(move["transfers_out"])) | set(move["transfers_in"])
                 new_bank = state["bank"] + move["bank_delta"]
@@ -186,8 +308,20 @@ def search_sequences(
                 count = len(move["transfers_in"])
                 special = chip in {"freehit", "wildcard"}
                 hits = 0 if special else max(0, count - state["ft"])
+                if not special and (count > 2 or hits > max_hits_per_move or (hits and gw < hit_cooldown_until)):
+                    continue
+                from fpl_oracle.optimise.hit_policy import expected_transfer_gain
+
+                transfer_gain = expected_transfer_gain(
+                    move["transfers_in"], move["transfers_out"], maps, gameweeks[step:]
+                )
+                if hits and enforce_hit_gain and transfer_gain + 1e-9 < hits * optimizer.hit_penalty:
+                    continue
                 next_ft = state["ft"] if special else min(5, max(0, state["ft"] - count) + 1)
-                gross, captain, formation = evaluate_lineup(new, maps[gw], risk, chip)
+                try:
+                    gross, captain, formation = evaluate_lineup(new, maps[gw], risk, chip)
+                except ValueError:
+                    continue
                 net = gross - hits * optimizer.hit_penalty
                 record = dict(
                     gameweek=gw,
@@ -202,6 +336,8 @@ def search_sequences(
                     banked_ft=next_ft,
                     hits=hits,
                     hit_cost=hits * optimizer.hit_penalty,
+                    expected_player_gain=transfer_gain,
+                    hit_requires_prior_success=bool(hits and any(r["hits"] for r in state["history"][-6:])),
                     gross_xp=gross,
                     net_xp=net,
                 )
@@ -218,19 +354,64 @@ def search_sequences(
                         score=state["score"] + optimizer.discount_factor**step * (net - costs.get(chip, 0)),
                     )
                 )
-        # Keep distinct resource states: chip conservation must survive early score pruning.
-        next_states.sort(key=lambda s: s["score"], reverse=True)
+        # A future-ranked player must survive the current-week beam too.
+        # Use a no-more-transfers lookahead only for pruning, never for the
+        # reported plan score or hit-gain gate.
+        future_cache = {}
+
+        def pruning_value(state, step=step, future_cache=future_cache):
+            key = tuple(sorted(state["elements"]))
+            if key in future_cache:
+                return state["score"] + future_cache[key]
+            future = 0.0
+            for j, later in enumerate(gameweeks[step + 1 :], start=step + 1):
+                try:
+                    if risk == "points":
+                        from fpl_oracle.optimise.transfers import VALID_FORMATIONS
+
+                        groups = {
+                            pos: sorted(
+                                (
+                                    float(maps[later][e]["expected_points"])
+                                    for e in state["elements"]
+                                    if maps[later][e]["position"] == pos
+                                    and not maps[later][e].get("simulation_unavailable", False)
+                                ),
+                                reverse=True,
+                            )
+                            for pos in ("GKP", "DEF", "MID", "FWD")
+                        }
+                        scores = []
+                        for formation in VALID_FORMATIONS:
+                            counts = (1, *formation)
+                            if all(len(groups[pos]) >= count for pos, count in zip(groups, counts, strict=True)):
+                                chosen = [
+                                    xp for pos, count in zip(groups, counts, strict=True) for xp in groups[pos][:count]
+                                ]
+                                scores.append(sum(chosen) + max(chosen))
+                        if not scores:
+                            raise ValueError("No legal future XI")
+                        gross = max(scores)
+                    else:
+                        gross, _, _ = evaluate_lineup(state["elements"], maps[later], risk)
+                except ValueError:
+                    continue
+                future += optimizer.discount_factor**j * gross
+            future_cache[key] = future
+            return state["score"] + future
+
+        next_states.sort(key=pruning_value, reverse=True)
         groups: dict[Any, list] = {}
         for state in next_states:
-            key = (state["first_chip"], state["remaining"])
+            key = (state["first_chip"], state["remaining"], state["ft"])
             if len(groups.setdefault(key, [])) < 2:
                 groups[key].append(state)
         # Bounded total; preserve one best branch per resource state before runners-up.
         selected = [v[0] for v in groups.values()]
-        selected.sort(key=lambda s: s["score"], reverse=True)
+        selected.sort(key=pruning_value, reverse=True)
         first_best = {}
         for candidate in selected:
-            first_best.setdefault(candidate["first_chip"], candidate)
+            first_best.setdefault((candidate["first_chip"], candidate["ft"]), candidate)
         # Keep a frontier that retains each available chip so the endpoint can
         # report preservation break-even instead of silently spending everything.
         retain_best = []

@@ -22,7 +22,7 @@
 </head>
 <body>
 
-<div id="app" v-cloak class="app">
+<div id="app" v-cloak class="app" :class="{ 'chat-open': showChatDrawer }">
 
   <aside class="desktop-sidebar">
 <div class="sidebar-brand"><strong>FPL Oracle</strong></div>
@@ -67,23 +67,27 @@
       <p class="muted">{{ basicSquadData.is_stale ? 'Cached published team; refresh failed or in progress.' : 'Published picks, not optimized recommendations.' }}</p>
       <div class="chips" data-testid="basic-starters"><ui-badge v-for="p in basicSquadData.starters" :key="p.element">{{ p.web_name }}</ui-badge></div>
       <div class="chips" data-testid="basic-bench"><span class="subtle">Bench:</span> <ui-badge v-for="p in basicSquadData.bench" :key="p.element">{{ p.web_name }}</ui-badge></div>
-      <p class="subtle">Source data as of: {{ basicSquadData.data_as_of || 'Unknown' }}. Fresh advice: {{ adviceStage || "calculating separately" }}.</p>
+      
     </glass-card>
 
+    <div class="callout tone-warn" v-if="!squadData?.team_confirmed && !followedLocked"><ui-icon name="circle-alert"></ui-icon><div class="stack-sm"><strong>Team not confirmed</strong><ui-button @click="openConfirmTeam">Confirm my team</ui-button></div></div>
     <!-- ===================== OVERVIEW ===================== -->
     <section v-if="activeTab === 'overview'" class="panel" id="main-panel-overview" role="tabpanel" aria-label="Overview">
 
-      <glass-card id="decision-card" class="hero">
+      <glass-card v-if="followedLocked" id="followed-card" class="hero">
+        <ui-badge tone="ok">Followed</ui-badge>
+        <h2 class="hero-title">Done. Next update after the deadline.</h2>
+        
+        <div class="row wrap"><ui-button @click="undoFollowedAdvice">Undo</ui-button><ui-button variant="ghost" @click="openConfirmTeam().then(()=>confirmMode='different')">Did something different</ui-button></div>
+      </glass-card>
+      <glass-card v-else id="decision-card" class="hero">
         <div class="row between">
           <div class="row">
             <ui-badge v-if="nextDecision.isUnavailable" tone="muted">{{ nextDecision.badge }}</ui-badge>
             <ui-badge v-else :tone="nextDecision.tone" dot>{{ nextDecision.badge }}</ui-badge>
             <span class="subtle">{{ gameState.next_gw ? 'Gameweek ' + gameState.next_gw : 'Upcoming' }}</span>
           </div>
-          <div class="row">
-            <ui-badge v-if="nextDecision.card">Model {{ nextDecision.card.model_version }}</ui-badge>
-            <ui-button variant="ghost" size="sm" icon="copy" :loading="busy.export" :disabled="!nextDecision.card" @click="exportDecisionCard">Export card</ui-button>
-          </div>
+
         </div>
 
         <div v-if="decisionCardLoading || plansLoading" class="stack reserve" aria-busy="true" aria-label="Calculating recommendations">
@@ -97,7 +101,7 @@
           <h2 class="hero-title">{{ nextDecision.title }}</h2>
 
           <div v-if="!nextDecision.isUnavailable" class="stats">
-            <div class="stat"><span class="stat-label">Projected gain</span><span class="stat-value">{{ nextDecision.gainText }}</span></div>
+            <div class="stat"><span class="stat-label">Est. extra points</span><span class="stat-value">{{ nextDecision.gainText }}</span></div>
             <div class="stat"><span class="stat-label">Hit</span><span class="stat-value">{{ nextDecision.hitText }}</span></div>
             <div class="stat"><span class="stat-label">Bank</span><span class="stat-value">{{ nextDecision.bankText }}</span></div>
             <div class="stat"><span class="stat-label">Free transfers</span><span class="stat-value">{{ nextDecision.ftText }}</span></div>
@@ -107,12 +111,13 @@
             <ui-icon name="zap"></ui-icon>
             <div class="stack-sm">
               <div class="callout-title">
-                <span>Conditional chip candidate: {{ decisionCard.chip.chip_display_name }}</span>
+                <span>Chip: {{ decisionCard.chip.chip_display_name }}</span>
                 <ui-badge :tone="chipCheck.tone" dot>{{ chipCheck.label }}</ui-badge>
               </div>
-              <p class="callout-text">Inside the loaded window it adds +{{ decisionCard.chip.gain_vs_hold }} next-GW xP. {{ chipCheck.text }}</p>
+              <p v-if="decisionCard.chip.gain_vs_hold != null" class="callout-text">Est. +{{ decisionCard.chip.gain_vs_hold }} pts · {{ chipCheck.label }}</p>
+              <p v-else class="callout-text">Chip needed for a legal XI.</p>
               <div class="row">
-                <ui-button size="sm" variant="ghost" icon="search-check" :loading="expiryResearchLoading" @click="loadExpiryResearch">{{ chipCheck.state === 'idle' ? 'Check through GW19' : 'Re-run check' }}</ui-button>
+                <ui-button size="sm" variant="ghost" icon="search-check" :loading="expiryResearchLoading" @click="loadExpiryResearch">{{ chipCheck.state === 'idle' ? 'Check chip timing' : 'Check again' }}</ui-button>
               </div>
             </div>
           </div>
@@ -124,20 +129,22 @@
             </ul>
           </div>
 
-          <p class="note"><ui-icon name="info" :size="16"></ui-icon><span>{{ nextDecision.caveat }} Advice only. Nothing is submitted to FPL.</span></p>
+          
 
-          <div class="row">
+          <div class="row wrap">
+            <ui-button v-if="!nextDecision.isUnavailable" variant="primary" :loading="confirmTeamSaving" @click="confirmFollowedAdvice">Done</ui-button>
+            <ui-button variant="ghost" @click="openConfirmTeam().then(()=>confirmMode='different')">Did something different</ui-button>
             <ui-button variant="primary" icon="arrow-right" @click="activeTab = 'transfers'">Transfers to make</ui-button>
           </div>
         </template>
       </glass-card>
 
       <div class="grid cols-3">
-        <glass-card title="Who to captain" lift>
+        <glass-card title="Captain" lift>
           <div v-if="squadData.captain" class="stack-sm">
             <div class="row"><span class="mark">C</span><span class="stat-value">{{ squadData.captain.web_name }}</span></div>
             <p class="muted num">{{ squadData.captain.expected_points }} predicted pts (x2 = {{ (squadData.captain.expected_points * 2).toFixed(1) }})</p>
-            <p class="subtle num">Floor {{ squadData.captain.p10 ?? '—' }} · Ceiling {{ squadData.captain.p90 ?? '—' }}</p>
+            <p class="subtle num">Range {{ squadData.captain.p10 ?? '—' }} - {{ squadData.captain.p90 ?? '—' }}</p>
             <p v-if="squadData.vice_captain" class="row muted"><span class="mark vc">VC</span> {{ squadData.vice_captain.web_name }} <span class="num subtle">{{ squadData.vice_captain.expected_points }} pts</span></p>
           </div>
           <div v-else-if="squadLoading" class="stack-sm reserve"><ui-skeleton width="60%" height="28px"></ui-skeleton><ui-skeleton width="80%"></ui-skeleton></div>
@@ -147,24 +154,26 @@
         <glass-card :title="'GW' + (gameState.next_gw || '') + ' predicted points'" lift>
           <p v-if="!hasLoadedSquad && !squadLoading" class="muted">Update your data to calculate expected points.</p>
           <div v-else class="stat"><span class="stat-value stat-big">{{ totalGameweekPoints }}</span><span class="stat-label">pts forecast</span></div>
-          <p v-if="hasLoadedSquad" class="muted">Formation {{ squadData.formation || 'Not available' }} · Confidence {{ squadData.confidence != null ? squadData.confidence : '—' }}</p>
+          <p v-if="hasLoadedSquad" class="muted">Formation {{ squadData.formation || '—' }}</p>
           <ui-disclosure v-if="hasLoadedSquad" title="Arithmetic">
             <div class="item-row"><span>11 starting players</span><span class="num">{{ startersExpectedPoints }} pts</span></div>
-            <div class="item-row"><span>Captaincy bonus</span><span class="num">+{{ captainBonusPoints }} pts</span></div>
+            <div class="item-row"><span>Captain bonus</span><span class="num">+{{ captainBonusPoints }} pts</span></div>
             <div class="item-row"><strong>Total</strong><strong class="num">{{ totalGameweekPoints }} pts</strong></div>
-            <p class="subtle">Bench points do not count unless an autosub activates.</p>
+            
           </ui-disclosure>
         </glass-card>
 
         <glass-card title="Rivals" lift>
-          <div class="stat"><span class="stat-value stat-big">{{ leagueData.simulation?.user_rank != null ? '#' + leagueData.simulation.user_rank : 'Not available' }}</span><span class="stat-label">{{ leagueData.league_name || 'Mini-league standings' }}{{ squadData.overall_points != null ? ' · ' + squadData.overall_points + ' points' : '' }}</span></div>
+          <span class="stat-label">Current league rank</span>
+          <ui-button v-if="aux.league.error" size="sm" @click="retryAux('league')">Try again</ui-button>
+          <div class="stat"><span class="stat-value stat-big">{{ currentLeagueRankLabel }}</span><span class="stat-label">{{ leagueData.league_name || 'Mini-league standings' }}{{ squadData.overall_points != null ? ' · ' + squadData.overall_points + ' points' : '' }}</span></div>
           <p class="muted">Simulated first-place rate: <strong class="num">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</strong></p>
           <p class="subtle">Tactical mode: {{ leagueData.strategy?.mode_title || '—' }}</p>
-          <p v-if="decisionCard && decisionCard.rivals && decisionCard.rivals.status === 'configured'" class="subtle">Approach: {{ decisionCard.rivals.posture }} ({{ decisionCard.win_prob.p_first }}% horizon, owned squad held)</p>
+
         </glass-card>
       </div>
 
-      <glass-card title="Squad" :subtitle="'Risk: ' + (profile.risk_preference || 'balanced') + ' · Set 1 chips expire after GW19'">
+      <glass-card title="Squad" :subtitle="'Automatic strategy · First-set chips expire at GW19'">
         <div class="stats">
           <div class="stat"><span class="stat-label">Squad value</span><span class="stat-value">{{ squadData.total_team_value != null ? '£' + squadData.total_team_value + 'm' : '—' }}</span></div>
           <div class="stat"><span class="stat-label">Selling value</span><span class="stat-value">{{ squadData.total_selling_value != null ? '£' + squadData.total_selling_value + 'm' : '—' }}</span></div>
@@ -173,7 +182,7 @@
         </div>
       </glass-card>
 
-      <glass-card title="Availability and news" subtitle="Official flags and sourced news; extraction mode shown per player">
+      <glass-card title="Availability and news">
         <div v-if="squadLoading" class="stack-sm reserve"><ui-skeleton height="48px"></ui-skeleton><ui-skeleton height="48px"></ui-skeleton></div>
         <div v-else-if="!hasLoadedSquad" class="empty"><strong>Squad data unavailable</strong>Set your manager ID in .env or import a squad to check fitness.</div>
         <template v-else>
@@ -181,8 +190,8 @@
             <div v-for="player in flaggedSquadPlayers" :key="player.element" class="item-row" style="display:grid;gap:8px">
               <div class="row between">
                 <div class="row"><strong>{{ player.web_name }}</strong><ui-badge tone="warn">{{ player.chance_of_playing ?? 75 }}% chance</ui-badge></div>
-                <ui-badge v-if="player.news_mode === 'gated_active'" tone="ok">Gated Active</ui-badge>
-                <ui-badge v-else-if="player.news_mode === 'shadow'" tone="info">Shadow Mode</ui-badge>
+                <ui-badge v-if="player.news_mode === 'gated_active'" tone="ok">Active</ui-badge>
+                <ui-badge v-else-if="player.news_mode === 'shadow'" tone="info">Preview</ui-badge>
               </div>
               <p class="muted">{{ player.news || player.reconciliation_reason || 'No additional fitness detail was returned.' }}</p>
               <p v-if="player.news_quote" class="muted"><em>"{{ player.news_quote }}"</em></p>
@@ -192,30 +201,30 @@
               </div>
             </div>
           </div>
-          <p v-if="allSquadConfirmedAvailable" class="note"><ui-icon name="circle-check" :size="16"></ui-icon>All 15 have an explicit 100% official availability value. This is not a guaranteed start.</p>
-          <p v-else-if="unknownAvailabilityPlayers.length > 0" class="note"><ui-icon name="circle-help" :size="16"></ui-icon>Availability unknown for {{ unknownAvailabilityPlayers.length }} players. Their fitness has not been confirmed.</p>
+          <p v-if="allSquadConfirmedAvailable" class="note"><ui-icon name="circle-check" :size="16"></ui-icon>All players available</p>
+          <p v-else-if="unknownAvailabilityPlayers.length > 0" class="note"><ui-icon name="circle-help" :size="16"></ui-icon>{{ unknownAvailabilityPlayers.length }} availability unknown</p>
         </template>
       </glass-card>
 
-      <glass-card title="Chip research" subtitle="Model-only stress tests. Not forecasts and not calibrated.">
-        <ui-disclosure title="Future chip value: preservation alternatives" v-if="decisionCard?.resource_frontier?.length">
-          <p class="muted">Model-only break-even, not a forecast of later value. Reassess before every deadline.</p>
+      <glass-card title="Chips">
+        <ui-disclosure title="Saving your chips" v-if="decisionCard?.resource_frontier?.length">
+          
           <div v-for="row in decisionCard.resource_frontier" :key="row.chip" class="item-row">
-            <span>{{ humanLabel(row.chip) }}: preserving through GW{{ row.retained_through_gameweek }} costs {{ row.discounted_horizon_cost_to_preserve }} discounted xP in this window. Later value above {{ row.tail_value_break_even_at_horizon_end }} xP could reverse the choice.</span>
+            <span>{{ humanLabel(row.chip) }}: saving until GW{{ row.retained_through_gameweek }} gives up {{ row.discounted_horizon_cost_to_preserve }} estimated points.</span>
           </div>
         </ui-disclosure>
-        <ui-disclosure title="Expiry window: eight weeks vs through GW19">
-          <p class="muted">Compares the same inputs over eight weeks and through GW19. Separate stress test, not a validated tail forecast. It runs in the background after the core advice appears; a re-run can take around two minutes or longer on slower devices.</p>
+        <ui-disclosure title="Check timing through GW19">
+          
           <div class="row"><ui-button icon="search-check" :loading="expiryResearchLoading" @click="loadExpiryResearch">{{ expiryResearchLoading ? 'Calculating expiry comparison' : 'Run expiry comparison' }}</ui-button></div>
           <p v-if="expiryResearchError" class="note"><ui-icon name="circle-alert" :size="16"></ui-icon>{{ expiryResearchError }}</p>
-          <p v-if="expiryResearch?.status === 'pending'" class="note"><ui-icon name="loader-circle" class="spin" :size="16"></ui-icon>Calculating in the background.</p>
+          <p v-if="expiryResearch?.status === 'pending'" class="note"><ui-icon name="loader-circle" class="spin" :size="16"></ui-icon>Checking...</p>
           <p v-if="expiryResearch?.status === 'unavailable'" class="note"><ui-icon name="info" :size="16"></ui-icon>{{ expiryResearch.reason }}</p>
           <div v-if="expiryResearch?.status === 'model_expiry_sensitivity'" class="stack-sm">
-            <div class="item-row"><span>Eight-week first chip: {{ humanLabel(expiryResearch.short.first_chip, 'Hold') }}</span><span class="num">edge {{ expiryResearch.short.discounted_edge }} xP</span></div>
-            <div class="item-row"><span>Through GW19 first chip: {{ humanLabel(expiryResearch.extended.first_chip, 'Hold') }}</span><span class="num">edge {{ expiryResearch.extended.discounted_edge }} xP</span></div>
-            <p class="muted">{{ expiryResearch.first_chip_changes ? 'Choice changes with the horizon. Reassess before committing.' : 'Same first-chip candidate across these windows. This does not prove it is optimal.' }}</p>
-            <p class="subtle">{{ expiryResearch.assumptions }}</p>
-            <p class="subtle">{{ expiryResearch.unresolved }}</p>
+            <div class="item-row"><span>Next 8 weeks: {{ humanLabel(expiryResearch.short.first_chip, 'Hold') }}</span><span class="num">+{{ expiryResearch.short.discounted_edge }} estimated pts</span></div>
+            <div class="item-row"><span>To GW19: {{ humanLabel(expiryResearch.extended.first_chip, 'Hold') }}</span><span class="num">+{{ expiryResearch.extended.discounted_edge }} estimated pts</span></div>
+            <p class="muted">{{ expiryResearch.first_chip_changes ? 'Timing changed' : 'Timing unchanged' }}</p>
+            
+            
           </div>
         </ui-disclosure>
       </glass-card>
@@ -223,19 +232,19 @@
 
     <!-- ===================== MY TEAM ===================== -->
     <section v-if="activeTab === 'team'" class="panel" id="main-panel-team" role="tabpanel" aria-label="My Team">
-      <glass-card title="Starting XI" subtitle="Tap Out? on a starter to simulate an autosub. Vice-captain failsafe applies.">
+      <glass-card title="Starting XI">
         <template #actions>
           <ui-button size="sm" icon="clipboard-paste" @click="openSquadModal">Import squad</ui-button>
-          <ui-button size="sm" variant="ghost" icon="settings-2" @click="showSettingsModal = true">Server config</ui-button>
+          <ui-button size="sm" variant="ghost" icon="settings-2" @click="showSettingsModal = true">Settings</ui-button>
         </template>
 
-        <p v-if="!hasLoadedSquad" class="note"><ui-icon name="info" :size="16"></ui-icon>{{ squadError || (squadLoading ? 'Current lineup analysis is calculating. Published picks are shown above.' : 'Current lineup unavailable. No recommended lineup is being shown.') }}</p>
+        <p v-if="!hasLoadedSquad" class="note"><ui-icon name="info" :size="16"></ui-icon>{{ squadError || (squadLoading ? 'Checking lineup...' : 'Lineup unavailable') }}</p>
 
         <div v-if="simulatedOutIds.length > 0" class="callout tone-warn" role="status">
           <ui-icon name="repeat"></ui-icon>
           <div class="stack-sm">
-            <div class="callout-title">Autosub simulation</div>
-            <p class="callout-text">Starter marked absent: reserve 1 ({{ (squadData.bench && squadData.bench[1]) ? squadData.bench[1].web_name : 'first reserve' }}) is promoted to the Starting XI.</p>
+            <div class="callout-title">Bench cover</div>
+            <p class="callout-text"><span v-for="move in simulatedSubs.moves" :key="move.out" class="sub-line">{{ move.in }} replaces {{ move.out }}.</span><span v-if="simulatedSubs.unfilled">{{ simulatedSubs.unfilled }} player(s) have no legal bench cover.</span></p>
             <div class="row"><ui-button size="sm" variant="ghost" @click="simulatedOutIds = []">Reset</ui-button></div>
           </div>
         </div>
@@ -257,13 +266,13 @@
               <div class="fixtures">
                 <span v-for="f in (p.next_fixtures || []).slice(0, 3)" :key="f.event" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}</span>
               </div>
-              <ui-button size="sm" variant="ghost" :aria-pressed="simulatedOutIds.includes(p.element) ? 'true' : 'false'" :aria-label="'Simulate ' + p.web_name + ' out'" @click="toggleSimulateOut(p.element)">Out?</ui-button>
+              <ui-button size="sm" variant="ghost" :aria-pressed="simulatedOutIds.includes(p.element) ? 'true' : 'false'" :aria-label="'Simulate ' + p.web_name + ' out'" @click="toggleSimulateOut(p.element)">Misses match?</ui-button>
             </div>
           </div>
         </div>
       </glass-card>
 
-      <glass-card title="Bench" subtitle="The first outfield sub is promoted automatically if a starter plays 0 minutes.">
+      <glass-card title="Bench">
         <div v-if="(squadData.bench || []).length" class="bench">
           <div v-for="(p, idx) in squadData.bench" :key="p.element" class="player" style="width:auto">
             <div class="player-top"><ui-badge>{{ idx === 0 ? 'GK reserve' : 'Sub ' + idx }}</ui-badge><span class="player-meta">{{ p.position }}</span></div>
@@ -275,7 +284,7 @@
         <div v-else class="empty"><strong>No bench loaded</strong>Update your data or import a full 15-player squad to see the bench.</div>
       </glass-card>
 
-      <glass-card title="Injury and rotation matrix" subtitle="Selected plan, not submitted. What if a starter is ruled out: autosub vs emergency transfer.">
+      <glass-card title="Injury and rotation matrix">
         <ui-disclosure title="View injury comparison" :hint="'(' + contingencyMatrix.length + ' starters)'">
 <div v-if="aux.matrix.loading" class="stack-sm reserve" aria-busy="true"><ui-skeleton height="48px"></ui-skeleton><p class="subtle">Loading injury comparison...</p></div>
           <div v-else-if="aux.matrix.error" class="empty"><strong>Injury comparison unavailable</strong>{{ aux.matrix.error }}<ui-button size="sm" @click="retryAux('matrix')">Try again</ui-button></div>
@@ -301,7 +310,7 @@
 
     <!-- ===================== TRANSFERS ===================== -->
     <section v-if="activeTab === 'transfers'" class="panel" id="main-panel-transfers" role="tabpanel" aria-label="Transfers">
-      <glass-card title="Conditional transfer candidates" subtitle="Bounded legal transfer and chip search over the served planning horizon.">
+      <glass-card title="Transfer options">
         <ui-tabs v-model="selectedPlanKey" :items="planTabs" label="Transfer plans" id-prefix="plan" segmented></ui-tabs>
 
         <div v-if="plansLoading" class="stack-sm reserve"><ui-skeleton height="28px" width="50%"></ui-skeleton><ui-skeleton height="64px"></ui-skeleton></div>
@@ -309,22 +318,18 @@
         <div v-else-if="activePlan" class="stack">
           <div class="row between">
             <div class="row"><h3 class="card-title">{{ activePlan.title }}</h3><ui-badge>{{ humanLabel(activePlan.plan_type) }}</ui-badge></div>
-            <div class="stat"><span class="stat-label">Net expected points</span><span class="stat-value">{{ activePlan.net_expected_points == null ? "Not calculated" : activePlan.net_expected_points + " pts" }}</span></div>
+            <div class="stat"><span class="stat-label">Est. extra points</span><span class="stat-value">{{ activePlan.net_expected_points == null ? "Not calculated" : activePlan.net_expected_points + " pts" }}</span></div>
           </div>
-          <p class="muted"><strong>Trigger:</strong> {{ activePlan.trigger_condition || 'Review before making changes in official FPL.' }}</p>
-          <p class="muted">{{ activePlan.action_summary || 'Check the players and costs below before acting.' }}</p>
+          <p class="muted"><strong>Trigger:</strong> {{ activePlan.trigger_condition || 'Review changes' }}</p>
+          <p class="muted">{{ activePlan.action_summary || '' }}</p>
 
-          <div class="grid cols-2">
-            <div class="stack-sm">
-              <div class="eyebrow">Transfer out ({{ (activePlan.transfers_out || []).length }})</div>
-              <div v-if="(activePlan.transfers_out || []).length === 0" class="item-row muted">No transfers out (save free transfer).</div>
-              <div v-for="t in activePlan.transfers_out" :key="t.element" class="item-row"><span>{{ t.web_name }} <span class="subtle">({{ t.position }})</span></span><span class="num">£{{ t.sell_price != null ? t.sell_price : t.cost }}m</span></div>
+          <div class="transfer-pairs">
+            <div class="transfer-pair"><div class="eyebrow transfer-out-label">Transfer out</div><div class="eyebrow transfer-in-label">Transfer in</div></div>
+            <div v-for="(pair, idx) in transferPairs" :key="idx" class="transfer-pair">
+              <div class="transfer-side"><div class="eyebrow mobile-transfer-label">Out</div><div class="item-row"><span>{{ pair.out?.web_name || 'None' }} <span class="subtle">{{ pair.out?.position }}</span></span><span class="num" v-if="pair.out">£{{ pair.out.sell_price ?? pair.out.cost }}m</span></div></div>
+              <div class="transfer-side"><div class="eyebrow mobile-transfer-label">In</div><div class="item-row"><span>{{ pair.in?.web_name || 'None' }} <span class="subtle">{{ pair.in?.position }}</span><div v-if="pair.in" class="subtle">{{ pair.in.expected_points }} predicted pts</div></span><span class="num" v-if="pair.in">£{{ pair.in.cost }}m</span></div></div>
             </div>
-            <div class="stack-sm">
-              <div class="eyebrow">Transfer in ({{ (activePlan.transfers_in || []).length }})</div>
-              <div v-if="(activePlan.transfers_in || []).length === 0" class="item-row muted">No transfers in (roll free transfer to bank for next GW).</div>
-              <div v-for="t in activePlan.transfers_in" :key="t.element" class="item-row"><span>{{ t.web_name }} <span class="subtle">({{ t.position }})</span><div class="subtle num">+{{ t.expected_points }} predicted pts</div></span><span class="num">£{{ t.cost }}m</span></div>
-            </div>
+            <p v-if="!transferPairs.length" class="muted">Save your free transfer.</p>
           </div>
         </div>
 
@@ -334,12 +339,12 @@
         </div>
 
         <div class="row">
-          <ui-button icon="git-compare" :loading="detailedPlansLoading" @click="loadDetailedPlans">{{ detailedPlansLoading ? 'Calculating conditional alternatives' : 'Calculate Plan B/C alternatives' }}</ui-button>
+          <ui-button icon="git-compare" :loading="detailedPlansLoading" @click="loadDetailedPlans">{{ detailedPlansLoading ? 'Calculating conditional alternatives' : 'Other transfer options' }}</ui-button>
           <span v-if="detailedPlansError" class="note"><ui-icon name="circle-alert" :size="16"></ui-icon>{{ detailedPlansError }}</span>
         </div>
       </glass-card>
 
-      <glass-card title="Price watch" subtitle="Heuristic transfer momentum, not verified price timing.">
+      <glass-card title="Price watch">
         <ui-disclosure title="View price watch">
 <div v-if="aux.prices.loading" class="stack-sm reserve" aria-busy="true"><ui-skeleton height="48px"></ui-skeleton><p class="subtle">Loading price watch...</p></div>
           <div v-else-if="aux.prices.error" class="empty"><strong>Price watch unavailable</strong>{{ aux.prices.error }}<ui-button size="sm" @click="retryAux('prices')">Try again</ui-button></div>
@@ -347,12 +352,12 @@
             <div class="stack-sm">
               <div class="eyebrow">Price-rise watch</div>
               <div v-for="p in (priceChanges.rises || []).slice(0, 5)" :key="p.element || p.element_id" class="item-row"><span>{{ p.web_name }}</span><ui-badge tone="ok">{{ priceLabel(p.direction) }}</ui-badge></div>
-              <p v-if="(priceChanges.rises || []).length === 0" class="subtle">No players currently flagged for a potential price rise.</p>
+              <p v-if="(priceChanges.rises || []).length === 0" class="subtle">No likely rises</p>
             </div>
             <div class="stack-sm">
               <div class="eyebrow">Price-fall watch</div>
               <div v-for="p in (priceChanges.falls || []).slice(0, 5)" :key="p.element || p.element_id" class="item-row"><span>{{ p.web_name }}</span><ui-badge tone="warn">{{ priceLabel(p.direction) }}</ui-badge></div>
-              <p v-if="(priceChanges.falls || []).length === 0" class="subtle">No players currently flagged for a potential price fall.</p>
+              <p v-if="(priceChanges.falls || []).length === 0" class="subtle">No likely falls</p>
             </div>
           </div>
         </ui-disclosure>
@@ -361,10 +366,13 @@
 
     <!-- ===================== LEAGUE ===================== -->
     <section v-if="activeTab === 'league'" class="panel" id="main-panel-league" role="tabpanel" aria-label="My League">
-      <glass-card title="Rivals" :subtitle="'Observed rival ownership and hypothetical plan stress tests. No calibrated title odds. League: ' + (leagueData.league_name || 'My League')">
+      <glass-card title="Overall rank">
+        <div class="stat"><span class="stat-value stat-big num">{{ overallRankLabel }}</span></div>
+      </glass-card>
+      <glass-card title="Rivals" :subtitle="'League: ' + (leagueData.league_name || 'My League')">
         <div class="stats">
-          <div class="stat"><span class="stat-label">Simulated first-place rate</span><span class="stat-value stat-big">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</span><span class="subtle">Current-squad simulation over five gameweeks. Uncalibrated, not season-winning odds.</span></div>
-          <div class="stat"><span class="stat-label">Average simulated rank</span><span class="stat-value stat-big">{{ leagueData.simulation?.expected_final_rank != null ? '#' + leagueData.simulation.expected_final_rank.toFixed(1) : '—' }}</span><span class="subtle">Based on current point gap</span></div>
+          <div class="stat"><span class="stat-label">Simulated first-place rate</span><span class="stat-value stat-big">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</span><span class="subtle">5 weeks</span></div>
+          <div class="stat"><span class="stat-label">Average simulated rank</span><span class="stat-value stat-big">{{ leagueData.simulation?.expected_final_rank != null ? '#' + leagueData.simulation.expected_final_rank.toFixed(1) : '—' }}</span><span class="subtle"></span></div>
           <div class="stat"><span class="stat-label">Strategy mode</span><span class="stat-value">{{ leagueData.strategy?.mode_title || '—' }}</span></div>
         </div>
 <div v-if="aux.league.loading" class="stack-sm reserve" aria-busy="true"><ui-skeleton height="48px"></ui-skeleton><p class="subtle">Loading mini-league standings...</p></div>
@@ -388,82 +396,87 @@
       </glass-card>
 
       <glass-card title="Selected-plan rival stress comparison">
-        <p class="muted">Uncalibrated stress test only. The percentages are simulated draw counts under assumptions, not your chance of winning. Do not choose a chip from these rates alone.</p>
+        
         <ui-disclosure title="How it works">
-          <p class="muted">Compares full plan trajectories against holding rivals, one legal non-price-increasing transfer per week, and an optimistic restructure. These are possible cases, not predicted hidden choices or winning odds.</p>
+          
         </ui-disclosure>
         <div class="row"><ui-button icon="flask-conical" :loading="rivalStressLoading" @click="loadRivalStress">{{ rivalStressLoading ? 'Calculating plan stress' : 'Run plan stress comparison' }}</ui-button></div>
         <p v-if="rivalStressError" class="note"><ui-icon name="circle-alert" :size="16"></ui-icon>{{ rivalStressError }}</p>
         <div v-for="scenario in (rivalStress?.scenarios || [])" :key="scenario.mode" class="stack-sm">
-          <div class="eyebrow">{{ humanLabel(scenario.mode) }} - hypothetical, uncalibrated</div>
-          <div v-for="option in scenario.options" :key="option.first_chip || 'hold'" class="item-row"><span>{{ humanLabel(option.first_chip, 'Hold now') }}</span><span class="num">{{ option.uncalibrated_stress_beat_rate_pct }}% stress draw rate, NOT winning odds</span></div>
-          <p class="subtle">{{ scenario.assumptions }}</p>
+          <div class="eyebrow">{{ humanLabel(scenario.mode) }} - simulation</div>
+          <div v-for="option in scenario.options" :key="option.first_chip || 'hold'" class="item-row"><span>{{ humanLabel(option.first_chip, 'Hold now') }}</span><span class="num">{{ option.uncalibrated_stress_beat_rate_pct }}% simulated rate</span></div>
+          
         </div>
-        <p v-if="rivalStress?.scenario_preference_changes" class="note"><ui-icon name="triangle-alert" :size="16"></ui-icon>Preferred first chip changes across these rival cases. Do not treat a single percentage as the answer.</p>
-        <p v-if="rivalStress" class="subtle">{{ rivalStress.unresolved || rivalStress.reason }}</p>
+        <p v-if="rivalStress?.scenario_preference_changes" class="note"><ui-icon name="triangle-alert" :size="16"></ui-icon>Chip choice varies</p>
+        
       </glass-card>
     </section>
 
-    <footer class="footer">FPL Oracle 2026/27. Local decision support. Advice only; changes must be confirmed in official FPL.</footer>
+    <footer class="footer">FPL Oracle</footer>
   </main>
 
   <!-- ===================== OVERLAYS (one at a time) ===================== -->
-  <ui-modal :open="showChatDrawer" title="Ask about my team" drawer @close="showChatDrawer = false">
-    <div class="row"><ui-badge tone="info">Grounded in local FPL rules and data</ui-badge></div>
+  <aside v-if="showChatDrawer" class="chat-dock" aria-label="Ask about my team">
+    <header class="chat-dock-header"><strong>Ask about my team</strong><ui-button size="sm" variant="ghost" icon="x" aria-label="Close chat" @click="showChatDrawer=false"></ui-button></header>
+    <div class="chat-dock-body">
+
     <div class="chat-log" aria-live="polite">
-      <div v-if="chatMessages.length === 0" class="empty"><strong>Nothing asked yet</strong>Ask about your lineup, captaincy, transfers, chip timing or mini-league rivals.</div>
+      <div v-if="chatMessages.length === 0" class="empty"><strong>Nothing asked yet</strong>Ask a question.</div>
       <div v-for="(m, i) in chatMessages" :key="i" class="bubble" :class="m.role">
         <div class="eyebrow">{{ m.role === 'user' ? 'You' : 'FPL Oracle' }}</div>
-        <p v-if="m.historical" class="subtle">Previous session history, not current advice</p>
+        <p v-if="m.historical" class="subtle">Previous chat</p>
         <div class="prose-rendered" v-html="renderMarkdown(m.content)"></div>
       </div>
       <div v-if="isChatLoading" class="bubble" aria-busy="true"><ui-skeleton width="160px"></ui-skeleton></div>
     </div>
     <div class="chips"><ui-button v-for="p in suggestedPrompts" :key="p" size="sm" :disabled="isChatLoading" @click="sendPrompt(p)">{{ p }}</ui-button></div>
-    <template #footer>
+    </div><footer class="chat-dock-footer">
       <form class="row" style="flex:1;flex-wrap:nowrap" @submit.prevent="sendMessage">
         <ui-field v-model="userInput" placeholder="Ask about transfers, captain, hits, chips" style="flex:1" id="chat-input"></ui-field>
         <ui-button type="submit" variant="primary" icon="send" :loading="isChatLoading" :disabled="!userInput.trim()" aria-label="Send message"></ui-button>
       </form>
-    </template>
-  </ui-modal>
+    </footer>
+  </aside>
 
-  <ui-modal :open="showSettingsModal" title="Server configuration" @close="showSettingsModal = false">
-    <ui-button v-if="profile.bank_override_enabled || profile.ft_override_enabled" variant="ghost" :loading="busy.reset" @click="resetFinancialOverrides">Use official bank and free transfers (clear overrides)</ui-button>
-    <div class="item-row"><span>FPL manager account</span><span class="num">{{ profile.manager_id_redacted || 'Loaded from .env' }}</span></div>
-    <p class="subtle">Configured via <code>FPL_MANAGER_ID</code> in the local <code>.env</code> file.</p>
-    <div class="item-row"><span>Target mini-league</span><span class="num">{{ profile.league_id_redacted || 'Loaded from .env' }}</span></div>
-    <p class="subtle">Configured via <code>FPL_TARGET_LEAGUE_ID</code> in the local <code>.env</code> file.</p>
-    <div class="item-row"><span>News and availability extractor</span><ui-badge :tone="profile.status_diagnostic?.recommendation_mode === 'gated_active' ? 'ok' : 'info'" dot>{{ profile.status_diagnostic?.recommendation_mode === 'gated_active' ? 'Active' : 'Shadow Mode' }}</ui-badge></div>
-    <p class="subtle">{{ profile.status_diagnostic?.llm_extractor_status || 'Official API baseline running (No key required)' }}</p>
-    <ui-field v-model="profile.risk_preference" label="Tactical risk preference" select>
-      <option value="balanced">Balanced contender (standard optimization)</option>
-      <option value="aggressive">Chasing leader (high differential upside)</option>
-      <option value="conservative">Defending lead (template protection)</option>
-    </ui-field>
-    <p class="note"><ui-icon name="shield-check" :size="16"></ui-icon><span><strong>Privacy:</strong> personal IDs and API keys live only in the project-local <code>.env</code> and load server-side. No secret entry forms exist in the web client.</span></p>
+  <ui-modal :open="showSettingsModal" title="Settings" @close="showSettingsModal = false">
+    <ui-button v-if="profile.bank_override_enabled || profile.ft_override_enabled" variant="ghost" :loading="busy.reset" @click="resetFinancialOverrides">Reset bank and transfers</ui-button>
+    <div class="item-row"><span>Manager ID</span><span class="num">{{ profile.manager_id_redacted || (profile.manager_id ? 'Connected' : 'Not set') }}</span></div>
+    
+    <div class="item-row"><span>League ID</span><span class="num">{{ profile.league_id_redacted || (profile.target_league_id ? 'Connected' : 'Not set') }}</span></div>
+    
+    <div class="item-row"><span>Team news</span><ui-badge :tone="profile.status_diagnostic?.recommendation_mode === 'gated_active' ? 'ok' : 'info'" dot>{{ profile.status_diagnostic?.recommendation_mode === 'gated_active' ? 'Active' : 'Preview' }}</ui-badge></div>
+    
+    <div class="item-row"><span>Strategy</span><span>Automatic</span></div>
+    
+    <ui-button variant="ghost" icon="activity" @click="showSettingsModal=false; onMenu('system')">Diagnostics</ui-button>
+    
     <template #footer>
       <ui-button variant="ghost" @click="showSettingsModal = false">Close</ui-button>
-      <ui-button variant="primary" :loading="busy.save" @click="saveProfile">Save preference</ui-button>
+
     </template>
   </ui-modal>
 
-  <ui-modal :open="showPanicModal" title="Emergency re-optimizer" @close="showPanicModal = false">
-    <p class="muted">Breaking team news or a late injury before the deadline? Describe it or pick a starter to re-solve your lineup, bench promotion, captain and best market replacement.</p>
+  <ui-modal :open="showPanicModal" title="Emergency check" @close="showPanicModal = false">
+    
     <div class="row" style="flex-wrap:nowrap;align-items:flex-end">
       <ui-field v-model="panicQuery" label="What happened" placeholder="e.g. Saka ruled out with hamstring" style="flex:1"></ui-field>
-      <ui-button variant="primary" :loading="panicResolving" :disabled="!panicQuery.trim()" @click="executePanicReoptimize">{{ panicResolving ? 'Resolving' : 'Resolve' }}</ui-button>
+      <ui-button variant="primary" :loading="panicResolving" :disabled="!panicQuery.trim()" @click="executePanicReoptimize">{{ panicResolving ? 'Checking' : 'Check options' }}</ui-button>
     </div>
+    <ui-field v-model="panicDuration" label="How long is he out?" select><option value="">Choose duration</option><option value="1">This week</option><option value="2">Next 2 weeks</option><option value="window">Until further notice</option></ui-field>
+    
     <div class="stack-sm">
       <div class="eyebrow">Or pick the affected starter</div>
       <div class="chips"><ui-button v-for="p in squadData.starters || []" :key="p.element" size="sm" :disabled="panicResolving" @click="panicQuery = p.web_name + ' ruled out injured'; executePanicReoptimize()">{{ p.web_name }}</ui-button></div>
     </div>
-    <div v-if="panicResult" class="callout tone-ok" role="status">
-      <ui-icon name="circle-check"></ui-icon>
+    <div v-if="panicResult" class="callout" :class="panicResult.status === 'recalculated' ? 'tone-ok' : 'tone-warn'" role="status">
+      <ui-icon :name="panicResult.status === 'recalculated' ? 'circle-check' : 'circle-alert'"></ui-icon>
       <div class="stack-sm">
-        <div class="callout-title">Recommendation</div>
+        <div class="callout-title">{{ panicResult.status === 'recalculated' ? 'Recommendation' : panicResult.status === 'error' ? 'No plan' : 'Check details' }}</div>
         <p class="callout-text">{{ panicResult.recommendation }}</p>
-        <p v-if="panicResult.lineup_action" class="callout-text">New formation <strong>{{ panicResult.lineup_action.new_formation }}</strong> · New captain <strong>{{ panicResult.lineup_action.captain }}</strong></p>
+        <p v-if="panicResult.excluded_gameweeks" class="subtle">Out in GW{{ panicResult.excluded_gameweeks.join(', GW') }}</p>
+        <p v-for="option in panicResult.chip_options || []" :key="option.chip" class="callout-text">{{ option.chip === 'wildcard' ? 'Wildcard' : 'Free Hit' }}: legal XI, {{ option.hit_cost }} hit points.</p>
+        <p v-if="panicResult.hit_policy?.warning" class="callout-text">{{ panicResult.hit_policy.warning }}</p>
+        <p v-if="panicResult.lineup_action" class="callout-text">New formation <strong>{{ panicResult.lineup_action.new_formation }}</strong> · New captain <strong>{{ panicResult.lineup_action.captain?.web_name }}</strong></p>
       </div>
     </div>
   </ui-modal>
@@ -471,13 +484,55 @@
   <ui-modal :open="showChecklistModal" title="Pre-deadline checklist" @close="showChecklistModal = false">
     <div v-if="!checklistItems.length" class="empty"><strong>No checklist yet</strong>It loads after the first data refresh.</div>
     <div v-for="item in checklistItems" :key="item.category" class="item-row" style="align-items:flex-start">
-      <div class="stack-sm"><strong>{{ item.title }}</strong><span class="muted">{{ item.detail }}</span></div>
+      <div class="stack-sm"><strong>{{ item.title || item.item }}</strong><span class="muted">{{ item.detail }}</span></div>
       <ui-badge :tone="item.status === 'PASS' ? 'ok' : 'warn'" dot>{{ humanLabel(item.status) }}</ui-badge>
     </div>
   </ui-modal>
 
+  <ui-modal :open="showConfirmTeam" title="Confirm team" wide @close="showConfirmTeam=false">
+    
+    
+    <p v-if="confirmTeamData?.saved" class="subtle">{{ confirmTeamData.saved.comparison }}</p>
+    <p v-if="confirmTeamData?.recommendation" class="subtle">Out {{ confirmTeamData.recommendation.outs.map(id => confirmTeamData.players.find(p => p.element === id)?.name || 'Unknown player').join(', ') || 'none' }}, in {{ confirmTeamData.recommendation.ins.map(id => confirmTeamData.players.find(p => p.element === id)?.name || 'Unknown player').join(', ') || 'none' }}.</p>
+    <div class="row wrap">
+      <ui-button variant="primary" :disabled="!confirmTeamData?.recommendation" :loading="confirmTeamSaving" @click="confirmFollowedAdvice">I followed the advice</ui-button>
+      <ui-button @click="confirmMode='different'">I did something different</ui-button>
+    </div>
+    
+    <p v-if="confirmMode==='advanced'" class="subtle">Current team: {{ confirmRows.map(r => confirmTeamData?.players.find(p => p.element === Number(r.element))?.name || 'Unknown player').join(', ') }}. £{{ confirmForm.bank }}m · {{ confirmForm.free_transfers }} FT</p>
+    <div v-if="confirmMode==='different'" class="stack-sm">
+      <div class="grid cols-2">
+        <ui-field v-model="confirmDelta.out" label="Player out" select><option value="">Choose</option><option v-for="r in confirmRows" :value="r.element">{{ confirmTeamData?.players.find(p=>p.element===Number(r.element))?.name }}</option></ui-field>
+        <ui-field v-model="confirmDelta.in" label="Player in" select><option value="">Choose</option><option v-for="p in confirmTeamData?.players || []" :value="p.element">{{ p.name }}</option></ui-field>
+      </div>
+      <ui-button @click="addConfirmedMove">Add this move</ui-button>
+      
+    </div>
+    <div v-if="confirmMode==='different' || confirmMode==='advanced'" class="grid cols-3">
+
+      <ui-field v-model="confirmForm.bank" label="Bank (£m)" type="number" step="0.1" min="0"></ui-field>
+      <ui-field v-model="confirmForm.free_transfers" label="Free transfers left" type="number" min="0" max="5"></ui-field>
+      <ui-field v-model="confirmForm.hit_cost" label="Hit points taken" type="number" min="0" step="4"></ui-field>
+    </div>
+    <ui-button @click="confirmMode=confirmMode==='advanced'?'simple':'advanced'">{{ confirmMode==='advanced' ? 'Hide full team editor' : 'Edit full team' }}</ui-button>
+    <div v-if="confirmMode==='advanced'" class="stack-sm"><strong>Your current 15 players</strong>
+      <div v-for="(row,i) in confirmRows" :key="i" class="stack-sm">
+        <ui-field v-model="row.element" :label="'Player '+(i+1)" select><option v-for="p in confirmTeamData?.players || []" :key="p.element" :value="p.element">{{ p.name }}</option></ui-field>
+        <details><summary class="subtle">Bought £{{ row.purchase }}m · Sell £{{ row.selling }}m</summary><div class="grid cols-2">
+          <ui-field v-model="row.purchase" label="Bought for (£m)" type="number" step="0.1"></ui-field>
+          <ui-field v-model="row.selling" label="Sell for (£m)" type="number" step="0.1"></ui-field>
+        </div></details>
+      </div>
+    </div>
+    <div v-if="confirmMode==='advanced'" class="stack-sm"><strong>Available chips</strong><label v-for="chip in ['wildcard','freehit','3xc','bboost']" :key="chip"><input type="checkbox" :value="chip" v-model="confirmForm.available_chips"> {{ chip === 'wildcard' ? 'Wildcard' : chip === 'freehit' ? 'Free Hit' : chip === '3xc' ? 'Triple Captain' : 'Bench Boost' }}</label></div>
+    <ui-field v-if="confirmMode!=='simple'" v-model="confirmForm.active_chip" label="Active chip" select><option value="">None</option><option value="wildcard">Wildcard</option><option value="freehit">Free Hit</option><option value="3xc">Triple Captain</option><option value="bboost">Bench Boost</option></ui-field>
+    <div v-if="confirmMode==='different'" class="grid cols-2"><ui-field v-model="confirmForm.captain" label="Current captain" select><option value="">Unchanged</option><option v-for="r in confirmRows" :value="r.element">{{ confirmTeamData?.players.find(p=>p.element===Number(r.element))?.name }}</option></ui-field><ui-field v-model="confirmForm.vice_captain" label="Current vice captain" select><option value="">Unchanged</option><option v-for="r in confirmRows" :value="r.element">{{ confirmTeamData?.players.find(p=>p.element===Number(r.element))?.name }}</option></ui-field></div>
+    <p v-if="confirmTeamError" class="callout tone-warn" role="alert">{{ confirmTeamError }}</p>
+    <ui-button variant="primary" :loading="confirmTeamSaving" @click="saveConfirmTeam">{{ confirmMode==='simple' ? 'Unchanged' : 'Save my actual changes' }}</ui-button>
+  </ui-modal>
+
   <ui-modal :open="showSquadModal" title="Paste or upload squad" @close="showSquadModal = false">
-    <p class="muted">Paste your 15 players as text, or upload a .txt or .csv file.</p>
+    <p class="muted">Paste 15 players or upload a file.</p>
     <ui-field v-model="manualSquadText" :rows="5" placeholder="Raya, Sels, Gabriel, Alexander-Arnold, Saliba, Robinson, Faes, Saka, Palmer, Mbeumo, Rogers, Semenyo, Haaland, Watkins, Wood"></ui-field>
     <div class="row">
       <label class="btn btn-sm" for="squad-file"><ui-icon name="upload" :size="16"></ui-icon>Upload file</label>
@@ -488,7 +543,7 @@
       <ui-icon :name="matchResult.is_valid_15 ? 'circle-check' : 'triangle-alert'"></ui-icon>
       <div class="stack-sm">
         <div class="callout-title">Matched {{ matchResult.total_matched }}/15</div>
-        <p class="callout-text">{{ matchResult.is_valid_15 ? 'All 15 players matched. Review before saving.' : 'Need 15 players (2 GK, 5 DEF, 5 MID, 3 FWD).' }}</p>
+        <p class="callout-text">{{ matchResult.is_valid_15 ? '15 players found' : 'Need 15 players (2 GK, 5 DEF, 5 MID, 3 FWD).' }}</p>
         <div v-if="matchResult.is_valid_15" class="row"><ui-button variant="primary" size="sm" :loading="savingSquad" @click="saveManualSquad">{{ savingSquad ? 'Saving' : 'Confirm and save squad' }}</ui-button></div>
       </div>
     </div>
@@ -497,26 +552,26 @@
   <ui-modal :open="showBriefingModal" title="Reports" wide @close="showBriefingModal = false">
     <div class="row between">
       <ui-tabs v-model="briefingSubTab" :items="briefingTabs" label="Report type" id-prefix="report"></ui-tabs>
-      <ui-button size="sm" icon="copy" :loading="busy.copy" @click="copyBriefingMarkdown">Copy markdown</ui-button>
+      <ui-button size="sm" icon="copy" :loading="busy.copy" @click="copyBriefingMarkdown">Copy</ui-button>
     </div>
-    <div v-if="briefingSubTab === 'preview'" class="prose-rendered" v-html="renderMarkdown(briefingData.markdown || (aux.briefing.loading ? 'Preparing your weekly report...' : aux.briefing.error || 'No weekly report is available yet. Update your data and try again.'))"></div>
-    <div v-if="briefingSubTab === 'review'" class="prose-rendered" v-html="renderMarkdown(reviewData.review_markdown || (aux.review.loading ? 'Loading the gameweek review...' : aux.review.error || 'No completed gameweek review is available yet.'))"></div>
+    <div v-if="briefingSubTab === 'preview'" class="prose-rendered" v-html="renderMarkdown(briefingData.markdown || (aux.briefing.loading ? 'Preparing...' : aux.briefing.error || 'Report unavailable'))"></div>
+    <div v-if="briefingSubTab === 'review'" class="prose-rendered" v-html="renderMarkdown(reviewData.review_markdown || (aux.review.loading ? 'Loading...' : aux.review.error || 'No completed week'))"></div>
   </ui-modal>
 
-  <ui-modal :open="showSystemModal" title="System diagnostics" @close="showSystemModal = false">
+  <ui-modal :open="showSystemModal" title="Status" @close="showSystemModal = false">
     <div class="stack-sm">
-      <div class="eyebrow">Mini-league forward evidence</div>
-      <p class="muted">Status: {{ humanLabel(leagueValidation.status, 'Not loaded') }}. Frozen forecasts: {{ leagueValidation.frozen_forecast_count ?? 'Unknown' }}. Finalized scored forecasts: {{ leagueValidation.count ?? 'Unknown' }}.</p>
-      <p class="muted">Probabilities are not empirically calibrated. Baseline comparison and chronological validation are required before promotion.</p>
-      <p class="subtle">{{ leagueValidation.capture_window }}</p>
-      <p class="subtle">{{ leagueValidation.event_definition }}</p>
+      <div class="eyebrow">League checks</div>
+      <p class="muted">{{ humanLabel(leagueValidation.status, 'Not checked') }} · {{ leagueValidation.count ?? 0 }} results</p>
+      <p class="muted">Accuracy pending</p>
+      
+      
     </div>
-    <div class="item-row"><span>ML model version</span><strong class="num">{{ systemStatus.model?.active_version || '—' }}</strong></div>
-    <div class="item-row"><span>Holdout MAE</span><strong class="num">{{ systemStatus.model?.mae != null ? systemStatus.model.mae + ' pts' : '—' }}</strong></div>
-    <div class="item-row"><span>Spearman rank correlation</span><strong class="num">{{ systemStatus.model?.spearman ?? '—' }}</strong></div>
-    <div class="item-row"><span>Background scheduler</span><strong>{{ systemStatus.scheduler?.running === true ? 'Running' : systemStatus.scheduler?.running === false ? 'Stopped' : 'Unknown' }}</strong></div>
-    <div class="item-row"><span>Verified test suite</span><strong>{{ systemStatus.tests?.summary || 'Not verified this session' }}</strong></div>
-    <div class="item-row"><span>CBC MILP solver</span><strong>{{ humanLabel(systemStatus.solver?.status, 'Not verified this session') }}</strong></div>
+    <div class="item-row"><span>Model</span><strong class="num">{{ systemStatus.model?.active_version || '—' }}</strong></div>
+    <div class="item-row"><span>Average error</span><strong class="num">{{ systemStatus.model?.mae != null ? systemStatus.model.mae + ' pts' : '—' }}</strong></div>
+    <div class="item-row"><span>Player ranking</span><strong class="num">{{ systemStatus.model?.spearman ?? '—' }}</strong></div>
+    <div class="item-row"><span>Updates</span><strong>{{ systemStatus.scheduler?.running === true ? 'Running' : systemStatus.scheduler?.running === false ? 'Stopped' : 'Unknown' }}</strong></div>
+    <div class="item-row"><span>Tests</span><strong>{{ systemStatus.tests?.summary || 'Not checked' }}</strong></div>
+    <div class="item-row"><span>Planner</span><strong>{{ humanLabel(systemStatus.solver?.status, 'Not checked') }}</strong></div>
   </ui-modal>
 
   <ui-toasts :items="toasts"></ui-toasts>

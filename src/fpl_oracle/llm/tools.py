@@ -53,7 +53,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "plan_chips",
-        "description": "Run Joint Chip Strategy Planner evaluating optimal gameweeks for Wildcard, Free Hit, Triple Captain, and Bench Boost across both Set 1 (GW1-19) and Set 2 (GW20-38).",
+        "description": "Compare chip options over the loaded upcoming weeks. No full-season best-date schedule is established.",
         "parameters": {"type": "object", "properties": {}},
     },
     {
@@ -66,7 +66,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "league_analysis",
-        "description": "Analyze mini-league standings, rival squads, template vs differential ownership, and win probability.",
+        "description": "Analyze mini-league standings, rival squads, template vs differential ownership, and simulated outcomes.",
         "parameters": {
             "type": "object",
             "properties": {"league_id": {"type": "integer", "description": "Target mini-league ID"}},
@@ -257,7 +257,7 @@ class ToolExecutor:
         candidates = sorted(squad["starters"], key=lambda p: p.get("expected_points", 0), reverse=True)[:5]
         return {
             "gameweek": gw,
-            "risk_preference": data_store.get_profile().risk_preference,
+            "risk_preference": "automatic",
             "scope": "selected_plan_not_submitted",
             "safe_captain": captain["web_name"],
             "differential_captain": vice["web_name"],
@@ -342,7 +342,9 @@ class ToolExecutor:
 
     async def _tool_get_news(self, args: dict[str, Any]) -> dict[str, Any]:
         player_query = (args.get("player_name") or args.get("query") or "").strip().lower()
-        boot, _ = await fpl_client.get_bootstrap_static()
+        boot, stale = await fpl_client.get_bootstrap_static()
+        if stale:
+            return {"status": "stale"}
         team_map = {t.id: t.name for t in boot.teams}
 
         matching = [
@@ -364,10 +366,9 @@ class ToolExecutor:
             "availability_status": p.status,
             "chance_of_playing": p.chance_of_playing_next_round
             if p.chance_of_playing_next_round is not None
-            else (100 if is_fit else 0),
+            else (100 if is_fit else None),
             "news": p.news or "No current injury or suspension news reported.",
             "source": "Official Premier League / FPL API",
-            "confidence": 1.0,
         }
 
     async def _tool_get_fixtures(self, args: dict[str, Any]) -> dict[str, Any]:

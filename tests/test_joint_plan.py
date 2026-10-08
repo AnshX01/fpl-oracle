@@ -186,3 +186,31 @@ def test_chip_preservation_frontier_exposes_future_value_gap(sample_squad_and_po
         assert all(step["chip"] != row["chip"] for step in row["retained_trajectory"])
         assert row["tail_value_break_even_at_horizon_end"] >= row["discounted_horizon_cost_to_preserve"] >= 0
     assert result["decision_scope"]["season_tail_value_estimated"] is False
+
+
+def test_freehit_not_recommended_on_zero_gain_normal_week(monkeypatch):
+    from fpl_oracle.league import objective
+    from tests.test_sequential_search import fixture_data
+
+    frame, pools, maps = fixture_data()
+
+    # Force the rival tie-break to nominate a zero-benefit FH. The final action
+    # still preserves it when the ordinary plan has the same score.
+    def choose(states, *args, **kwargs):
+        return next(s for s in states if s["first_chip"] == "freehit"), dict(status="test")
+
+    monkeypatch.setattr(objective, "select_balanced_sequence", choose)
+    result = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
+        current_squad_df=frame,
+        player_pool_df=frame,
+        bank=0,
+        free_transfers=1,
+        horizon_projections={18: pools[18]},
+        target_gw=18,
+        current_gw=17,
+        available_chips=["freehit"],
+        horizon_len=1,
+        locked_in_ids=set(frame.element),
+    )
+    assert result["recommended_chip"] is None
+    assert result["best_candidate"]["chip"] == "HOLD"

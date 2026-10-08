@@ -56,13 +56,13 @@ class PriceChangePredictor:
             urgency = "Can wait"
             if score >= 80.0:
                 direction = "RISE_IMMINENT"
-                urgency = "Buy before tonight's rise (+£0.1m)"
+                urgency = "Strong rising transfer momentum; price change unconfirmed"
             elif score >= 50.0:
                 direction = "LIKELY_RISE"
                 urgency = "Rising momentum"
             elif score <= -80.0:
                 direction = "FALL_IMMINENT"
-                urgency = "Sell before tonight's fall (-£0.1m)"
+                urgency = "Strong falling transfer momentum; price change unconfirmed"
             elif score <= -50.0:
                 direction = "LIKELY_FALL"
                 urgency = "Falling momentum"
@@ -79,6 +79,7 @@ class PriceChangePredictor:
                     "urgency_score": round(score, 1),
                     "direction": direction,
                     "urgency_message": urgency,
+                    "calibrated_price_forecast": False,
                 }
             )
 

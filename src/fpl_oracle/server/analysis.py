@@ -38,9 +38,12 @@ class AnalysisService:
             self._league_context_cache.clear()
             self._news_at = 0.0
             self._news_key = None
+            from fpl_oracle.optimise.hit_ledger import hit_ledger
+
+            hit_ledger._refreshes.clear()
 
     async def projections(self, start_gw, horizon, bootstrap, fixtures):
-        horizon = max(horizon, 8)
+        horizon = max(horizon, (20 if start_gw <= 19 else 39) - start_gw)
         async with self._projection_lock:
             body = bootstrap.model_dump(mode="json")
             import time
@@ -140,6 +143,8 @@ class AnalysisService:
             return None
         context = dict(
             user_points=user["total"],
+            user_rank=user["rank"],
+            standings=[dict(rank=r["rank"], points=r["total"]) for r in rows],
             rivals=[
                 dict(points=r["total_points"], elements=[p["element"] for p in r["squad"]])
                 for r in result.get("rival_squads", [])
@@ -222,22 +227,14 @@ class AnalysisService:
         """Public chip recommendations follow the selected resource trajectory."""
         result = dict(calendar)
         result["independent_calendar_context"] = calendar.get("chip_plan_table", [])
-        rows = []
-        for step in joint["recommended_plan"].get("trajectory", []):
-            if step.get("chip"):
-                rows.append(
-                    {
-                        "chip": step["chip"],
-                        "code": step["chip"],
-                        "recommended_gw": step["gameweek"],
-                        "expected_gain": None,
-                        "reasoning": "Selected legal joint transfer/chip trajectory; isolated chip gain is not estimated.",
-                    }
-                )
-        result["chip_plan_table"] = rows
-        result["joint_schedule"] = {r["recommended_gw"]: r["code"] for r in rows}
-        result["set_1_deadline_warning"] = (
-            "Unused Set 1 chips expire at the GW19 deadline. This roadmap is conditional; unknown later option value is not a verified points loss."
+        result["chip_plan_table"] = joint.get("measured_chip_roadmap", [])
+        result["joint_schedule"] = {
+            row["recommended_gw"]: row["code"] for row in result["chip_plan_table"] if row["recommended_gw"] is not None
+        }
+        result["schedule_status"] = joint.get("chip_measurement_status", "unavailable")
+        result["set_1_deadline_warning"] = "First-set chips expire at GW19. Check chip timing again each week."
+        result["timing_note"] = (
+            "Based on current fixtures and player forecasts. Future injuries and unconfirmed doubles can change the plan."
         )
         result["recommended_chip"] = joint["recommended_chip"]
         result["chip_comparison_table"] = joint["chip_comparison_table"]
@@ -355,13 +352,39 @@ class AnalysisService:
         )
 
     async def joint_plan(self, **kwargs):
-        from fpl_oracle.data.store import data_store
+        from fpl_oracle.domain.manager_state import manager_state_service
+        from fpl_oracle.domain.team_confirmation import team_confirmation
         from fpl_oracle.optimise.transfers import transfer_optimizer
 
-        if "previous_chip" not in kwargs:
-            from fpl_oracle.domain.manager_state import manager_state_service
+        state = await manager_state_service.get_current_state()
+        if team_confirmation.locked(state):
+            from fastapi import HTTPException
 
-            state = await manager_state_service.get_current_state()
+            raise HTTPException(409, "Done. Next update after the deadline.")
+        if state.confirmation_required and not state.team_confirmed:
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                409,
+                state.error_message or "Team not confirmed.",
+            )
+        if state.confirmation_required:
+            from fastapi import HTTPException
+
+            if state.is_stale:
+                raise HTTPException(409, "Data is old. Refresh before deciding.")
+            owned = set(kwargs["current_squad_df"]["element"])
+            if (
+                owned != {p.element for p in state.squad}
+                or int(kwargs["bank"]) != state.bank_tenths
+                or int(kwargs["free_transfers"]) != state.free_transfers
+                or kwargs["target_gw"] != state.target_gw
+            ):
+                raise HTTPException(409, "Team changed. Refresh advice.")
+        if state.active_chip:
+            kwargs["forced_current_chip"] = state.active_chip
+            kwargs["available_chips"] = list(set(kwargs.get("available_chips", [])) | {state.active_chip})
+        if "previous_chip" not in kwargs:
             kwargs["previous_chip"] = next(
                 (c["name"] for c in state.chips_used if c["event"] == kwargs["target_gw"] - 1), None
             )
@@ -370,20 +393,66 @@ class AnalysisService:
                 kwargs["rival_context"] = await self.league_context(kwargs["target_gw"])
             except Exception:
                 kwargs["rival_context"] = None
-        kwargs.setdefault(
-            "risk_preference", getattr(data_store.get_profile(), "risk_preference", "balanced") or "balanced"
-        )
+        # Automatic strategy never turns an old manual preference into a large
+        # captain/points trade-off. League exposure only breaks close scores.
+        kwargs["risk_preference"] = "points"
         for name in ("locked_in_ids", "locked_out_ids", "excluded_team_ids"):
             kwargs.setdefault(name, set())
+
+        from fpl_oracle.data.store import data_store
+        from fpl_oracle.optimise.hit_ledger import hit_ledger
+
+        profile = data_store.get_profile()
+        manager_id = getattr(profile, "manager_id", None)
+        try:
+            hit_context = await hit_ledger.refresh(manager_id)
+        except Exception:
+            saved = hit_ledger.read(manager_id) if manager_id else []
+            from fpl_oracle.optimise.hit_policy import cooldown_until
+
+            hit_context = dict(status="unverified", records=saved, cooldown_until=cooldown_until(saved))
+        kwargs["hit_cooldown_until"] = hit_context["cooldown_until"]
+        unresolved = [
+            r
+            for r in hit_context["records"]
+            if r.get("kind") == "taken"
+            and r.get("status") in ("pending", "unknown")
+            and kwargs["target_gw"] - 6 <= r["gameweek"] < kwargs["target_gw"]
+        ]
+        if unresolved:
+            kwargs["hit_cooldown_until"] = max(kwargs["hit_cooldown_until"], kwargs["target_gw"] + 1)
+            hit_context["warning"] = "Previous hit result not settled; no repeat hit until checked."
+        if manager_id and hit_context["status"] != "fresh":
+            kwargs["hit_cooldown_until"] = max(kwargs["hit_cooldown_until"], kwargs["target_gw"] + 1)
+            hit_context["warning"] = "Hit outcome history unavailable; no new hit this week until refreshed."
 
         # Search all supported loaded weeks, with no fabricated season-tail forecast.
         if "horizon_len" not in kwargs:
             start = kwargs["target_gw"]
             consecutive = 0
-            while start + consecutive in kwargs["horizon_projections"] and consecutive < 8:
+            while start + consecutive in kwargs["horizon_projections"] and start + consecutive <= (
+                19 if start <= 19 else 38
+            ):
                 consecutive += 1
             kwargs["horizon_len"] = consecutive
+        for gw in range(kwargs["target_gw"], kwargs["target_gw"] + kwargs["horizon_len"]):
+            frame = kwargs["horizon_projections"].get(gw)
+            if (
+                frame is None
+                or frame.empty
+                or "element" not in frame
+                or "expected_points" not in frame
+                or not set(kwargs["current_squad_df"]["element"]).issubset(set(frame["element"]))
+                or not np.isfinite(pd.to_numeric(frame["expected_points"], errors="coerce")).all()
+            ):
+                from fastapi import HTTPException
+
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Predictions missing or invalid for GW{gw}. Update data; no plan published.",
+                )
         kwargs.setdefault("evaluate_rival_scenarios", False)
+        kwargs["measure_chip_values"] = True
         # Different surfaces attach different projection columns and numeric
         # dtypes to the same owned squad. Canonicalize before cache-keying so
         # they share one CPU plan instead of several identical concurrent beams.
@@ -439,6 +508,7 @@ class AnalysisService:
             self._plan_tasks[key] = task
         try:
             result = await asyncio.shield(task)
+            result["hit_policy"] = hit_context
             self._plans[key] = result
             if len(self._plans) > 8:
                 self._plans.pop(next(iter(self._plans)))

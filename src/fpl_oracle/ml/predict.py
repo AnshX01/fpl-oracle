@@ -270,6 +270,13 @@ class ProjectionEngine:
         dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, [c for c in bgw_zero_cols if c in dgw_grouped.columns]] = 0.0
 
         dgw_grouped["fixture_components"] = dgw_grouped["element"].map(fixture_records)
+        # Summed quantiles are not joint DGW quantiles. Preserve historical
+        # model fields for compatibility, but carry their actual provenance.
+        dgw_grouped["uncertainty_status"] = dgw_grouped["element"].map(
+            lambda eid: "dgw_marginal_sum_unvalidated" if len(fixture_records[int(eid)]) > 1
+            else "single_fixture_model_interval"
+        )
+        dgw_grouped["dgw_covariance_calibrated"] = False
         self._cache[cache_key] = dgw_grouped.copy()
 
         return dgw_grouped

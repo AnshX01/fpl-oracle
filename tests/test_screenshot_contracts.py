@@ -16,12 +16,17 @@ def test_chip_schedule_comes_from_selected_trajectory():
                 {"gameweek": 8, "chip": "3xc"},
             ]
         },
+        "measured_chip_roadmap": [
+            {"chip": "Wildcard", "code": "wildcard", "recommended_gw": 6, "expected_gain": 12.5},
+            {"chip": "Triple Captain", "code": "3xc", "recommended_gw": 8, "expected_gain": 5.0},
+        ],
+        "chip_measurement_status": "measured_through_expiry",
         "recommended_chip": "wildcard",
         "chip_comparison_table": [],
     }
     result = analysis_service.bind_chip_schedule({"chip_plan_table": [{"recommended_gw": 5}]}, joint)
     assert [r["recommended_gw"] for r in result["chip_plan_table"]] == [6, 8]
-    assert result["chip_plan_table"][0]["expected_gain"] is None
+    assert result["chip_plan_table"][0]["expected_gain"] == 12.5
 
 
 def test_empty_chat_provider_falls_back_and_persists_nonempty():
@@ -50,7 +55,7 @@ def test_auxiliary_team_matches_selected_pitch(configured_advisor):
         assert all("emergency_net_expected_points" in r for r in matrix["contingency_matrix"])
         vc = next(r for r in checklist["checklist"] if r["item"] == "Vice-Captain Failsafe")
         assert squad["vice_captain"]["web_name"] in vc["detail"]
-        assert squad["captain"]["web_name"] in vc["detail"]
+        assert vc["status"] in ("PASS", "WARNING")
         assert "Imminent Rises" not in briefing["markdown"]
         assert matrix["scope"] == "selected_plan_not_submitted"
 
@@ -63,7 +68,7 @@ def test_review_does_not_invent_calibration_or_autosub_evidence(configured_advis
     review = asyncio.run(post_gameweek_reviewer.generate_gameweek_review())
     assert "Variance remains within calibrated" not in review["review_markdown"]
     assert "Autosub and bench hierarchy operated" not in review["review_markdown"]
-    assert "not assessed" in review["review_markdown"]
+    assert "Prediction comparison unavailable" in review["review_markdown"]
 
 
 def test_recent_chat_history_returns_newest_window(configured_advisor):

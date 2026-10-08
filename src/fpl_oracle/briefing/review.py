@@ -25,7 +25,7 @@ class PostGameweekReviewer:
         Generate diagnostic review of a completed gameweek.
         """
         profile = data_store.get_profile()
-        m_id = manager_id or profile.manager_id
+        m_id = manager_id or getattr(profile, "manager_id", None)
 
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         target_gw = gameweek or curr_gw or (next_gw - 1 if next_gw and next_gw > 1 else 1)
@@ -65,24 +65,23 @@ class PostGameweekReviewer:
                 logger.warning("Error fetching manager picks for GW review: %s", ex)
 
         md_lines = [
-            f"# Gameweek {target_gw} Post-Gameweek Review & Performance Diagnostics",
+            f"# Gameweek {target_gw} review",
             "",
-            f"**Headline:** Gameweek {target_gw} Post-Match Debrief",
             f"**Actual Score:** {actual_points} points (Overall Rank: {overall_rank or 'N/A'}, GW Rank: {gw_rank or 'N/A'})",
             "",
-            "## Key Learnings & Diagnostic Findings",
+            "## Results",
         ]
         learnings = [
             f"Official GW{target_gw} points: {actual_points}"
             if actual_points is not None
             else "Official score unavailable.",
-            "No stored pre-deadline decision snapshot was loaded for this review. Prediction accuracy, autosub impact and risk compliance are not assessed.",
+            "Prediction comparison unavailable.",
         ]
         for kl in learnings:
             md_lines.append(f"- {kl}")
         md_lines.append("")
-        md_lines.append("## Contingency & Risk Assessment")
-        md_lines.append("Pre-deadline decisions and prediction intervals not verified for this gameweek.")
+        md_lines.append("## Prediction check")
+        md_lines.append("Not checked.")
         review_md = "\n".join(md_lines)
 
         return {
@@ -95,7 +94,7 @@ class PostGameweekReviewer:
             "squad_picks": picks_data,
             "summary_headline": f"Gameweek {target_gw} Post-Match Debrief",
             "key_learnings": learnings,
-            "contingency_assessment": "Pre-deadline decisions and prediction intervals not verified for this gameweek.",
+            "contingency_assessment": "Not checked.",
             "review_markdown": review_md,
             "data_as_of": datetime.now(UTC).isoformat(),
         }

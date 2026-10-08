@@ -233,8 +233,8 @@ def test_offline_chat_matches_squad_captain(configured_advisor, monkeypatch):
         text = await OfflineExpertProvider().chat(
             messages=[{"role": "user", "content": "who should I captain?"}], system_prompt=""
         )
-        assert f"captain **{squad['captain']['web_name']}**" in text
-        assert f"vice-captain **{squad['vice_captain']['web_name']}**" in text
+        assert f"captain {squad['captain']['web_name']}" in text
+        assert f"vice captain {squad['vice_captain']['web_name']}" in text
 
     asyncio.run(run())
 

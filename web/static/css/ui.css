@@ -381,3 +381,57 @@ select.input option { color: #151824; }
   .league-table td { display: flex; gap: 16px; justify-content: space-between; padding: 5px 0; border: none; text-align: right; }
   .league-table td::before { content: attr(data-label); color: var(--text-2); font-size: var(--fs-xs); flex-shrink: 0; text-align:left; }
 }
+
+.transfer-pairs{display:grid;gap:10px}.transfer-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}.transfer-pair .item-row{min-height:68px}.sub-line{display:block}.prose-rendered h2{margin-top:28px;padding-top:18px;border-top:1px solid var(--border)}.prose-rendered table{width:100%;border-collapse:collapse}.prose-rendered th,.prose-rendered td{padding:10px;text-align:left;border-bottom:1px solid var(--border)}
+
+.chat-dock{position:fixed;right:0;top:0;bottom:0;width:360px;display:flex;flex-direction:column;background:var(--bg-base);border-left:1px solid var(--glass-border-soft);z-index:30;min-width:0}.chat-dock-header{padding:16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}.chat-dock-body{padding:16px;overflow-y:auto;overflow-x:hidden;flex:1;min-height:0;min-width:0}.chat-dock-footer{padding:12px;border-top:1px solid var(--glass-border-soft)}.chat-dock .chat-log{max-height:none}.chat-dock .bubble{min-width:0;overflow-wrap:anywhere}.chat-dock .row>*{min-width:0}.chat-dock pre,.chat-dock table{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}.chat-dock .prose-rendered table{display:table;table-layout:fixed}.chat-open main{margin-right:360px}.chat-open .cols-3{grid-template-columns:1fr 1fr}@media(max-width:1100px){.chat-open .cols-2,.chat-open .cols-3{grid-template-columns:1fr}}@media(max-width:767px){.chat-dock{width:100%;z-index:70}.chat-open main{margin-right:0}}
+
+@media(min-width:1024px){.chat-open .main{width:calc(100% - var(--sidebar-width) - 360px)}.chat-open .topbar{margin-right:360px}}@media(min-width:768px) and (max-width:1023px){.chat-open .main{width:calc(100% - 360px)}.chat-open .topbar{margin-right:360px}}
+
+.chat-dock .chips .btn{white-space:normal;text-align:left;max-width:100%;overflow-wrap:anywhere}.chat-dock .chips{display:grid}.chat-dock-header{position:relative;z-index:1}.chat-dock{z-index:46}.chat-open .panel{min-width:0}.chat-open .card{min-width:0}
+/* Vue mounts inside #app; shell sizing follows the rendered dock itself. */
+.app:has(.chat-dock) .panel,.app:has(.chat-dock) .card{min-width:0}
+.app:has(.chat-dock) .cols-3{grid-template-columns:1fr 1fr}
+@media(min-width:1024px){.app:has(.chat-dock) .main{width:calc(100% - var(--sidebar-width) - 360px);margin-right:360px}.app:has(.chat-dock) .topbar{margin-right:360px}}
+@media(min-width:768px) and (max-width:1023px){.app:has(.chat-dock) .main{width:calc(100% - 360px);margin-right:360px}.app:has(.chat-dock) .topbar{margin-right:360px}}
+@media(min-width:768px) and (max-width:1100px){.app:has(.chat-dock) .cols-2,.app:has(.chat-dock) .cols-3{grid-template-columns:1fr}}
+
+@media (max-width: 767px) {
+  .btn, .btn-sm, .tab, .side-link, .field-input, .field-select { min-height: 44px; }
+  .modal-body summary { min-height: 44px; display: flex; align-items: center; }
+}
+
+/* Separate chat sections and keep the input outside the scrolling messages. */
+.chat-dock-body { display: flex; flex-direction: column; gap: 24px; }
+.chat-dock .chat-log { flex: none; overflow: visible; display: flex; flex-direction: column; gap: 16px; margin: 0; }
+.chat-dock .bubble { margin: 0; }
+.chat-dock .chips { gap: 10px; margin: 0; padding-bottom: 12px; }
+.chat-dock-footer { flex-shrink: 0; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.chat-dock-footer form { gap: 12px; align-items: center; }
+.chat-dock-footer .field { margin: 0; }
+.chat-dock .chips .btn { padding: 12px 14px; line-height: 1.5; }
+@media(max-width:767px) { .chat-dock { height: 100dvh; bottom: auto; } }
+@media(max-width:767px) {
+  .player { min-width: 0; }
+  .player .btn { max-width: 100%; padding: 8px 4px; white-space: normal; font-size: 10px; }
+  .player .name { overflow-wrap: anywhere; }
+  .transfer-pair { grid-template-columns: 1fr; gap: 12px; }
+  .transfer-pair .item-row { gap: 12px; min-width: 0; }
+  .transfer-pair .item-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+  .transfer-pair .item-row .num { flex-shrink: 0; }
+}
+@media(max-width:360px) {
+  .pitch { margin-left: -8px; margin-right: -8px; }
+  .player { padding-left: 2px; padding-right: 2px; }
+  .player .btn { font-size: 9px; }
+}
+@media(max-width:767px) {
+  .player-top { flex-wrap: wrap; justify-content: center; }
+  .player .fixtures { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; min-width: 0; }
+  .player .fix { max-width: 100%; font-size: 9px; }
+  .player-meta { overflow-wrap: anywhere; }
+}
+@media(max-width:360px) { .pitch-row { gap: 8px; } .player { width: calc(50% - 8px); } }
+
+.mobile-transfer-label { display: none; }
+@media(max-width:767px) { .transfer-pair:has(.transfer-out-label) { display: none; } .mobile-transfer-label { display: block; margin-bottom: 8px; } .transfer-side { min-width: 0; } }

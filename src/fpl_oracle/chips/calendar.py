@@ -61,7 +61,7 @@ class FixtureCalendar:
                         "description": f"Double Gameweek {gw}: {len(dgw_teams)} teams playing twice.",
                     }
                 )
-            elif bgw_teams:
+            if bgw_teams:
                 blank_gameweeks.append(
                     {
                         "gameweek": gw,
@@ -70,7 +70,7 @@ class FixtureCalendar:
                         "description": f"Blank Gameweek {gw}: {len(bgw_teams)} teams have no fixture.",
                     }
                 )
-            else:
+            if not dgw_teams and not bgw_teams:
                 regular_gameweeks.append(gw)
 
         return {

@@ -24,10 +24,10 @@ FORBIDDEN_LITERALS = [
 ]
 
 REQUIRED_SECTION_HEADINGS = [
-    "Who to captain",
+    "Captain",
     "Transfers to make",
     "Bench",
-    "Conditional chip candidate",
+    "Chip:",
     "Rivals",
     "Why",
 ]
@@ -139,8 +139,8 @@ def test_squad_availability_empty_state_honesty():
 def test_absent_plan_truthfulness_in_app_js():
     """Verify app.js does not recommend rolling or fake values when plan/squad is missing."""
     content = APP_JS.read_text(encoding="utf-8")
-    assert "Transfer recommendations unavailable" in content
-    assert "Loading transfer recommendations..." in content
+    assert "Advice unavailable" in content
+    assert "Checking..." in content
     # When squad is missing, rolling must be guarded
     assert "if (!this.hasLoadedSquad)" in content
     assert "Cannot recommend rolling without a verified loaded squad" in content
@@ -155,9 +155,9 @@ def test_chip_banner_is_computed_and_keeps_caveats():
     html = INDEX_HTML.read_text(encoding="utf-8")
     for state in ("pending", "holds", "changed", "unavailable", "idle"):
         assert f"state: '{state}'" in js
-    assert "later chip value remains unresolved" in js
+    assert "Timing unchanged" in js
     assert "chipCheck" in html
-    assert "not proof it is optimal" in js
+    assert "Timing changes" in js
 
 
 def test_design_tokens_live_in_one_css_file():

@@ -52,9 +52,9 @@ class ExpertAgent:
                 )
             except Exception:
                 logger.exception("Offline answer failed")
-                response_text = "Advice could not be calculated from the current squad snapshot. Check the server log and retry after the data refresh completes."
+                response_text = "Advice unavailable. Refresh and try again."
         if not isinstance(response_text, str) or not response_text.strip():
-            response_text = "No answer was produced. Please retry after the data refresh completes."
+            response_text = "No answer. Try again."
 
         # Save assistant message
         data_store.add_chat_message(role="assistant", content=response_text, session_id=session_id)

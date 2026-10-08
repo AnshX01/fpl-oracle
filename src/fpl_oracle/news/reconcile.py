@@ -52,6 +52,16 @@ def check_news_benchmark_gate(
         if metrics.get("status") in ("mock", "awaiting", "unverified"):
             return False, f"Extractor {extractor_name} is unverified", metrics
 
+        if extractor_name == "gemini":
+            import os
+
+            from fpl_oracle.news.gemini_extractor import DEFAULT_GEMINI_MODEL
+
+            if metrics.get("model") != os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL):
+                return False, "Gemini model changed; rerun its benchmark", metrics
+            if not metrics.get("production_gate", {}).get("gate_passed"):
+                return False, "Gemini benchmark safety checks failed", metrics
+
         precision = float(metrics.get("extraction_precision_pct", metrics.get("precision_pct", 0.0)) or 0.0) / 100.0
         recall = float(metrics.get("extraction_recall_pct", metrics.get("recall_pct", 0.0)) or 0.0) / 100.0
         false_ro_rate = (

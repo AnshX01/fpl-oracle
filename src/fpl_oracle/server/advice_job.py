@@ -17,6 +17,19 @@ class AdvicePublisher:
         self.expiry_task = None
         self.expiry_cache = {}
 
+    async def invalidate(self):
+        for task in (self.task, self.expiry_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self.current = None
+        self.task = None
+        self.expiry_task = None
+        self.expiry_cache.clear()
+
     def start(self, profile_key):
         if self.task and not self.task.done():
             if self.current["profile_key"] != profile_key:
@@ -35,7 +48,7 @@ class AdvicePublisher:
         self.current = dict(
             id=uuid.uuid4().hex,
             status="calculating",
-            stage="Loading canonical snapshot",
+            stage="Loading team",
             profile_key=profile_key,
             created=time.monotonic(),
             result=None,
@@ -76,9 +89,9 @@ class AdvicePublisher:
         try:
 
             async def work():
-                self.current["stage"] = "Calculating shared eight-week plan"
+                self.current["stage"] = "Checking transfers and chips"
                 squad = await get_squad()
-                self.current["stage"] = "Formatting decision and contingency plans"
+                self.current["stage"] = "Preparing advice"
                 from fpl_oracle.briefing.decision_card import decision_card_generator
 
                 card = await decision_card_generator.generate_decision_card(include_league=False)
@@ -113,17 +126,25 @@ class AdvicePublisher:
                     source_revision=fpl_client.revision,
                 )
 
-            result = await asyncio.wait_for(work(), timeout=600)
+            result = await asyncio.wait_for(work(), timeout=1800)
             from fpl_oracle.ml.model_registry import model_registry
 
             result["expiryResearch"] = dict(status="pending")
             self.current.update(
                 status="ready",
-                stage="Published coherent core",
+                stage="Ready",
                 result=result,
                 sources={k: v[0] for k, v in (read_context.get() or {}).items()},
                 model_version=model_registry.get_active_version(),
             )
+            saved_recommendation = result["decisionCard"].pop("confirmation_recommendation", None)
+            if saved_recommendation:
+                from fpl_oracle.domain.team_confirmation import team_confirmation
+
+                team_confirmation.write(
+                    "recommendation:" + team_confirmation.identity(saved_recommendation.pop("manager_id", None)),
+                    saved_recommendation,
+                )
             publication = self.current
             cache_key = json.dumps(
                 [original_key, result.get("snapshot_id"), str(model_before), str(manifest_before)], default=str
@@ -164,25 +185,23 @@ class AdvicePublisher:
 
 
 def profile_key(profile):
-    return hashlib.sha256(
-        json.dumps(
-            {
-                k: getattr(profile, k, None)
-                for k in (
-                    "manager_id",
-                    "target_league_id",
-                    "risk_preference",
-                    "bank",
-                    "free_transfers",
-                    "bank_override_enabled",
-                    "ft_override_enabled",
-                    "manual_squad",
-                )
-            },
-            sort_keys=True,
-            default=str,
-        ).encode()
-    ).hexdigest()
+    from fpl_oracle.domain.team_confirmation import team_confirmation
+
+    fields = {
+        k: getattr(profile, k, None)
+        for k in (
+            "manager_id",
+            "target_league_id",
+            "risk_preference",
+            "bank",
+            "free_transfers",
+            "bank_override_enabled",
+            "ft_override_enabled",
+            "manual_squad",
+        )
+    }
+    fields["team_confirmation"] = team_confirmation.read(getattr(profile, "manager_id", None))
+    return hashlib.sha256(json.dumps(fields, sort_keys=True, default=str).encode()).hexdigest()
 
 
 advice_publisher = AdvicePublisher()

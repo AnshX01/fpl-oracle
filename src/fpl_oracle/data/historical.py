@@ -137,7 +137,8 @@ class HistoricalDataManager:
         # rows. Never deduplicate those by a null/zero fixture key.
         past_rows = merged[merged["season"] != "2026-27"]
         current_rows = merged[merged["season"] == "2026-27"].drop_duplicates(
-            ["season", "element", "fixture", "round"], keep="last")
+            ["season", "element", "fixture", "round"], keep="last"
+        )
         merged = pd.concat([past_rows, current_rows], ignore_index=True)
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.output_file.with_suffix(".csv.tmp")

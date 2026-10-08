@@ -104,10 +104,10 @@ class FPLClient:
             await self._client.aclose()
             self._client = None
 
-    def get_data_as_of(self, cache_key: str) -> str:
+    def get_data_as_of(self, cache_key: str) -> str | None:
         """Return ISO timestamp of when data for key was fetched or last updated."""
-        dt = self._cache_timestamps.get(cache_key) or self.last_sync_time or datetime.now(UTC)
-        return dt.isoformat()
+        dt = self._cache_timestamps.get(cache_key)
+        return dt.isoformat() if dt else None
 
     async def _fetch_json(
         self, endpoint: str, cache_key: str, ttl_seconds: int, retries: int = 3, force_refresh: bool = False
@@ -117,6 +117,7 @@ class FPLClient:
         Returns (data, is_stale).
         """
         from fpl_oracle.api.read_context import recalled, remember
+
         pinned = recalled(cache_key)
         if pinned is not None and not force_refresh:
             return pinned

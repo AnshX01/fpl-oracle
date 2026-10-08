@@ -137,3 +137,60 @@ def test_expiry_research_runs_in_background_after_core_ready(monkeypatch):
         assert len(calls) == 1
 
     asyncio.run(run())
+
+
+def test_confirmation_change_changes_profile_identity(monkeypatch):
+    from fpl_oracle.domain.team_confirmation import team_confirmation
+
+    profile = SimpleNamespace(manager_id=4)
+    monkeypatch.setattr(team_confirmation, "read", lambda mid: None)
+    first = profile_key(profile)
+    monkeypatch.setattr(team_confirmation, "read", lambda mid: dict(confirmed_at="new"))
+    assert profile_key(profile) != first
+
+
+def test_invalidate_cancels_old_publication():
+    async def run():
+        publisher = AdvicePublisher()
+        publisher.current = dict(status="calculating")
+        publisher.task = asyncio.create_task(asyncio.sleep(100))
+        old = publisher.task
+        await publisher.invalidate()
+        assert old.cancelled()
+        assert publisher.public()["status"] == "absent"
+
+    asyncio.run(run())
+
+
+def test_only_successful_core_saves_published_recommendation(monkeypatch):
+    async def run():
+        from fpl_oracle.briefing.decision_card import decision_card_generator
+        from fpl_oracle.data.store import data_store
+        from fpl_oracle.domain.team_confirmation import team_confirmation
+        from fpl_oracle.server.routes import api
+
+        profile = SimpleNamespace(manager_id=1, target_league_id=None)
+        monkeypatch.setattr(data_store, "get_profile", lambda: profile)
+        monkeypatch.setattr(team_confirmation, "read", lambda mid: None)
+        captured = []
+        monkeypatch.setattr(team_confirmation, "write", lambda mid, r: captured.append((mid, r)))
+        monkeypatch.setattr(api, "get_squad", AsyncMock(return_value=dict(captain=dict(element=12))))
+        monkeypatch.setattr(api, "get_contingency_plans", AsyncMock(return_value=dict(plan_a=dict(title="same"))))
+        monkeypatch.setattr(
+            decision_card_generator,
+            "generate_decision_card",
+            AsyncMock(
+                return_value=dict(
+                    captain=dict(element=12),
+                    confirmation_recommendation=dict(manager_id=1, gameweek=6, ins=[], outs=[]),
+                )
+            ),
+        )
+        publisher = AdvicePublisher()
+        publisher.start(profile_key(profile))
+        await publisher.task
+        assert publisher.public()["status"] == "ready"
+        assert captured == [("recommendation:1", dict(gameweek=6, ins=[], outs=[]))]
+        assert "confirmation_recommendation" not in publisher.public()["result"]["decisionCard"]
+
+    asyncio.run(run())

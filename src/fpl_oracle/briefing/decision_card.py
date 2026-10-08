@@ -271,15 +271,16 @@ class DecisionCardGenerator:
             "recommend": chip_rec_now,
             "chip_name": active_chip_code,
             "chip_display_name": active_chip_name,
-            "reason": (
-                best_cand.get("reason", "")
-                if chip_rec_now
-                else "No chip deployment recommended this gameweek. Save chips for confirmed DGWs."
-            ),
-            "next_best_window": next(
-                (step["gameweek"] for step in rec_plan["trajectory"][1:] if step.get("chip")), None
-            ),
-            "gain_vs_hold": round(float(best_cand.get("gross_gain_vs_hold", 0.0)), 1) if chip_rec_now else 0.0,
+            "reason": ("Compare the extra points with saving the chip." if chip_rec_now else "Save chips this week."),
+            "next_best_window": None,
+            "gain_vs_hold": (
+                round(float(best_cand.get("net_gain_vs_hold", 0.0)), 1)
+                if joint_res.get("normal_plan_feasible", True)
+                else None
+            )
+            if chip_rec_now
+            else 0.0,
+            "baseline_available": joint_res.get("normal_plan_feasible", True),
             "set_1_deadline_warning": chip_strat.get("set_1_deadline_warning"),
         }
 
@@ -544,14 +545,14 @@ class DecisionCardGenerator:
             in_names = ", ".join(p["web_name"] for p in transfers_in)
             out_names = ", ".join(p["web_name"] for p in transfers_out)
             two_line = (
-                f"Executing {out_names} -> {in_names} gains +{transfers_summary['expected_gain_gw']:.1f} xP this GW and +{transfers_summary['net_gain_vs_roll']:.1f} xP across the {len(joint_res['decision_scope']['horizon_gameweeks'])}-GW horizon. "
-                f"Lineup totals {lineup_res['total_gameweek_expected_points']:.1f} xP led by captain {captain_dict['web_name']}."
+                f"{out_names} → {in_names}: +{transfers_summary['expected_gain_gw']:.1f} predicted pts this week and +{transfers_summary['net_gain_vs_roll']:.1f} xP across the {len(joint_res['decision_scope']['horizon_gameweeks'])} weeks. "
+                f"Starting XI: {lineup_res['total_gameweek_expected_points']:.1f} predicted pts. Captain: {captain_dict['web_name']}."
             )
 
         caveats = [
-            f"{len(joint_res['decision_scope']['horizon_gameweeks'])}-GW supported projection search. Value beyond this window is not estimated; chip decisions are conditional, not whole-season optima.",
-            "Monitor Friday press conference updates for confirmed starter status.",
-            "Verify lineup locking prior to the official deadline window.",
+            "Uses current fixtures and forecasts through chip expiry.",
+            "Check the latest team news.",
+            "Confirm your team in FPL before the deadline.",
         ]
         if chip_decision["set_1_deadline_warning"]:
             caveats.append(str(chip_decision["set_1_deadline_warning"]))
@@ -574,6 +575,25 @@ class DecisionCardGenerator:
         active_ver = model_registry.get_active_version()
 
         return {
+            "confirmation_recommendation": dict(
+                manager_id=effective_state.manager_id,
+                gameweek=target_gw,
+                baseline=[p.element for p in effective_state.squad],
+                baseline_bank=effective_state.bank_tenths,
+                baseline_ft=effective_state.free_transfers,
+                buy_prices={p["element"]: int(round(p["cost"] * 10)) for p in transfers_in},
+                ins=[p["element"] for p in transfers_in],
+                outs=[p["element"] for p in transfers_out],
+                hit_cost=int(rec_plan.get("hits", 0) * 4),
+                expected_gain=rec_plan["trajectory"][0].get("expected_player_gain"),
+                remaining_bank=int(round(rec_plan["remaining_bank"] * 10)),
+                captain=captain_elem,
+                vice_captain=vice_elem,
+                bench=[p["element"] for p in bench_list],
+                chip=active_chip_code,
+                baseline_purchase={p.element: p.purchase_price for p in effective_state.squad},
+                baseline_selling={p.element: p.selling_price for p in effective_state.squad},
+            ),
             "gameweek": target_gw,
             "deadline": {
                 "deadline_time": game_state.deadline_time,
@@ -583,8 +603,8 @@ class DecisionCardGenerator:
             },
             "data_freshness": {
                 "projections_as_of": fpl_client.get_data_as_of("bootstrap-static"),
-                "news_as_of": fpl_client.get_data_as_of("news") or fpl_client.get_data_as_of("bootstrap-static"),
-                "rivals_as_of": fpl_client.get_data_as_of("league") or fpl_client.get_data_as_of("bootstrap-static"),
+                "news_as_of": fpl_client.get_data_as_of("news"),
+                "rivals_as_of": fpl_client.get_data_as_of("league"),
                 "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
             },
             "model_version": active_ver.get("version", "v1.0.0"),
@@ -603,6 +623,7 @@ class DecisionCardGenerator:
                 }
                 for i, c in enumerate(joint_res.get("chip_comparison_table", []))
             ],
+            "hit_policy": joint_res.get("hit_policy"),
             "transfers": transfers_summary,
             "xi": starters_list,
             "formation": lineup_res.get("formation", "3-5-2"),
@@ -634,106 +655,43 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
     wp = card.get("win_prob", {})
 
     lines = [
-        f"# FPL Oracle — Gameweek {gw} Decision Card",
-        f"**Generated:** {card.get('data_as_of', 'Recent')} | **Model:** {card.get('model_version', 'v1.0.0')}",
-        f"**Deadline:** {dl.get('label', 'TBD')} ({dl.get('seconds_to_deadline', 0):.0f}s remaining)",
-        f"**Disclaimer:** {card.get('advice_disclaimer', 'Advice only — nothing is submitted to FPL.')}",
+        f"# FPL Oracle - Gameweek {gw}",
+        f"**Deadline:** {dl.get('deadline_time') or dl.get('label') or 'Unknown'}",
         "",
-        "---",
-        "",
-        "## 1. Chip Strategy",
-        f"**Recommendation:** {'YES: ' + str(chip.get('chip_display_name')) if chip.get('recommend') else 'HOLD CHIP (Save for DGW/BGW)'}",
-        f"- **Expected Gain vs Hold:** +{chip.get('gain_vs_hold', 0.0)} pts",
-        f"- **Rationale:** {chip.get('reason', '')}",
-        f"- **Next Best Window:** GW{chip.get('next_best_window', 'TBD')}",
+        "## Transfers",
     ]
-
-    if chip.get("set_1_deadline_warning"):
-        lines.append(f"- **Set 1 Expiry:** [Warning] {chip['set_1_deadline_warning']}")
-
-    lines.extend(
-        [
-            "",
-            "## 2. Transfer Plan",
-            f"**Recommended Move:** {t.get('action_summary', '')}",
-        ]
-    )
-
     if t.get("is_roll"):
-        lines.append(f"- **Strategy:** Roll transfer to accumulate {t.get('ft_remaining', 2)} free transfers.")
+        lines.append("Save your free transfer.")
     else:
-        in_names = ", ".join(f"{p['web_name']} (£{p['cost']}m)" for p in t.get("in", []))
-        out_names = ", ".join(f"{p['web_name']} (£{p['cost']}m)" for p in t.get("out", []))
-        lines.append(f"- **Transfers Out:** {out_names}")
-        lines.append(f"- **Transfers In:** {in_names}")
-
-    lines.extend(
-        [
-            f"- **GW Net Gain vs Roll:** +{t.get('expected_gain_gw', 0.0):.1f} pts",
-            f"- **5-GW Horizon Net Gain:** +{t.get('net_gain_vs_roll', 0.0):.1f} pts",
-            f"- **Hit Penalty:** -{t.get('hit_cost', 0)} pts ({t.get('hits_count', 0)} extra transfer(s))",
-            f"- **Bank After:** £{t.get('bank_after', 0.0):.1f}m | **FTs Next Week:** {t.get('ft_remaining', 1)}",
-            f"- **No-Regret Status:** {'Model stability flag, not verified future success' if t.get('no_regret_flag') else 'Conditional model candidate'}",
-            "",
-            "## 3. Starting XI & Captaincy",
-            f"**Formation:** {card.get('formation', '3-5-2')}",
-            f"- **Captain (C):** {cap.get('web_name', '')} ({cap.get('team_short', '')}) — {cap.get('expected_points', 0.0)} xP [P10: {cap.get('p10', 0.0)}, P90: {cap.get('p90', 0.0)}]",
-            f"- **Vice-Captain (V):** {vice.get('web_name', '')} ({vice.get('team_short', '')}) — {vice.get('expected_points', 0.0)} xP",
-            "",
-            "### Starting Lineup",
-            "| Pos | Player | Club | xP | P10-P90 | Role |",
-            "|:---|:---|:---:|:---:|:---:|:---:|",
-        ]
-    )
-
-    for p in card.get("xi", []):
-        role = "Captain (C)" if p.get("is_captain") else ("Vice (V)" if p.get("is_vice_captain") else "")
-        interval = f"[{p.get('p10', 0.0):.1f} - {p.get('p90', 0.0):.1f}]"
+        for out, incoming in zip(t.get("out", []), t.get("in", []), strict=False):
+            lines.append(f"- {out['web_name']} -> {incoming['web_name']}")
+    lines += [
+        f"Hit: {t.get('hit_cost', 0)} pts · Bank: £{t.get('bank_after', 0):.1f}m · Free transfers left: {t.get('ft_remaining', 0)}",
+        "",
+        "## Captain and bench",
+        f"Captain: {cap.get('web_name', 'Unknown')}",
+        f"Vice captain: {vice.get('web_name', 'Unknown')}",
+        f"Formation: {card.get('formation', 'Unknown')}",
+        "",
+        "| Player | Position | Est. points |",
+        "|---|---|---|",
+    ]
+    for player in card.get("xi", []):
         lines.append(
-            f"| {p.get('position')} | {p.get('web_name')} | {p.get('team_short')} | {p.get('expected_points', 0.0):.1f} | {interval} | {role} |"
+            f"| {player.get('web_name')} | {player.get('position')} | {player.get('expected_points', 0):.1f} |"
         )
-
-    lines.extend(
-        [
-            "",
-            "### Bench Order",
-        ]
-    )
-    for b in card.get("bench", []):
-        lines.append(
-            f"{b.get('bench_order')}. {b.get('web_name')} ({b.get('position')}, {b.get('team_short')}) — {b.get('expected_points', 0.0):.1f} xP"
-        )
-
-    lines.extend(
-        [
-            "",
-            "## 4. Mini-League & Rivals",
-            f"- **Mini-League:** {riv.get('league_name', 'None')} ({riv.get('status', 'unconfigured')})",
-            f"- **Tactical Posture:** {riv.get('posture', 'BALANCED_ATTACK')}",
-            f"- **Posture Rationale:** {riv.get('posture_reason', '')}",
-            f"- **Championship Win Probability:** {wp.get('p_first', 0.0):.1f}% (Expected Finish: {wp.get('expected_rank', 1.0):.1f})",
-            f"- **Key Exposure Risks:** {', '.join(riv.get('exposure_players', [])) or 'None'}",
-            f"- **Key Differentials:** {', '.join(riv.get('differential_players', [])) or 'None'}",
-            "",
-            "## 5. Decision Summary & Pre-Deadline Caveats",
-            f"**Rationale:** {card.get('two_line_reasoning', '')}",
-            "",
-            "**Caveats:**",
-        ]
-    )
-
-    for c in card.get("caveats", []):
-        lines.append(f"- {c}")
-
-    lines.extend(
-        [
-            f"- {card.get('what_changed', '')}",
-            "",
-            "---",
-            f"*{card.get('advice_disclaimer', '')}*",
-        ]
-    )
-
+    lines += ["", "### Bench"]
+    for player in card.get("bench", []):
+        lines.append(f"{player.get('bench_order')}. {player.get('web_name')}")
+    lines += ["", "## Chips", str(chip.get("chip_display_name")) if chip.get("recommend") else "Save chips"]
+    if chip.get("recommend") and chip.get("gain_vs_hold") is not None:
+        lines.append(f"Est. +{chip['gain_vs_hold']} pts")
+    if chip.get("set_1_deadline_warning"):
+        lines.append(chip["set_1_deadline_warning"])
+    if riv.get("league_name") and riv.get("status") not in ("unconfigured", "unavailable"):
+        lines += ["", "## League", str(riv["league_name"])]
+    if wp.get("p_first") is not None:
+        lines.append(f"Simulated first-place rate: {wp['p_first']:.1f}%")
     return "\n".join(lines)
 
 

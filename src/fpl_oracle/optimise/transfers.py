@@ -392,14 +392,20 @@ class TransferOptimizer:
             avail_budget = bank + sell_price
             sell_team = sell_p["team"]
 
-            cands = pool_df[
-                (pool_df["position"] == sell_pos)
-                & (~pool_df["element"].isin(elements))
-                & (~pool_df["element"].isin(locked_out))
-                & (~pool_df["team"].isin(excluded_teams))
-                & (pool_df["value"] <= avail_budget)
+            eligible_pool = pool_df
+            if "simulation_unavailable" in pool_df:
+                eligible_pool = pool_df[~pool_df["simulation_unavailable"].fillna(False).astype(bool)]
+            cands = eligible_pool[
+                (eligible_pool["position"] == sell_pos)
+                & (~eligible_pool["element"].isin(elements))
+                & (~eligible_pool["element"].isin(locked_out))
+                & (~eligible_pool["team"].isin(excluded_teams))
+                & (eligible_pool["value"] <= avail_budget)
             ].sort_values(by="expected_points", ascending=False)
 
+            # Club-limit failures must not consume the candidate allowance.
+            legal_teams = [team for team, count in team_counts.items() if count < 3 or team == sell_team]
+            cands = cands[cands["team"].isin(legal_teams) | ~cands["team"].isin(team_counts)]
             for _, buy_row in cands.head(max_per_pos).iterrows():
                 buy_id = int(buy_row["element"])
                 buy_team = buy_row["team"]
@@ -1509,6 +1515,10 @@ class TransferOptimizer:
         horizon_len: int | None = None,
         evaluate_rival_scenarios: bool = False,
         previous_chip: str | None = None,
+        measure_chip_values: bool = False,
+        search_quality: dict[str, int] | None = None,
+        hit_cooldown_until: int = 0,
+        forced_current_chip: str | None = None,
     ) -> dict[str, Any]:
         """
         Evaluates joint dynamic trajectory search combining multi-GW transfer planning
@@ -1584,7 +1594,44 @@ class TransferOptimizer:
             terminal_costs=chip_retention_values,
             chips_by_set=chips_by_set,
             previous_chip=previous_chip,
+            hit_cooldown_until=hit_cooldown_until,
+            forced_current_chip=forced_current_chip,
+            **(search_quality or {}),
         )
+        # Full-date restructuring searches may reveal a trajectory lost by
+        # joint pruning. Include them before choosing the action, not just in
+        # a report after the decision.
+        date_states = {}
+        if measure_chip_values and horizon_gws[-1] == (19 if target_gw <= 19 else 38):
+            for code in legal_chips:
+                if code not in {"wildcard", "freehit"}:
+                    continue
+                for date in horizon_gws:
+                    found = search_sequences(
+                        self,
+                        initial_elements,
+                        initial_bank,
+                        initial_purchase,
+                        free_transfers,
+                        horizon_gws,
+                        clean_projections,
+                        player_maps,
+                        legal_chips,
+                        locked_in,
+                        locked_out,
+                        excluded_teams,
+                        risk_preference,
+                        terminal_costs=chip_retention_values,
+                        chips_by_set=chips_by_set,
+                        previous_chip=previous_chip,
+                        hit_cooldown_until=hit_cooldown_until,
+                        forced_current_chip=forced_current_chip,
+                        forced_chip_schedule={date: code},
+                        **(search_quality or {}),
+                    )
+                    date_states[(code, date)] = found
+                    sequences += found
+        sequences.sort(key=lambda state: state["score"], reverse=True)
         # Compare complete trajectories with the same chip opportunities, not a
         # current-chip bonus against a chip-free continuation.
         from fpl_oracle.league.objective import select_balanced_sequence
@@ -1594,8 +1641,7 @@ class TransferOptimizer:
         by_first: dict[str | None, dict[str, Any]] = {}
         for state in sequences:
             by_first.setdefault(state["first_chip"], state)
-        if None not in by_first:
-            raise ValueError("Sequential beam did not retain a hold branch")
+        normal_plan_feasible = None in by_first
         # Expose data-derived option-value break-even, never a fabricated tail constant.
         resource_frontier = []
         best_score = max(state["score"] for state in sequences)
@@ -1618,7 +1664,7 @@ class TransferOptimizer:
                         interpretation="If this chip's later option value exceeds this threshold, the preserved-chip trajectory may beat current-window deployment. Later value is not estimated.",
                     )
                 )
-        hold_score = by_first[None]["score"]
+        hold_score = by_first[None]["score"] if normal_plan_feasible else max(s["score"] for s in sequences)
         rival_scenarios = None
         if evaluate_rival_scenarios:
             from fpl_oracle.league.scenarios import compare_plan_scenarios
@@ -1680,20 +1726,23 @@ class TransferOptimizer:
                     action="DEPLOY" if chip else "HOLD",
                     plan=plan,
                     net_gain_vs_hold=gain,
-                    gross_gain_vs_hold=round(first["gross_xp"] - by_first[None]["history"][0]["gross_xp"], 2),
+                    gross_gain_vs_hold=round(first["gross_xp"] - by_first[None]["history"][0]["gross_xp"], 2)
+                    if normal_plan_feasible
+                    else None,
                     opportunity_cost=float((chip_retention_values or {}).get(chip or "", 0)),
                     effective_trajectory_score=round(state["score"], 2),
-                    reason="Legal sequential transfer/chip trajectory across the projection horizon.",
+                    reason="Legal sequential transfer/chip trajectory across the projection horizon."
+                    if normal_plan_feasible
+                    else "No ordinary legal XI within the hit limit. Comparison gain unavailable.",
                 )
             )
-        hold_plan = next(c["plan"] for c in candidates if c["chip"] == "HOLD")
+        hold_plan = next((c["plan"] for c in candidates if c["chip"] == "HOLD"), candidates[0]["plan"])
         for candidate in candidates:
             plan = candidate["plan"]
             count = len(plan["transfers_in"])
             plan["recommendation_summary"] = (
-                f"{candidate['chip']}: {count} transfer(s), {plan['hits']} hit(s), "
-                f"{plan['net_expected_points']:.2f} next-GW xP; "
-                f"{candidate['net_gain_vs_hold']:+.2f} discounted horizon xP vs holding chips now"
+                f"{count} transfers · {plan['hit_cost']} hit points · "
+                f"{plan['net_expected_points']:.1f} est. points this week."
             )
             plan["horizon_gain_vs_roll"] = round(plan["accumulated_discounted_net_xp"] - hold_score, 2)
             plan["horizon_hit_cost"] = plan["horizon_hits"] * self.hit_penalty
@@ -1705,6 +1754,13 @@ class TransferOptimizer:
         candidates.sort(key=lambda c: c["net_gain_vs_hold"], reverse=True)
         best_cand = next(c for c in candidates if c["chip_code"] == league_choice["first_chip"])
 
+        if (
+            best_cand["chip"] == "freehit"
+            and normal_plan_feasible
+            and not forced_current_chip
+            and best_cand["net_gain_vs_hold"] <= 1e-6
+        ):
+            best_cand = next(c for c in candidates if c["chip"] == "HOLD")
         if best_cand["chip"] != "HOLD":
             recommended_chip = best_cand["chip"]
             recommended_action = "DEPLOY"
@@ -1718,7 +1774,183 @@ class TransferOptimizer:
             for c in candidates:
                 c["is_recommended"] = bool(c["chip"] == "HOLD")
 
+        # The roadmap must follow the action actually selected after any
+        # non-beneficial Free Hit guard, not the discarded tie-break choice.
+        league_choice = by_first[best_cand["chip_code"]]
+        measured_roadmap = []
+        measurement_status = "not_requested"
+        if measure_chip_values:
+            import time
+
+            from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
+
+            began = time.monotonic()
+            expiry = 19 if target_gw <= 19 else 38
+            if horizon_gws[-1] != expiry:
+                measurement_status = "incomplete_window"
+            else:
+                measurement_status = "measured_through_expiry"
+                for chip in [c for c in legal_chips if c != forced_current_chip]:
+                    without = search_sequences(
+                        self,
+                        initial_elements,
+                        initial_bank,
+                        initial_purchase,
+                        free_transfers,
+                        horizon_gws,
+                        clean_projections,
+                        player_maps,
+                        [code for code in legal_chips if code != chip],
+                        locked_in,
+                        locked_out,
+                        excluded_teams,
+                        risk_preference,
+                        terminal_costs=chip_retention_values,
+                        chips_by_set={
+                            number: [code for code in values if code != chip]
+                            for number, values in (chips_by_set or {}).items()
+                        },
+                        previous_chip=previous_chip,
+                        hit_cooldown_until=hit_cooldown_until,
+                        forced_current_chip=forced_current_chip,
+                        **(search_quality or {}),
+                    )
+                    # Use the same date-search expansion on both sides of a
+                    # chip comparison. Otherwise a broader with-chip search
+                    # can overstate gain against a weaker ordinary baseline.
+                    for other in legal_chips:
+                        if other == chip or other not in {"wildcard", "freehit"}:
+                            continue
+                        for date in horizon_gws:
+                            without += search_sequences(
+                                self,
+                                initial_elements,
+                                initial_bank,
+                                initial_purchase,
+                                free_transfers,
+                                horizon_gws,
+                                clean_projections,
+                                player_maps,
+                                [code for code in legal_chips if code != chip],
+                                locked_in,
+                                locked_out,
+                                excluded_teams,
+                                risk_preference,
+                                terminal_costs=chip_retention_values,
+                                chips_by_set={
+                                    number: [code for code in values if code != chip]
+                                    for number, values in (chips_by_set or {}).items()
+                                },
+                                previous_chip=previous_chip,
+                                hit_cooldown_until=hit_cooldown_until,
+                                forced_current_chip=forced_current_chip,
+                                forced_chip_schedule={date: other},
+                                **(search_quality or {}),
+                            )
+                    if not without:
+                        measured_roadmap.append(
+                            dict(
+                                chip=CHIP_DISPLAY_NAMES[chip],
+                                code=chip,
+                                recommended_gw=next(
+                                    (r["gameweek"] for r in league_choice["history"] if r.get("chip") == chip), None
+                                ),
+                                expected_gain=None,
+                                status="required_for_feasibility",
+                                date_comparison=[
+                                    dict(
+                                        gameweek=date,
+                                        status="required_for_feasibility" if found else "infeasible",
+                                        expected_gain=None,
+                                        plan_score=round(max(found, key=lambda state: state["score"])["score"], 2)
+                                        if found
+                                        else None,
+                                    )
+                                    for (code, date), found in date_states.items()
+                                    if code == chip
+                                ],
+                                reasoning="No legal plan within the hit limit without this chip.",
+                            )
+                        )
+                        continue
+                    baseline = max(without, key=lambda state: state["score"])
+                    date_rows = []
+                    if chip in {"wildcard", "freehit"}:
+                        from fpl_oracle.chips.date_comparison import compare_dates
+
+                        date_rows = compare_dates(
+                            lambda forced_chip_schedule, chip=chip, **unused: date_states.get(
+                                (chip, next(iter(forced_chip_schedule))), []
+                            ),
+                            {},
+                            chip,
+                            baseline,
+                            horizon_gws,
+                        )
+                    full = league_choice
+                    step = next((row for row in full["history"] if row.get("chip") == chip), None)
+                    delta = round(full["score"] - baseline["score"], 2)
+                    measured_roadmap.append(
+                        dict(
+                            chip=CHIP_DISPLAY_NAMES[chip],
+                            code=chip,
+                            recommended_gw=step["gameweek"] if step else None,
+                            expected_gain=delta,
+                            baseline_score=round(baseline["score"], 2),
+                            plan_score=round(full["score"], 2),
+                            baseline_trajectory=baseline["history"],
+                            date_comparison=date_rows,
+                            best_measured_date=max(
+                                (row for row in date_rows if row.get("plan_score") is not None),
+                                key=lambda row: row["plan_score"],
+                                default={"gameweek": None, "plan_score": None},
+                            ).get("gameweek"),
+                            forecast_through=expiry,
+                            status="measured" if delta >= 0 else "search_inconclusive",
+                            reasoning="Extra weighted points over the full plan without this chip. Transfers and other chip dates may change; gains do not add together.",
+                        )
+                    )
+                import copy
+
+                equal_optimizer = copy.copy(self)
+                equal_optimizer.discount_factor = 1.0
+                equal_states = search_sequences(
+                    equal_optimizer,
+                    initial_elements,
+                    initial_bank,
+                    initial_purchase,
+                    free_transfers,
+                    horizon_gws,
+                    clean_projections,
+                    player_maps,
+                    legal_chips,
+                    locked_in,
+                    locked_out,
+                    excluded_teams,
+                    risk_preference,
+                    terminal_costs=chip_retention_values,
+                    chips_by_set=chips_by_set,
+                    previous_chip=previous_chip,
+                    hit_cooldown_until=hit_cooldown_until,
+                    forced_current_chip=forced_current_chip,
+                    **(search_quality or {}),
+                )
+                equal_best = max(equal_states, key=lambda state: state["score"])
+                equal_dates = {row["chip"]: row["gameweek"] for row in equal_best["history"] if row.get("chip")}
+                for row in measured_roadmap:
+                    row["equal_weight_gameweek"] = equal_dates.get(row["code"])
+                    row["timing_changes_without_discount"] = row["recommended_gw"] != row["equal_weight_gameweek"]
+                measurement_seconds = round(time.monotonic() - began, 2)
+
         return {
+            "normal_plan_feasible": normal_plan_feasible,
+            "measured_chip_roadmap": measured_roadmap,
+            "chip_measurement_status": measurement_status,
+            "search_quality": search_quality
+            or dict(
+                beam_width=32, candidate_limit=2, two_transfer_limit=1, per_position_limit=2, restructure_parent_limit=1
+            ),
+            "chip_measurement_seconds": locals().get("measurement_seconds"),
             "recommended_chip": recommended_chip,
             "chip_action": recommended_action,
             "recommended_plan": recommended_plan,
@@ -1753,7 +1985,7 @@ class TransferOptimizer:
             "transfer_roadmap": self._generate_dynamic_roadmap(
                 recommended_plan["trajectory"], horizon_gws, clean_projections, player_maps
             ),
-            "hit_verdict": f"Selected trajectory costs {recommended_plan['horizon_hits']} hit(s) over {len(horizon_gws)} gameweeks.",
+            "hit_verdict": f"Plan costs {recommended_plan['horizon_hits']} hit(s) over {len(horizon_gws)} gameweeks.",
             "target_gameweek": target_gw,
             "available_free_transfers": free_transfers,
             "is_joint_plan": True,
@@ -1820,6 +2052,8 @@ class TransferOptimizer:
                 action = f"Double Transfer: OUT {out_names} -> IN {in_names}"
                 strategic_focus = "Execute tactical restructuring."
 
+            if step.get("hit_requires_prior_success"):
+                action += " (only if the earlier hit paid off)"
             cap_id = step.get("captain")
             cap_name = (
                 pmap.get(int(cap_id), {}).get("web_name", f"Captain #{cap_id}")

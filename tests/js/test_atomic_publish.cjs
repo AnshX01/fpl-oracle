@@ -3,6 +3,7 @@ let config, release, polls=0;
 const gate=new Promise(r=>release=r);
 const core={squadData:{starters:[1],bench:[2]},decisionCard:{captain:1},contingencyPlans:{plan_a:{title:'same snapshot'}}};
 async function fetch(path){
+ if(path==='/api/team/confirmation')return {ok:true,json:async()=>({locked:false})};
  if(path==='/api/advice/start')return {ok:true,json:async()=>({id:'job',status:'calculating',stage:'shared plan'})};
  if(path==='/api/advice/status/job'){polls++;await gate;return {ok:true,json:async()=>({id:'job',status:'ready',result:core})};}
  throw Error(path);

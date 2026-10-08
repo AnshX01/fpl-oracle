@@ -25,7 +25,7 @@ def _normalize_name(name: str) -> str:
     """Normalize accents and strip non-alphanumeric chars for robust matching."""
     nfkd = unicodedata.normalize("NFKD", name)
     ascii_str = "".join(c for c in nfkd if not unicodedata.combining(c))
-    return re.sub(r"[^a-zA-Z0-9]", "", ascii_str).lower()
+    return re.sub(r"[^a-zA-Z0-9]+", " ", ascii_str).lower().strip()
 
 
 class ContingencyEngine:
@@ -276,7 +276,7 @@ class ContingencyEngine:
         Compares:
         1. Auto-sub outcome: which bench player steps in and net xP change.
         2. Direct emergency transfer: best replacement on market within budget.
-        3. Recommendation: TRUST_BENCH vs EXECUTE_TRANSFER vs MONITOR.
+        3. One-week comparison, not an instruction to transfer.
         """
         lineup_res = lineup or lineup_optimizer.select_lineup_and_captain(squad_df)
         starters = lineup_res["starters"]
@@ -340,16 +340,20 @@ class ContingencyEngine:
 
             # Action verdict
             if transfer_gain_vs_bench >= 2.0:
-                verdict = "EXECUTE_TRANSFER"
+                verdict = "CHECK_TRANSFER"
                 verdict_reason = (
-                    f"Emergency transfer to {rep_name} nets {transfer_gain_vs_bench:+.2f} xP over bench after hit."
+                    f"{rep_name}: {transfer_gain_vs_bench:+.2f} est. points vs bench. Run the emergency check."
                 )
             elif autosub_delta >= -1.0 or transfer_gain_vs_bench < 0.5:
                 verdict = "TRUST_BENCH"
-                verdict_reason = f"Bench coverage ({sub_name}) is strong ({sub_xp} xP). Save free transfer / hit."
+                verdict_reason = (
+                    f"Bench coverage ({sub_name}) is strong ({sub_xp} predicted pts). Save free transfer / hit."
+                )
             else:
                 verdict = "MONITOR_PRESS_CONFERENCE"
-                verdict_reason = f"Marginal call ({transfer_gain_vs_bench:+.2f} xP). Wait for final press conference."
+                verdict_reason = (
+                    f"Marginal call ({transfer_gain_vs_bench:+.2f} predicted pts). Wait for final press conference."
+                )
 
             matrix.append(
                 {
@@ -398,15 +402,19 @@ class ContingencyEngine:
             clean_q = _normalize_name(query)
             for _, r in squad_df.iterrows():
                 p_norm = _normalize_name(r["web_name"])
-                if p_norm in clean_q or clean_q in p_norm:
+                if p_norm and (f" {p_norm} " in f" {clean_q} " or clean_q == p_norm):
                     affected_ids.add(int(r["element"]))
 
-        if not affected_ids:
-            # Fallback to the lowest chance starter if no match
-            lineup = lineup_optimizer.select_lineup_and_captain(squad_df)
-            affected_ids.add(int(lineup["starters"].iloc[0]["element"]))
+        owned = set(int(e) for e in squad_df["element"])
+        if not affected_ids or not affected_ids.issubset(owned):
+            return dict(status="needs_player", recommendation="Name a player in your squad, or select their player ID.")
+        if len(affected_ids) != 1:
+            return dict(status="needs_player", recommendation="Check one player at a time.")
 
         # Perturb squad with ruled-out player having 0.0 expected points
+        unavailable = set(affected_ids)
+        if "status" in squad_df:
+            unavailable.update(int(e) for e in squad_df.loc[squad_df["status"].isin(["i", "s", "u"]), "element"])
         perturbed_squad = squad_df.copy()
         for idx in perturbed_squad.index:
             if int(perturbed_squad.loc[idx, "element"]) in affected_ids:
@@ -415,10 +423,18 @@ class ContingencyEngine:
                 perturbed_squad.loc[idx, "p90"] = 0.0
 
         # 1. New lineup with bench promotion
-        new_lineup = lineup_optimizer.select_lineup_and_captain(perturbed_squad)
+        try:
+            new_lineup = lineup_optimizer.select_lineup_and_captain(
+                perturbed_squad, risk_preference="points", excluded_ids=unavailable
+            )
+        except RuntimeError:
+            return dict(
+                status="unavailable",
+                recommendation="Not enough available players for a legal XI. Review transfers before the deadline.",
+            )
 
         # Identify which player was promoted
-        orig_lineup = lineup_optimizer.select_lineup_and_captain(squad_df)
+        orig_lineup = lineup_optimizer.select_lineup_and_captain(squad_df, risk_preference="points")
         orig_starters = set(orig_lineup["starters"]["element"].tolist())
         new_starters = set(new_lineup["starters"]["element"].tolist())
         promoted_ids = list(new_starters - orig_starters)
@@ -445,6 +461,10 @@ class ContingencyEngine:
             & (player_pool_df["value"] <= avail_cash)
         ].sort_values(by="expected_points", ascending=False)
 
+        if "status" in candidates:
+            candidates = candidates[~candidates["status"].isin(["i", "s", "u"])]
+        other_teams = squad_df[squad_df["element"] != ruled_out_id]["team"].value_counts()
+        candidates = candidates[candidates["team"].map(other_teams).fillna(0) < 3]
         best_market_rep = None
         if not candidates.empty:
             bm = candidates.iloc[0]
@@ -481,10 +501,10 @@ class ContingencyEngine:
             },
             "emergency_transfer": best_market_rep,
             "recommendation": (
-                f"1-Click Recommendation: If {ruled_out_row['web_name']} is definitely out, "
-                f"start {promoted_player['web_name'] if promoted_player else 'bench'} ({promoted_player['expected_points'] if promoted_player else 0} xP). "
+                f"If {ruled_out_row['web_name']} is definitely out, "
+                f"start {promoted_player['web_name'] if promoted_player else 'bench'} ({promoted_player['expected_points'] if promoted_player else 0} predicted pts). "
                 f"Alternatively, transfer {ruled_out_row['web_name']} -> {best_market_rep['web_name'] if best_market_rep else 'Replacement'} "
-                f"for {best_market_rep['net_expected_points'] if best_market_rep else 0} net xP."
+                f"for {best_market_rep['net_expected_points'] if best_market_rep else 0} net predicted pts."
             ),
         }
 
@@ -518,7 +538,7 @@ class ContingencyEngine:
                     "item": "Starting XI Fitness & Availability",
                     "status": "PASS",
                     "badge": "Fit",
-                    "detail": "No current official injury/suspension flags for the selected starters. Availability and starting minutes are not guaranteed.",
+                    "detail": "No injury flags.",
                 }
             )
         else:
@@ -527,7 +547,7 @@ class ContingencyEngine:
                     "item": "Starting XI Fitness & Availability",
                     "status": "WARNING",
                     "badge": "Doubtful Starters",
-                    "detail": f"Doubtful players detected: {', '.join(doubtful)}. Check Friday press conference quotes.",
+                    "detail": f"Check {', '.join(doubtful)}.",
                 }
             )
 
@@ -537,9 +557,13 @@ class ContingencyEngine:
         checklist.append(
             {
                 "item": "Vice-Captain Failsafe",
-                "status": "PASS",
-                "badge": "Active",
-                "detail": f"Vice-Captain assigned to {vc['web_name']} ({vc['expected_points']} xP). Activates if {cap['web_name']} does not feature.",
+                "status": "PASS"
+                if vc["element"] != cap["element"]
+                and elem_meta.get(int(vc["element"]))
+                and elem_meta[int(vc["element"])].status == "a"
+                else "WARNING",
+                "badge": "Assigned",
+                "detail": f"{vc['web_name']}",
             }
         )
 
@@ -548,9 +572,11 @@ class ContingencyEngine:
         checklist.append(
             {
                 "item": "Autosub Hierarchy Order",
-                "status": "PASS",
+                "status": "PASS"
+                if elem_meta.get(int(b1["element"])) and elem_meta[int(b1["element"])].status == "a"
+                else "WARNING",
                 "badge": f"1st Sub: {b1['web_name']}",
-                "detail": f"Selected first outfield sub {b1['web_name']} ({round(float(b1['expected_points']), 2)} xP) occupies position 1 on the bench.",
+                "detail": f"{b1['web_name']}",
             }
         )
 
@@ -573,7 +599,7 @@ class ContingencyEngine:
                     "item": "Chip Set 1 Expiry Deadline",
                     "status": "INFO",
                     "badge": f"{len(rem_set_1)} Chips / {gws_to_19} GWs",
-                    "detail": f"Set 1 chips remaining: {', '.join(rem_set_1)}. Cutoff is the GW19 deadline; consult the current official deadline.",
+                    "detail": f"{len(rem_set_1)} chips expire at GW19.",
                 }
             )
         else:
@@ -582,7 +608,7 @@ class ContingencyEngine:
                     "item": "Chip Set 1 Expiry Deadline",
                     "status": "PASS",
                     "badge": "Set 1 Complete",
-                    "detail": "All Set 1 chips executed or planned on schedule.",
+                    "detail": "No first-set chips left.",
                 }
             )
 
@@ -594,7 +620,7 @@ class ContingencyEngine:
                 "item": "Pre-Deadline Lock Time",
                 "status": "PASS" if hours > 12 else "WARNING",
                 "badge": f"{hours}h Remaining",
-                "detail": f"Deadline locks in {hours} hours. Finalize transfers and captaincy before official server freeze.",
+                "detail": f"{hours} hours left.",
             }
         )
 

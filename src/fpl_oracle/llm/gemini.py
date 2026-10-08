@@ -1,94 +1,59 @@
-"""
-Google Gemini LLM Provider with tool-calling capabilities.
-Connects directly to Google Generative Language API via httpx.
-"""
+"""Gemini chat with grounded, bounded tool rounds and honest failures."""
 
+import json
 import logging
 
 import httpx
 
 from fpl_oracle.llm.tools import TOOL_DEFINITIONS, tool_executor
 
-logger = logging.getLogger("fpl_oracle.llm.gemini")
+logger = logging.getLogger(__name__)
 
 
 class GeminiProvider:
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         self.api_key = api_key
         self.model = model
-        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    async def chat(self, messages: list[dict[str, str]], system_prompt: str) -> str:
-        """
-        Execute multi-turn conversation with tool calling loop against Gemini API.
-        """
-        # Format tools for Gemini API
-        gemini_tools = [
-            {
-                "function_declarations": [
-                    {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}
-                    for t in TOOL_DEFINITIONS
-                ]
-            }
+    async def chat(self, messages, system_prompt):
+        contents = [
+            {"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]} for m in messages
         ]
-
-        # Prepare contents
-        contents = []
-        for m in messages:
-            role = "user" if m["role"] == "user" else "model"
-            contents.append({"role": role, "parts": [{"text": m["content"]}]})
-
-        payload = {
-            "system_instruction": {"parts": [{"text": system_prompt}]},
-            "contents": contents,
-            "tools": gemini_tools,
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
-        }
-
+        declarations = [
+            {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}
+            for t in TOOL_DEFINITIONS
+        ]
+        grounded = False
         async with httpx.AsyncClient(timeout=45.0) as client:
-            resp = await client.post(
-                f"{self.base_url}?key={self.api_key}", json=payload, headers={"Content-Type": "application/json"}
-            )
-            if resp.status_code != 200:
-                logger.error(f"Gemini API error {resp.status_code}: {resp.text}")
-                raise RuntimeError(f"Gemini API returned status {resp.status_code}")
-
-            data = resp.json()
-            candidate = data.get("candidates", [{}])[0].get("content", {})
-            parts = candidate.get("parts", [])
-
-            # Check if Gemini made a function call
-            for part in parts:
-                if "functionCall" in part:
-                    fn_name = part["functionCall"]["name"]
-                    fn_args = part["functionCall"].get("args", {})
-                    # Execute tool
-                    tool_res = await tool_executor.execute(fn_name, fn_args)
-
-                    # Send tool result back to Gemini
-                    followup_contents = list(contents)
-                    followup_contents.append({"role": "model", "parts": [{"functionCall": part["functionCall"]}]})
-                    followup_contents.append(
-                        {"role": "function", "parts": [{"functionResponse": {"name": fn_name, "response": tool_res}}]}
-                    )
-
-                    followup_payload = {
-                        "system_instruction": {"parts": [{"text": system_prompt}]},
-                        "contents": followup_contents,
-                        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
-                    }
-
-                    resp2 = await client.post(
-                        f"{self.base_url}?key={self.api_key}",
-                        json=followup_payload,
-                        headers={"Content-Type": "application/json"},
-                    )
-                    if resp2.status_code == 200:
-                        data2 = resp2.json()
-                        parts2 = data2.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-                        texts = [p.get("text", "") for p in parts2 if "text" in p]
-                        return "\n".join(texts)
-                elif "text" in part:
-                    return part["text"]
-
-            return "I have analyzed your request based on the latest 2026/27 FPL data."
+            for _ in range(5):
+                payload = {
+                    "system_instruction": {"parts": [{"text": system_prompt}]},
+                    "contents": contents,
+                    "tools": [{"function_declarations": declarations}],
+                    "tool_config": {"function_calling_config": {"mode": "AUTO" if grounded else "ANY"}},
+                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
+                }
+                resp = await client.post(self.base_url, json=payload, headers={"x-goog-api-key": self.api_key})
+                if resp.status_code != 200:
+                    # Do not log API response bodies or secret-bearing URLs.
+                    raise RuntimeError(f"Gemini returned status {resp.status_code}")
+                parts = (resp.json().get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+                calls = [p["functionCall"] for p in parts if "functionCall" in p]
+                if calls:
+                    contents.append({"role": "model", "parts": parts})
+                    responses = []
+                    for call in calls:
+                        if call["name"] not in {d["name"] for d in declarations}:
+                            raise RuntimeError("Unknown data request")
+                        result = await tool_executor.execute(call["name"], call.get("args", {}))
+                        result = json.loads(json.dumps(result, default=str))
+                        responses.append({"functionResponse": {"name": call["name"], "response": result}})
+                    contents.append({"role": "user", "parts": responses})
+                    grounded = True
+                    continue
+                text = "\n".join(p["text"] for p in parts if "text" in p).strip()
+                if grounded and text:
+                    return text
+                raise RuntimeError("No grounded Gemini answer returned")
+        raise RuntimeError("Gemini data-request limit reached")
