@@ -55,6 +55,13 @@ squad.update(
     published_gameweek=5,
 )
 source["/api/decision-card"].update(captain=rows[9], xi=rows[:11])
+source["/api/decision-card"]["transfers"].update(bank_after=1.8, ft_remaining=1, ft_next_gw=2)
+source["/api/contingency/plans"]["plan_a"].update(
+    next_banked_ft=2,
+    title="Save your transfer",
+    net_expected_points=0.0,
+    trigger_condition="No transfer improves this plan",
+)
 source["/api/team/confirmation"] = {
     "locked": False,
     "state": {
