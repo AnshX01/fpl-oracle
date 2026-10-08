@@ -96,6 +96,14 @@ class AdvicePublisher:
 
         model_before = model_registry.get_active_version()
         manifest_before = compute_manifest_sha256()
+        from fpl_oracle.config import HISTORICAL_DIR
+
+        history_file = HISTORICAL_DIR / "master_history.csv"
+
+        def history_revision():
+            return hashlib.sha256(history_file.read_bytes()).hexdigest() if history_file.exists() else None
+
+        history_before = history_revision()
         original_key = self.current["profile_key"]
         from fpl_oracle.server.analysis import publication_projections
 
@@ -129,6 +137,8 @@ class AdvicePublisher:
                     raise ValueError("Profile changed during calculation; refresh")
                 if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
                     raise ValueError("Model changed during core calculation; refresh")
+                if history_revision() != history_before:
+                    raise ValueError("History changed during calculation; refresh")
                 if {r["element"] for r in squad.get("starters", [])} != {r["element"] for r in card.get("xi", [])}:
                     raise ValueError("Lineup mismatch in core publication")
                 context = read_context.get() or {}
@@ -173,6 +183,8 @@ class AdvicePublisher:
                     raise ValueError("Profile changed during validation; refresh")
                 if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
                     raise ValueError("Model changed during validation; refresh")
+                if history_revision() != history_before:
+                    raise ValueError("History changed during validation; refresh")
                 snapshot = hashlib.sha256(
                     json.dumps(
                         {k: decision_source(k, v[0]) for k, v in context.items()}, sort_keys=True, default=str

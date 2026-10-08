@@ -73,9 +73,10 @@
         <ui-badge tone="muted">Previous calculation</ui-badge>
         <h2 class="hero-title">Team data changed. {{ adviceNeedsRefresh ? 'Refresh when ready.' : 'Updating advice.' }}</h2>
         <p class="subtle">This is the earlier plan. Wait for the updated advice before making changes.</p>
+        <p v-if="previousAdvice.decisionCard?.transfers">{{ previousAdvice.decisionCard.transfers.action_summary }}</p>
         <p v-if="previousAdvice.decisionCard?.captain">Captain: {{ previousAdvice.decisionCard.captain.web_name }}</p>
         <p v-if="previousAdvice.decisionCard?.chip?.chip_display_name">Chip: {{ previousAdvice.decisionCard.chip.chip_display_name }}</p>
-        <p class="subtle">Data from {{ previousAdvice.data_as_of }}</p>
+        <p class="subtle">Data from {{ new Date(previousAdvice.data_as_of).toLocaleString() }}</p>
         <ui-button v-if="adviceNeedsRefresh" @click="refreshAll(true)">Refresh advice</ui-button>
       </glass-card>
       <glass-card v-if="followedLocked" id="followed-card" class="hero">
