@@ -4,7 +4,6 @@ Coordinates multi-turn dialogue, tool calling, conversation memory,
 and factual citation generation.
 """
 
-import asyncio
 import logging
 
 from fpl_oracle.data.store import data_store
@@ -36,23 +35,26 @@ class ExpertAgent:
         # Get LLM Provider
         provider = get_llm_provider()
 
+        from fpl_oracle.llm.tools import chat_tool_cache
+
+        tools_token = chat_tool_cache.set({})
         try:
-            response_text = await asyncio.wait_for(
-                provider.chat(messages=history, system_prompt=self.system_prompt), timeout=80
-            )
+            response_text = await provider.chat(messages=history, system_prompt=self.system_prompt)
             if not isinstance(response_text, str) or not response_text.strip():
                 raise ValueError("Provider returned no answer")
         except Exception as e:
-            logger.error(f"Error during LLM chat generation: {e}. Falling back to offline engine...")
+            logger.exception(
+                "LLM chat failed: provider=%s type=%s; using offline answer", type(provider).__name__, type(e).__name__
+            )
             from fpl_oracle.llm.provider import OfflineExpertProvider
 
             try:
-                response_text = await asyncio.wait_for(
-                    OfflineExpertProvider().chat(messages=history, system_prompt=self.system_prompt), timeout=80
-                )
+                response_text = await OfflineExpertProvider().chat(messages=history, system_prompt=self.system_prompt)
             except Exception:
                 logger.exception("Offline answer failed")
                 response_text = "Advice unavailable. Refresh and try again."
+        finally:
+            chat_tool_cache.reset(tools_token)
         if not isinstance(response_text, str) or not response_text.strip():
             response_text = "No answer. Try again."
 

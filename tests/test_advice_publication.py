@@ -270,8 +270,8 @@ def test_expired_source_is_revalidated_not_treated_as_changed(monkeypatch):
         publisher = AdvicePublisher()
         publisher.start(profile_key(profile))
         await publisher.task
-        assert calls == ["entry:1:history"]
-        assert publisher.public()["status"] == ("failed" if changed else "ready")
+        assert calls == ["entry:1:history"] * (2 if changed else 1)
+        assert publisher.public()["status"] == ("refresh_required" if changed else "ready")
         if changed:
             assert publisher.public()["result"] is None
         if publisher.expiry_task:
