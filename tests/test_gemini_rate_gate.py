@@ -54,3 +54,30 @@ def test_repeated_429_is_bounded():
         assert len(calls) == 2
 
     asyncio.run(run())
+
+
+def test_shared_gate_caps_concurrent_chat_and_news(monkeypatch):
+    async def run():
+        gate = GeminiGate()
+        active = 0
+        maximum = 0
+
+        async def yield_only(delay):
+            await original_sleep(0)
+
+        original_sleep = asyncio.sleep
+        monkeypatch.setattr(asyncio, "sleep", yield_only)
+
+        class Client:
+            async def post(self, *a, **kw):
+                nonlocal active, maximum
+                active += 1
+                maximum = max(maximum, active)
+                await original_sleep(0.001)
+                active -= 1
+                return SimpleNamespace(status_code=200, headers={})
+
+        await asyncio.gather(*(gate.post(Client(), "https://example.invalid") for _ in range(4)))
+        assert maximum == 1
+
+    asyncio.run(run())

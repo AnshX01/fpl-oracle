@@ -129,3 +129,41 @@ def test_rule_cosmetic_metadata_ignored_but_squad_rules_not():
     assert not changes("bootstrap-static", old, new)
     new["game_settings"]["squad_team_limit"] = 4
     assert changes("bootstrap-static", old, new) == ["rules"]
+
+
+def test_volatile_bootstrap_mid_run_publishes_without_retry(monkeypatch):
+    from fpl_oracle.api.cache import cache_manager
+    from fpl_oracle.api.read_context import remember
+    from fpl_oracle.briefing.decision_card import decision_card_generator
+    from fpl_oracle.data.store import data_store
+    from fpl_oracle.server.advice_job import AdvicePublisher, profile_key
+    from fpl_oracle.server.routes import api
+
+    async def run():
+        old = boot()
+        current = copy.deepcopy(old)
+        current["elements"][0].update(selected_by_percent="21.5", transfers_in_event=900, form="9.9", event_points=12)
+        monkeypatch.setattr(data_store, "get_profile", lambda: SimpleNamespace(manager_id=1))
+        monkeypatch.setattr(cache_manager, "get_with_meta", lambda key: (current, None))
+        calls = []
+
+        async def squad():
+            calls.append(1)
+            remember("bootstrap-static", old, False, None)
+            return dict(captain=dict(element=12))
+
+        monkeypatch.setattr(api, "get_squad", squad)
+        monkeypatch.setattr(
+            decision_card_generator, "generate_decision_card", AsyncMock(return_value=dict(captain=dict(element=12)))
+        )
+        monkeypatch.setattr(api, "get_contingency_plans", AsyncMock(return_value=dict(plan_a=dict(title="same"))))
+        publisher = AdvicePublisher()
+        publisher.start(profile_key(data_store.get_profile()))
+        await publisher.task
+        assert publisher.public()["status"] == "ready"
+        assert len(calls) == 1
+        assert publisher.sources_unchanged()
+        if publisher.expiry_task:
+            publisher.expiry_task.cancel()
+
+    asyncio.run(run())
