@@ -50,6 +50,10 @@ class ExpertAgent:
 
             try:
                 response_text = await OfflineExpertProvider().chat(messages=history, system_prompt=self.system_prompt)
+                from fpl_oracle.llm.gemini_requests import GeminiRateLimitError
+
+                if isinstance(e, GeminiRateLimitError):
+                    response_text = "Gemini is busy right now. This answer uses your FPL data without Gemini.\n\n" + response_text
             except Exception:
                 logger.exception("Offline answer failed")
                 response_text = "Advice unavailable. Refresh and try again."

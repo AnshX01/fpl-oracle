@@ -120,3 +120,12 @@ def test_server_blocks_done_for_outdated_result(monkeypatch):
     monkeypatch.setattr(advice_publisher, "current", dict(status="refresh_required", previous_result={"old": True}))
     with pytest.raises(HTTPException, match="Wait for updated advice"):
         asyncio.run(confirm_followed_team())
+
+
+def test_rule_cosmetic_metadata_ignored_but_squad_rules_not():
+    old = boot()
+    new = copy.deepcopy(old)
+    new["game_settings"] = {"ui_timestamp": "changed"}
+    assert not changes("bootstrap-static", old, new)
+    new["game_settings"]["squad_team_limit"] = 4
+    assert changes("bootstrap-static", old, new) == ["rules"]
