@@ -25,3 +25,11 @@ Status comes from actual search events, not a timer or made-up percentage:
 - Preparing advice and Ready still handled by atomic publication.
 
 Worker updates return to the publication event loop, are scoped to the job, and cannot overwrite a different or finished job. Targeted worker-to-publication test passes. Visually inspected real rendered pixels at 1440/390/360/320px using mocked APIs. No horizontal overflow; longest status wraps at 320px. Done and Undo remain visible.
+
+## Final local regression
+
+- Full suite: 398 passed in 264.95 seconds (4m25s). An extra search-progress/recommendation equality test added during this run passed separately. Current targeted publication/sequential group: 20 passed.
+- All four JavaScript regression scripts passed.
+- Ruff passed on the changed Python files. Committed diff whitespace check passed.
+- Repeated whole-result parity with conservative risk: base 42.42s, optimised 0.92s, exact match. Progress-wired balanced result rechecked at 0.68s and exact match.
+- No CI status claimed. Full live whole-plan parity remains unmeasured because the earlier base live run did not finish; shortened end-to-end parity and previous piecewise live parity cover the cache rewrites.
