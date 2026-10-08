@@ -232,3 +232,41 @@ def test_points_captain_matches_exhaustive_xi_and_milp():
         assert cap == 15
         assert cap == exact["captain"]["element"]
         assert score == pytest.approx(exact["total_gameweek_expected_points"], abs=0.02)
+
+
+def test_progress_tracks_actual_full_chip_checks_without_changing_plan():
+    from fpl_oracle.optimise.progress import search_progress
+
+    frame, pools, _ = fixture_data()
+    kwargs = dict(
+        current_squad_df=frame,
+        player_pool_df=pools[18],
+        bank=0,
+        free_transfers=1,
+        horizon_projections={18: pools[18], 19: pools[19]},
+        current_gw=17,
+        target_gw=18,
+        available_chips=["3xc", "bboost"],
+        locked_in_ids=list(frame.element),
+        horizon_len=2,
+        measure_chip_values=True,
+    )
+    baseline = TransferOptimizer().evaluate_joint_transfer_and_chip_plan(**kwargs)
+    stages = []
+    token = search_progress.set(stages.append)
+    try:
+        observed = TransferOptimizer().evaluate_joint_transfer_and_chip_plan(**kwargs)
+    finally:
+        search_progress.reset(token)
+    import json
+
+    def serialize(plan):
+        return json.dumps(plan, sort_keys=True, default=lambda value: value.to_dict("records") if isinstance(value, pd.DataFrame) else str(value))
+
+    assert serialize(baseline["recommended_plan"]) == serialize(observed["recommended_plan"])
+    assert stages == [
+        "Comparing transfers through Gameweek 19",
+        "Checking Triple Captain against saving it",
+        "Checking Bench Boost against saving it",
+        "Checking the final chip plan",
+    ]
