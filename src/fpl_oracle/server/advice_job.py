@@ -3,11 +3,14 @@
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import uuid
 from datetime import UTC, datetime
 
 from fpl_oracle.api.read_context import read_context
+
+logger = logging.getLogger("fpl_oracle.advice")
 
 
 class AdvicePublisher:
@@ -85,6 +88,9 @@ class AdvicePublisher:
         model_before = model_registry.get_active_version()
         manifest_before = compute_manifest_sha256()
         original_key = self.current["profile_key"]
+        from fpl_oracle.server.analysis import publication_projections
+
+        projection_token = publication_projections.set({})
         token = read_context.set({})
         from fpl_oracle.optimise.progress import search_progress
 
@@ -116,14 +122,34 @@ class AdvicePublisher:
                     raise ValueError("Model changed during core calculation; refresh")
                 if {r["element"] for r in squad.get("starters", [])} != {r["element"] for r in card.get("xi", [])}:
                     raise ValueError("Lineup mismatch in core publication")
+                self.current["stage"] = "Checking the latest team data"
                 context = read_context.get() or {}
                 # Timestamp changes alone are not changed content. Guard real facts.
                 from fpl_oracle.api.cache import cache_manager
 
-                for key, (value, _, _) in context.items():
+                for key, (value, _, _) in list(context.items()):
                     live = cache_manager.get_with_meta(key)
+                    if live is None:
+                        # Expiry is not a content change. Fetch current facts outside
+                        # the pinned context before accepting an old-but-identical read.
+                        request = getattr(fpl_client, "_source_requests", {}).get(key)
+                        if request is not None:
+                            validation_token = read_context.set(None)
+                            try:
+                                endpoint, ttl = request
+                                fresh, stale = await fpl_client._fetch_json(endpoint, key, ttl, force_refresh=True)
+                                live = None if stale else (fresh, None)
+                            finally:
+                                read_context.reset(validation_token)
                     if live is None or live[0] != value:
+                        logger.warning("Advice source validation failed: key=%s outcome=%s", key,
+                                       "unverifiable" if live is None else "content_changed")
                         raise ValueError("Source content changed during calculation; refresh")
+                # Revalidation itself may take time; owner and model must still agree.
+                if profile_key(data_store.get_profile()) != original_key:
+                    raise ValueError("Profile changed during validation; refresh")
+                if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
+                    raise ValueError("Model changed during validation; refresh")
                 snapshot = hashlib.sha256(
                     json.dumps({k: v[0] for k, v in context.items()}, sort_keys=True, default=str).encode()
                 ).hexdigest()
@@ -136,7 +162,9 @@ class AdvicePublisher:
                     source_revision=fpl_client.revision,
                 )
 
-            result = await asyncio.wait_for(work(), timeout=1800)
+            # CPU work is not discarded because a laptop is slow. Individual
+            # network requests retain their own timeouts; explicit refresh can cancel.
+            result = await work()
             from fpl_oracle.ml.model_registry import model_registry
 
             result["expiryResearch"] = dict(status="pending")
@@ -164,8 +192,14 @@ class AdvicePublisher:
             else:
                 self.expiry_task = asyncio.create_task(self.run_expiry(publication, cache_key))
         except Exception as error:
-            self.current.update(status="failed", stage="Calculation stopped", error=str(error), result=None)
+            logger.exception("Advice job failed: type=%s stage=%s elapsed_seconds=%.1f",
+                             type(error).__name__, self.current.get("stage"),
+                             time.monotonic() - self.current["created"])
+            self.current.update(status="failed", stage="Calculation stopped",
+                                error="Could not prepare advice. Check the application log.",
+                                error_type=type(error).__name__, result=None)
         finally:
+            publication_projections.reset(projection_token)
             search_progress.reset(progress_token)
             read_context.reset(token)
 

@@ -118,6 +118,10 @@ class FPLClient:
         """
         from fpl_oracle.api.read_context import recalled, remember
 
+        if not hasattr(self, "_source_requests"):
+            self._source_requests = {}
+        self._source_requests[cache_key] = (endpoint, ttl_seconds)
+
         pinned = recalled(cache_key)
         if pinned is not None and not force_refresh:
             return pinned
