@@ -16,6 +16,20 @@ from fpl_oracle.config import MAX_STANDINGS_PAGES
 logger = logging.getLogger("fpl_oracle.league.standings")
 
 
+def current_manager_rank(standings_data, manager_id):
+    """Current official mini-league rank, never a simulation or overall-rank fallback."""
+    if not manager_id:
+        return {"current_league_rank": None, "league_rank_status": "manager_unconfigured"}
+    for row in standings_data.get("standings", []):
+        if row.get("entry") == manager_id:
+            rank = row.get("rank")
+            if isinstance(rank, int) and not isinstance(rank, bool) and rank > 0:
+                return {"current_league_rank": rank, "league_rank_status": "available"}
+            return {"current_league_rank": None, "league_rank_status": "unavailable"}
+    partial = standings_data.get("coverage", {}).get("partial", False)
+    return {"current_league_rank": None, "league_rank_status": "unavailable" if partial else "not_listed"}
+
+
 class LeagueStandingsManager:
     def __init__(self):
         pass

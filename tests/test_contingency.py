@@ -165,7 +165,7 @@ def test_injury_contingency_matrix(mock_squad_and_pool, dummy_bootstrap):
         assert "autosub_player" in row
         assert "autosub_points_delta" in row
         assert "action_verdict" in row
-        assert row["action_verdict"] in ["TRUST_BENCH", "EXECUTE_TRANSFER", "MONITOR_PRESS_CONFERENCE"]
+        assert row["action_verdict"] in ["TRUST_BENCH", "CHECK_TRANSFER", "MONITOR_PRESS_CONFERENCE"]
         assert "wait_vs_commit" in row
 
 
@@ -180,7 +180,7 @@ def test_panic_button_reoptimize(mock_squad_and_pool):
     assert panic_res["ruled_out_player"]["web_name"] == "Haaland"
     assert panic_res["lineup_action"]["captain"]["web_name"] != "Haaland"
     assert panic_res["lineup_action"]["promoted_player"] is not None
-    assert "1-Click Recommendation" in panic_res["recommendation"]
+    assert "Haaland" in panic_res["recommendation"]
 
 
 def test_pre_deadline_checklist(mock_squad_and_pool, dummy_bootstrap):
@@ -241,3 +241,46 @@ def test_plan_c_legal_trade_and_hit_math(configured_advisor):
     assert plan["net_expected_points"] == round(xp, 2)
     assert plan["delta_vs_plan_a"] == round(xp - 75, 2)
     assert plans["plan_b"]["net_expected_points"] != 75
+
+
+def test_emergency_unrecognised_never_picks_random_player(mock_squad_and_pool):
+    squad, pool = mock_squad_and_pool
+    result = contingency_engine.panic_button_reoptimize("unknown broken player", squad, pool, 10, 1)
+    assert result["status"] == "needs_player"
+    assert "ruled_out_player" not in result
+
+
+def test_emergency_same_model_lineup_and_constraints(mock_squad_and_pool):
+    from fpl_oracle.optimise.lineup import lineup_optimizer
+
+    squad, pool = mock_squad_and_pool
+    orig = lineup_optimizer.select_lineup_and_captain(squad)
+    gk = int(orig["starters"].query("position == 'GKP'").iloc[0].element)
+    result = contingency_engine.panic_button_reoptimize("", squad, pool, 10, 0, ruled_out_ids=[gk])
+    assert result["lineup_action"]["promoted_player"]["position"] == "GKP"
+    adjusted = squad.copy()
+    adjusted.loc[adjusted.element == gk, ["expected_points", "p10", "p90"]] = 0
+    same = lineup_optimizer.select_lineup_and_captain(adjusted, risk_preference="points", excluded_ids={gk})
+    assert result["lineup_action"]["total_gameweek_expected_points"] == same["total_gameweek_expected_points"]
+    replacement = result["emergency_transfer"]
+    if replacement:
+        assert replacement["position"] == "GKP"
+        assert replacement["hit_cost"] == 4
+        assert sum(squad.loc[squad.element != gk, "team"] == replacement["team"]) < 3
+
+
+def test_measured_chip_windows_use_each_weeks_predictions(mock_squad_and_pool):
+    from fpl_oracle.chips.measured_windows import measured_windows
+
+    squad, pool = mock_squad_and_pool
+    later = pool.copy()
+    later["expected_points"] *= 2
+    later["p10"] *= 2
+    later["p90"] *= 2
+    result = measured_windows(squad, {6: pool, 7: later})
+    for chip in ("3xc", "bboost"):
+        first = next(row for row in result if row["chip"] == chip and row["gameweek"] == 6)
+        second = next(row for row in result if row["chip"] == chip and row["gameweek"] == 7)
+        assert second["expected_gain"] == pytest.approx(first["expected_gain"] * 2, abs=0.02)
+        assert second["recommended"] is False
+        assert second["chip_points"] - second["baseline_points"] == pytest.approx(second["expected_gain"], abs=0.02)

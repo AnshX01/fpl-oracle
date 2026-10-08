@@ -27,7 +27,14 @@ class SquadOptimizer:
         locked_out_ids: list[int] | None = None,
         excluded_team_ids: list[int] | None = None,
         bench_weight: float = 0.05,
+        captain_mean_only: bool = False,
         require_talisman: bool = True,
+        repair_elements: set[int] | None = None,
+        repair_sell_prices: dict[int, int] | None = None,
+        repair_free_transfers: int = 0,
+        repair_hit_penalty: float = 4.0,
+        repair_max_transfers: int | None = None,
+        repair_min_transfers: bool = False,
     ) -> dict[str, Any]:
         """
         Solve optimal 15-man squad within budget.
@@ -55,9 +62,16 @@ class SquadOptimizer:
             for idx in df.index:
                 prob += s[idx] <= x[idx]
                 prob += c[idx] <= s[idx]
+                if bool(df.loc[idx].get("simulation_unavailable", False)):
+                    if repair_elements is not None and int(df.loc[idx, "element"]) in repair_elements:
+                        prob += s[idx] == 0
+                    else:
+                        prob += x[idx] == 0
 
             # Objective: Starters (1.0) + Captain multiplier (1.0 + ceiling bonus) + Bench (0.05)
-            cap_scores = df[metric_col] * 1.0 + df.get("p90", df[metric_col] * 1.5) * 0.35
+            cap_scores = (
+                df[metric_col] if captain_mean_only else df[metric_col] + df.get("p90", df[metric_col] * 1.5) * 0.35
+            )
             prob += pulp.lpSum(
                 [
                     df.loc[idx, metric_col] * s[idx]
@@ -66,6 +80,23 @@ class SquadOptimizer:
                     for idx in df.index
                 ]
             )
+
+            if repair_elements is not None:
+                hits = pulp.LpVariable("repair_hits", lowBound=0, cat=pulp.LpInteger)
+                prob += (
+                    hits
+                    >= pulp.lpSum(x[i] for i in df.index if int(df.loc[i, "element"]) not in repair_elements)
+                    - repair_free_transfers
+                )
+                prob.objective -= repair_hit_penalty * hits
+                transfer_count = pulp.lpSum(x[i] for i in df.index if int(df.loc[i, "element"]) not in repair_elements)
+                if repair_max_transfers is not None:
+                    prob += transfer_count <= repair_max_transfers
+                if repair_min_transfers:
+                    # Finite lexicographic dominance: one fewer transfer beats
+                    # the entire feasible scoring range, then points break ties.
+                    bound = 1 + 4 * float(df[metric_col].abs().sum())
+                    prob.objective -= bound * transfer_count
 
             # Lineup constraints
             prob += pulp.lpSum([s[idx] for idx in df.index]) == 11
@@ -105,7 +136,24 @@ class SquadOptimizer:
             prob += pulp.lpSum([x[idx] for idx in team_indices]) <= 3
 
         # Constraint 4: Budget limit
-        prob += pulp.lpSum([df.loc[idx, "value"] * x[idx] for idx in df.index]) <= budget
+        if repair_elements is None:
+            prob += pulp.lpSum([df.loc[idx, "value"] * x[idx] for idx in df.index]) <= budget
+        else:
+            # Retaining an owned player consumes its actual sell value, not its
+            # market price. New players consume their purchase price.
+            costs = repair_sell_prices or {}
+            prob += (
+                pulp.lpSum(
+                    (
+                        costs[int(df.loc[i, "element"])]
+                        if int(df.loc[i, "element"]) in repair_elements
+                        else df.loc[i, "value"]
+                    )
+                    * x[i]
+                    for i in df.index
+                )
+                <= budget
+            )
 
         # Constraint 5: Locked-in / Locked-out
         for idx, row in df.iterrows():

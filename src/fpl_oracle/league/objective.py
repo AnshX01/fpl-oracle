@@ -4,10 +4,13 @@ from math import tanh
 
 
 def select_balanced_sequence(states, rival_context, maps, max_xp_loss=0.5):
+    from fpl_oracle.league.strategy import automatic_strategy
+
+    strategy = automatic_strategy(rival_context)
     best = max(states, key=lambda s: s["score"])
     rivals = (rival_context or {}).get("rivals", [])
     if not rivals:
-        return best, dict(status="unavailable", applied=False, max_xp_loss=max_xp_loss)
+        return best, dict(status="unavailable", applied=False, max_xp_loss=max_xp_loss, strategy=strategy)
     user_points = float(rival_context["user_points"])
     from fpl_oracle.league.scenarios import evolve_rival
 
@@ -38,6 +41,7 @@ def select_balanced_sequence(states, rival_context, maps, max_xp_loss=0.5):
     close = [s for s in states if best["score"] - s["score"] <= max_xp_loss + 1e-9]
     chosen = max(close, key=lambda s: (utility(s), s["score"]))
     return chosen, dict(
+        strategy=strategy,
         status="observed_and_hypothetical_evolving_roster_scenarios",
         applied=chosen is not best,
         max_xp_loss=max_xp_loss,

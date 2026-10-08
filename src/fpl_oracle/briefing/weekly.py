@@ -4,7 +4,6 @@ Generates an executive, data-backed pre-deadline briefing card and markdown expo
 """
 
 import asyncio
-from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
@@ -86,14 +85,14 @@ class WeeklyBriefingGenerator:
             available_chips=available_chips,
             chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
             chips_already_used=chips_used,
-            risk_preference=profile.risk_preference or "balanced",
+            risk_preference="points",
         )
         lineup_res = transfers_res["recommended_plan"].get("lineup")
         if not lineup_res:
             lineup_res = await asyncio.to_thread(
                 lineup_optimizer.select_lineup_and_captain,
                 user_squad_df,
-                risk_preference=profile.risk_preference or "balanced",
+                risk_preference="points",
             )
         chip_res = await analysis_service.chip_strategy(
             current_gw=effective_curr_gw,
@@ -104,6 +103,12 @@ class WeeklyBriefingGenerator:
             manager_history=user_history,
         )
         chip_res = analysis_service.bind_chip_schedule(chip_res, transfers_res)
+
+        from fpl_oracle.chips.measured_windows import measured_windows
+
+        measured = await asyncio.to_thread(measured_windows, user_squad_df, horizon_proj)
+        measured = [row for row in measured if row["chip"] in available_chips]
+        chip_res["measured_windows"] = measured
 
         # 4. Price Changes Tonight
         price_preds = price_change_predictor.analyze_price_changes(boot)
@@ -164,73 +169,74 @@ class WeeklyBriefingGenerator:
         vc = lineup_res["vice_captain"]
         rec_plan = transfers_res["recommended_plan"]
 
-        markdown = f"""# FPL Oracle - Gameweek {target_gw} Executive Briefing
+        markdown = f"""# Gameweek {target_gw}
 
-**Generated:** {datetime.now(UTC).strftime("%A, %d %B %Y %H:%M UTC")}
-**Deadline:** {deadline_str}
-**Status:** {"[STALE DATA] (API Unavailable)" if is_stale else "[LIVE & SYNCHRONIZED]"}
+{deadline_str}
 
----
+## Your plan
 
-## 1. Executive Summary & Core Decisions
-- **Captain:** **{cap["web_name"]}** ({cap["expected_points"]} projected points, {cap["multiplier"]}x multiplier).
-- **Vice-Captain:** **{vc["web_name"]}** ({vc["expected_points"]} projected points).
-- **Transfers Decision:** {rec_plan.get("recommendation_summary", rec_plan.get("plan_type", "Unavailable"))}
-- **Hit Verdict:** {transfers_res["hit_verdict"]}
-- **Starting Formation:** {lineup_res["formation"]} (Starting XI before captain bonus: **{lineup_res["starters_expected_points"]}** xP; total including captain/chip: **{lineup_res["total_gameweek_expected_points"]}** xP).
-
----
-
-## 2. Recommended Starting XI & Bench
-
-### Starting XI:
-"""
-        for _, s in lineup_res["starters"].iterrows():
-            is_c = " (C)" if s["element"] == cap["element"] else (" (VC)" if s["element"] == vc["element"] else "")
-            markdown += f"- **{s['web_name']}** ({s['position']}) - {s['expected_points']} xP [Floor: {s.get('p10', 0.0)}, Ceiling: {s.get('p90', 0.0)}, DefCon: +{s.get('exp_defcon_pts', 0.0)}]{is_c}\n"
-
-        markdown += "\n### Bench Substitutes (in priority order):\n"
-        for idx, (_, b) in enumerate(lineup_res["bench"].iterrows(), 1):
-            markdown += f"{idx}. **{b['web_name']}** ({b['position']}) - {b['expected_points']} xP\n"
-
-        markdown += f"""
----
-
-## 3. Conditional Chip Roadmap (reassess every deadline)
-{chip_res.get("set_1_deadline_warning") or "Set 1 chips are active through GW19."}
-
-| Chip | Recommended GW | Expected Gain | Tactical Notes |
+| Captain | Vice-captain | Formation | Predicted points |
 |---|---|---|---|
+| {cap["web_name"]} | {vc["web_name"]} | {lineup_res["formation"]} | {lineup_res["total_gameweek_expected_points"]} |
+
+**Transfers:** {rec_plan.get("transfers_count", 0)} · **Hit cost:** {rec_plan.get("hit_cost", 0)} points
+
 """
-        for c in chip_res.get("chip_plan_table", [])[:4]:
-            markdown += (
-                f"| **{c['chip']}** | GW {c['recommended_gw']} | Not separately estimated | {c['reasoning']} |\n"
+        for out, incoming in zip(rec_plan.get("transfers_out", []), rec_plan.get("transfers_in", []), strict=False):
+            markdown += f"- {out['web_name']} → {incoming['web_name']}\n"
+        if not rec_plan.get("transfers_in"):
+            markdown += "Save your free transfer.\n"
+        hit_policy = transfers_res.get("hit_policy", {})
+        markdown += "\n## Hits\n"
+        if hit_policy.get("warning"):
+            markdown += hit_policy["warning"] + "\n"
+        if hit_policy.get("cooldown_until", 0) > target_gw:
+            markdown += f"No new hit before GW{hit_policy['cooldown_until']}.\n"
+        taken_hits = [r for r in hit_policy.get("records", []) if r.get("kind") == "taken"]
+        if taken_hits:
+            markdown += "\n| Week | Cost | Actual player gain | Result |\n|---|---|---|---|\n"
+            for row in sorted(taken_hits, key=lambda r: r["gameweek"], reverse=True)[:6]:
+                markdown += f"| GW{row['gameweek']} | {row['hit_cost']} | {row.get('realised_gain', 'Not settled')} | {row['status']} |\n"
+        if any(r.get("hit_requires_prior_success") for r in rec_plan.get("trajectory", [])):
+            markdown += "\nFuture hits need a new check.\n"
+        markdown += "\n## Starting XI\n\n| Player | Position | Predicted points |\n|---|---|---|\n"
+        for _, player in lineup_res["starters"].iterrows():
+            role = (
+                " (C)" if player["element"] == cap["element"] else " (VC)" if player["element"] == vc["element"] else ""
             )
+            markdown += f"| {player['web_name']}{role} | {player['position']} | {player['expected_points']:.1f} |\n"
+        markdown += "\n### Bench\n\n"
+        for _, player in lineup_res["bench"].iterrows():
+            markdown += (
+                f"- {player['web_name']} ({player['position']}) · {player['expected_points']:.1f} predicted pts\n"
+            )
+        markdown += "\n## Chips\n\n"
+        if transfers_res.get("chip_measurement_status") == "measured_through_expiry" and chip_res["chip_plan_table"]:
+            markdown += "| Chip | Plan week | Alternative week | Est. extra points |\n|---|---|---|---|\n"
+            for row in chip_res["chip_plan_table"]:
+                week = f"GW{row['recommended_gw']}" if row["recommended_gw"] is not None else "No clear benefit"
+                gain = f"{row['expected_gain']:+.1f}" if row["status"] == "measured" else "Search inconclusive"
+                equal_week = (
+                    f"GW{row['equal_weight_gameweek']}" if row.get("equal_weight_gameweek") is not None else "Not used"
+                )
+                markdown += f"| {row['chip']} | {week} | {equal_week} | {gain} |\n"
 
-        markdown += "\nFuture resource value is not forecast. Legal preservation alternatives:\n"
-        for row in transfers_res.get("resource_frontier", []):
-            markdown += f"- Preserve {row['chip']} through GW{row['retained_through_gameweek']}: {row['discounted_horizon_cost_to_preserve']} discounted xP window cost; later value above {row['tail_value_break_even_at_horizon_end']} xP could reverse the choice.\n"
-
-        markdown += f"""
----
-
-## 4. Heuristic Transfer Momentum (price timing unverified)
-- **Positive momentum:** {", ".join([r["web_name"] for r in imminent_rises]) if imminent_rises else "No signal"}
-- **Negative momentum:** {", ".join([f["web_name"] for f in imminent_falls]) if imminent_falls else "No signal"}
-
----
-
-## 5. Mini-League & Tactical Situation
-- **Strategy Mode:** {league_summary["strategy_mode"] if league_summary else "Global Points Optimization"}
-- **Key Tactical Directives:**
-"""
-        if league_summary and league_summary.get("tactics"):
-            for t in league_summary["tactics"]:
-                markdown += f"  - {t}\n"
         else:
             markdown += (
-                "  - Focus on maximizing overall expected points and banking free transfers for winter swings.\n"
+                "No chips remain in this set.\n"
+                if not available_chips
+                else "Chip timing unavailable. Update data and try again.\n"
             )
+        if measured:
+            markdown += "\n### Weekly chip comparisons\n\n| Week | Triple Captain extra pts | Bench Boost extra pts |\n|---|---|---|\n"
+            for gw in sorted(horizon_proj):
+                gains = {row["chip"]: row["expected_gain"] for row in measured if row["gameweek"] == gw}
+                markdown += f"| GW{gw} | {gains.get('3xc', 'Unavailable')} | {gains.get('bboost', 'Unavailable')} |\n"
+        markdown += f"\n## Price watch\n\n- Possible rises: {', '.join(p['web_name'] for p in imminent_rises) or 'No signal'}\n- Possible falls: {', '.join(p['web_name'] for p in imminent_falls) or 'No signal'}\n"
+        strategy = transfers_res.get("league_objective", {}).get("strategy", {})
+        markdown += f"\n## Your league\n\n{strategy.get('mode_title', 'Focus on points')}\n"
+        if strategy.get("status") == "automatic":
+            markdown += f"\nRank #{strategy['rank']} · {strategy['gap_to_leader']} points behind first.\n"
 
         briefing_dict = {
             "target_gameweek": target_gw,

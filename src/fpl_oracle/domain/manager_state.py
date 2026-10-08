@@ -101,6 +101,10 @@ class EffectiveManagerState(BaseModel):
     is_stale: bool = False
     confidence: str = "high"  # "high", "estimated", "manual"
     error_message: str | None = None
+    confirmation_required: bool = False
+    team_confirmed: bool = False
+    confirmation_as_of: str | None = None
+    confirmation_comparison: str | None = None
 
     @property
     def bank_millions(self) -> float:
@@ -578,9 +582,14 @@ class ManagerStateService:
         known = [stamp for stamp in timestamps if stamp is not None]
         if known:
             state.source_timestamp = min(known).isoformat()
+        if len(known) != len(timestamps):
+            state.is_stale = True
+            state.error_message = "Data age unknown. Refresh before using advice."
         if profile.manager_id and manager_picks is None:
             state.error_message = "Official published squad unavailable; saved manual squad was not substituted"
-        return state
+        from fpl_oracle.domain.team_confirmation import team_confirmation
+
+        return team_confirmation.apply(state, boot)
 
 
 manager_state_service = ManagerStateService()

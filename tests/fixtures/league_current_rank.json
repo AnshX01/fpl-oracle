@@ -1,0 +1,12 @@
+{
+  "status": "success",
+  "league_name": "Test League",
+  "current_league_rank": 7,
+  "overall_rank": 123456,
+  "league_rank_status": "available",
+  "total_teams": 10,
+  "standings": [{"entry": 22, "rank": 7, "player_name": "Fixture Manager", "entry_name": "Fixture Team", "total": 338, "event_total": 50}],
+  "simulation": {"status": "SIMULATION_SUCCESS", "user_win_probability_pct": 5.0, "user_top3_probability_pct": 12.0, "expected_final_rank": 6.2, "simulations_count": 1000},
+  "strategy": {"mode_title": "Chasing the leader"},
+  "is_stale": false
+}

@@ -29,6 +29,7 @@ class LineupOptimizer:
         is_triple_captain: bool = False,
         is_bench_boost: bool = False,
         risk_preference: str = "balanced",
+        excluded_ids: set[int] | None = None,
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
@@ -52,7 +53,9 @@ class LineupOptimizer:
         p90_vals = df["p90"] if "p90" in df.columns else df["expected_points"] * 1.5
         p10_vals = df["p10"] if "p10" in df.columns else df["expected_points"] * 0.4
 
-        if risk_preference == "conservative":
+        if risk_preference == "points":
+            cap_scores = df["expected_points"]
+        elif risk_preference == "conservative":
             cap_scores = df["expected_points"] * 0.60 + p10_vals * 0.40
         elif risk_preference == "aggressive":
             cap_scores = df["expected_points"] * 0.40 + p90_vals * 0.60
@@ -65,6 +68,17 @@ class LineupOptimizer:
                 for i in df.index
             ]
         )
+
+        for i in df.index:
+            if int(df.loc[i, "element"]) in (excluded_ids or set()) or bool(
+                df.loc[i].get("simulation_unavailable", False)
+            ):
+                prob += starter[i] == 0
+
+        if is_bench_boost:
+            prob.setObjective(
+                prob.objective + pulp.lpSum(df.loc[i, "expected_points"] * (1 - starter[i]) for i in df.index)
+            )
 
         # Constraint 1: Exactly 11 starters
         prob += pulp.lpSum([starter[i] for i in df.index]) == 11

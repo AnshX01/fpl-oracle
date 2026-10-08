@@ -207,3 +207,33 @@ class LeagueStrategyAdvisor:
 
 
 league_strategy_advisor = LeagueStrategyAdvisor()
+
+
+def automatic_strategy(context):
+    """Describe current complete standings, never infer rank from simulation."""
+    if not context or not context.get("standings"):
+        return dict(mode_title="Focus on points", status="unavailable", rationale="League standings unavailable.")
+    rank = context["user_rank"]
+    points = context["user_points"]
+    rows = context["standings"]
+    above = [row for row in rows if row["rank"] < rank]
+    below = [row for row in rows if row["rank"] > rank]
+    leader = max(row["points"] for row in rows)
+    gap_above = min((row["points"] - points for row in above), default=None)
+    gap_below = min((points - row["points"] for row in below), default=None)
+    title = (
+        "Protect your lead"
+        if rank == 1
+        else "Close the gap"
+        if gap_below is None or (gap_above or 0) <= gap_below
+        else "Gain ground, protect your place"
+    )
+    return dict(
+        mode_title=title,
+        status="automatic",
+        rank=rank,
+        gap_to_leader=max(0, leader - points),
+        gap_above=gap_above,
+        gap_below=gap_below,
+        rationale="Maximise points; use rival coverage to choose between close options.",
+    )

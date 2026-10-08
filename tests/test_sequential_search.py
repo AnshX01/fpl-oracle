@@ -146,7 +146,7 @@ def test_league_context_uses_roster_not_captain(monkeypatch):
     monkeypatch.setattr(data_store, "get_profile", lambda: SimpleNamespace(manager_id=10, target_league_id=20))
 
     async def standings(*a, **k):
-        return dict(standings=[dict(entry=10, total=100)], coverage=dict(partial=False))
+        return dict(standings=[dict(entry=10, rank=2, total=100)], coverage=dict(partial=False))
 
     async def bootstrap(*a, **k):
         return None, False
@@ -160,9 +160,75 @@ def test_league_context_uses_roster_not_captain(monkeypatch):
     import asyncio
 
     context = asyncio.run(AnalysisService().league_context(6))
-    assert context == dict(user_points=100, rivals=[dict(points=150, elements=[1])])
+    assert context == dict(
+        user_points=100, user_rank=2, standings=[dict(rank=2, points=100)], rivals=[dict(points=150, elements=[1])]
+    )
 
 
 def test_actual_previous_freehit_blocks_first_future_deadline():
     states, _, _ = run([20], ["freehit"], previous_chip="freehit")
     assert all(state["first_chip"] is None for state in states)
+
+
+def test_full_expiry_chip_gain_is_actual_paired_search():
+    frame, pools, maps = fixture_data()
+    result = TransferOptimizer().evaluate_joint_transfer_and_chip_plan(
+        current_squad_df=frame,
+        player_pool_df=pools[18],
+        bank=0,
+        free_transfers=1,
+        horizon_projections={18: pools[18], 19: pools[19]},
+        current_gw=17,
+        target_gw=18,
+        available_chips=["3xc", "bboost"],
+        chips_by_set={1: ["3xc", "bboost"]},
+        locked_in_ids=list(frame.element),
+        horizon_len=2,
+        measure_chip_values=True,
+    )
+    assert result["chip_measurement_status"] == "measured_through_expiry"
+    assert result["decision_scope"]["horizon_gameweeks"] == [18, 19]
+    for row in result["measured_chip_roadmap"]:
+        assert row["expected_gain"] == pytest.approx(row["plan_score"] - row["baseline_score"], abs=0.02)
+        assert all(step["chip"] != row["code"] for step in row["baseline_trajectory"])
+        assert row["forecast_through"] == 19
+
+
+def test_partial_window_never_claims_chip_dates():
+    frame, pools, maps = fixture_data()
+    result = TransferOptimizer().evaluate_joint_transfer_and_chip_plan(
+        current_squad_df=frame,
+        player_pool_df=pools[18],
+        bank=0,
+        free_transfers=1,
+        horizon_projections={18: pools[18]},
+        current_gw=17,
+        target_gw=18,
+        available_chips=["3xc"],
+        locked_in_ids=list(frame.element),
+        horizon_len=1,
+        measure_chip_values=True,
+    )
+    assert result["chip_measurement_status"] == "incomplete_window"
+    assert result["measured_chip_roadmap"] == []
+
+
+def test_points_captain_matches_exhaustive_xi_and_milp():
+    from fpl_oracle.optimise.lineup import lineup_optimizer
+    from fpl_oracle.optimise.sequential import evaluate_lineup
+
+    frame, pools, maps = fixture_data()
+    frame["p90"] = 3.0
+    frame["p10"] = 0.0
+    frame.loc[frame.element == 15, "expected_points"] = 8.0
+    frame.loc[frame.element == 8, "expected_points"] = 7.0
+    frame.loc[frame.element == 8, "p90"] = 40.0
+    pmap = {int(row["element"]): row for row in frame.to_dict("records")}
+    for chip in (None, "3xc", "bboost"):
+        score, cap, formation = evaluate_lineup(set(frame.element), pmap, "points", chip)
+        exact = lineup_optimizer.select_lineup_and_captain(
+            frame, risk_preference="points", is_triple_captain=chip == "3xc", is_bench_boost=chip == "bboost"
+        )
+        assert cap == 15
+        assert cap == exact["captain"]["element"]
+        assert score == pytest.approx(exact["total_gameweek_expected_points"], abs=0.02)

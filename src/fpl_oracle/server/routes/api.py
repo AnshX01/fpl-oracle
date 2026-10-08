@@ -27,7 +27,6 @@ from fpl_oracle.domain.manager_state import manager_state_service
 from fpl_oracle.league.montecarlo import monte_carlo_simulator
 from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
-from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.llm.agent import expert_agent
 from fpl_oracle.llm.provider import get_llm_status
 from fpl_oracle.ml.model_registry import model_registry
@@ -60,6 +59,118 @@ class ProfileUpdateRequest(BaseModel):
     manual_squad: list[int] | None = None
 
 
+class ConfirmTeamRequest(BaseModel):
+    gameweek: int
+    player_ids: list[int]
+    bank_tenths: int
+    free_transfers: int
+    available_chips: list[str]
+    active_chip: str | None = None
+    hit_cost: int
+    selling_prices: dict[int, int]
+    purchase_prices: dict[int, int]
+    captain: int | None = None
+    vice_captain: int | None = None
+    bench: list[int] = []
+
+
+@router.post("/team/followed")
+async def confirm_followed_team():
+    from fpl_oracle.domain.team_confirmation import team_confirmation
+
+    state = await manager_state_service.get_current_state()
+    boot, stale = await fpl_client.get_bootstrap_static()
+    if stale:
+        raise HTTPException(409, "Current player data unavailable; refresh first.")
+    rec = team_confirmation.recommendation(state.manager_id)
+    try:
+        payload = team_confirmation.followed_payload(state, boot, rec)
+    except (ValueError, KeyError) as error:
+        raise HTTPException(409, str(error)) from None
+    return await _confirm_team_payload(payload)
+
+
+@router.post("/team/undo")
+async def undo_followed_team():
+    from fpl_oracle.domain.team_confirmation import team_confirmation
+    from fpl_oracle.optimise.hit_ledger import hit_ledger
+    from fpl_oracle.server.advice_job import advice_publisher
+
+    state = await manager_state_service.get_current_state()
+    record = team_confirmation.read(state.manager_id)
+    if not record or not team_confirmation.locked(state):
+        raise HTTPException(409, "No followed advice to undo for this deadline.")
+    prior = record.get("undo_state")
+    if prior:
+        team_confirmation.write(state.manager_id, prior)
+    else:
+        team_confirmation.remove(state.manager_id)
+    hit_ledger.undo_user_confirmation(state.manager_id or "manual", state.target_gw, prior)
+    await advice_publisher.invalidate()
+    await analysis_service.invalidate()
+    return dict(status="undone", note="Local confirmation undone. Nothing changed on FPL.")
+
+
+@router.get("/team/confirmation")
+async def get_team_confirmation():
+    from fpl_oracle.domain.team_confirmation import team_confirmation
+
+    state = await manager_state_service.get_current_state()
+    saved = team_confirmation.read(state.manager_id)
+    boot, _ = await fpl_client.get_bootstrap_static()
+    recommendation = team_confirmation.recommendation(state.manager_id)
+    return safe_json_serialize(
+        dict(
+            state=state.model_dump(),
+            saved=saved,
+            locked=team_confirmation.locked(state),
+            recommendation=recommendation,
+        )
+    )
+
+
+@router.post("/team/confirmation")
+async def confirm_team(req: ConfirmTeamRequest):
+    return await _confirm_team_payload(req.model_dump())
+
+
+async def _confirm_team_payload(payload):
+    from fpl_oracle.domain.team_confirmation import team_confirmation
+    from fpl_oracle.optimise.hit_ledger import hit_ledger
+    from fpl_oracle.server.advice_job import advice_publisher
+
+    state = await manager_state_service.get_current_state()
+    boot, stale = await fpl_client.get_bootstrap_static()
+    if stale:
+        raise HTTPException(409, "Current player data unavailable; refresh before confirming.")
+    recommendation = team_confirmation.recommendation(state.manager_id)
+    try:
+        record = team_confirmation.confirm(state, boot, payload, recommendation)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    if payload["hit_cost"]:
+        hit_ledger.write(
+            state.manager_id or "manual",
+            dict(
+                kind="taken",
+                gameweek=payload["gameweek"],
+                ins=record["actual_ins"],
+                outs=record["actual_outs"],
+                hit_cost=payload["hit_cost"],
+                status="pending",
+                source="user_confirmed",
+                expected_gain=recommendation.get("expected_gain")
+                if recommendation and record["comparison"] == "followed"
+                else None,
+                matched_recommendation=record["comparison"] == "followed",
+            ),
+        )
+    hit_ledger._refreshes.clear()
+    await advice_publisher.invalidate()
+    await analysis_service.invalidate()
+    return safe_json_serialize(record)
+
+
 class MatchSquadRequest(BaseModel):
     raw_text: str
 
@@ -80,6 +191,7 @@ class OptimizeRequest(BaseModel):
 class PanicRequest(BaseModel):
     query: str | None = None
     ruled_out_ids: list[int] | None = None
+    duration: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -468,6 +580,9 @@ async def get_squad(manager_id: int | None = None):
             "overall_points": effective_state.overall_points,
             "overall_rank": effective_state.overall_rank,
             "mode": effective_state.mode.value,
+            "team_confirmed": effective_state.team_confirmed,
+            "confirmation_as_of": effective_state.confirmation_as_of,
+            "confirmation_comparison": effective_state.confirmation_comparison,
             "confidence": effective_state.confidence,
             "target_gameweek": target_gw,
             "bank_millions": effective_state.bank_millions,
@@ -699,12 +814,22 @@ async def get_chip_strategy():
 @router.get("/league")
 async def get_league_intel(league_id: int | None = None):
     effective_state = await manager_state_service.get_current_state()
+    official_overall_rank = effective_state.overall_rank
+    if (
+        not isinstance(official_overall_rank, int)
+        or isinstance(official_overall_rank, bool)
+        or official_overall_rank <= 0
+    ):
+        official_overall_rank = None
     profile = data_store.get_profile()
     l_id = league_id or profile.target_league_id
     if not l_id:
         return safe_json_serialize(
             {
                 "status": "unconfigured",
+                "overall_rank": official_overall_rank,
+                "current_league_rank": None,
+                "league_rank_status": "league_unconfigured",
                 "message": "No target mini-league ID configured. Enter a mini-league ID to see rival analysis.",
                 "league_name": "None",
                 "total_teams": 0,
@@ -724,6 +849,9 @@ async def get_league_intel(league_id: int | None = None):
         )
 
     standings_data = await league_standings_manager.get_league_standings(l_id)
+    from fpl_oracle.league.standings import current_manager_rank
+
+    rank_fields = current_manager_rank(standings_data, effective_state.manager_id)
     boot, is_stale = await fpl_client.get_bootstrap_static()
     curr_gw, _ = await fpl_client.get_current_and_next_gw()
 
@@ -731,6 +859,9 @@ async def get_league_intel(league_id: int | None = None):
         return safe_json_serialize(
             {
                 "status": "empty",
+                "overall_rank": official_overall_rank,
+                "current_league_rank": None,
+                "league_rank_status": "unavailable",
                 "message": f"No standings found for mini-league {l_id}.",
                 "league_name": standings_data.get("league_name", f"League #{l_id}"),
                 "total_teams": 0,
@@ -789,6 +920,8 @@ async def get_league_intel(league_id: int | None = None):
     if user_squad_df.empty or len(user_squad_df) != 15:
         return {
             "status": "unavailable",
+            "overall_rank": official_overall_rank,
+            **rank_fields,
             "standings": standings_data["standings"],
             "simulation": None,
             "reason": "Configured squad unavailable",
@@ -808,13 +941,23 @@ async def get_league_intel(league_id: int | None = None):
         projections_by_gw=projections_horizon,
     )
 
-    strategy = league_strategy_advisor.evaluate_strategy(
-        user_rank=user_rank, user_total_points=user_pts, rivals_analysis=rivals_res, user_squad_df=user_squad_df
+    from fpl_oracle.league.strategy import automatic_strategy
+
+    strategy = automatic_strategy(
+        None
+        if user_rank is None
+        else dict(
+            user_rank=user_rank,
+            user_points=user_pts,
+            standings=[dict(rank=r["rank"], points=r["total"]) for r in standings_data["standings"]],
+        )
     )
 
     return safe_json_serialize(
         {
             "status": "success",
+            "overall_rank": official_overall_rank,
+            **rank_fields,
             "league_name": standings_data["league_name"],
             "total_teams": standings_data["total_teams"],
             "standings": standings_data["standings"],
@@ -923,7 +1066,6 @@ async def get_contingency_plans(detailed: bool = True):
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
-    profile = data_store.get_profile()
 
     state = await manager_state_service.get_current_state()
     joint = await analysis_service.joint_plan(
@@ -947,7 +1089,7 @@ async def get_contingency_plans(detailed: bool = True):
         horizon_projections=horizon_proj,
         current_gw=curr_gw or 5,
         target_gw=target_gw,
-        risk_preference=profile.risk_preference or "balanced",
+        risk_preference="points",
         primary_plan=joint["recommended_plan"],
         compute_alternatives=detailed,
     )
@@ -1046,18 +1188,133 @@ async def post_contingency_panic(req: PanicRequest):
 
     horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
+    state = await manager_state_service.get_current_state()
+    if is_stale or state.is_stale or target_df.empty:
+        raise HTTPException(status_code=409, detail="Fresh squad and predictions required. Update data and try again.")
 
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
 
-    crisis_res = await asyncio.to_thread(
-        contingency_engine.panic_button_reoptimize,
-        query=req.query or "",
-        squad_df=user_squad_df,
-        player_pool_df=target_df,
-        bank=bank,
-        free_transfers=free_transfers,
-        ruled_out_ids=req.ruled_out_ids,
+    import re
+    import unicodedata
+
+    def normalize(value):
+        value = "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c))
+        return re.sub(r"[^a-zA-Z0-9]+", " ", value).lower().strip()
+
+    ids = set(req.ruled_out_ids or [])
+    query = normalize(req.query or "")
+    if not ids and query:
+        ids = {
+            int(row["element"])
+            for row in user_squad_df.to_dict("records")
+            if normalize(row["web_name"]) and f" {normalize(row['web_name'])} " in f" {query} "
+        }
+    if not ids or not ids.issubset(set(user_squad_df["element"])):
+        return dict(status="needs_player", recommendation="Name an unavailable player in your squad.")
+    if req.duration not in ("1", "2", "window"):
+        return dict(
+            status="needs_duration",
+            recommendation="How long is he out? Choose this week, two weeks or until further notice.",
+        )
+    excluded_weeks = (
+        sorted(horizon_proj) if req.duration == "window" else list(range(target_gw, target_gw + int(req.duration)))
     )
+    constrained = {}
+    for gw, frame in horizon_proj.items():
+        frame = frame.copy()
+        mask = frame["element"].isin(ids) & (gw in excluded_weeks)
+        for column in ("expected_points", "p10", "p90"):
+            if column in frame:
+                frame.loc[mask, column] = 0.0
+        frame["simulation_unavailable"] = mask
+        constrained[gw] = frame
+    try:
+        joint = await analysis_service.joint_plan(
+            current_squad_df=user_squad_df,
+            player_pool_df=constrained[target_gw],
+            bank=bank,
+            free_transfers=free_transfers,
+            horizon_projections=constrained,
+            current_gw=curr_gw or target_gw - 1,
+            target_gw=target_gw,
+            available_chips=state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2,
+            chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
+            chips_already_used=[c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
+            locked_out_ids=set(),
+        )
+    except ValueError:
+        from fpl_oracle.optimise.squad import squad_optimizer
+        from fpl_oracle.optimise.transfers import transfer_optimizer
+
+        sells = {
+            int(row["element"]): int(row.get("selling_price", row["value"])) for row in user_squad_df.to_dict("records")
+        }
+        try:
+            repair = await asyncio.to_thread(
+                squad_optimizer.solve_best_squad,
+                constrained[target_gw],
+                bank + sum(sells.values()),
+                captain_mean_only=True,
+                require_talisman=False,
+                bench_weight=0,
+                repair_elements=set(sells),
+                repair_sell_prices=sells,
+                repair_free_transfers=free_transfers,
+                repair_min_transfers=True,
+            )
+            new_ids = set(int(e) for e in repair["squad"]["element"])
+            ins, outs = new_ids - set(sells), set(sells) - new_ids
+            cost = max(0, len(ins) - free_transfers) * transfer_optimizer.hit_penalty
+            return safe_json_serialize(
+                dict(
+                    status="needs_decision",
+                    recommendation=f"Not possible within the transfer/hit limit. Cheapest legal paid repair needs {len(ins)} transfers and costs {cost:g} points. This is above your limit, not a recommendation.",
+                    above_cap_option=dict(transfers_in=sorted(ins), transfers_out=sorted(outs), hit_cost=cost),
+                    chip_options=[],
+                    excluded_gameweeks=excluded_weeks,
+                )
+            )
+        except (ValueError, RuntimeError):
+            raise HTTPException(
+                status_code=409, detail="No legal plan found under budget and squad rules; no recommendation published."
+            ) from None
+    plan = joint["recommended_plan"]
+    lineup = plan["lineup"]
+    names = [row["web_name"] for row in user_squad_df.to_dict("records") if row["element"] in ids]
+    moves = [
+        f"{out['web_name']} → {incoming['web_name']}"
+        for out, incoming in zip(plan["transfers_out"], plan["transfers_in"], strict=False)
+    ]
+    crisis_res = dict(
+        status="recalculated",
+        recommendation=("; ".join(moves) or "Keep the squad; use your bench.")
+        + f" Captain: {lineup['captain']['web_name']}. Hit cost: {plan['hit_cost']} points.",
+        affected_players=names,
+        excluded_gameweeks=excluded_weeks,
+        duration=req.duration,
+        excluded_ids=sorted(ids),
+        joint_plan=joint,
+        chip_options=[
+            dict(chip=c["chip_code"], hit_cost=c["plan"]["hit_cost"], net_points=c["plan"]["net_expected_points"])
+            for c in joint.get("chip_comparison_table", [])
+            if c.get("chip_code") in ("wildcard", "freehit")
+        ],
+        hit_policy=joint.get("hit_policy"),
+        lineup_action=dict(
+            new_formation=lineup["formation"],
+            captain=lineup["captain"],
+            vice_captain=lineup["vice_captain"],
+            total_gameweek_expected_points=lineup["total_gameweek_expected_points"],
+        ),
+    )
+
+    if joint.get("normal_plan_feasible") is False:
+        crisis_res["recommendation"] = (
+            "Not possible within the ordinary transfer/hit limit. "
+            + str(plan.get("chip_applied", "Chip"))
+            + " gives a legal XI. "
+            + crisis_res["recommendation"]
+        )
     crisis_res["stale"] = is_stale
     crisis_res["is_stale"] = is_stale
     crisis_res["data_as_of"] = fpl_client.get_data_as_of("bootstrap-static")
@@ -1097,6 +1354,32 @@ async def get_pre_deadline_checklist():
         game_state_data=game_state.model_dump(),
         chips_status=chips_status,
         lineup=joint["recommended_plan"]["lineup"],
+    )
+    state = await manager_state_service.get_current_state()
+    plan = joint["recommended_plan"]
+    checklist.extend(
+        [
+            dict(
+                item="Team",
+                status="PASS" if state.team_confirmed else "WARNING",
+                detail="Confirmed" if state.team_confirmed else "Confirm team",
+            ),
+            dict(
+                item="Bank",
+                status="PASS" if plan["remaining_bank"] >= 0 else "WARNING",
+                detail=f"£{plan['remaining_bank']:.1f}m left",
+            ),
+            dict(
+                item="Transfers and hits",
+                status="PASS" if plan["hit_cost"] <= 4 and len(plan["transfers_in"]) <= 2 else "WARNING",
+                detail=f"{len(plan['transfers_in'])} transfers · {plan['hit_cost']} hit points",
+            ),
+            dict(
+                item="Data",
+                status="WARNING" if is_stale or state.is_stale else "PASS",
+                detail="Refresh needed" if is_stale or state.is_stale else "Current",
+            ),
+        ]
     )
     return safe_json_serialize(
         {

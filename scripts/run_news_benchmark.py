@@ -47,7 +47,7 @@ class BenchmarkMockPlayer:
         self.scout_risks = scout_risks or []
 
 
-def run_benchmark() -> dict[str, Any]:
+def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
     logger.info(
         f"Starting Production News Extraction Benchmark across {len(HELD_OUT_BENCHMARK_CASES)} held-out cases..."
     )
@@ -93,7 +93,11 @@ def run_benchmark() -> dict[str, Any]:
         must_not_ro = tc.get("must_not_be_ruled_out", False)
 
         # Run real extractor
-        ev_list = text_extractor.extract_evidence_from_text(raw_text, player_name=p_name, player_id=p_id, target_gw=10)
+        ev_list = (
+            evidence_by_case[cid]
+            if evidence_by_case is not None
+            else text_extractor.extract_evidence_from_text(raw_text, player_name=p_name, player_id=p_id, target_gw=10)
+        )
         ev = ev_list[0] if ev_list else None
 
         actual_cat = ev.category if ev else EvidenceCategory.UNKNOWN
@@ -183,6 +187,7 @@ def run_benchmark() -> dict[str, Any]:
                 tp += 1
             else:
                 fp += 1
+                fn += 1
         elif is_signal_expected and not is_signal_detected:
             fn += 1
         elif not is_signal_expected and is_signal_detected:
@@ -225,6 +230,7 @@ def run_benchmark() -> dict[str, Any]:
         precision >= NEWS_GATE_MIN_PRECISION
         and recall >= NEWS_GATE_MIN_RECALL
         and false_ro_rate <= NEWS_GATE_MAX_FALSE_RULED_OUT
+        and all(c.get("quote_verified", True) for c in case_records)
         and injection_breaches == 0
         and ssrf_breaches == 0
     )
@@ -270,7 +276,7 @@ def run_benchmark() -> dict[str, Any]:
     # Write output artifacts
     out_file1 = REPORTS_DIR / "news_benchmark.json"
     out_file2 = REPORTS_DIR / "news_benchmark_results.json"
-    for out_f in (out_file1, out_file2):
+    for out_f in (out_file1, out_file2) if write_reports else ():
         out_f.parent.mkdir(parents=True, exist_ok=True)
         out_f.write_text(json.dumps(benchmark_summary, indent=2), encoding="utf-8")
 

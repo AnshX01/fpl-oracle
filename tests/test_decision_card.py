@@ -275,13 +275,13 @@ def test_decision_card_api_endpoints():
                 assert export_resp.status_code == 200
                 assert "text/plain" in export_resp.headers["content-type"]
                 text = export_resp.text
-                assert "# FPL Oracle — Gameweek 6 Decision Card" in text
-                assert "## 1. Chip Strategy" in text
-                assert "## 2. Transfer Plan" in text
-                assert "## 3. Starting XI & Captaincy" in text
-                assert "## 4. Mini-League & Rivals" in text
+                assert "# FPL Oracle - Gameweek 6" in text
+                assert "## Chips" in text
+                assert "## Transfers" in text
+                assert "## Captain and bench" in text
+                assert "## League" in text
                 assert "Haaland" in text
-                assert "Advice only - nothing is submitted to FPL." in text
+                assert "Disclaimer" not in text and "nothing is submitted" not in text
 
     asyncio.run(_run())
 
@@ -359,7 +359,7 @@ def test_format_decision_card_markdown():
     }
 
     md = format_decision_card_markdown(mock_card)
-    assert "# FPL Oracle — Gameweek 6 Decision Card" in md
+    assert "# FPL Oracle - Gameweek 6" in md
     assert "Haaland" in md
     assert "Salah" in md
     assert "Set 1 chips expire GW19" in md
@@ -407,9 +407,8 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
             "fpl_oracle.briefing.decision_card.data_store.get_profile",
             return_value=SimpleNamespace(target_league_id=99),
         )
-        profile_patch.start()
-
         with (
+            profile_patch,
             patch(
                 "fpl_oracle.domain.manager_state.manager_state_service.get_current_state",
                 new=AsyncMock(return_value=mock_state),
@@ -444,6 +443,5 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
             assert wp["p_first"] is None, "Failed simulation must emit p_first=None, not 0.0"
             assert wp["expected_rank"] is None, "Failed simulation must emit expected_rank=None, not 1.0"
             assert "Simulated Monte Carlo numerical breakdown" in wp["error_message"]
-            profile_patch.stop()
 
     asyncio.run(_run())

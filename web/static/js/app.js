@@ -117,6 +117,18 @@ const app = createApp({
       panicQuery: '',
       panicResolving: false,
       panicResult: null,
+      panicDuration: "",
+      showConfirmTeam: false,
+      confirmTeamData: null,
+      confirmTeamText: "",
+      confirmForm: {},
+      confirmRows: [],
+      confirmMode: 'simple',
+      followedLocked: false,
+      deadlineTimer: null,
+      confirmDelta: {out:'',in:''},
+      confirmTeamError: "",
+      confirmTeamSaving: false,
 
       // Manual Squad Entry
       manualSquadText: '',
@@ -132,9 +144,9 @@ const app = createApp({
       isChatLoading: false,
       suggestedPrompts: [
         "Who is the safest captain pick this week?",
-        "Should I roll my free transfer or buy Gabriel?",
+        "Should I make a transfer?",
         "When is the best week for Bench Boost?",
-        "What do the mini-league simulations show, and what are their limits?"
+        "How can I catch my league leader?"
       ],
 
       // Background Sync Pipeline
@@ -147,37 +159,64 @@ const app = createApp({
   },
 
   computed: {
+    overallRankLabel() {
+      const rank = this.leagueData.overall_rank;
+      return Number.isInteger(rank) && rank > 0 ? '#' + rank.toLocaleString('en-GB') : (this.aux.league.loading ? 'Loading overall rank...' : 'Overall rank unavailable');
+    },
+    currentLeagueRankLabel() {
+      if (this.aux.league.loading) return 'Loading league rank...';
+      if (this.aux.league.error) return 'League rank unavailable';
+      const rank = this.leagueData.current_league_rank;
+      if (Number.isInteger(rank) && rank > 0) return '#' + rank;
+      return {not_listed:'Not listed in this league',manager_unconfigured:'Set your manager ID',league_unconfigured:'Set your mini-league ID'}[this.leagueData.league_rank_status] || 'League rank unavailable';
+    },
     moreItems() {
       return [
-        { key: 'panic', label: 'Emergency re-optimizer', icon: 'siren' },
+        { key: 'panic', label: 'Emergency check', icon: 'siren' },
         { key: 'audit', label: 'Pre-deadline checklist', icon: 'list-checks',
           badge: `${this.checklistSummary.passed_count ?? 0}/5`, tone: this.checklistSummary.status === 'PASS' ? 'ok' : 'warn' },
         { key: 'report', label: 'Weekly report', icon: 'file-text' },
         { key: 'squad', label: 'Import squad', icon: 'clipboard-paste' },
         { key: 'settings', label: 'Settings', icon: 'settings-2' },
-        { key: 'system', label: 'Diagnostics', icon: 'activity' }
+
       ];
     },
 
+    simulatedSubs() {
+      const starters=this.squadData.starters || [], bench=this.squadData.bench || [];
+      const absent=starters.filter(p=>this.simulatedOutIds.includes(p.element));
+      let best=[];
+      const legal=players=>{
+        const n={GKP:0,DEF:0,MID:0,FWD:0};players.forEach(p=>n[p.position]++);
+        return n.GKP===1 && n.DEF>=3 && n.DEF<=5 && n.MID>=2 && n.MID<=5 && n.FWD>=1 && n.FWD<=3;
+      };
+      function search(i,players,used,moves){
+        if(i===absent.length){if(legal(players) && moves.length>best.length) best=moves;return;}
+        const out=absent[i];
+        for(const b of bench){
+          if(used.has(b.element) || (out.position==='GKP')!==(b.position==='GKP')) continue;
+          search(i+1,players.map(p=>p.element===out.element?b:p),new Set([...used,b.element]),[...moves,{out:out.web_name,in:b.web_name}]);
+        }
+        search(i+1,players,used,moves);
+      }
+      search(0,starters,new Set(),[]);
+      return {moves:best,unfilled:absent.length-best.length};
+    },
+    transferPairs() {
+      const out=this.activePlan?.transfers_out || [], ins=this.activePlan?.transfers_in || [];
+      return Array.from({length:Math.max(out.length,ins.length)},(_,i)=>({out:out[i],in:ins[i]}));
+    },
     chipCheck() {
       const chip = this.decisionCard && this.decisionCard.chip;
       if (!chip || !chip.recommend || this.decisionCardLoading || this.plansLoading) return null;
       const r = this.expiryResearch;
-      const noForecast = 'Model-based, not calibrated; nothing beyond loaded data is forecast.';
-      if (!r) return { state: 'idle', tone: 'muted', label: 'Not checked to GW19',
-        text: 'The normal search covers eight weeks and Set 1 chips run to GW19, so later chip value remains unresolved until the longer check runs. ' + noForecast };
-      if (r.status === 'pending' || this.expiryResearchLoading) return { state: 'pending', tone: 'info', label: 'Checking to GW19',
-        text: 'Running the search through the GW19 chip expiry in the background. Until it finishes, later chip value remains unresolved.' };
-      if (r.status === 'model_expiry_sensitivity' && r.short && r.extended) {
-        if (!r.short.first_chip) return { state: 'unavailable', tone: 'muted', label: 'Check inconclusive',
-          text: 'The through-GW19 check did not reproduce this candidate, so later chip value remains unresolved. ' + noForecast };
-        if (!r.first_chip_changes) return { state: 'holds', tone: 'ok', label: 'Holds to GW19',
-          text: `The search through GW19 also puts this chip first (edge ${r.short.discounted_edge} xP over eight weeks, ${r.extended.discounted_edge} xP to GW19). A model comparison, not proof it is optimal. ${noForecast}` };
-        return { state: 'changed', tone: 'warn', label: 'Changes by GW19',
-          text: `The search through GW19 puts ${String(r.extended.first_chip || 'no chip now').replace(/_/g, ' ')} first instead. Reassess before committing; the eight-week candidate is not final.` };
+      if (!r) return {state: 'idle',tone:'muted',label:'Check timing',text:'Check timing'};
+      if(r.status==='pending' || this.expiryResearchLoading) return {state: 'pending',tone:'info',label:'Checking timing',text:'Checking...'};
+      if(r.status==='model_expiry_sensitivity' && r.short && r.extended){
+        if(!r.first_chip_changes) return {state: 'holds',tone:'info',label:'Timing checked',text:'Timing unchanged'};
+        return {state: 'changed',tone:'warn',label:'Timing changes',text:`The longer comparison starts with ${String(r.extended.first_chip || 'saving chips').replace(/_/g,' ')}. Review before using a chip.`};
       }
-      return { state: 'unavailable', tone: 'muted', label: 'GW19 check unavailable',
-        text: `${r.reason || 'The through-GW19 check could not run.'} Later chip value remains unresolved.` };
+      return {state: 'unavailable',tone:'muted',label:'Timing unavailable',text:r.reason || 'Update data and check again.'};
     },
 
     isDark() {
@@ -236,11 +275,11 @@ const app = createApp({
 
     nextDecision() {
       if (this.decisionCardLoading || this.plansLoading || this.decisionCardError || this.plansError || this.squadError || this.decisionCard?.is_stale) {
-        return {title: (this.decisionCardLoading || this.plansLoading) ? "Calculating recommendations..." : "Transfer recommendations unavailable",
+        return {title: (this.decisionCardLoading || this.plansLoading) ? "Checking..." : "Advice unavailable",
           badge: "Unavailable", tone: "muted", gainText: "Unavailable", hitText: "Unavailable",
           bankText: this.bankDisplay, ftText: this.ftDisplay,
-          reasons: [this.decisionCardError || this.plansError || this.squadError || "Waiting for current analysis."],
-          caveat: "No current advice until analysis succeeds.", card: null, isUnavailable: true};
+          reasons: [this.decisionCardError || this.plansError || this.squadError || "Checking..."],
+          caveat: "Refresh needed", card: null, isUnavailable: true};
       }
       if (!this.hasLoadedSquad) {
         if (this.decisionCardLoading || this.plansLoading || this.squadLoading) {
@@ -251,9 +290,9 @@ const app = createApp({
             gainText: "Evaluating",
             hitText: "--",
             bankText: "Bank unavailable",
-            ftText: "FT unavailable",
+            ftText: "Free transfers unknown",
             reasons: [
-              "Evaluating gameweek projections and multi-GW trajectories.",
+              "Checking...",
               "Solving optimal transfer and chip combinations."
             ],
             caveat: "Please wait while optimization runs.",
@@ -262,15 +301,15 @@ const app = createApp({
           };
         }
         return {
-          title: "Transfer recommendations unavailable",
+          title: "Advice unavailable",
           badge: "Unavailable",
           tone: "muted",
           gainText: "Unavailable",
           hitText: "Unavailable",
           bankText: "Bank unavailable",
-          ftText: "FT unavailable",
+          ftText: "Free transfers unknown",
           reasons: [
-            this.decisionCardError || this.plansError || this.squadError || "No verified squad data loaded.",
+            this.decisionCardError || this.plansError || this.squadError || "Team not confirmed",
             "Cannot provide transfer recommendations without verified squad and fixture data."
           ],
           caveat: "Configure manager ID or upload a squad in settings to generate recommendations.",
@@ -293,11 +332,11 @@ const app = createApp({
         let tone = "muted";
 
         if (chip.recommend) {
-          title = `Chip to consider: ${chip.chip_display_name || 'Active chip'}`;
-          badge = "Chip Deployment";
+          title = `Use chip: ${chip.chip_display_name || 'Active chip'}`;
+          badge = "Chip";
           tone = "warn";
         } else if (isRoll) {
-          title = `Roll Free Transfer (Bank to ${t.ft_next_gw ?? "unavailable"} FTs)`;
+          title = `Save transfer (${t.ft_next_gw ?? "unknown"} next week)`;
           badge = "Hold & Roll";
           tone = "info";
         } else {
@@ -309,7 +348,7 @@ const app = createApp({
         }
 
         const reasons = [
-          card.two_line_reasoning || "Projected trajectory based on the served planning horizon.",
+          card.two_line_reasoning || "Plan for the upcoming weeks.",
           chip.recommend ? chip.reason : `Starting XI led by captain ${card.captain?.web_name || 'Captain'} (${card.captain?.expected_points || 0.0} xP) in a ${card.formation || '3-5-2'} shape.`
         ];
 
@@ -338,9 +377,9 @@ const app = createApp({
             gainText: "Evaluating",
             hitText: "--",
             bankText: (this.squadData && this.squadData.bank_millions !== undefined) ? `£${this.squadData.bank_millions}m in bank` : "Bank unavailable",
-            ftText: (this.squadData && this.squadData.free_transfers !== undefined) ? `${this.squadData.free_transfers} FT left` : "FT unavailable",
+            ftText: (this.squadData && this.squadData.free_transfers !== undefined) ? `${this.squadData.free_transfers} FT left` : "Free transfers unknown",
             reasons: [
-              "Evaluating gameweek projections and multi-GW trajectories.",
+              "Checking...",
               "Solving optimal transfer and chip combinations."
             ],
             caveat: "Please wait while optimization runs.",
@@ -350,13 +389,13 @@ const app = createApp({
 
         const errDetail = this.decisionCardError || this.plansError || this.squadError;
         return {
-          title: "Transfer recommendations unavailable",
+          title: "Advice unavailable",
           badge: "Unavailable",
           tone: "muted",
           gainText: "Unavailable",
           hitText: "Unavailable",
           bankText: (this.squadData && this.squadData.bank_millions !== undefined) ? `£${this.squadData.bank_millions}m in bank` : "Bank unavailable",
-          ftText: (this.squadData && this.squadData.free_transfers !== undefined) ? `${this.squadData.free_transfers} FT left` : "FT unavailable",
+          ftText: (this.squadData && this.squadData.free_transfers !== undefined) ? `${this.squadData.free_transfers} FT left` : "Free transfers unknown",
           reasons: [
             errDetail || "No transfer plan available. Verify squad configuration and network connection.",
             "Cannot provide transfer recommendations without verified squad and fixture data."
@@ -391,13 +430,13 @@ const app = createApp({
       } else {
         if (!this.hasLoadedSquad) {
           return {
-            title: "Transfer recommendations unavailable",
+            title: "Advice unavailable",
             badge: "Unavailable",
             tone: "muted",
             gainText: "Unavailable",
             hitText: "Unavailable",
             bankText: "Bank unavailable",
-            ftText: "FT unavailable",
+            ftText: "Free transfers unknown",
             reasons: [
               "Cannot recommend rolling without a verified loaded squad.",
               "Please configure your squad to generate valid recommendations."
@@ -413,12 +452,12 @@ const app = createApp({
           gainText: "0.0 pts (Roll)",
           hitText: "0 hit pts",
           bankText: `£${(this.squadData.bank_millions !== undefined ? this.squadData.bank_millions : 0.0).toFixed(1)}m in bank`,
-          ftText: Number.isInteger(plan.next_banked_ft) ? `${plan.next_banked_ft} FTs next week` : "FT unavailable",
+          ftText: Number.isInteger(plan.next_banked_ft) ? `${plan.next_banked_ft} FTs next week` : "Free transfers unknown",
           reasons: [
             "Starting XI holds high expected output across all fixtures.",
-            "Accumulating a second free transfer provides greater pivot leverage next week."
+            "Save the transfer for next week."
           ],
-          caveat: "Ensure vice-captain is locked on an early kickoff starter as backup.",
+          caveat: "Check team news before the deadline.",
           isUnavailable: false
         };
       }
@@ -479,12 +518,12 @@ const app = createApp({
     },
     humanLabel(value, fallback = 'Not available') {
       if (value == null || value === '') return fallback;
-      const names = {ROLL_TRANSFER:'Save free transfer',WILDCARD:'Wildcard',FREE_HIT:'Free Hit',BENCH_BOOST:'Bench Boost',TRIPLE_CAPTAIN:'Triple Captain',PASS:'Passed',WARN:'Needs review',FAIL:'Failed',PENDING:'Pending',api_only:'Official data only'};
+      const names = {ROLL_TRANSFER:'Save free transfer',WILDCARD:'Wildcard',FREE_HIT:'Free Hit',BENCH_BOOST:'Bench Boost',TRIPLE_CAPTAIN:'Triple Captain',PASS:'Passed',WARN:'Needs review',FAIL:'Failed',PENDING:'Pending',api_only:'Official data only',CHECK_TRANSFER:'Check transfer'};
       if (names[value] || names[String(value).toUpperCase()]) return names[value] || names[String(value).toUpperCase()];
       return String(value).replace(/[_-]+/g,' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
     },
     priceLabel(direction) {
-      return {RISE_IMMINENT:'Strong rise momentum',LIKELY_RISE:'Rising transfer demand',FALL_IMMINENT:'Strong fall momentum',LIKELY_FALL:'Falling transfer demand'}[direction] || 'Price change unconfirmed';
+      return {RISE_IMMINENT:'Possible rise',LIKELY_RISE:'Rising transfer demand',FALL_IMMINENT:'Possible fall',LIKELY_FALL:'Falling transfer demand'}[direction] || 'Price change unconfirmed';
     },
     overlapLabel(team) {
       if (team.squad_overlap_pct == null) return 'Not measured';
@@ -726,6 +765,53 @@ const app = createApp({
       };
     },
 
+    async openConfirmTeam() {
+      this.showConfirmTeam=true;this.confirmTeamError="";this.confirmMode="simple";
+      try {
+        const r=await fetch('/api/team/confirmation');const data=await r.json();
+        if(!r.ok)throw new Error(data.detail||'Current team unavailable');
+        this.confirmTeamData=data;
+        const state=data.state, saved=data.saved;
+        this.confirmForm={gameweek:state.target_gw,bank:state.bank_tenths/10,free_transfers:state.free_transfers,
+          available_chips:state.target_gw<=19?state.chips_remaining_set_1:state.chips_remaining_set_2,
+          active_chip:state.active_chip||"",hit_cost:saved?.gameweek===state.target_gw?saved.hit_cost:0};
+        this.confirmRows=state.squad.map(p=>({element:p.element,purchase:p.purchase_price/10,selling:p.selling_price/10}));
+      } catch(e){this.confirmTeamError=e.message;}
+    },
+    async undoFollowedAdvice() {
+      try {const r=await fetch('/api/team/undo',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Undo failed');this.followedLocked=false;await this.refreshAll();}
+      catch(e){this.triggerToast(e.message,'warn');}
+    },
+    async confirmFollowedAdvice() {
+      if(this.confirmTeamSaving)return;this.confirmTeamSaving=true;this.confirmTeamError='';
+      try {const r=await fetch('/api/team/followed',{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Could not confirm advice');this.showConfirmTeam=false;this.triggerToast('Done');await this.refreshAll();}
+      catch(e){this.confirmTeamError=e.message;this.triggerToast(e.message,'warn');}finally{this.confirmTeamSaving=false;}
+    },
+    addConfirmedMove() {
+      const out=Number(this.confirmDelta.out), incoming=Number(this.confirmDelta.in), row=this.confirmRows.find(r=>Number(r.element)===out), player=this.confirmTeamData?.players.find(p=>p.element===incoming);
+      if(!row||!player||this.confirmRows.some(r=>Number(r.element)===incoming)){this.confirmTeamError='Choose an owned player out and a different player in.';return;}
+      const original=this.confirmTeamData.state.squad.find(p=>p.element===out);
+      if(original?.price_provenance==='market_estimate'){this.confirmTeamError='Check selling price in the full editor.';return;}
+      this.confirmForm.bank=Number((Number(this.confirmForm.bank)+Number(row.selling)-player.price/10).toFixed(1));
+      if(!['wildcard','freehit'].includes(this.confirmForm.active_chip)){if(Number(this.confirmForm.free_transfers)>0)this.confirmForm.free_transfers--;else this.confirmForm.hit_cost=Number(this.confirmForm.hit_cost)+4;}
+      row.element=incoming;row.purchase=player.price/10;row.selling=player.price/10;this.confirmDelta={out:'',in:''};this.confirmTeamError='';
+    },
+    async saveConfirmTeam() {
+      if(this.confirmTeamSaving)return;this.confirmTeamSaving=true;this.confirmTeamError="";
+      try {
+        const payload={gameweek:this.confirmForm.gameweek,player_ids:this.confirmRows.map(p=>Number(p.element)),
+          bank_tenths:Math.round(Number(this.confirmForm.bank)*10),free_transfers:Number(this.confirmForm.free_transfers),
+          available_chips:this.confirmForm.available_chips.filter(c=>c!==this.confirmForm.active_chip),active_chip:this.confirmForm.active_chip||null,
+          captain:Number(this.confirmForm.captain)||null,vice_captain:Number(this.confirmForm.vice_captain)||null,
+          hit_cost:Number(this.confirmForm.hit_cost),selling_prices:Object.fromEntries(this.confirmRows.map(p=>[p.element,Math.round(Number(p.selling)*10)])),
+          purchase_prices:Object.fromEntries(this.confirmRows.map(p=>[p.element,Math.round(Number(p.purchase)*10)]))};
+        const r=await fetch('/api/team/confirmation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        const data=await r.json();if(!r.ok)throw new Error(data.detail||'Confirmation failed');
+        this.showConfirmTeam=false;this.triggerToast('Saved: '+data.comparison);
+        await this.refreshAll();
+      } catch(e){this.confirmTeamError=e.message;this.triggerToast(e.message,'warn');}finally{this.confirmTeamSaving=false;}
+    },
+
     // Emergency Crisis Solver (Panic Button)
     openPanicModal() {
       this.showPanicModal = true;
@@ -739,11 +825,13 @@ const app = createApp({
         const res = await fetch('/api/contingency/panic', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: this.panicQuery })
+          body: JSON.stringify({ query: this.panicQuery, duration:this.panicDuration })
         });
-        this.panicResult = await res.json();
+        const result = await res.json();
+        if(!res.ok) throw new Error(result.detail || 'Emergency check failed');
+        this.panicResult = result;
       } catch (e) {
-        this.panicResult = { recommendation: "Failed to generate emergency re-optimization." };
+        this.panicResult = { status: "error", recommendation: e.message || "Emergency check failed. Try again." };
       } finally {
         this.panicResolving = false;
       }
@@ -808,7 +896,7 @@ const app = createApp({
         body: JSON.stringify({bank: null, free_transfers: null}) });
       if (!res.ok) { this.triggerToast('Could not reset overrides.'); return; }
       await this.refreshAll(true);
-      this.triggerToast('Official bank and free transfers restored.');
+      this.triggerToast('Bank and transfers reset');
     },
 
     async saveProfile() {
@@ -893,7 +981,7 @@ const app = createApp({
       } catch (error) {
         if (generation !== this.snapshotGeneration) return;
         this[field] = field === 'contingencyMatrix' ? [] : {};
-        state.error = 'The data source did not respond. Check your connection and try again.';
+        state.error = 'Refresh failed. Try again.';
       } finally {
         if (generation === this.snapshotGeneration) state.loading = false;
       }
@@ -981,7 +1069,7 @@ const app = createApp({
           ? data.response : (data.error || 'No answer returned. Check the server error and try again.');
         this.chatMessages.push({ role: 'assistant', content: body });
       } catch (e) {
-        this.chatMessages.push({ role: 'assistant', content: "Error communicating with local expert agent." });
+        this.chatMessages.push({ role: 'assistant', content: "Could not load an answer. Try again." });
       } finally {
         this.isChatLoading = false;
       }
@@ -1096,11 +1184,19 @@ const app = createApp({
       // Render basic data before expensive requests enter the event loop.
       await Promise.all([this.loadBasicSquad(refresh), this.loadGameState(), this.loadProfile()]);
       await this.$nextTick();
+      const confirmationResponse=await fetch('/api/team/confirmation');
+      if(confirmationResponse.ok){const confirmation=await confirmationResponse.json();this.confirmTeamData=confirmation;this.followedLocked=Boolean(confirmation.locked);
+        if(this.followedLocked){this.decisionCardLoading=false;this.squadLoading=false;this.plansLoading=false;
+          if(this.deadlineTimer)clearTimeout(this.deadlineTimer);
+          const deadline=Date.parse(confirmation.state?.deadline_utc||'');
+          if(Number.isFinite(deadline)&&deadline>Date.now())this.deadlineTimer=setTimeout(()=>this.refreshAll(true),Math.min(deadline-Date.now()+1000,2147483647));
+          return;}}
+
       // One durable calculation publishes the core atomically. Browser latency
       // cannot discard a completed squad merely because league/report is slower.
       this.snapshotBuffer = null;
       this.decisionCardLoading = true; this.squadLoading = true; this.plansLoading = true;
-      this.adviceStage = "Starting shared calculation";
+      this.adviceStage = "Checking...";
       this.decisionCardError = null; this.squadError = null; this.plansError = null;
       const generation = this.snapshotGeneration;
       try {
@@ -1124,7 +1220,7 @@ const app = createApp({
         if (this.expiryResearch && this.expiryResearch.status === 'pending') void this.watchExpiry(job.id, generation);
       } catch (error) {
         if (generation !== this.snapshotGeneration) return;
-        this.squadError = 'Current advice unavailable. Published team is still visible.';
+        this.squadError = 'Advice unavailable';
         this.decisionCardError = String(error);
       } finally {
         if (generation === this.snapshotGeneration) {
@@ -1137,7 +1233,7 @@ const app = createApp({
     }
   },
 
-  beforeUnmount() { if (this.routeListener) window.removeEventListener('hashchange', this.routeListener); },
+  beforeUnmount() { if(this.deadlineTimer)clearTimeout(this.deadlineTimer); if (this.routeListener) window.removeEventListener('hashchange', this.routeListener); },
   mounted() {
     this.initTheme();
     this.restoreSessionHistory();
