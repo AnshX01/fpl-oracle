@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 
 import httpx
 
@@ -12,8 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiProvider:
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str | None = None):
         self.api_key = api_key
+        model = (model if model is not None else os.getenv("GEMINI_MODEL", "")).strip() or "gemini-2.5-flash"
         self.model = model
         self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 

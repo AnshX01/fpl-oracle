@@ -81,3 +81,16 @@ async def test_gemini_empty_answer_fails_instead_of_invented_success(monkeypatch
     monkeypatch.setattr("fpl_oracle.llm.gemini.httpx.AsyncClient", Client)
     with pytest.raises(RuntimeError, match="empty_candidates"):
         await GeminiProvider("test").chat([{"role": "user", "content": "captain?"}], "data")
+
+
+
+def test_chat_model_uses_env_preserves_default_and_explicit_override(monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", " gemini-test-env ")
+    provider = GeminiProvider("fake-test-key")
+    assert provider.model == "gemini-test-env"
+    assert provider.base_url.endswith("gemini-test-env:generateContent")
+    assert GeminiProvider("fake-test-key", model="explicit-model").model == "explicit-model"
+    monkeypatch.delenv("GEMINI_MODEL")
+    assert GeminiProvider("fake-test-key").model == "gemini-2.5-flash"
+    monkeypatch.setenv("GEMINI_MODEL", "   ")
+    assert GeminiProvider("fake-test-key").model == "gemini-2.5-flash"
