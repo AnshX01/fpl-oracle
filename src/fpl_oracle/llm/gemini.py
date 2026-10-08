@@ -5,6 +5,7 @@ import logging
 
 import httpx
 
+from fpl_oracle.llm.gemini_requests import gemini_gate
 from fpl_oracle.llm.tools import TOOL_DEFINITIONS, tool_executor
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ class GeminiProvider:
                     "tool_config": {"function_calling_config": {"mode": "AUTO" if grounded else "ANY"}},
                     "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
                 }
-                resp = await client.post(self.base_url, json=payload, headers={"x-goog-api-key": self.api_key})
+                resp = await gemini_gate.post(client, self.base_url, json=payload, headers={"x-goog-api-key": self.api_key})
                 if resp.status_code != 200:
                     # Do not log API response bodies or secret-bearing URLs.
                     raise RuntimeError(f"Gemini returned status {resp.status_code}")

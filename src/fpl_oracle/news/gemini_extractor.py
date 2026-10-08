@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 
 from fpl_oracle.config import CACHE_DIR
+from fpl_oracle.llm.gemini_requests import GeminiRateLimitError, gemini_gate
 from fpl_oracle.news.models import EvidenceCategory, ExtractedNewsPayload, PlayerEvidence
 
 logger = logging.getLogger("fpl_oracle.news.gemini")
@@ -112,7 +113,28 @@ class GeminiEvidenceExtractor:
         Falls back immediately and gracefully to empty payload on missing key,
         budget exhaustion, 429, or schema errors.
         """
+        import hashlib
+        import time
+
         now_iso = datetime.now(UTC).isoformat()
+        cache_key = hashlib.sha256(
+            json.dumps(
+                [
+                    article_text,
+                    article_url,
+                    published_at,
+                    candidate_players,
+                    target_gw,
+                    os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
+                ],
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        if not hasattr(self, "_evidence_cache"):
+            self._evidence_cache = {}
+        cached = self._evidence_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < 900:
+            return cached[1].model_copy(deep=True)
         article_hash = f"hash_{len(article_text)}_{abs(hash(article_text))}"
 
         configured, reason = self.is_configured()
@@ -197,7 +219,7 @@ class GeminiEvidenceExtractor:
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(url, json=request_body, headers={"x-goog-api-key": api_key})
+                resp = await gemini_gate.post(client, url, json=request_body, headers={"x-goog-api-key": api_key})
 
                 if resp.status_code == 429:
                     logger.warning(
@@ -262,7 +284,7 @@ class GeminiEvidenceExtractor:
                             )
                         )
 
-                return ExtractedNewsPayload(
+                result = ExtractedNewsPayload(
                     article_url=article_url,
                     article_hash=article_hash,
                     published_at=published_at,
@@ -270,6 +292,10 @@ class GeminiEvidenceExtractor:
                     evidences=evidences,
                     raw_response_snippet="Success",
                 )
+                if len(self._evidence_cache) > 100:
+                    self._evidence_cache.clear()
+                self._evidence_cache[cache_key] = (time.monotonic(), result.model_copy(deep=True))
+                return result
 
         except Exception as e:
             logger.warning(
@@ -281,7 +307,9 @@ class GeminiEvidenceExtractor:
                 published_at=published_at,
                 fetched_at=now_iso,
                 evidences=[],
-                raw_response_snippet=f"Exception: {type(e).__name__}",
+                raw_response_snippet="HTTP 429: Rate limited"
+                if isinstance(e, GeminiRateLimitError)
+                else f"Exception: {type(e).__name__}",
             )
 
 
