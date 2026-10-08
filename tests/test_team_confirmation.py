@@ -65,29 +65,58 @@ def test_confirm_rejects_duplicate_bad_prices_and_wrong_gw(configured_advisor, m
             store.confirm(state, boot, dict(payload, **{field: value}))
 
 
-def test_unconfirmed_state_blocks_normal_advice(configured_advisor):
+def test_published_team_gets_advice_without_confirmation(configured_advisor, monkeypatch):
     state, pool, horizon = configured_advisor
     state.confirmation_required = True
     state.team_confirmed = False
-    from fastapi import HTTPException
+    from unittest.mock import AsyncMock
 
+    from fpl_oracle.domain.team_confirmation import team_confirmation
     from fpl_oracle.server.analysis import analysis_service
 
+    monkeypatch.setattr(team_confirmation, "read", lambda mid: None)
+    monkeypatch.setattr(analysis_service, "league_context", AsyncMock(return_value=None))
+    result = asyncio.run(
+        analysis_service.joint_plan(
+            current_squad_df=pool,
+            player_pool_df=pool,
+            bank=state.bank_tenths,
+            free_transfers=state.free_transfers,
+            horizon_projections={6: horizon[6]},
+            target_gw=6,
+            current_gw=5,
+            available_chips=[],
+        )
+    )
+    assert result["recommended_plan"]["lineup"]["captain"]
+
+
+@pytest.mark.parametrize("problem", ["Active Free Hit needs permanent team", "Official published team differs"])
+def test_real_state_conflict_still_blocks_advice(configured_advisor, monkeypatch, problem):
+    state, pool, horizon = configured_advisor
+    state.confirmation_required = True
+    state.team_confirmed = False
+    state.error_message = problem
+    from fastapi import HTTPException
+
+    from fpl_oracle.domain.team_confirmation import team_confirmation
+    from fpl_oracle.server.analysis import analysis_service
+
+    monkeypatch.setattr(team_confirmation, "read", lambda mid: None)
     with pytest.raises(HTTPException) as err:
         asyncio.run(
             analysis_service.joint_plan(
                 current_squad_df=pool,
                 player_pool_df=pool,
-                bank=10,
-                free_transfers=1,
+                bank=state.bank_tenths,
+                free_transfers=state.free_transfers,
                 horizon_projections=horizon,
                 target_gw=6,
                 current_gw=5,
                 available_chips=[],
             )
         )
-    assert err.value.status_code == 409
-    assert "not confirmed" in err.value.detail
+    assert err.value.status_code == 409 and err.value.detail == problem
 
 
 def test_reconfirm_is_idempotent_and_keeps_comparison(configured_advisor, monkeypatch):

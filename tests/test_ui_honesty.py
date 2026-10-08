@@ -128,7 +128,7 @@ def test_squad_availability_empty_state_honesty():
     content = INDEX_HTML.read_text(encoding="utf-8")
     # Must check !hasLoadedSquad and show squad unavailable message
     assert "!hasLoadedSquad" in content
-    assert "Squad data unavailable" in content
+    assert "Team unavailable" in content
     # The claim must be contingent on flaggedSquadPlayers.length === 0, NOT an empty raw squad
     assert "allSquadConfirmedAvailable" in content
     assert "unknownAvailabilityPlayers.length === 0" in APP_JS.read_text()

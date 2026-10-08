@@ -435,3 +435,5 @@ select.input option { color: #151824; }
 
 .mobile-transfer-label { display: none; }
 @media(max-width:767px) { .transfer-pair:has(.transfer-out-label) { display: none; } .mobile-transfer-label { display: block; margin-bottom: 8px; } .transfer-side { min-width: 0; } }
+
+.published-team-note { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; color:var(--text-2); font-size:var(--fs-sm); padding:8px 4px; }

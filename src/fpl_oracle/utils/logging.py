@@ -46,5 +46,33 @@ def setup_logging(
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
 
+    for handler in root_logger.handlers:
+        handler.addFilter(SecretRedactingFilter())
+
     _is_configured = True
     return logging.getLogger("fpl_oracle")
+
+
+class SecretRedactingFilter(logging.Filter):
+    """Remove credentials from rendered messages, including exception URLs."""
+
+    def filter(self, record):
+        import os
+        import re
+
+        text = record.getMessage()
+        if record.exc_info:
+            text += "\n" + logging.Formatter().formatException(record.exc_info)
+            record.exc_info = None
+            record.exc_text = None
+        text = re.sub(
+            r"(?i)([?&](?:key|api_key|apikey|access_token)=)[^&\s\"']+",
+            r"\1[REDACTED]",
+            text,
+        )
+        for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+            secret = os.getenv(name, "").strip()
+            if secret:
+                text = text.replace(secret, "[REDACTED]")
+        record.msg, record.args = text, ()
+        return True

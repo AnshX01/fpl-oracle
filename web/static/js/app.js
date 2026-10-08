@@ -183,7 +183,7 @@ const app = createApp({
     },
 
     simulatedSubs() {
-      const starters=this.squadData.starters || [], bench=this.squadData.bench || [];
+      const starters=this.displaySquad.starters || [], bench=this.displaySquad.bench || [];
       const absent=starters.filter(p=>this.simulatedOutIds.includes(p.element));
       let best=[];
       const legal=players=>{
@@ -237,19 +237,26 @@ const app = createApp({
       return Array.isArray(s?.starters) && s.starters.length === 11 && Array.isArray(s?.bench) && s.bench.length === 4;
     },
 
+    displaySquad() { return this.hasLoadedSquad ? this.squadData : (this.hasBasicSquad ? this.basicSquadData : {}); },
+    usingPublishedTeam() { return this.hasBasicSquad && !this.confirmTeamData?.state?.team_confirmed; },
+    publishedTeamNote() {
+      const gw = this.basicSquadData.published_gameweek;
+      return `Based on your team at ${Number.isInteger(gw) ? 'the GW' + gw + ' deadline' : 'the last deadline'}.`;
+    },
+
     flaggedSquadPlayers() {
-      if (!this.hasLoadedSquad) return [];
-      return [...this.squadData.starters, ...this.squadData.bench].filter(p =>
+      if (!this.hasLoadedSquad && !this.hasBasicSquad) return [];
+      return [...this.displaySquad.starters, ...this.displaySquad.bench].filter(p =>
         p.status !== 'a' || (Number.isFinite(p.chance_of_playing) && p.chance_of_playing < 100) || p.news_quote);
     },
 
     unknownAvailabilityPlayers() {
-      if (!this.hasLoadedSquad) return [];
-      return [...this.squadData.starters, ...this.squadData.bench].filter(p => !Number.isFinite(p.chance_of_playing));
+      if (!this.hasLoadedSquad && !this.hasBasicSquad) return [];
+      return [...this.displaySquad.starters, ...this.displaySquad.bench].filter(p => !Number.isFinite(p.chance_of_playing));
     },
 
     allSquadConfirmedAvailable() {
-      return this.hasLoadedSquad && this.flaggedSquadPlayers.length === 0 && this.unknownAvailabilityPlayers.length === 0;
+      return (this.hasLoadedSquad || this.hasBasicSquad) && this.flaggedSquadPlayers.length === 0 && this.unknownAvailabilityPlayers.length === 0;
     },
 
     bankDisplay() {
@@ -712,8 +719,8 @@ const app = createApp({
     },
 
     getPositionPlayers(pos) {
-      if (!this.squadData.starters) return [];
-      return this.squadData.starters.filter(p => p.position === pos);
+      if (!this.displaySquad.starters) return [];
+      return this.displaySquad.starters.filter(p => p.position === pos);
     },
 
     toggleSimulateOut(elemId) {
@@ -728,6 +735,11 @@ const app = createApp({
     // Background Synchronization Pipeline
     async triggerSyncPipeline() {
       if (this.pipelineRunning) return;
+      if (this.followedLocked) {
+        await this.refreshAll(true);
+        this.triggerToast(this.followedLocked ? 'Done. Next advice after the deadline.' : 'Data updated.');
+        return;
+      }
       this.squadData = {}; this.decisionCard = null; this.contingencyPlans = {};
       this.chipData = {}; this.leagueData = {}; this.briefingData = {};
       this.pipelineRunning = true;
@@ -771,10 +783,14 @@ const app = createApp({
         const r=await fetch('/api/team/confirmation');const data=await r.json();
         if(!r.ok)throw new Error(data.detail||'Current team unavailable');
         this.confirmTeamData=data;
+        this.confirmTeamData.players = data.players || data.state.players || [];
         const state=data.state, saved=data.saved;
         this.confirmForm={gameweek:state.target_gw,bank:state.bank_tenths/10,free_transfers:state.free_transfers,
           available_chips:state.target_gw<=19?state.chips_remaining_set_1:state.chips_remaining_set_2,
-          active_chip:state.active_chip||"",hit_cost:saved?.gameweek===state.target_gw?saved.hit_cost:0};
+          active_chip:state.active_chip||"",hit_cost:saved?.gameweek===state.target_gw?saved.hit_cost:0,
+          captain:state.squad.find(p=>p.is_captain)?.element || null,
+          vice_captain:state.squad.find(p=>p.is_vice_captain)?.element || null,
+          bench:state.squad.filter(p=>!p.is_starter).sort((a,b)=>a.bench_order-b.bench_order).map(p=>p.element)};
         this.confirmRows=state.squad.map(p=>({element:p.element,purchase:p.purchase_price/10,selling:p.selling_price/10}));
       } catch(e){this.confirmTeamError=e.message;}
     },
@@ -794,6 +810,9 @@ const app = createApp({
       if(original?.price_provenance==='market_estimate'){this.confirmTeamError='Check selling price in the full editor.';return;}
       this.confirmForm.bank=Number((Number(this.confirmForm.bank)+Number(row.selling)-player.price/10).toFixed(1));
       if(!['wildcard','freehit'].includes(this.confirmForm.active_chip)){if(Number(this.confirmForm.free_transfers)>0)this.confirmForm.free_transfers--;else this.confirmForm.hit_cost=Number(this.confirmForm.hit_cost)+4;}
+      this.confirmForm.bench=this.confirmForm.bench.map(id=>id===out?incoming:id);
+      if(this.confirmForm.captain===out)this.confirmForm.captain=incoming;
+      if(this.confirmForm.vice_captain===out)this.confirmForm.vice_captain=incoming;
       row.element=incoming;row.purchase=player.price/10;row.selling=player.price/10;this.confirmDelta={out:'',in:''};this.confirmTeamError='';
     },
     async saveConfirmTeam() {
@@ -803,7 +822,9 @@ const app = createApp({
           bank_tenths:Math.round(Number(this.confirmForm.bank)*10),free_transfers:Number(this.confirmForm.free_transfers),
           available_chips:this.confirmForm.available_chips.filter(c=>c!==this.confirmForm.active_chip),active_chip:this.confirmForm.active_chip||null,
           captain:Number(this.confirmForm.captain)||null,vice_captain:Number(this.confirmForm.vice_captain)||null,
-          hit_cost:Number(this.confirmForm.hit_cost),selling_prices:Object.fromEntries(this.confirmRows.map(p=>[p.element,Math.round(Number(p.selling)*10)])),
+          hit_cost:Number(this.confirmForm.hit_cost),
+          bench:(this.confirmForm.bench || []).filter(id=>this.confirmRows.some(p=>Number(p.element)===id)),
+          selling_prices:Object.fromEntries(this.confirmRows.map(p=>[p.element,Math.round(Number(p.selling)*10)])),
           purchase_prices:Object.fromEntries(this.confirmRows.map(p=>[p.element,Math.round(Number(p.purchase)*10)]))};
         const r=await fetch('/api/team/confirmation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
         const data=await r.json();if(!r.ok)throw new Error(data.detail||'Confirmation failed');
@@ -1180,6 +1201,8 @@ const app = createApp({
       this.chipData = {};
       this.leagueData = {};
       this.briefingData = {};
+      this.checklistItems = []; this.contingencyMatrix = [];
+      this.decisionCardError = null; this.squadError = null; this.plansError = null;
       // A forced reopen refresh completes before advice requests use cached upstream data.
       // Render basic data before expensive requests enter the event loop.
       await Promise.all([this.loadBasicSquad(refresh), this.loadGameState(), this.loadProfile()]);
@@ -1221,7 +1244,7 @@ const app = createApp({
       } catch (error) {
         if (generation !== this.snapshotGeneration) return;
         this.squadError = 'Advice unavailable';
-        this.decisionCardError = String(error);
+        this.decisionCardError = 'Could not prepare advice. Try Update again.';
       } finally {
         if (generation === this.snapshotGeneration) {
           this.decisionCardLoading=false; this.squadLoading=false; this.plansLoading=false;

@@ -141,7 +141,7 @@ class GeminiEvidenceExtractor:
 
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         model_name = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
-        url = f"{GEMINI_API_BASE}/{model_name}:generateContent?key={api_key}"
+        url = f"{GEMINI_API_BASE}/{model_name}:generateContent"
 
         # Build candidate player roster hint to anchor extraction
         roster_hints = ""
@@ -197,7 +197,7 @@ class GeminiEvidenceExtractor:
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(url, json=request_body)
+                resp = await client.post(url, json=request_body, headers={"x-goog-api-key": api_key})
 
                 if resp.status_code == 429:
                     logger.warning(
