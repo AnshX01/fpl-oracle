@@ -76,6 +76,11 @@ class ConfirmTeamRequest(BaseModel):
 
 @router.post("/team/followed")
 async def confirm_followed_team():
+    from fpl_oracle.server.advice_job import advice_publisher
+
+    publication = advice_publisher.public()
+    if publication.get("previous_result") or publication.get("status") == "refresh_required":
+        raise HTTPException(409, "Team data changed. Wait for updated advice before Done.")
     from fpl_oracle.domain.team_confirmation import team_confirmation
 
     state = await manager_state_service.get_current_state()

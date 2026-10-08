@@ -9,6 +9,15 @@ import uuid
 from datetime import UTC, datetime
 
 from fpl_oracle.api.read_context import read_context
+from fpl_oracle.server.source_fingerprint import changes, decision_source
+
+
+class SourceChanged(ValueError):
+    def __init__(self, previous, categories):
+        super().__init__("Decision inputs changed during calculation")
+        self.previous = previous
+        self.categories = categories
+
 
 logger = logging.getLogger("fpl_oracle.advice")
 
@@ -67,7 +76,7 @@ class AdvicePublisher:
             return False
         for key, value in self.current.get("sources", {}).items():
             live = cache_manager.get_with_meta(key)
-            if live is None or live[0] != value:
+            if live is None or changes(key, value, live[0]):
                 return False
         return True
 
@@ -122,6 +131,15 @@ class AdvicePublisher:
                     raise ValueError("Model changed during core calculation; refresh")
                 if {r["element"] for r in squad.get("starters", [])} != {r["element"] for r in card.get("xi", [])}:
                     raise ValueError("Lineup mismatch in core publication")
+                context = read_context.get() or {}
+                timestamps = [stamp for _, _, stamp in context.values() if stamp is not None]
+                candidate = dict(
+                    squadData=squad,
+                    decisionCard=card,
+                    contingencyPlans=plans,
+                    data_as_of=min(timestamps).isoformat() if timestamps else datetime.now(UTC).isoformat(),
+                    source_revision=fpl_client.revision,
+                )
                 self.current["stage"] = "Checking the latest team data"
                 context = read_context.get() or {}
                 # Timestamp changes alone are not changed content. Guard real facts.
@@ -141,33 +159,57 @@ class AdvicePublisher:
                                 live = None if stale else (fresh, None)
                             finally:
                                 read_context.reset(validation_token)
-                    if live is None or live[0] != value:
+                    categories = [] if live is None else changes(key, value, live[0])
+                    if live is None or categories:
                         logger.warning(
-                            "Advice source validation failed: key=%s outcome=%s",
+                            "Advice source validation failed: key=%s outcome=%s categories=%s",
                             key,
                             "unverifiable" if live is None else "content_changed",
+                            categories,
                         )
-                        raise ValueError("Source content changed during calculation; refresh")
+                        raise SourceChanged(candidate, categories or ["unverifiable"])
                 # Revalidation itself may take time; owner and model must still agree.
                 if profile_key(data_store.get_profile()) != original_key:
                     raise ValueError("Profile changed during validation; refresh")
                 if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
                     raise ValueError("Model changed during validation; refresh")
                 snapshot = hashlib.sha256(
-                    json.dumps({k: v[0] for k, v in context.items()}, sort_keys=True, default=str).encode()
+                    json.dumps(
+                        {k: decision_source(k, v[0]) for k, v in context.items()}, sort_keys=True, default=str
+                    ).encode()
                 ).hexdigest()
-                return dict(
-                    squadData=squad,
-                    decisionCard=card,
-                    contingencyPlans=plans,
-                    snapshot_id=snapshot,
-                    data_as_of=datetime.now(UTC).isoformat(),
-                    source_revision=fpl_client.revision,
-                )
+                bootstrap = context.get("bootstrap-static", ({}, False, None))[0]
+                next_events = [e for e in bootstrap.get("events", []) if e.get("is_next")]
+                for event in next_events:
+                    deadline = datetime.fromisoformat(event["deadline_time"].replace("Z", "+00:00"))
+                    if datetime.now(UTC) >= deadline:
+                        raise ValueError("Deadline passed during calculation; refresh")
+                candidate["snapshot_id"] = snapshot
+                return candidate
 
             # CPU work is not discarded because a laptop is slow. Individual
             # network requests retain their own timeouts; explicit refresh can cancel.
-            result = await work()
+            for attempt in range(2):
+                try:
+                    result = await work()
+                    break
+                except SourceChanged as changed:
+                    changed.previous["decisionCard"].pop("confirmation_recommendation", None)
+                    self.current.update(
+                        previous_result=changed.previous,
+                        changed_categories=changed.categories,
+                        retry_count=attempt + 1,
+                        stage="Team data changed. Updating advice",
+                    )
+                    if attempt == 1 or "unverifiable" in changed.categories:
+                        self.current.update(
+                            status="refresh_required", result=None, stage="Team data changed again. Refresh when ready"
+                        )
+                        return
+                    # A new pinned snapshot uses the current cache facts. Derived
+                    # projection caches reuse unchanged model features where safe.
+                    read_context.get().clear()
+                    publication_projections.get().clear()
             from fpl_oracle.ml.model_registry import model_registry
 
             result["expiryResearch"] = dict(status="pending")
@@ -175,6 +217,7 @@ class AdvicePublisher:
                 status="ready",
                 stage="Ready",
                 result=result,
+                previous_result=None,
                 sources={k: v[0] for k, v in (read_context.get() or {}).items()},
                 model_version=model_registry.get_active_version(),
             )

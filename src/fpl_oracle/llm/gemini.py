@@ -38,7 +38,19 @@ class GeminiProvider:
                 if resp.status_code != 200:
                     # Do not log API response bodies or secret-bearing URLs.
                     raise RuntimeError(f"Gemini returned status {resp.status_code}")
-                parts = (resp.json().get("candidates") or [{}])[0].get("content", {}).get("parts", [])
+                data = resp.json()
+                candidates = data.get("candidates") or []
+                if not candidates:
+                    reason = data.get("promptFeedback", {}).get("blockReason", "empty_candidates")
+                    raise RuntimeError("Gemini returned no candidate: " + str(reason))
+                candidate = candidates[0]
+                parts = candidate.get("content", {}).get("parts", [])
+                logger.info(
+                    "Gemini chat response: round=%s finish_reason=%s function_calls=%s",
+                    _ + 1,
+                    candidate.get("finishReason", "unspecified"),
+                    sum("functionCall" in p for p in parts),
+                )
                 calls = [p["functionCall"] for p in parts if "functionCall" in p]
                 if calls:
                     contents.append({"role": "model", "parts": parts})

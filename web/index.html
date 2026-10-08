@@ -69,13 +69,22 @@
     <!-- ===================== OVERVIEW ===================== -->
     <section v-if="activeTab === 'overview'" class="panel" id="main-panel-overview" role="tabpanel" aria-label="Overview">
 
+      <glass-card v-if="previousAdvice" class="hero" data-testid="previous-advice">
+        <ui-badge tone="muted">Previous calculation</ui-badge>
+        <h2 class="hero-title">Team data changed. {{ adviceNeedsRefresh ? 'Refresh when ready.' : 'Updating advice.' }}</h2>
+        <p class="subtle">This is the earlier plan. Wait for the updated advice before making changes.</p>
+        <p v-if="previousAdvice.decisionCard?.captain">Captain: {{ previousAdvice.decisionCard.captain.web_name }}</p>
+        <p v-if="previousAdvice.decisionCard?.chip?.chip_display_name">Chip: {{ previousAdvice.decisionCard.chip.chip_display_name }}</p>
+        <p class="subtle">Data from {{ previousAdvice.data_as_of }}</p>
+        <ui-button v-if="adviceNeedsRefresh" @click="refreshAll(true)">Refresh advice</ui-button>
+      </glass-card>
       <glass-card v-if="followedLocked" id="followed-card" class="hero">
         <ui-badge tone="ok">Followed</ui-badge>
         <h2 class="hero-title">Done. Next update after the deadline.</h2>
         
         <div class="row wrap"><ui-button @click="undoFollowedAdvice">Undo</ui-button><ui-button variant="ghost" @click="openConfirmTeam().then(()=>confirmMode='different')">Did something different</ui-button></div>
       </glass-card>
-      <glass-card v-else id="decision-card" class="hero">
+      <glass-card v-else-if="!adviceNeedsRefresh" id="decision-card" class="hero">
         <div class="row between">
           <div class="row">
             <ui-badge v-if="nextDecision.isUnavailable" tone="muted">{{ nextDecision.badge }}</ui-badge>
