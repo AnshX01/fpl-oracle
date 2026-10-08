@@ -5,7 +5,32 @@ from typing import Any
 from fpl_oracle.optimise.squad import squad_optimizer
 
 
+_SOLVE_CACHES: dict[Any, Any] = {}
+_RANKING_CACHE: dict[Any, Any] = {}
+_LINEUP_CACHE: dict[Any, Any] = {}
+_LINEUP_CACHE_LIMIT = 400_000
+
+
 def evaluate_lineup(elements, player_map, risk="balanced", chip=None):
+    """Best legal XI for a squad. Memoised: identical squad and projections give an identical answer."""
+    key = (id(player_map), frozenset(elements), risk, chip)
+    hit = _LINEUP_CACHE.get(key)
+    if hit is not None and hit[0] is player_map:
+        if hit[1] is None:
+            raise ValueError("No legal XI in projected squad")
+        return hit[1]
+    if len(_LINEUP_CACHE) > _LINEUP_CACHE_LIMIT:
+        _LINEUP_CACHE.clear()
+    try:
+        result = _evaluate_lineup_uncached(elements, player_map, risk, chip)
+    except ValueError:
+        _LINEUP_CACHE[key] = (player_map, None)
+        raise
+    _LINEUP_CACHE[key] = (player_map, result)
+    return result
+
+
+def _evaluate_lineup_uncached(elements, player_map, risk="balanced", chip=None):
     from fpl_oracle.optimise.transfers import VALID_FORMATIONS
 
     players = [player_map[e] for e in sorted(elements)]
@@ -95,22 +120,52 @@ def search_sequences(
             first_chip=None,
         )
     ]
-    solve_cache: dict[Any, Any] = {}
-    ranking_pools = {}
-    ranking_maps = {}
-    for step, gw in enumerate(gameweeks):
-        frame = pools[gw].copy()
-        frame["expected_points"] = frame["element"].map(
-            {
-                e: sum(
-                    optimizer.discount_factor**j * float(maps[g].get(e, {}).get("expected_points", 0))
-                    for j, g in enumerate(gameweeks[step:])
-                )
-                for e in maps[gw]
-            }
-        )
-        ranking_pools[gw] = frame
-        ranking_maps[gw] = {int(row["element"]): dict(row) for _, row in frame.iterrows()}
+    # Squad solves depend only on the projections, locks and hit rules, so every
+    # chip/date search over the same inputs can reuse them.
+    solve_ctx = (
+        id(pools),
+        id(maps),
+        tuple(gameweeks),
+        optimizer.discount_factor,
+        frozenset(locked_in),
+        frozenset(locked_out),
+        frozenset(excluded),
+        risk,
+        max_hits_per_move,
+        hit_cooldown_until,
+        optimizer.hit_penalty,
+    )
+    held = _SOLVE_CACHES.get(solve_ctx)
+    if held is not None and held[0] is pools and held[1] is maps:
+        solve_cache = held[2]
+    else:
+        solve_cache = {}
+        if len(_SOLVE_CACHES) > 8:
+            _SOLVE_CACHES.clear()
+        _SOLVE_CACHES[solve_ctx] = (pools, maps, solve_cache)
+    shared_key = (id(pools), id(maps), tuple(gameweeks), optimizer.discount_factor)
+    shared = _RANKING_CACHE.get(shared_key)
+    if shared is not None and shared[0] is pools and shared[1] is maps:
+        ranking_pools, ranking_maps = shared[2], shared[3]
+    else:
+        ranking_pools = {}
+        ranking_maps = {}
+        for step, gw in enumerate(gameweeks):
+            frame = pools[gw].copy()
+            frame["expected_points"] = frame["element"].map(
+                {
+                    e: sum(
+                        optimizer.discount_factor**j * float(maps[g].get(e, {}).get("expected_points", 0))
+                        for j, g in enumerate(gameweeks[step:])
+                    )
+                    for e in maps[gw]
+                }
+            )
+            ranking_pools[gw] = frame
+            ranking_maps[gw] = {int(row["element"]): dict(row) for _, row in frame.iterrows()}
+        if len(_RANKING_CACHE) > 8:
+            _RANKING_CACHE.clear()
+        _RANKING_CACHE[shared_key] = (pools, maps, ranking_pools, ranking_maps)
     for step, gw in enumerate(gameweeks):
         next_states = []
         restructure_parents = {}
