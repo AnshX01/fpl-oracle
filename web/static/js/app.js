@@ -343,7 +343,7 @@ const app = createApp({
           badge = "Chip";
           tone = "warn";
         } else if (isRoll) {
-          title = `Save transfer (${t.ft_next_gw ?? "unknown"} next week)`;
+          title = "Save your transfer";
           badge = "Hold & Roll";
           tone = "info";
         } else {

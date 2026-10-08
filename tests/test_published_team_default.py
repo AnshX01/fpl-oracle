@@ -88,3 +88,29 @@ def test_update_team_endpoint_has_player_roster(configured_advisor, monkeypatch)
     roster = {p["element"]: p for p in result["players"]}
     assert all(p.element in roster for p in configured_advisor[0].squad)
     assert all(p["name"] and p["price"] > 0 for p in roster.values())
+
+
+def test_default_roll_keeps_current_bank_ft_and_adds_one_next_week(configured_advisor, monkeypatch):
+    from fpl_oracle.domain.team_confirmation import team_confirmation
+    from fpl_oracle.server.analysis import analysis_service
+
+    state, pool, horizon = configured_advisor
+    state.confirmation_required = True
+    monkeypatch.setattr(team_confirmation, "read", lambda mid: None)
+    monkeypatch.setattr(analysis_service, "league_context", AsyncMock(return_value=None))
+    result = asyncio.run(
+        analysis_service.joint_plan(
+            current_squad_df=pool,
+            player_pool_df=pool,
+            bank=state.bank_tenths,
+            free_transfers=state.free_transfers,
+            horizon_projections={6: horizon[6]},
+            target_gw=6,
+            current_gw=5,
+            available_chips=[],
+        )
+    )
+    plan = result["recommended_plan"]
+    assert plan["transfers_in"] == []
+    assert plan["remaining_bank"] == state.bank_millions
+    assert plan["next_banked_ft"] == min(5, state.free_transfers + 1)
