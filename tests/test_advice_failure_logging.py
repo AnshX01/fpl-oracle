@@ -25,6 +25,7 @@ def test_failure_trace_is_logged_with_type_but_secret_is_scrubbed(monkeypatch):
     logger = logging.getLogger("fpl_oracle.advice")
     logger.addHandler(handler)
     try:
+
         async def run():
             publisher = AdvicePublisher()
             publisher.start(profile_key(data_store.get_profile()))
@@ -32,6 +33,7 @@ def test_failure_trace_is_logged_with_type_but_secret_is_scrubbed(monkeypatch):
             assert publisher.public()["status"] == "failed"
             assert publisher.public()["error_type"] == "RuntimeError"
             assert secret not in str(publisher.public())
+
         asyncio.run(run())
     finally:
         logger.removeHandler(handler)

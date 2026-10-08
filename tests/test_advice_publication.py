@@ -213,14 +213,16 @@ def test_real_search_progress_reaches_publication_from_worker(monkeypatch):
             return dict(captain=dict(element=12))
 
         monkeypatch.setattr(api, "get_squad", squad)
-        monkeypatch.setattr(decision_card_generator, "generate_decision_card", AsyncMock(return_value=dict(captain=dict(element=12))))
+        monkeypatch.setattr(
+            decision_card_generator, "generate_decision_card", AsyncMock(return_value=dict(captain=dict(element=12)))
+        )
         monkeypatch.setattr(api, "get_contingency_plans", AsyncMock(return_value=dict(plan_a=dict(title="same"))))
         publisher = AdvicePublisher()
         publisher.start(profile_key(profile))
         for _ in range(100):
             if publisher.public().get("stage") == "Comparing chip dates (2 of 28)":
                 break
-            await asyncio.sleep(.005)
+            await asyncio.sleep(0.005)
         assert publisher.public()["stage"] == "Comparing chip dates (2 of 28)"
         assert publisher.public()["status"] == "calculating"
         release.set()
@@ -229,7 +231,6 @@ def test_real_search_progress_reaches_publication_from_worker(monkeypatch):
         assert search_progress.get() is None
 
     asyncio.run(run())
-
 
 
 def test_expired_source_is_revalidated_not_treated_as_changed(monkeypatch):
@@ -244,7 +245,9 @@ def test_expired_source_is_revalidated_not_treated_as_changed(monkeypatch):
         profile = SimpleNamespace(manager_id=1)
         monkeypatch.setattr(data_store, "get_profile", lambda: profile)
         monkeypatch.setattr(cache_manager, "get_with_meta", lambda key: None)
-        monkeypatch.setattr(fpl_client, "_source_requests", {"entry:1:history": ("entry/1/history/", 300)}, raising=False)
+        monkeypatch.setattr(
+            fpl_client, "_source_requests", {"entry:1:history": ("entry/1/history/", 300)}, raising=False
+        )
         calls = []
 
         async def fresh(endpoint, key, ttl, force_refresh=False):
@@ -260,7 +263,9 @@ def test_expired_source_is_revalidated_not_treated_as_changed(monkeypatch):
             return dict(captain=dict(element=12))
 
         monkeypatch.setattr(api, "get_squad", squad)
-        monkeypatch.setattr(decision_card_generator, "generate_decision_card", AsyncMock(return_value=dict(captain=dict(element=12))))
+        monkeypatch.setattr(
+            decision_card_generator, "generate_decision_card", AsyncMock(return_value=dict(captain=dict(element=12)))
+        )
         monkeypatch.setattr(api, "get_contingency_plans", AsyncMock(return_value=dict(plan_a=dict(title="same"))))
         publisher = AdvicePublisher()
         publisher.start(profile_key(profile))
