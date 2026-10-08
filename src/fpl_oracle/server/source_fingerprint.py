@@ -57,8 +57,26 @@ def decision_source(key, value):
             "teams": rows(value.get("teams"), TEAM_FIELDS),
             "events": rows(value.get("events"), EVENT_FIELDS),
             "chips": rows(value.get("chips")),
-            "positions": rows(value.get("element_types")),
-            "rules": {k: value.get(k) for k in ("game_settings", "game_config")},
+            "positions": rows(
+                value.get("element_types"),
+                ("id", "singular_name_short", "squad_select", "squad_min_play", "squad_max_play"),
+            ),
+            "rules": {
+                "settings": picked(
+                    value.get("game_settings") or {},
+                    (
+                        "squad_squadsize",
+                        "squad_squadplay",
+                        "squad_team_limit",
+                        "squad_total_spend",
+                        "transfers_sell_on_fee",
+                        "max_extra_free_transfers",
+                        "max_extra_transfers",
+                        "element_sell_at_purchase_price",
+                    ),
+                ),
+                "scoring": (value.get("game_config") or {}).get("scoring"),
+            },
         }
     if key.startswith("fixtures:") and isinstance(value, list):
         return rows(value, FIXTURE_FIELDS)
