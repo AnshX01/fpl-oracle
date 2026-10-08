@@ -194,3 +194,38 @@ def test_only_successful_core_saves_published_recommendation(monkeypatch):
         assert "confirmation_recommendation" not in publisher.public()["result"]["decisionCard"]
 
     asyncio.run(run())
+
+
+def test_real_search_progress_reaches_publication_from_worker(monkeypatch):
+    async def run():
+        from fpl_oracle.briefing.decision_card import decision_card_generator
+        from fpl_oracle.data.store import data_store
+        from fpl_oracle.optimise.progress import report_search_progress, search_progress
+        from fpl_oracle.server.routes import api
+
+        profile = SimpleNamespace(manager_id=1, target_league_id=None)
+        monkeypatch.setattr(data_store, "get_profile", lambda: profile)
+        release = asyncio.Event()
+
+        async def squad():
+            await asyncio.to_thread(report_search_progress, "Comparing chip dates (2 of 28)")
+            await release.wait()
+            return dict(captain=dict(element=12))
+
+        monkeypatch.setattr(api, "get_squad", squad)
+        monkeypatch.setattr(decision_card_generator, "generate_decision_card", AsyncMock(return_value=dict(captain=dict(element=12))))
+        monkeypatch.setattr(api, "get_contingency_plans", AsyncMock(return_value=dict(plan_a=dict(title="same"))))
+        publisher = AdvicePublisher()
+        publisher.start(profile_key(profile))
+        for _ in range(100):
+            if publisher.public().get("stage") == "Comparing chip dates (2 of 28)":
+                break
+            await asyncio.sleep(.005)
+        assert publisher.public()["stage"] == "Comparing chip dates (2 of 28)"
+        assert publisher.public()["status"] == "calculating"
+        release.set()
+        await publisher.task
+        assert publisher.public()["stage"] == "Ready"
+        assert search_progress.get() is None
+
+    asyncio.run(run())

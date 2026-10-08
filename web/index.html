@@ -89,7 +89,7 @@
           <ui-skeleton width="70%" height="36px"></ui-skeleton>
           <ui-skeleton width="100%" height="20px"></ui-skeleton>
           <ui-skeleton width="85%" height="20px"></ui-skeleton>
-          <p class="subtle">{{ adviceStage || 'Calculating recommendations' }}</p>
+          <p class="subtle" role="status" aria-live="polite" data-testid="advice-stage">{{ adviceStage || 'Checking your next move' }}</p>
         </div>
 
         <template v-else>

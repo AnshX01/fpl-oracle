@@ -1228,7 +1228,7 @@ const app = createApp({
         let job = await start.json();
         if (!job.id) throw new Error(job.reason || 'Advice job could not start');
         while (job.status === 'calculating') {
-          this.adviceStage = job.stage || 'Calculating shared advice';
+          this.adviceStage = job.stage || 'Checking your next move';
           await new Promise(resolve => setTimeout(resolve, 1500));
           if (generation !== this.snapshotGeneration) return;
           const response = await fetch(`/api/advice/status/${job.id}`);
