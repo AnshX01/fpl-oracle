@@ -48,8 +48,12 @@ class AnalysisService:
     async def projections(self, start_gw, horizon, bootstrap, fixtures):
         horizon = max(horizon, (20 if start_gw <= 19 else 39) - start_gw)
         pinned = publication_projections.get()
-        request_key = (start_gw, horizon, json.dumps(bootstrap.model_dump(mode="json"), sort_keys=True),
-                       json.dumps([f.model_dump(mode="json") for f in fixtures], sort_keys=True))
+        request_key = (
+            start_gw,
+            horizon,
+            json.dumps(bootstrap.model_dump(mode="json"), sort_keys=True),
+            json.dumps([f.model_dump(mode="json") for f in fixtures], sort_keys=True),
+        )
         if pinned is not None and request_key in pinned:
             return {gw: frame.copy(deep=True) for gw, frame in pinned[request_key].items()}
         async with self._projection_lock:
