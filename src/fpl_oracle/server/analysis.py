@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+from contextvars import ContextVar
 from datetime import UTC, datetime
 
 import numpy as np
@@ -11,6 +12,8 @@ import pandas as pd
 from fpl_oracle.ml.model_registry import model_registry
 from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.analyse import news_analyzer
+
+publication_projections = ContextVar("publication_projections", default=None)
 
 
 class AnalysisService:
@@ -44,6 +47,11 @@ class AnalysisService:
 
     async def projections(self, start_gw, horizon, bootstrap, fixtures):
         horizon = max(horizon, (20 if start_gw <= 19 else 39) - start_gw)
+        pinned = publication_projections.get()
+        request_key = (start_gw, horizon, json.dumps(bootstrap.model_dump(mode="json"), sort_keys=True),
+                       json.dumps([f.model_dump(mode="json") for f in fixtures], sort_keys=True))
+        if pinned is not None and request_key in pinned:
+            return {gw: frame.copy(deep=True) for gw, frame in pinned[request_key].items()}
         async with self._projection_lock:
             body = bootstrap.model_dump(mode="json")
             import time
@@ -111,6 +119,8 @@ class AnalysisService:
                 frame.attrs["snapshot_inputs_json"] = serialized_inputs
                 frame.attrs["snapshot_created_at"] = snapshot["created_at"]
                 result[g] = frame
+            if pinned is not None:
+                pinned[request_key] = {gw: frame.copy(deep=True) for gw, frame in result.items()}
             return result
 
     async def league_context(self, target_gw):
