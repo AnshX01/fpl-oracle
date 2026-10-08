@@ -142,8 +142,11 @@ class AdvicePublisher:
                             finally:
                                 read_context.reset(validation_token)
                     if live is None or live[0] != value:
-                        logger.warning("Advice source validation failed: key=%s outcome=%s", key,
-                                       "unverifiable" if live is None else "content_changed")
+                        logger.warning(
+                            "Advice source validation failed: key=%s outcome=%s",
+                            key,
+                            "unverifiable" if live is None else "content_changed",
+                        )
                         raise ValueError("Source content changed during calculation; refresh")
                 # Revalidation itself may take time; owner and model must still agree.
                 if profile_key(data_store.get_profile()) != original_key:
@@ -192,12 +195,19 @@ class AdvicePublisher:
             else:
                 self.expiry_task = asyncio.create_task(self.run_expiry(publication, cache_key))
         except Exception as error:
-            logger.exception("Advice job failed: type=%s stage=%s elapsed_seconds=%.1f",
-                             type(error).__name__, self.current.get("stage"),
-                             time.monotonic() - self.current["created"])
-            self.current.update(status="failed", stage="Calculation stopped",
-                                error="Could not prepare advice. Check the application log.",
-                                error_type=type(error).__name__, result=None)
+            logger.exception(
+                "Advice job failed: type=%s stage=%s elapsed_seconds=%.1f",
+                type(error).__name__,
+                self.current.get("stage"),
+                time.monotonic() - self.current["created"],
+            )
+            self.current.update(
+                status="failed",
+                stage="Calculation stopped",
+                error="Could not prepare advice. Check the application log.",
+                error_type=type(error).__name__,
+                result=None,
+            )
         finally:
             publication_projections.reset(projection_token)
             search_progress.reset(progress_token)
