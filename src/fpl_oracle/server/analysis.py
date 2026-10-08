@@ -361,12 +361,12 @@ class AnalysisService:
             from fastapi import HTTPException
 
             raise HTTPException(409, "Done. Next update after the deadline.")
-        if state.confirmation_required and not state.team_confirmed:
+        if state.confirmation_required and state.error_message:
             from fastapi import HTTPException
 
             raise HTTPException(
                 409,
-                state.error_message or "Team not confirmed.",
+                state.error_message,
             )
         if state.confirmation_required:
             from fastapi import HTTPException
