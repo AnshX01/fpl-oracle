@@ -22,6 +22,11 @@ import pandas as pd
 
 from fpl_oracle.config import PLANNER_HORIZON, SETTINGS
 from fpl_oracle.optimise.lineup import lineup_optimizer
+from fpl_oracle.rules.transfers import (
+    next_free_transfers,
+    sell_price,
+    validate_chip_legality,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,34 +48,6 @@ VALID_FORMATIONS = [
     (5, 4, 1),
     (5, 2, 3),
 ]
-
-
-def validate_chip_legality(
-    chip: str,
-    target_gw: int,
-    chips_already_used: set[str] | list[str] | None = None,
-) -> tuple[bool, str]:
-    """
-    Validates legality of chip deployment for target_gw according to 2026/27 rules:
-    - Legal chips: 3xc, bboost, freehit, wildcard
-    - Set 1 (GW 1-19) / Set 2 (GW 20-38)
-    - Set 1 chips expire after GW19 without carryover
-    - Exactly 1 deployment per set
-    """
-    chip_lower = chip.lower()
-    valid_chips = {"3xc", "bboost", "freehit", "wildcard"}
-    if chip_lower not in valid_chips:
-        return False, f"Unknown chip '{chip}'. Valid chips are: {sorted(valid_chips)}."
-
-    if target_gw < 1 or target_gw > 38:
-        return False, f"Invalid gameweek {target_gw}. Gameweeks must be between 1 and 38."
-
-    current_set = 1 if target_gw <= 19 else 2
-    used_set = set(c.lower() for c in (chips_already_used or []))
-    if chip_lower in used_set:
-        return False, f"Chip '{chip}' has already been deployed in Set {current_set}."
-
-    return True, f"Chip '{chip}' is legal for deployment in GW{target_gw} (Set {current_set})."
 
 
 def _fast_eval_squad_full(
@@ -253,10 +230,7 @@ class TransferOptimizer:
         Selling price rule: purchase_price + floor((now_cost - purchase_price) / 2)
         Prices in tenths (e.g. 100 = £10.0m).
         """
-        if now_cost > purchase_price:
-            profit = now_cost - purchase_price
-            return purchase_price + (profit // 2)
-        return now_cost
+        return sell_price(purchase_price, now_cost)
 
     def calculate_banked_free_transfers(self, history: Any) -> int:
         """
@@ -278,13 +252,8 @@ class TransferOptimizer:
             if index == 0:
                 # Initial deadline is unlimited; the following week starts at one FT.
                 banked = 1
-            elif active_chip in ("wildcard", "freehit"):
-                banked = banked
             else:
-                if transfers_made <= banked:
-                    banked = min(5, (banked - transfers_made) + 1)
-                else:
-                    banked = 1
+                banked, _ = next_free_transfers(banked, transfers_made, active_chip)
 
         return max(1, min(5, banked))
 
@@ -681,16 +650,9 @@ class TransferOptimizer:
             curr_purch[in_id] = initial_action["buy_costs"][in_id]
 
         transfers_count = len(t_in)
-        if is_wildcard or initial_action.get("plan_type") in ("FREE_HIT", "WILDCARD"):
-            hits0 = 0
-            next_ft0 = initial_ft
-        elif transfers_count <= initial_ft:
-            hits0 = 0
-            next_ft0 = min(5, (initial_ft - transfers_count) + 1)
-        else:
-            hits0 = transfers_count - initial_ft
-            next_ft0 = 1
-
+        active_chip = "wildcard" if (is_wildcard or initial_action.get("plan_type") in ("FREE_HIT", "WILDCARD")) else None
+        next_ft0, hit_points0 = next_free_transfers(initial_ft, transfers_count, chip=active_chip)
+        hits0 = hit_points0 // 4
         hit_cost0 = hits0 * self.hit_penalty
         xp0, cap0, form0 = _fast_eval_squad_formation(curr_elements, pmap0, risk_preference=risk_preference)
         net_xp0 = xp0 - hit_cost0
@@ -742,6 +704,7 @@ class TransferOptimizer:
                 xp_roll, cap_roll, form_roll = _fast_eval_squad_formation(
                     state["elements"], pmap, risk_preference=risk_preference
                 )
+                roll_ft, _ = next_free_transfers(state["banked_ft"], 0)
                 roll_rec = {
                     "gameweek": gw,
                     "transfers_in": [],
@@ -754,14 +717,14 @@ class TransferOptimizer:
                     "captain": cap_roll,
                     "formation": form_roll,
                     "bank": state["bank"],
-                    "banked_ft": min(5, state["banked_ft"] + 1),
+                    "banked_ft": roll_ft,
                 }
                 next_beam.append(
                     {
                         "elements": set(state["elements"]),
                         "bank": state["bank"],
                         "purchase_prices": dict(state["purchase_prices"]),
-                        "banked_ft": min(5, state["banked_ft"] + 1),
+                        "banked_ft": roll_ft,
                         "history": state["history"] + [roll_rec],
                         "total_hits": state["total_hits"],
                         "total_gross_xp": state["total_gross_xp"] + xp_roll,
@@ -794,14 +757,8 @@ class TransferOptimizer:
                     for in_id in s_in:
                         new_purch[in_id] = m["buy_costs"][in_id]
 
-                    curr_ft = state["banked_ft"]
-                    if curr_ft >= 1:
-                        hits = 0
-                        n_ft = min(5, (curr_ft - 1) + 1)
-                    else:
-                        hits = 1
-                        n_ft = 1
-
+                    n_ft, hit_points = next_free_transfers(state["banked_ft"], 1)
+                    hits = hit_points // 4
                     h_cost = hits * self.hit_penalty
                     xp_m, cap_m, form_m = _fast_eval_squad_formation(new_elems, pmap, risk_preference=risk_preference)
                     net_m = xp_m - h_cost
@@ -1014,7 +971,7 @@ class TransferOptimizer:
             "net_expected_points": round(base_xp, 2),
             "expected_gain": 0.0,
             "remaining_bank": round(initial_bank / 10.0, 2),
-            "next_banked_ft": min(5, free_transfers + 1),
+            "next_banked_ft": next_free_transfers(free_transfers, 0)[0],
             "lineup": curr_lineup,
             "horizon_gross_xp": round(roll_traj["total_gross_xp"], 2),
             "horizon_hits": roll_traj["total_hits"],
@@ -1026,7 +983,7 @@ class TransferOptimizer:
             "price_movement_gain": 0.0,
             "robustness_score": 1.0,
             "is_no_regret": True,
-            "recommendation_summary": f"Roll transfer. Bank {min(5, free_transfers + 1)} free transfers for next gameweek.",
+            "recommendation_summary": f"Roll transfer. Bank {next_free_transfers(free_transfers, 0)[0]} free transfers for next gameweek.",
             "trajectory": roll_traj["history"],
         }
 
@@ -1117,7 +1074,7 @@ class TransferOptimizer:
                 "net_expected_points": round(net_trial_xp, 2),
                 "expected_gain": gw_gain,
                 "remaining_bank": round((initial_bank + m["bank_delta"]) / 10.0, 2),
-                "next_banked_ft": min(5, max(1, free_transfers)),
+                "next_banked_ft": next_free_transfers(free_transfers, 1)[0],
                 "lineup": trial_lineup,
                 "horizon_gross_xp": round(traj["total_gross_xp"], 2),
                 "horizon_hits": traj["total_hits"],
@@ -1224,7 +1181,7 @@ class TransferOptimizer:
                 "net_expected_points": round(net_trial2_xp, 2),
                 "expected_gain": gw_gain_2,
                 "remaining_bank": round((initial_bank + m["bank_delta"]) / 10.0, 2),
-                "next_banked_ft": 1,
+                "next_banked_ft": next_free_transfers(free_transfers, 2)[0],
                 "lineup": trial2_lineup,
                 "horizon_gross_xp": round(traj["total_gross_xp"], 2),
                 "horizon_hits": traj["total_hits"],

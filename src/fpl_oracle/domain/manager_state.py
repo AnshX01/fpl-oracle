@@ -152,27 +152,19 @@ class EffectiveManagerState(BaseModel):
 class ManagerStateService:
     @staticmethod
     def calculate_selling_price(purchase_price: int, now_cost: int) -> int:
-        """
-        Official FPL Selling Price rule:
-        retains 50% of price rise rounded down.
-        selling_price = purchase_price + floor((now_cost - purchase_price) / 2) if now_cost > purchase_price else now_cost
-        """
-        if now_cost > purchase_price:
-            profit = now_cost - purchase_price
-            return purchase_price + (profit // 2)
-        return now_cost
+        from fpl_oracle.rules.transfers import sell_price
+        return sell_price(purchase_price, now_cost)
 
     @staticmethod
     def calculate_banked_free_transfers(history_current: list[Any], chips_history: list[Any] | None = None) -> int:
         """
         Replay free transfer banking from Gameweek 1 through current round.
-        Rules verified for 2026/27:
-        - Initial deadline unlimited; one FT is granted for the following gameweek.
-        - Wildcard and Free Hit preserve banked FTs unchanged for the next round.
-        - Normal gameweek: remaining = max(0, banked - transfers_made), next_banked = min(5, remaining + 1).
+        Uses centralised rules.transfers next_free_transfers state machine.
         """
         if not history_current:
             return 1
+
+        from fpl_oracle.rules.transfers import next_free_transfers
 
         entries = sorted(
             history_current, key=lambda e: getattr(e, "event", 0) if not isinstance(e, dict) else e.get("event", 0)
@@ -195,14 +187,8 @@ class ManagerStateService:
             if index == 0:
                 # Initial deadline is unlimited; the following week starts at one FT.
                 banked = 1
-            elif active_chip in ("wildcard", "freehit"):
-                banked = banked
             else:
-                if transfers_made <= banked:
-                    remaining = banked - transfers_made
-                else:
-                    remaining = 0
-                banked = min(5, remaining + 1)
+                banked, _ = next_free_transfers(banked, transfers_made, active_chip)
 
         return max(1, min(5, banked))
 

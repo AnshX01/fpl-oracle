@@ -25,6 +25,13 @@ from fpl_oracle.rules.scoring import (
     YELLOW_CARD_POINTS,
     calculate_match_points,
 )
+from fpl_oracle.rules.transfers import (
+    TransferStateConfig,
+    next_free_transfers,
+    sell_price,
+    sell_price_millions,
+    validate_chip_legality,
+)
 
 __all__ = [
     "APPEARANCE_GE60",
@@ -45,6 +52,11 @@ __all__ = [
     "RED_CARD_POINTS",
     "SAVES_PER_PLUS1",
     "SET_1_LAST_GW",
+    "TransferStateConfig",
     "YELLOW_CARD_POINTS",
     "calculate_match_points",
+    "next_free_transfers",
+    "sell_price",
+    "sell_price_millions",
+    "validate_chip_legality",
 ]
