@@ -8,6 +8,23 @@ import math
 from typing import Any
 
 
+from fpl_oracle.rules.scoring import (
+    APPEARANCE_GE60,
+    APPEARANCE_LT60,
+    ASSIST_POINTS,
+    CLEAN_SHEET_POINTS,
+    DEFCON_POINTS,
+    GOAL_POINTS,
+    GOALS_CONCEDED_PER_MINUS1,
+    OWN_GOAL_POINTS,
+    PENALTY_MISS_POINTS,
+    PENALTY_SAVE_POINTS,
+    RED_CARD_POINTS,
+    SAVES_PER_PLUS1,
+    YELLOW_CARD_POINTS,
+)
+
+
 def calculate_match_points(
     position: str,  # "GKP", "DEF", "MID", "FWD"
     minutes: int,
@@ -34,50 +51,40 @@ def calculate_match_points(
 
     # 1. Appearance
     if minutes >= 60:
-        pts += 2
+        pts += APPEARANCE_GE60
     elif minutes > 0:
-        pts += 1
+        pts += APPEARANCE_LT60
 
     # 2. Goals scored
-    if pos == "GKP":
-        pts += goals_scored * 10
-    elif pos == "DEF":
-        pts += goals_scored * 6
-    elif pos == "MID":
-        pts += goals_scored * 5
-    elif pos == "FWD":
-        pts += goals_scored * 4
+    pts += goals_scored * GOAL_POINTS.get(pos, 4)
 
     # 3. Assists (3 pts for all positions)
-    pts += assists * 3
+    pts += assists * ASSIST_POINTS
 
     # 4. Clean Sheet (only if played >= 60 minutes)
     if clean_sheet and minutes >= 60:
-        if pos in ("GKP", "DEF"):
-            pts += 4
-        elif pos == "MID":
-            pts += 1
+        pts += CLEAN_SHEET_POINTS.get(pos, 0)
 
     # 5. Goals Conceded (-1 per 2 goals for GKP and DEF)
-    if pos in ("GKP", "DEF"):
-        pts -= goals_conceded // 2
+    if pos in GOALS_CONCEDED_PER_MINUS1:
+        pts -= goals_conceded // GOALS_CONCEDED_PER_MINUS1[pos]
 
     # 6. Saves (1 pt per 3 saves for GKP)
     if pos == "GKP":
-        pts += saves // 3
+        pts += saves // SAVES_PER_PLUS1
 
     # 7. Penalties
-    pts += penalties_saved * 5
-    pts -= penalties_missed * 2
+    pts += penalties_saved * PENALTY_SAVE_POINTS
+    pts += penalties_missed * PENALTY_MISS_POINTS
 
     # 8. Disciplinary & Own Goals
-    pts -= yellow_cards * 1
-    pts -= red_cards * 3
-    pts -= own_goals * 2
+    pts += yellow_cards * YELLOW_CARD_POINTS
+    pts += red_cards * RED_CARD_POINTS
+    pts += own_goals * OWN_GOAL_POINTS
 
     # 9. Defensive Contribution (DefCon +2 for DEF, MID, FWD)
     if defensive_contribution and pos in ("DEF", "MID", "FWD"):
-        pts += 2
+        pts += DEFCON_POINTS
 
     # 10. Bonus
     pts += bonus
@@ -143,12 +150,12 @@ def calculate_expected_fixture_points(
     app_pts = p_min60 * 2.0 + p_sub * 1.0
 
     # Attacking returns
-    goal_rate = {"GKP": 10.0, "DEF": 6.0, "MID": 5.0, "FWD": 4.0}.get(pos, 5.0)
+    goal_rate = float(GOAL_POINTS.get(pos, 4))
     goal_pts = expected_goals * goal_rate
-    assist_pts = expected_assists * 3.0
+    assist_pts = expected_assists * float(ASSIST_POINTS)
 
     # Clean sheet: requires 60+ minutes
-    cs_rate = {"GKP": 4.0, "DEF": 4.0, "MID": 1.0, "FWD": 0.0}.get(pos, 0.0)
+    cs_rate = float(CLEAN_SHEET_POINTS.get(pos, 0))
     cs_pts = p_clean_sheet * p_min60 * cs_rate
 
     # Goals conceded deduction (-1 per 2 goals for GKP/DEF)
