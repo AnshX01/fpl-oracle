@@ -9,7 +9,7 @@ minutes:
   min_minutes_for_clean_sheet: 60 # Player must be on the pitch >= 60 mins to earn clean sheet
 
 goals_scored:
-  GKP: 10
+  GKP: 6
   DEF: 6
   MID: 5
   FWD: 4

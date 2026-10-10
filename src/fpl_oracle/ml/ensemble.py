@@ -14,6 +14,13 @@ from sklearn.metrics import mean_absolute_error
 
 from fpl_oracle.config import MODELS_DIR
 from fpl_oracle.domain.scoring import expected_floor_div
+from fpl_oracle.rules.scoring import (
+    ASSIST_POINTS,
+    CLEAN_SHEET_POINTS,
+    DEFCON_POINTS,
+    GOAL_POINTS,
+    PENALTY_SAVE_POINTS,
+)
 
 
 class ScoringEnsemble:
@@ -208,14 +215,24 @@ class ScoringEnsemble:
         pos_fwd = X.get("pos_FWD", pd.Series(np.zeros(n), index=X.index)).values
 
         # 2. Goals scored points
-        goal_pts_rate = pos_gkp * 10.0 + pos_def * 6.0 + pos_mid * 5.0 + pos_fwd * 4.0
+        goal_pts_rate = (
+            pos_gkp * float(GOAL_POINTS["GKP"])
+            + pos_def * float(GOAL_POINTS["DEF"])
+            + pos_mid * float(GOAL_POINTS["MID"])
+            + pos_fwd * float(GOAL_POINTS["FWD"])
+        )
         exp_goal_pts = components["expected_goals"] * goal_pts_rate * cop_scale
 
-        # 3. Assists points (3 pts across all positions)
-        exp_assist_pts = components["expected_assists"] * 3.0 * cop_scale
+        # 3. Assists points
+        exp_assist_pts = components["expected_assists"] * float(ASSIST_POINTS) * cop_scale
 
         # 4. Clean sheet points (requires >= 60 mins)
-        cs_pts_rate = pos_gkp * 4.0 + pos_def * 4.0 + pos_mid * 1.0 + pos_fwd * 0.0
+        cs_pts_rate = (
+            pos_gkp * float(CLEAN_SHEET_POINTS["GKP"])
+            + pos_def * float(CLEAN_SHEET_POINTS["DEF"])
+            + pos_mid * float(CLEAN_SHEET_POINTS["MID"])
+            + pos_fwd * float(CLEAN_SHEET_POINTS["FWD"])
+        )
         exp_cs_pts = components["p_clean_sheet"] * p_min60 * cs_pts_rate
 
         # 5. Goals conceded deductions (-1 pt per 2 goals conceded for DEF/GKP)
@@ -233,7 +250,7 @@ class ScoringEnsemble:
 
         # 7. Defensive Contribution (DefCon +2 for DEF, MID, FWD)
         defcon_eligible = 1.0 - pos_gkp
-        exp_defcon_pts = components["p_defcon"] * p_play * 2.0 * defcon_eligible
+        exp_defcon_pts = components["p_defcon"] * p_play * float(DEFCON_POINTS) * defcon_eligible
 
         # 8. Disciplinary deductions (trained on real card labels)
         exp_card_deduction = components["expected_card_deduction"] * cop_scale

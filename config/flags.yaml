@@ -1,0 +1,13 @@
+# FPL Oracle Feature Flags
+# Feature-flag behavioural changes that alter recommendations.
+# Default OFF until the work item's acceptance gate passes, then ON.
+
+flags:
+  multiperiod_milp: false
+  proper_dixon_coles: false
+  odds_blended_expectancy: false
+  cqr_quantiles: false
+  scoreline_simulator: false
+  staged_ft_chip_planner: false
+  squad_health_diagnosis: false
+  efficient_frontier_advisor: false
