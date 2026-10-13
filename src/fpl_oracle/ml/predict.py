@@ -22,7 +22,7 @@ from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.defending import DefendingModel
 from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import scoring_ensemble
-from fpl_oracle.ml.model_registry import model_registry
+from fpl_oracle.ml.model_registry import ModelBundleCorruptError, model_registry
 
 logger = logging.getLogger("fpl_oracle.predict")
 
@@ -52,29 +52,36 @@ class ProjectionEngine:
             (self.cards_saves_model, self.models_dir / "cards_saves_model.pkl"),
         ]
 
-        all_exist = all(p.exists() for _, p in weights)
-        if all_exist:
-            logger.info("Loading pre-trained component models from disk...")
-            try:
-                model_registry.verify_weight_integrity(self.models_dir)
-                for model, path in weights:
-                    loaded = model.load(path)
-                    model.__dict__.update(loaded.__dict__)
-                if not scoring_ensemble.load_calibration(self.models_dir / "calibration.json"):
-                    raise ValueError("Verified model calibration could not be loaded")
-                self.loaded_version = model_registry.get_active_version().get("version")
-                self._cache.clear()
-                self.is_loaded = True
-                return
-            except ValueError as ve:
-                logger.error(f"[ModelIntegrity] Weight verification failed: {ve}")
-                raise
-            except Exception as e:
-                logger.warning(f"Error loading existing model bundle: {e}")
+        logger.info("Loading pre-trained component models from disk...")
+        try:
+            model_registry.verify_weight_integrity(self.models_dir)
+        except ModelBundleCorruptError:
+            raise
+        except Exception as e:
+            logger.error(f"[ModelIntegrity] Weight verification failed: {e}. Initiating quarantine and rollback...")
+            model_registry.quarantine_and_recover(self.models_dir, reason=str(e))
 
-        raise RuntimeError(
-            "Model bundle unavailable. Serving never retrains implicitly; run explicit candidate training."
-        )
+        try:
+            for model, path in weights:
+                loaded = model.load(path)
+                model.__dict__.update(loaded.__dict__)
+            if not scoring_ensemble.load_calibration(self.models_dir / "calibration.json"):
+                raise ValueError("Verified model calibration could not be loaded")
+            self.loaded_version = model_registry.get_active_version().get("version")
+            self._cache.clear()
+            self.is_loaded = True
+            return
+        except Exception as e:
+            logger.critical(f"[ModelIntegrity] Unreadable bundle weights during load: {e}. Initiating quarantine and rollback...")
+            model_registry.quarantine_and_recover(self.models_dir, reason=f"Unreadable weights: {e}")
+            for model, path in weights:
+                loaded = model.load(path)
+                model.__dict__.update(loaded.__dict__)
+            scoring_ensemble.load_calibration(self.models_dir / "calibration.json")
+            self.loaded_version = model_registry.get_active_version().get("version")
+            self._cache.clear()
+            self.is_loaded = True
+            return
 
     @bundle_locked
     def train(self, X: pd.DataFrame, Y: pd.DataFrame):
@@ -337,11 +344,12 @@ class ProjectionEngine:
         trained_iso = datetime.fromtimestamp(latest_mtime, tz=UTC).isoformat() if latest_mtime else None
 
         return {
-            "version": "v1.0.0-lgbm-2026/27",
+            "version": self.loaded_version or "v1.0.0-lgbm-2026/27",
             "is_loaded": self.is_loaded,
             "components_ready": f"{len(existing)}/{len(weights)}",
             "all_components_present": len(existing) == len(weights),
             "last_trained_timestamp": trained_iso,
+            "recovery_event": model_registry.get_last_recovery_event(),
         }
 
 
