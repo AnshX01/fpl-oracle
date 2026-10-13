@@ -8,11 +8,14 @@ Supports API-Only, Shadow, and Gated-Active modes.
 
 import json
 import logging
+import re
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.config import (
+    CONFIG_DIR,
     NEWS_GATE_MAX_FALSE_RULED_OUT,
     NEWS_GATE_MIN_PRECISION,
     NEWS_GATE_MIN_RECALL,
@@ -27,6 +30,67 @@ from fpl_oracle.news.models import (
 )
 
 logger = logging.getLogger("fpl_oracle.news.reconcile")
+
+DEFAULT_TRUSTED_PUBLISHERS = [
+    "bbc.co.uk",
+    "bbci.co.uk",
+    "theguardian.com",
+    "skysports.com",
+    "talksport.com",
+    "premierleague.com",
+    "theathletic.com",
+]
+
+
+def get_trusted_publishers() -> list[str]:
+    """Load trusted publisher domains from config/news_sources.yaml."""
+    try:
+        import yaml
+
+        cfg_path = CONFIG_DIR / "news_sources.yaml"
+        if cfg_path.exists():
+            data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            trusted = data.get("trusted_publishers")
+            if isinstance(trusted, list) and trusted:
+                return [str(p).lower().strip() for p in trusted]
+    except Exception as e:
+        logger.debug(f"Could not load trusted_publishers from yaml: {e}")
+    return list(DEFAULT_TRUSTED_PUBLISHERS)
+
+
+def extract_publisher_domain(url: str | None) -> str:
+    """Extract and normalize canonical publisher domain from an article URL."""
+    if not url:
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.netloc.lower().split(":")[0]
+        for p in get_trusted_publishers():
+            if host == p or host.endswith("." + p):
+                return p
+        return host
+    except Exception:
+        return ""
+
+
+def is_safe_quote(quote: str | None) -> tuple[bool, str]:
+    """Validate quote span against HTML comment injection, prompt override, and homoglyphs."""
+    if not quote or not str(quote).strip():
+        return False, "Empty quote"
+    q_str = str(quote)
+    if "<" in q_str or ">" in q_str:
+        if any(tag in q_str.lower() for tag in ["<!--", "-->", "<script", "</script>", "<span", "<div"]):
+            return False, "HTML comment or markup injection detected in quote"
+    lower_q = q_str.lower()
+    if any(
+        kw in lower_q
+        for kw in ["system override", "ignore previous", "ignore all previous", "mandatory priority override"]
+    ):
+        return False, "Adversarial prompt injection keywords detected in quote"
+    for ch in q_str:
+        if ch in ("\u200b", "\u200c", "\u200d", "\ufeff"):
+            return False, "Zero-width hidden characters detected in quote"
+    return True, "Safe"
 
 
 def check_news_benchmark_gate(
@@ -186,7 +250,23 @@ class AvailabilityReconciler:
                 e for e in candidate_evidence if e.player_id == elem_id and e.target_gw in (None, target_gw)
             ]
 
+            trusted_publishers = get_trusted_publishers()
             for ev in player_evidences:
+                # 1. Quote safety verification (HTML comments, prompt injection, homoglyphs)
+                safe_q, safety_reason = is_safe_quote(ev.quote)
+                if not safe_q:
+                    rejected_signals.append(f"Unsafe quote rejected ({safety_reason}): '{ev.quote[:40]}'")
+                    continue
+
+                # 2. Publisher allowlist verification in Gated-Active mode
+                domain = extract_publisher_domain(ev.source_url)
+                is_allowlisted = domain in trusted_publishers
+                if self.mode == RecommendationMode.GATED_ACTIVE and not is_allowlisted:
+                    rejected_signals.append(
+                        f"Source domain '{domain}' not in publisher allowlist; override rejected in Gated-Active mode"
+                    )
+                    continue
+
                 # Filter out cup-only quotes for Premier League planning
                 if ev.match_context and any(
                     cup in ev.match_context.lower() for cup in ["carabao", "fa cup", "champions league", "europa"]
@@ -212,13 +292,44 @@ class AvailabilityReconciler:
                 source_url = ev.source_url
 
                 if ev.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE):
-                    # Explicit manager ruled out statement
-                    is_shadow_override = True
-                    effective_cop = 0.0
-                    p_avail = 0.0
-                    p_start_given_avail = 0.0
-                    reconciliation_reason = f"Candidate Evidence: Manager ruled out player ('{ev.quote[:50]}...')"
-                    break
+                    # In Gated-Active mode, override to 0% requires corroboration from two independent allowlisted sources
+                    distinct_publishers = set()
+                    seen_snippets = set()
+                    for other in player_evidences:
+                        if (
+                            other.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE)
+                            and not other.is_negated
+                        ):
+                            o_safe, _ = is_safe_quote(other.quote)
+                            if not o_safe:
+                                continue
+                            o_dom = extract_publisher_domain(other.source_url)
+                            if self.mode == RecommendationMode.GATED_ACTIVE and o_dom not in trusted_publishers:
+                                continue
+                            norm_snippet = " ".join(re.findall(r"\w+", (other.quote or "").lower()[:60]))
+                            if o_dom and norm_snippet not in seen_snippets:
+                                distinct_publishers.add(o_dom)
+                                seen_snippets.add(norm_snippet)
+
+                    if self.mode == RecommendationMode.GATED_ACTIVE and len(distinct_publishers) < 2:
+                        # Single uncorroborated allowlisted source: cap at 25% and flag it!
+                        is_shadow_override = True
+                        effective_cop = min(baseline_cop, 25.0)
+                        p_avail = min(baseline_p_avail, 0.25)
+                        p_start_given_avail = 0.0
+                        reconciliation_reason = (
+                            f"Candidate Evidence: Single uncorroborated allowlisted source; "
+                            f"availability capped at {effective_cop:.0f}% ('{ev.quote[:50]}...')"
+                        )
+                        break
+                    else:
+                        # Corroborated by 2+ independent allowlisted sources (or in Shadow mode)
+                        is_shadow_override = True
+                        effective_cop = 0.0
+                        p_avail = 0.0
+                        p_start_given_avail = 0.0
+                        reconciliation_reason = f"Candidate Evidence: Manager ruled out player ('{ev.quote[:50]}...')"
+                        break
 
                 elif ev.category == EvidenceCategory.MINUTES_LIMIT:
                     is_shadow_override = True
