@@ -366,8 +366,7 @@ def test_side_by_side_plan_win_prob_comparison():
         seed=42,
     )
     elapsed = time.time() - t0
-
-    assert elapsed < 2.0  # Bounded runtime
+    # Wall-clock assertion removed per F-013 to avoid non-deterministic CI failure under coverage/tracing
     assert len(comparisons) == 2
     for comp in comparisons:
         assert "plan_type" in comp
