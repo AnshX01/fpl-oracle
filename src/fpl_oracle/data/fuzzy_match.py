@@ -40,16 +40,47 @@ def clean_query(text: str) -> str:
 
 class FuzzyPlayerMatcher:
     def match_single_name(
-        self, query: str, elements: list[Element], team_map: dict[int, str] | None = None
+        self,
+        query: str,
+        elements: list[Element],
+        team_map: dict[int, str] | None = None,
+        club: str | int | None = None,
+        position: str | int | None = None,
     ) -> dict[str, Any]:
         """
-        Fuzzy match a single player name string against element candidates.
+        Fuzzy match a single player name string against element candidates with
+        club and position disambiguation and shared surname collision resolution (F-010).
         """
+        # Extract potential club or position hints from query if not explicitly passed
+        club_hint = str(club).lower().strip() if club is not None else None
+        if club_hint is None:
+            match_paren = re.search(r"[\(\[](.*?)[\)\]]", query)
+            if match_paren:
+                cand_tag = match_paren.group(1).strip().lower()
+                if team_map and any(cand_tag == str(t_name).lower() for t_name in team_map.values()):
+                    club_hint = cand_tag
+
+        pos_hint = str(position).upper().strip() if position is not None else None
+        if pos_hint is None:
+            pos_match = re.search(r"\b(GKP|DEF|MID|FWD|GK)\b", query, flags=re.IGNORECASE)
+            if pos_match:
+                found_pos = pos_match.group(1).upper()
+                pos_hint = "GKP" if found_pos == "GK" else found_pos
+
         cleaned = clean_query(query)
         if not cleaned:
             return {"query": query, "matched": None, "confidence": 0.0, "alternatives": []}
 
         cleaned_norm = strip_accents(cleaned).lower()
+
+        # Check how many candidates share this exact surname in elements list
+        surname_matches = [
+            e
+            for e in elements
+            if strip_accents(str(e.second_name or "")).lower() == cleaned_norm
+            or strip_accents(e.web_name).lower() == cleaned_norm
+        ]
+        has_surname_collision = len(surname_matches) > 1
 
         scored_candidates = []
         for elem in elements:
@@ -58,25 +89,47 @@ class FuzzyPlayerMatcher:
             second_name_norm = strip_accents(str(elem.second_name or "")).lower()
             full_name_norm = f"{first_name_norm} {second_name_norm}"
 
-            # Exact matching
-            if cleaned_norm in (web_name_norm, second_name_norm, full_name_norm):
+            team_name = (team_map.get(elem.team, "") if team_map else "").lower()
+            elem_pos = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}.get(elem.element_type, "MID")
+            matches_club = bool(club_hint and (club_hint == team_name or club_hint == str(elem.team).lower()))
+            matches_pos = bool(pos_hint and pos_hint == elem_pos)
+
+            # 1. Exact full name or web name match
+            if cleaned_norm in (full_name_norm, web_name_norm):
                 score = 1.0
+            # 2. Surname-only query
+            elif cleaned_norm == second_name_norm:
+                if has_surname_collision:
+                    if matches_club:
+                        score = 0.95
+                    elif club_hint:
+                        score = 0.20
+                    elif matches_pos:
+                        score = 0.90
+                    elif pos_hint:
+                        score = 0.20
+                    else:
+                        # Ambiguity penalty for shared surnames without resolving context
+                        score = 0.40
+                else:
+                    score = 0.95
             else:
                 r1 = difflib.SequenceMatcher(None, cleaned_norm, web_name_norm).ratio()
                 r2 = difflib.SequenceMatcher(None, cleaned_norm, full_name_norm).ratio()
                 r3 = difflib.SequenceMatcher(None, cleaned_norm, second_name_norm).ratio()
 
-                # Substring bonus: e.g. "Salah" in "Mohamed Salah"
-                if cleaned_norm == second_name_norm or cleaned_norm in web_name_norm:
-                    score = max(r1, r2, r3, 0.95)
-                elif cleaned_norm in full_name_norm:
+                if cleaned_norm in full_name_norm:
                     score = max(r1, r2, r3, 0.90)
                 else:
                     score = max(r1, r2, r3)
 
-            if score >= 0.40:
+                if matches_club:
+                    score = min(1.0, score + 0.15)
+                elif club_hint and score > 0.4:
+                    score = max(0.1, score - 0.25)
+
+            if score >= 0.30:
                 team_short = team_map.get(elem.team, str(elem.team)) if team_map else str(elem.team)
-                pos_str = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}.get(elem.element_type, "MID")
                 scored_candidates.append(
                     {
                         "element": elem.id,
@@ -84,7 +137,7 @@ class FuzzyPlayerMatcher:
                         "full_name": f"{elem.first_name} {elem.second_name}",
                         "team": elem.team,
                         "team_short": team_short,
-                        "position": pos_str,
+                        "position": elem_pos,
                         "cost": round(elem.now_cost / 10.0, 1),
                         "score": round(score, 2),
                     }
@@ -92,7 +145,23 @@ class FuzzyPlayerMatcher:
 
         scored_candidates.sort(key=lambda x: float(str(x["score"])), reverse=True)
 
+        # Check for unresolved ambiguity (e.g. top candidates tied or below confidence threshold)
         if scored_candidates and float(str(scored_candidates[0]["score"])) >= 0.55:
+            # If top 2 candidates have tied scores due to ambiguous collision, drop item
+            if (
+                len(scored_candidates) > 1
+                and scored_candidates[0]["score"] == scored_candidates[1]["score"]
+                and has_surname_collision
+            ):
+                return {
+                    "query": query,
+                    "cleaned": cleaned,
+                    "matched": None,
+                    "confidence": scored_candidates[0]["score"],
+                    "alternatives": scored_candidates[:4],
+                    "ambiguity_detected": True,
+                }
+
             best = scored_candidates[0]
             alts = scored_candidates[1:5]
             return {
@@ -107,8 +176,9 @@ class FuzzyPlayerMatcher:
                 "query": query,
                 "cleaned": cleaned,
                 "matched": None,
-                "confidence": 0.0,
+                "confidence": scored_candidates[0]["score"] if scored_candidates else 0.0,
                 "alternatives": scored_candidates[:4],
+                "ambiguity_detected": has_surname_collision,
             }
 
     def extract_names_from_raw(self, raw_input: str | list[Any]) -> list[str]:
