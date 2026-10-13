@@ -30,10 +30,12 @@ class LineupOptimizer:
         is_bench_boost: bool = False,
         risk_preference: str = "balanced",
         excluded_ids: set[int] | None = None,
+        downside_risk_lambda: float = 0.20,
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
         Considers P10 floor and P90 ceiling distributions for risk-aware captaincy recommendations.
+        Modulates starter objective for conservative and aggressive risk postures.
         """
         if len(squad_df) != 15:
             raise ValueError(f"Squad must have exactly 15 players, got {len(squad_df)}")
@@ -62,9 +64,27 @@ class LineupOptimizer:
         else:  # balanced
             cap_scores = df["expected_points"] * 0.70 + p90_vals * 0.30
 
+        # Starter score based on risk preference:
+        if risk_preference == "conservative":
+            spread = p90_vals - p10_vals
+            cop_penalty = pd.Series(0.0, index=df.index)
+            if "chance_of_playing" in df.columns:
+                cop = pd.to_numeric(df["chance_of_playing"], errors="coerce").fillna(100.0)
+                cop_penalty = (100.0 - cop).clip(lower=0.0) / 100.0 * 2.0
+            elif "chance_of_playing_next_round" in df.columns:
+                cop = pd.to_numeric(df["chance_of_playing_next_round"], errors="coerce").fillna(100.0)
+                cop_penalty = (100.0 - cop).clip(lower=0.0) / 100.0 * 2.0
+            starter_scores = df["expected_points"] - (downside_risk_lambda * spread) - cop_penalty
+        elif risk_preference == "aggressive":
+            # Aggressive mode prioritizes ceiling / P90 upside
+            starter_scores = df["expected_points"] * 0.70 + p90_vals * 0.30
+        else:
+            # Balanced and points modes are numerically identical to existing baseline
+            starter_scores = df["expected_points"]
+
         prob += pulp.lpSum(
             [
-                df.loc[i, "expected_points"] * starter[i] + cap_scores.loc[i] * (cap_multiplier - 1.0) * captain[i]
+                starter_scores.loc[i] * starter[i] + cap_scores.loc[i] * (cap_multiplier - 1.0) * captain[i]
                 for i in df.index
             ]
         )
