@@ -26,6 +26,7 @@ htmlcov/
 *.sqlite
 *.sqlite3
 data/profile.json
+data/cache/
 data/cache/*
 data/snapshots/*
 !data/cache/.gitkeep
