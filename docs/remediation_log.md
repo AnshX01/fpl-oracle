@@ -57,7 +57,7 @@ Per finding: commit hash, test name, before and after execution output, configur
 
 ## F-006: Automatic Checkpoint Rollback on Corrupt Bundle
 
-- **Commit**: (Pending commit) `F-006: Add automatic model quarantine and rollback recovery`
+- **Commit**: `6dfcf32` (`F-006: Automatic quarantine and rollback on corrupt model bundle`)
 - **Test Name**: `tests/test_f006_f008_bundle_recovery_and_lock.py::test_corrupt_bundle_auto_recovers_to_previous_version`, `tests/test_f006_f008_bundle_recovery_and_lock.py::test_no_valid_version_raises_clear_error_not_raw_valueerror`, `tests/test_f006_f008_bundle_recovery_and_lock.py::test_tampered_manifest_auto_recovers`
 - **Flags Added**: None (reliability bugfix)
 - **Before Output**:
@@ -82,3 +82,50 @@ Per finding: commit hash, test name, before and after execution output, configur
   `audit/scratch/test_corrupt_bundle.py` asserted that `verify_weight_integrity()` would raise an exception; with automatic self-healing recovery, it now recovers and succeeds cleanly, matching operational resilience requirements.
 
 
+---
+
+## F-010: Shared Surname Entity Resolution Ambiguity
+
+- **Commit**: `c8fa2ae` (`F-010: Disambiguate shared surnames using club and position context`)
+- **Test Name**: `tests/test_f010_entity_resolution.py::test_shared_surname_requires_club_disambiguation`
+- **Flags Added**: None (entity resolution correctness)
+- **Before Output**:
+  ```text
+  res_ambiguous['confidence'] = 0.95; unmatched query "Timber" or "Silva" arbitrarily resolved to first candidate with high confidence despite multiple players sharing the identical surname.
+  ```
+- **After Output**:
+  ```text
+  tests/test_f010_entity_resolution.py::test_shared_surname_requires_club_disambiguation PASSED [100%]
+  ```
+- **Actions Taken**:
+  1. Updated `FuzzyPlayerMatcher.match_single_name()` in `src/fpl_oracle/data/fuzzy_match.py` to accept optional `club` and `position` hints.
+  2. Detected duplicate surname collisions across candidate elements.
+  3. When duplicate surname collisions occur without disambiguating club/position hints, applied an ambiguity penalty (`confidence = 0.40`) or returned `matched = None` with `ambiguity_detected = True`.
+  4. When club or position hint matches, boosted candidate confidence to 0.95.
+
+---
+
+## F-003: News Override Safety: Allowlist, Corroboration, and Injection Defenses
+
+- **Commit**: `57f89f8` (`F-003: News override safety with publisher allowlist and corroboration`)
+- **Test Name**: `tests/test_f003_news_override_safety.py` (5 test cases)
+- **Flags Added**: `trusted_publishers` in `config/news_sources.yaml`
+- **Before Output**:
+  ```text
+  Untrusted RSS feeds and single uncorroborated sources could override official FPL availability to 0% in Gated-Active mode. Quotes containing hidden prompt injection HTML comments passed verification.
+  ```
+- **After Output**:
+  ```text
+  tests/test_f003_news_override_safety.py::test_untrusted_rss_source_cannot_override_in_gated_active PASSED [ 20%]
+  tests/test_f003_news_override_safety.py::test_single_allowlisted_source_capped_not_zeroed PASSED [ 40%]
+  tests/test_f003_news_override_safety.py::test_two_independent_allowlisted_sources_permit_zero_cop PASSED [ 60%]
+  tests/test_f003_news_override_safety.py::test_duplicate_syndicated_copies_count_as_single_source PASSED [ 80%]
+  tests/test_f003_news_override_safety.py::test_hidden_text_and_prompt_injection_variants_rejected PASSED [100%]
+  ```
+- **Actions Taken**:
+  1. Added `trusted_publishers` allowlist to `config/news_sources.yaml` (BBC, Guardian, Premier League, The Athletic, etc.).
+  2. Implemented domain extraction and publisher matching in `AvailabilityReconciler` (`src/fpl_oracle/news/reconcile.py`). In Gated-Active mode, evidence from untrusted domains is rejected.
+  3. Added quote sanitization filtering hidden HTML tags/comments (`<!-- ... -->`), prompt injections, and zero-width unicode characters.
+  4. Enforced corroboration requirement: overriding chance of playing to 0.0 requires >=2 independent allowlisted publishers with non-identical quotes; single allowlisted sources are capped at reduced probability (25.0) and flagged.
+
+---
