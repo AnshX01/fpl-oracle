@@ -180,10 +180,13 @@ class WeeklyBriefingGenerator:
 | {cap["web_name"]} | {vc["web_name"]} | {lineup_res["formation"]} | {lineup_res["total_gameweek_expected_points"]} |
 
 **Transfers:** {rec_plan.get("transfers_count", 0)} · **Hit cost:** {rec_plan.get("hit_cost", 0)} points
-
 """
+        imminent_rise_ids = {p.get("element") for p in imminent_rises if p.get("element")}
         for out, incoming in zip(rec_plan.get("transfers_out", []), rec_plan.get("transfers_in", []), strict=False):
-            markdown += f"- {out['web_name']} → {incoming['web_name']}\n"
+            timing_warning = ""
+            if incoming.get("element") in imminent_rise_ids:
+                timing_warning = " ⚠️ (Price rises tonight, act before 23:59 UK)"
+            markdown += f"- {out['web_name']} → {incoming['web_name']}{timing_warning}\n"
         if not rec_plan.get("transfers_in"):
             markdown += "Save your free transfer.\n"
         hit_policy = transfers_res.get("hit_policy", {})
