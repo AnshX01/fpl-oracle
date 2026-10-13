@@ -414,6 +414,9 @@ class ModelRegistry:
             mismatch_reason = f"Manifest or file read error: {e}"
 
         if mismatch_reason:
+            if weights_dir is not None and weights_dir != self.models_dir:
+                raise ValueError(mismatch_reason)
+
             logger.warning(
                 f"[ModelIntegrity] Integrity check failed ({mismatch_reason}). Triggering automatic quarantine and rollback..."
             )

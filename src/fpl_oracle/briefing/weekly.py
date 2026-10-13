@@ -185,7 +185,7 @@ class WeeklyBriefingGenerator:
         for out, incoming in zip(rec_plan.get("transfers_out", []), rec_plan.get("transfers_in", []), strict=False):
             timing_warning = ""
             if incoming.get("element") in imminent_rise_ids:
-                timing_warning = " ⚠️ (Price rises tonight, act before 23:59 UK)"
+                timing_warning = " (Price rises tonight, act before 23:59 UK)"
             markdown += f"- {out['web_name']} → {incoming['web_name']}{timing_warning}\n"
         if not rec_plan.get("transfers_in"):
             markdown += "Save your free transfer.\n"
