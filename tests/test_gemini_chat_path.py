@@ -91,6 +91,6 @@ def test_chat_model_uses_env_preserves_default_and_explicit_override(monkeypatch
     assert provider.base_url.endswith("gemini-test-env:generateContent")
     assert GeminiProvider("fake-test-key", model="explicit-model").model == "explicit-model"
     monkeypatch.delenv("GEMINI_MODEL")
-    assert GeminiProvider("fake-test-key").model == "gemini-2.5-flash"
+    assert GeminiProvider("fake-test-key").model == "gemini-flash-lite-latest"
     monkeypatch.setenv("GEMINI_MODEL", "   ")
-    assert GeminiProvider("fake-test-key").model == "gemini-2.5-flash"
+    assert GeminiProvider("fake-test-key").model == "gemini-flash-lite-latest"

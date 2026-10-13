@@ -12,11 +12,27 @@ from fpl_oracle.llm.tools import tool_executor
 
 logger = logging.getLogger("fpl_oracle.llm.provider")
 
-SYSTEM_PROMPT = """You help an FPL manager choose transfers, captain, bench and chips.
-Use current tool results for facts. Do not invent news, prices, fixtures, minutes or rival choices.
-Keep replies short: action first, then relevant numbers. Use normal FPL words, not technical jargon.
-Mention a problem only when it changes what the manager should do. Label forecasts as estimates.
-Never treat an available player as a guaranteed starter, or price-transfer momentum as a confirmed price change.
+SYSTEM_PROMPT = """You are the FPL Oracle — an elite, mathematically rigorous Fantasy Premier League expert analyst and decision-support assistant.
+Your mission is to provide deeply insightful, fully justified, and data-grounded recommendations for transfers, captaincy, bench selection, and chip strategy.
+
+Core Operating Principles:
+1. DEEP THINKING & JUSTIFICATION:
+   - Provide the complete working, reasoning, and mathematical justifications behind all tool recommendations.
+   - For Transfers: Detail why the recommended plan is selected over competing plans (e.g. rolling vs 1 transfer vs hits). Explain expected points (xP) differentials, fixture difficulty, whether taking a -4 hit is justified according to the hit verdict, and the multi-week roadmap.
+   - For Captaincy: Compare the safe captain versus the differential/vice-captain. Explain their expected points, floor (P10) vs explosive ceiling (P90), and opponent fixture.
+   - For Chips: Explain the strategic timing, why holding or playing a chip is optimal, Set 1 vs Set 2 deadlines (GW19 boundary rule), and projected point gains.
+   - For Player Comparisons: Break down the head-to-head metrics: expected points, cost efficiency, fixture difficulty, DefCon (defensive contribution) boost, and statistical upside.
+
+2. STRICT FACTUAL GROUNDING (ANTI-HALLUCINATION):
+   - Cite exact player names, prices, expected points, and metrics directly from tool outputs.
+   - Never invent player prices, fixtures, news, or injuries not present in tool results.
+   - If a player is not found or data is unavailable, state this honestly.
+   - Label all forecasts as statistical estimates.
+
+3. STRUCTURE & CLARITY:
+   - Action first: Give the clear verdict / recommendation.
+   - Working & Rationale: Detail the mathematical and tactical justifications.
+   - Next Steps / Alternatives: Highlight future roadmap or key decision points.
 """
 
 
@@ -69,9 +85,12 @@ class OfflineExpertProvider:
                 worse = p2 if p1["expected_points"] >= p2["expected_points"] else p1
                 diff_xp = round(better["expected_points"] - worse["expected_points"], 2)
                 return (
-                    f"{better['web_name']}: {better['expected_points']} est. points. "
-                    f"{worse['web_name']}: {worse['expected_points']} est. points. "
-                    f"{better['web_name']} leads by {diff_xp} for GW{res['gameweek']}."
+                    f"### Player Comparison: {p1['web_name']} vs {p2['web_name']} (GW{res['gameweek']})\n"
+                    f"- **{better['web_name']}** ({better.get('position', '')}, £{better.get('cost', '')}m): **{better['expected_points']} est. points** "
+                    f"(P10 Floor: {better.get('p10_floor', better.get('p10', 0))} | P90 Ceiling: {better.get('p90_ceiling', better.get('p90', 0))} | DefCon: +{better.get('defcon_pts', 0.0)})\n"
+                    f"- **{worse['web_name']}** ({worse.get('position', '')}, £{worse.get('cost', '')}m): **{worse['expected_points']} est. points** "
+                    f"(P10 Floor: {worse.get('p10_floor', worse.get('p10', 0))} | P90 Ceiling: {worse.get('p90_ceiling', worse.get('p90', 0))} | DefCon: +{worse.get('defcon_pts', 0.0)})\n\n"
+                    f"**Verdict:** {better['web_name']} leads by +{diff_xp} est. points for GW{res['gameweek']}."
                 )
 
         # 2. Transfer Roadmap questions
@@ -136,10 +155,16 @@ class OfflineExpertProvider:
             diff = res["differential_captain"]
             cands = res["candidates"]
             lines = [
-                f"- **{c['web_name']}**: {c['expected_points']} est. points"
+                f"- **{c['web_name']}** ({c.get('position', '')}): **{c['expected_points']} est. points** "
+                f"(Floor: {c.get('p10_floor', c.get('p10', 0))} | Ceiling: {c.get('p90_ceiling', c.get('p90', 0))} | DefCon: +{c.get('defcon_pts', 0.0)})"
                 for c in cands[:3]
             ]
-            return f"GW{res['gameweek']}: captain {safe}, vice captain {diff}.\n" + "\n".join(lines)
+            return (
+                f"GW{res['gameweek']}: captain {safe}, vice captain {diff}.\n"
+                f"- **Safe / Armband Choice:** **{safe}** (highest projected expected points).\n"
+                f"- **Differential / Vice-Captain:** **{diff}** (high explosive ceiling).\n\n"
+                f"**Top Candidates Breakdown:**\n" + "\n".join(lines)
+            )
 
         # 6. Injury & Availability questions
         if any(
@@ -254,12 +279,28 @@ class OfflineExpertProvider:
                 return f"### Transfer Strategy & Hit Analysis\nUnable to optimize transfers: {res['error']}"
             rec = res["decision"]
             hit = res["hit_verdict"]
+            rec_transfers = res.get("recommended_transfers", [])
+            transfers_text = ""
+            if rec_transfers:
+                t_lines = [
+                    f"- **OUT:** {t['transfer_out']} (£{t.get('cost_out', 'N/A')}m) -> **IN:** {t['transfer_in']} (£{t.get('cost_in', 'N/A')}m)"
+                    for t in rec_transfers
+                ]
+                transfers_text = "\n**Recommended Moves:**\n" + "\n".join(t_lines) + "\n"
+
             plans = res.get("candidate_plans", [])
             plan_lines = [
-                f"- **{p['type']}**: {p['summary']} (Net xP: {p['net_xp']}, Net Gain: {p['gain']})" for p in plans
+                f"- **{p.get('type', p.get('plan_type'))}**: {p.get('summary', '')} (Net xP: {p.get('net_xp')}, Gain vs Roll: {p.get('gain', p.get('gain_vs_roll'))})"
+                for p in plans
             ]
 
-            return f"{rec}\n{hit}\n" + "\n".join(plan_lines)
+            return (
+                f"### Transfer Strategy & Mathematical Working\n"
+                f"**Verdict:** {rec}\n"
+                f"{transfers_text}\n"
+                f"**Hit Analysis:** {hit}\n\n"
+                f"**Evaluated Candidate Plans:**\n" + "\n".join(plan_lines)
+            )
 
         # Default: General squad / projection overview
         proj = await tool_executor.execute("get_projections", {"horizon": 3})

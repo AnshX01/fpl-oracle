@@ -59,7 +59,7 @@ class ExtractedNewsPayload(BaseModel):
     published_at: str | None = None
     fetched_at: str
     evidences: list[PlayerEvidence] = []
-    extraction_model: str = "gemini-2.5-flash-lite"
+    extraction_model: str = "gemini-flash-lite-latest"
     raw_response_snippet: str | None = None
 
 

@@ -237,21 +237,104 @@ class ToolExecutor:
         result = await run_optimizer(
             OptimizeRequest(locked_in=args.get("locked_in"), locked_out=args.get("locked_out"))
         )
-        plan = result["recommended_plan"]
+        plan = result.get("recommended_plan", {})
+        boot, _ = await fpl_client.get_bootstrap_static()
+        elem_map = {int(e.id): e for e in boot.elements}
+
+        def clean_player(p: Any) -> dict[str, Any]:
+            if not isinstance(p, dict):
+                return {}
+            val = p.get("value", p.get("cost", 50))
+            cost = round(float(val) / (10.0 if float(val) > 20 else 1.0), 1)
+            return {
+                "element": p.get("element"),
+                "web_name": p.get("web_name"),
+                "position": p.get("position"),
+                "cost": cost,
+                "expected_points": round(float(p.get("expected_points", 0)), 2),
+                "p10_floor": round(float(p.get("p10", 0)), 2),
+                "p90_ceiling": round(float(p.get("p90", 0)), 2),
+                "defcon_pts": round(float(p.get("exp_defcon_pts", 0)), 2),
+                "opponent_difficulty": p.get("opponent_difficulty"),
+                "is_home": bool(p.get("is_home", False)),
+                "chance_of_playing": p.get("chance_of_playing", 100),
+            }
+
+        def format_moves(step: dict[str, Any]) -> list[dict[str, Any]]:
+            moves = []
+            t_ins = step.get("transfers_in", [])
+            t_outs = step.get("transfers_out", [])
+            max_len = max(len(t_ins), len(t_outs))
+            for i in range(max_len):
+                in_id = t_ins[i] if i < len(t_ins) else None
+                out_id = t_outs[i] if i < len(t_outs) else None
+                p_in = elem_map.get(in_id) if in_id else None
+                p_out = elem_map.get(out_id) if out_id else None
+                moves.append({
+                    "transfer_in": p_in.web_name if p_in else (f"Player #{in_id}" if in_id else "None"),
+                    "transfer_out": p_out.web_name if p_out else (f"Player #{out_id}" if out_id else "None"),
+                    "cost_in": round(p_in.now_cost / 10.0, 1) if p_in else None,
+                    "cost_out": round(p_out.now_cost / 10.0, 1) if p_out else None,
+                })
+            return moves
+
+        first_step = plan.get("trajectory", [{}])[0] if plan.get("trajectory") else {}
+        transfers_formatted = format_moves(first_step) if first_step else []
+
+        candidate_plans_formatted = []
+        for cp in result.get("candidate_plans", []):
+            cp_step = cp.get("trajectory", [{}])[0] if cp.get("trajectory") else {}
+            candidate_plans_formatted.append({
+                "plan_type": cp.get("plan_type"),
+                "type": cp.get("plan_type"),
+                "summary": cp.get("recommendation_summary"),
+                "net_xp": round(float(cp.get("net_expected_points", 0)), 2),
+                "gain": round(float(cp.get("expected_gain", 0)), 2),
+                "gain_vs_roll": round(float(cp.get("expected_gain", 0)), 2),
+                "hit_cost": round(float(cp.get("hit_cost", 0)), 1),
+                "transfers": format_moves(cp_step) if cp_step else [],
+            })
+
+        starters_clean = [clean_player(p) for p in plan.get("starters", [])]
+        bench_clean = [clean_player(p) for p in plan.get("bench", [])]
+        captain_clean = clean_player(plan.get("captain", {}))
+        vice_captain_clean = clean_player(plan.get("vice_captain", {}))
+
+        roadmap_clean = []
+        for step in result.get("transfer_roadmap", []):
+            roadmap_clean.append({
+                "gameweek": step.get("gameweek"),
+                "action": step.get("action"),
+                "status": step.get("status"),
+                "banked_free_transfers": step.get("banked_free_transfers_projected", step.get("banked_ft")),
+                "banked_free_transfers_projected": step.get("banked_free_transfers_projected", step.get("banked_ft")),
+                "strategic_focus": step.get("strategic_focus"),
+                "key_targets": step.get("key_targets", []),
+                "captain": step.get("captain"),
+            })
+
         return {
             **result,
+            "target_gameweek": result.get("target_gameweek"),
             "decision": plan.get("recommendation_summary", plan.get("plan_type", "Unavailable")),
-            "roadmap": result.get("transfer_roadmap", []),
-            "candidate_plans": [
-                {
-                    **p,
-                    "type": p.get("plan_type"),
-                    "summary": p.get("recommendation_summary"),
-                    "net_xp": p.get("net_expected_points"),
-                    "gain": p.get("expected_gain"),
-                }
-                for p in result.get("candidate_plans", [])
-            ],
+            "recommended_plan": result["recommended_plan"],
+            "plan_type": plan.get("plan_type"),
+            "net_expected_points": round(float(plan.get("net_expected_points", 0)), 2),
+            "expected_gain": round(float(plan.get("expected_gain", 0)), 2),
+            "hit_cost": round(float(plan.get("hit_cost", 0)), 1),
+            "bank_remaining": round(float(plan.get("bank_remaining", 0)), 2),
+            "recommended_transfers": transfers_formatted,
+            "hit_verdict": result.get("hit_verdict", "No hit recommended"),
+            "captain": captain_clean,
+            "vice_captain": vice_captain_clean,
+            "formation": plan.get("formation"),
+            "candidate_plans": candidate_plans_formatted,
+            "roadmap": roadmap_clean,
+            "transfer_roadmap": roadmap_clean,
+            "chip_comparison_table": result.get("chip_comparison_table", []),
+            "league_objective": result.get("league_objective"),
+            "data_as_of": result.get("data_as_of"),
+            "is_stale": result.get("is_stale", False),
         }
 
     async def _tool_plan_chips(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -279,6 +362,22 @@ class ToolExecutor:
             }
         captain, vice = squad["captain"], squad["vice_captain"]
         candidates = sorted(squad["starters"], key=lambda p: p.get("expected_points", 0), reverse=True)[:5]
+        candidates_clean = [
+            {
+                "element": c.get("element"),
+                "web_name": c.get("web_name"),
+                "position": c.get("position"),
+                "cost": round(float(c.get("now_cost", 0)), 1),
+                "expected_points": round(float(c.get("expected_points", 0)), 2),
+                "p10_floor": round(float(c.get("p10", 0)), 2),
+                "p90_ceiling": round(float(c.get("p90", 0)), 2),
+                "defcon_pts": round(float(c.get("exp_defcon_pts", 0)), 2),
+                "opponent_difficulty": c.get("opponent_difficulty"),
+                "is_home": c.get("is_home"),
+                "chance_of_playing": c.get("chance_of_playing", 100),
+            }
+            for c in candidates
+        ]
         return {
             "gameweek": gw,
             "risk_preference": "automatic",
@@ -287,7 +386,7 @@ class ToolExecutor:
             "differential_captain": vice["web_name"],
             "captain": captain,
             "vice_captain": vice,
-            "candidates": candidates,
+            "candidates": candidates_clean,
             "is_stale": squad.get("is_stale", False),
             "data_as_of": squad.get("data_as_of"),
         }
@@ -352,13 +451,19 @@ class ToolExecutor:
                 r = sub.iloc[0]
                 matches.append(
                     {
+                        "element": int(r["element"]),
                         "web_name": r["web_name"],
                         "position": r["position"],
-                        "cost": r["value"] / 10.0,
+                        "cost": round(float(r["value"]) / 10.0, 1),
                         "expected_points": round(float(r["expected_points"]), 2),
-                        "p10": round(float(r["p10"]), 2),
-                        "p90": round(float(r["p90"]), 2),
-                        "defcon_pts": round(float(r["exp_defcon_pts"]), 2),
+                        "p10": round(float(r.get("p10", 0.0)), 2),
+                        "p90": round(float(r.get("p90", 0.0)), 2),
+                        "p10_floor": round(float(r.get("p10", 0.0)), 2),
+                        "p90_ceiling": round(float(r.get("p90", 0.0)), 2),
+                        "defcon_pts": round(float(r.get("exp_defcon_pts", 0.0)), 2),
+                        "opponent_difficulty": r.get("opponent_difficulty"),
+                        "is_home": bool(r.get("is_home", False)),
+                        "chance_of_playing": r.get("chance_of_playing", 100),
                     }
                 )
 

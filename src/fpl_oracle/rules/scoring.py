@@ -50,6 +50,7 @@ SAVES_PER_PLUS1: int = 3
 # 7. Penalties
 PENALTY_SAVE_POINTS: int = 5
 PENALTY_MISS_POINTS: int = -2
+PENALTY_MISSED_POINTS: int = PENALTY_MISS_POINTS
 
 # 8. Discipline & Own Goals
 YELLOW_CARD_POINTS: int = -1

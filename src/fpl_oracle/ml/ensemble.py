@@ -19,6 +19,8 @@ from fpl_oracle.rules.scoring import (
     CLEAN_SHEET_POINTS,
     DEFCON_POINTS,
     GOAL_POINTS,
+    OWN_GOAL_POINTS,
+    PENALTY_MISSED_POINTS,
     PENALTY_SAVE_POINTS,
 )
 
@@ -195,6 +197,8 @@ class ScoringEnsemble:
                 "expected_bonus",
                 "expected_card_deduction",
                 "expected_penalties_saved",
+                "expected_own_goals",
+                "expected_penalties_missed",
             ):
                 if key in components:
                     components[key] = components[key] * ratio
@@ -260,10 +264,50 @@ class ScoringEnsemble:
 
         # 10. Goalkeeper penalty saves (+5 pts)
         exp_pen_saves = components.get("expected_penalties_saved", np.zeros(n))
-        exp_pen_saves_pts = exp_pen_saves * 5.0 * pos_gkp * cop_scale
+        exp_pen_saves_pts = exp_pen_saves * float(PENALTY_SAVE_POINTS) * pos_gkp * cop_scale
+
+        # 11. Own goals (-2 pts per own goal, WI-1.2)
+        if "expected_own_goals" in components:
+            exp_og = np.asarray(components["expected_own_goals"], dtype=float)
+        elif "roll_own_goals_5" in X.columns:
+            og_rate = np.clip(X["roll_own_goals_5"].to_numpy(dtype=float) / 5.0, 0.0, 1.0)
+            pos_og_prior = pos_def * 0.008 + pos_gkp * 0.003 + pos_mid * 0.002 + pos_fwd * 0.001
+            exp_og = 0.5 * og_rate + 0.5 * pos_og_prior
+        else:
+            exp_og = pos_def * 0.008 + pos_gkp * 0.003 + pos_mid * 0.002 + pos_fwd * 0.001
+        exp_og_deduction = exp_og * float(abs(OWN_GOAL_POINTS)) * p_play * cop_scale
+
+        # 12. Penalties missed (-2 pts per penalty missed, WI-1.2)
+        # Expectation = P(takes penalty) * P(penalty awarded) * miss_rate, shrunk to positional prior
+        if "expected_penalties_missed" in components:
+            exp_pm = np.asarray(components["expected_penalties_missed"], dtype=float)
+        elif "roll_penalties_missed_5" in X.columns:
+            pm_rate = np.clip(X["roll_penalties_missed_5"].to_numpy(dtype=float) / 5.0, 0.0, 1.0)
+            taker_prior = (pos_fwd * 0.015 + pos_mid * 0.008) * np.clip(
+                components.get("expected_goals", np.zeros(n)) / 0.4, 0.0, 1.0
+            )
+            exp_pm = np.where(pm_rate > 0, 0.6 * pm_rate + 0.4 * taker_prior, taker_prior * 0.5)
+        else:
+            exp_pm = (pos_fwd * 0.005 + pos_mid * 0.003) * p_play
+        exp_pen_miss_deduction = exp_pm * float(abs(PENALTY_MISSED_POINTS)) * p_play * cop_scale
+
+        # Zero out components when player does not participate
+        zero_mask = (p_play <= 1e-4) | (exp_mins <= 1e-4)
+        appearance_pts = np.where(zero_mask, 0.0, appearance_pts)
+        exp_goal_pts = np.where(zero_mask, 0.0, exp_goal_pts)
+        exp_assist_pts = np.where(zero_mask, 0.0, exp_assist_pts)
+        exp_cs_pts = np.where(zero_mask, 0.0, exp_cs_pts)
+        exp_gc_deduction = np.where(zero_mask, 0.0, exp_gc_deduction)
+        exp_saves_pts = np.where(zero_mask, 0.0, exp_saves_pts)
+        exp_pen_saves_pts = np.where(zero_mask, 0.0, exp_pen_saves_pts)
+        exp_defcon_pts = np.where(zero_mask, 0.0, exp_defcon_pts)
+        exp_card_deduction = np.where(zero_mask, 0.0, exp_card_deduction)
+        exp_bonus_pts = np.where(zero_mask, 0.0, exp_bonus_pts)
+        exp_og_deduction = np.where(zero_mask, 0.0, exp_og_deduction)
+        exp_pen_miss_deduction = np.where(zero_mask, 0.0, exp_pen_miss_deduction)
 
         # Total Expected Points (unclipped to preserve negative point outcomes!)
-        xP = (
+        raw_xP = (
             appearance_pts
             + exp_goal_pts
             + exp_assist_pts
@@ -274,12 +318,12 @@ class ScoringEnsemble:
             + exp_defcon_pts
             - exp_card_deduction
             + exp_bonus_pts
+            - exp_og_deduction
+            - exp_pen_miss_deduction
         )
+        xP = raw_xP
 
-        # When player has 0 minutes / chance of playing is 0, zero out everything
-        zero_mask = (p_play <= 1e-4) | (exp_mins <= 1e-4)
-        xP = np.where(zero_mask, 0.0, xP)
-
+        exp_blend_adj = np.zeros(n)
         # Apply learned validation blend with heuristic baselines if configured and baseline features present
         if self.blend_weights is not None and any(w > 1e-4 for w in self.blend_weights[1:]):
             if (
@@ -292,8 +336,10 @@ class ScoringEnsemble:
                 base_recent = model_evaluator.compute_baseline_projections(X)
                 base_season = model_evaluator.compute_season_avg_baseline(X)
                 w_ml, w_rec, w_sea = self.blend_weights
-                xP = w_ml * xP + w_rec * base_recent + w_sea * base_season
-                xP = np.where(zero_mask, 0.0, xP)
+                blended_xP = w_ml * raw_xP + w_rec * base_recent + w_sea * base_season
+                blended_xP = np.where(zero_mask, 0.0, blended_xP)
+                exp_blend_adj = blended_xP - raw_xP
+                xP = blended_xP
 
         # Calibrated Distribution (P10, P50, P90, Variance)
         # In FPL scoring, distribution is positively skewed (hauls are in the upper tail, floor is bounded by appearance)
@@ -342,30 +388,89 @@ class ScoringEnsemble:
 
         variance = sigma**2
 
+        r_app = np.round(appearance_pts, 2)
+        r_goals = np.round(exp_goal_pts, 2)
+        r_assists = np.round(exp_assist_pts, 2)
+        r_cs = np.round(exp_cs_pts, 2)
+        r_defcon = np.round(exp_defcon_pts, 2)
+        r_bonus = np.round(exp_bonus_pts, 2)
+        r_gc = np.round(exp_gc_deduction, 2)
+        r_saves = np.round(exp_saves_pts, 2)
+        r_pen_saves = np.round(exp_pen_saves_pts, 2)
+        r_card = np.round(exp_card_deduction, 2)
+        r_og = np.round(exp_og_deduction, 2)
+        r_pm = np.round(exp_pen_miss_deduction, 2)
+        r_blend = np.round(exp_blend_adj, 2)
+
+        # Decomposed raw expectation sums exactly to the penny
+        decomp_xp = np.round(
+            r_app
+            + r_goals
+            + r_assists
+            + r_cs
+            + r_defcon
+            + r_bonus
+            + r_saves
+            + r_pen_saves
+            - r_gc
+            - r_card
+            - r_og
+            - r_pm,
+            2,
+        )
+        final_xp = np.round(decomp_xp + r_blend, 2)
+
         res_df = pd.DataFrame(
             {
-                "expected_points": np.round(xP, 2),
+                "expected_points": final_xp,
+                "raw_expected_points": decomp_xp,
                 "p10": np.round(p10, 2),
                 "p50": np.round(p50, 2),
                 "p90": np.round(p90, 2),
                 "variance": np.round(variance, 2),
-                "exp_appearance": np.round(appearance_pts, 2),
-                "exp_goals_pts": np.round(exp_goal_pts, 2),
-                "exp_assists_pts": np.round(exp_assist_pts, 2),
-                "exp_cs_pts": np.round(exp_cs_pts, 2),
-                "exp_defcon_pts": np.round(exp_defcon_pts, 2),
-                "exp_bonus_pts": np.round(exp_bonus_pts, 2),
+                "exp_appearance": r_app,
+                "exp_goals_pts": r_goals,
+                "exp_assists_pts": r_assists,
+                "exp_cs_pts": r_cs,
+                "exp_defcon_pts": r_defcon,
+                "exp_bonus_pts": r_bonus,
                 "p_starts": np.round(p_starts, 3),
                 "p_min60": np.round(p_min60, 3),
                 "p_clean_sheet": np.round(components.get("p_clean_sheet", np.full(n, 0.30)), 4),
                 "p_play": np.round(p_play, 3),
-                "exp_gc_deduction": np.round(exp_gc_deduction, 2),
-                "exp_saves_pts": np.round(exp_saves_pts, 2),
-                "exp_card_deduction": np.round(exp_card_deduction, 2),
+                "exp_gc_deduction": r_gc,
+                "exp_saves_pts": r_saves,
+                "exp_pen_saves_pts": r_pen_saves,
+                "exp_card_deduction": r_card,
+                "exp_og_deduction": r_og,
+                "exp_pen_miss_deduction": r_pm,
+                "exp_blend_adj": r_blend,
             }
         )
 
         return res_df
+
+    @staticmethod
+    def verify_decomposition(df: pd.DataFrame) -> pd.Series:
+        """
+        Reconstructs unblended expected points from constituent additive and deductive components.
+        Matches raw_expected_points exactly (and expected_points when unblended).
+        """
+        return np.round(
+            df.get("exp_appearance", 0.0)
+            + df.get("exp_goals_pts", 0.0)
+            + df.get("exp_assists_pts", 0.0)
+            + df.get("exp_cs_pts", 0.0)
+            + df.get("exp_defcon_pts", 0.0)
+            + df.get("exp_bonus_pts", 0.0)
+            + df.get("exp_saves_pts", 0.0)
+            + df.get("exp_pen_saves_pts", 0.0)
+            - df.get("exp_gc_deduction", 0.0)
+            - df.get("exp_card_deduction", 0.0)
+            - df.get("exp_og_deduction", 0.0)
+            - df.get("exp_pen_miss_deduction", 0.0),
+            2,
+        )
 
 
 scoring_ensemble = ScoringEnsemble()

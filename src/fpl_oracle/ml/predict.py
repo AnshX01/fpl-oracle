@@ -242,13 +242,19 @@ class ProjectionEngine:
                 "p_play": "max",
                 "exp_gc_deduction": "sum",
                 "exp_saves_pts": "sum",
+                "exp_pen_saves_pts": "sum",
                 "exp_card_deduction": "sum",
+                "exp_og_deduction": "sum",
+                "exp_pen_miss_deduction": "sum",
+                "raw_expected_points": "sum",
+                "exp_blend_adj": "sum",
             }
         )
 
         # Blank gameweek zeroing
         bgw_zero_cols = [
             "expected_points",
+            "raw_expected_points",
             "p10",
             "p50",
             "p90",
@@ -265,7 +271,11 @@ class ProjectionEngine:
             "p_play",
             "exp_gc_deduction",
             "exp_saves_pts",
+            "exp_pen_saves_pts",
             "exp_card_deduction",
+            "exp_og_deduction",
+            "exp_pen_miss_deduction",
+            "exp_blend_adj",
         ]
         dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, [c for c in bgw_zero_cols if c in dgw_grouped.columns]] = 0.0
 
