@@ -56,7 +56,7 @@ class FPLSettings(BaseModel):
     gemini_free_tier_confirmed: bool = Field(
         default=False, description="Confirmation that project is non-billable Free Tier"
     )
-    gemini_model: str = Field(default="gemini-2.5-flash-lite", description="Supported Gemini free model")
+    gemini_model: str = Field(default="gemini-flash-lite-latest", description="Supported Gemini free model")
     gemini_daily_request_limit: int = Field(default=150, description="Max daily requests on free tier")
     gemini_daily_token_limit: int = Field(default=500_000, description="Max daily tokens on free tier")
 
@@ -159,7 +159,7 @@ def _load_settings_from_env() -> FPLSettings:
         fpl_target_league_id=_parse_int(os.getenv("FPL_TARGET_LEAGUE_ID")),
         gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
         gemini_free_tier_confirmed=_parse_bool(os.getenv("GEMINI_FREE_TIER_CONFIRMED")),
-        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite").strip(),
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip(),
         gemini_daily_request_limit=_parse_int(os.getenv("GEMINI_DAILY_REQUEST_BUDGET")) or 150,
         gemini_daily_token_limit=_parse_int(os.getenv("GEMINI_DAILY_TOKEN_BUDGET")) or 500_000,
         news_recommendation_mode=os.getenv("NEWS_RECOMMENDATION_MODE", "shadow").strip(),
