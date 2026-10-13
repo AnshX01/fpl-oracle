@@ -1,4 +1,5 @@
 import pytest
+
 from fpl_oracle.api.models import Element
 from fpl_oracle.data.fuzzy_match import FuzzyPlayerMatcher
 
