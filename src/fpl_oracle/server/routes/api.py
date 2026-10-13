@@ -285,6 +285,7 @@ async def get_health():
         },
         "cache_age_seconds": cache_ages,
         "model": model_status,
+        "model_bundle_recovery": model_registry.get_last_recovery_event(),
         "news": news_status,
         "llm": llm_status,
         "is_stale": fpl_client.is_stale_mode,
