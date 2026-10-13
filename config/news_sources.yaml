@@ -34,3 +34,12 @@ search_apis:
 sentiment_and_signals:
   confidence_threshold: 0.65
   max_article_age_days: 7
+
+trusted_publishers:
+  - "bbc.co.uk"
+  - "bbci.co.uk"
+  - "theguardian.com"
+  - "skysports.com"
+  - "talksport.com"
+  - "premierleague.com"
+  - "theathletic.com"
