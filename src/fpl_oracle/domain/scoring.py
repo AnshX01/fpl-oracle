@@ -7,7 +7,6 @@ Also provides expected points calculation under discrete count approximations fo
 import math
 from typing import Any
 
-
 from fpl_oracle.rules.scoring import (
     APPEARANCE_GE60,
     APPEARANCE_LT60,

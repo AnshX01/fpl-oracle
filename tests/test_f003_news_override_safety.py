@@ -1,4 +1,5 @@
 import pytest
+
 from fpl_oracle.api.models import Element
 from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence, RecommendationMode
 from fpl_oracle.news.reconcile import AvailabilityReconciler

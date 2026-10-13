@@ -295,8 +295,6 @@ class ToolExecutor:
                 "transfers": format_moves(cp_step) if cp_step else [],
             })
 
-        starters_clean = [clean_player(p) for p in plan.get("starters", [])]
-        bench_clean = [clean_player(p) for p in plan.get("bench", [])]
         captain_clean = clean_player(plan.get("captain", {}))
         vice_captain_clean = clean_player(plan.get("vice_captain", {}))
 

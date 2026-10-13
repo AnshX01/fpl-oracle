@@ -7,21 +7,18 @@ Verifies:
 """
 
 from pathlib import Path
+
 import pandas as pd
 import pytest
 
 from fpl_oracle.rules.scoring import (
-    APPEARANCE_GE60,
-    APPEARANCE_LT60,
     ASSIST_POINTS,
     CLEAN_SHEET_POINTS,
     DEFCON_POINTS,
     DEFCON_THRESHOLDS,
     GOAL_POINTS,
-    GOALS_CONCEDED_PER_MINUS1,
     HIT_COST_POINTS,
     MAX_BANKED_FREE_TRANSFERS,
-    MAX_CHIPS_PER_GW,
     OWN_GOAL_POINTS,
     PENALTY_MISS_POINTS,
     PENALTY_SAVE_POINTS,
@@ -157,4 +154,4 @@ def test_grep_no_stray_10_multiplier_or_goal_dictionaries():
             if '{"GKP": 10' in line or '{"GKP": 10.0' in line:
                 offenders.append(f"{py_file}:{idx}: {line}")
 
-    assert not offenders, f"Found stray GKP 10 / goal dictionary definitions outside rules module:\n" + "\n".join(offenders)
+    assert not offenders, "Found stray GKP 10 / goal dictionary definitions outside rules module:\n" + "\n".join(offenders)

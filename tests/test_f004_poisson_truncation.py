@@ -1,6 +1,6 @@
 import numpy as np
-import pytest
 from scipy.stats import poisson
+
 from fpl_oracle.domain.scoring import expected_floor_div
 
 

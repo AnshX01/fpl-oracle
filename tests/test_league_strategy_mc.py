@@ -4,7 +4,6 @@ Monte Carlo simulation, strategy modes (Defending vs Chasing), and BGW/DGW calen
 Covers R1-R4 and W1-W3 requirements.
 """
 
-import time
 
 import pandas as pd
 
@@ -355,7 +354,6 @@ def test_side_by_side_plan_win_prob_comparison():
         },
     ]
 
-    t0 = time.time()
     comparisons = monte_carlo_simulator.compare_candidate_plans(
         candidate_plans=candidate_plans,
         user_points=340.0,
@@ -365,7 +363,6 @@ def test_side_by_side_plan_win_prob_comparison():
         horizon_gws=5,
         seed=42,
     )
-    elapsed = time.time() - t0
     # Wall-clock assertion removed per F-013 to avoid non-deterministic CI failure under coverage/tracing
     assert len(comparisons) == 2
     for comp in comparisons:

@@ -3,6 +3,7 @@
 from functools import wraps
 from pathlib import Path
 from threading import RLock
+
 from filelock import FileLock
 
 from fpl_oracle.config import MODELS_DIR
@@ -33,7 +34,7 @@ def bundle_locked(method):
     def wrapped(*args, **kwargs):
         target_dir = None
         if args and hasattr(args[0], "models_dir"):
-            target_dir = getattr(args[0], "models_dir")
+            target_dir = args[0].models_dir
 
         file_lock = get_bundle_file_lock(target_dir)
         with BUNDLE_THREAD_LOCK:

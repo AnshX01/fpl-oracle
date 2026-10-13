@@ -51,6 +51,7 @@ class ExpertAgent:
             try:
                 response_text = await OfflineExpertProvider().chat(messages=history, system_prompt=self.system_prompt)
                 import httpx
+
                 from fpl_oracle.llm.gemini_requests import GeminiRateLimitError
 
                 if isinstance(e, GeminiRateLimitError):
