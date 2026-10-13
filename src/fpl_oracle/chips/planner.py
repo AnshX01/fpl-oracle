@@ -293,6 +293,15 @@ class ChipPlanner:
         # ----------------------------------------------------------------------
         # SET 1 PLANNING (GW current_gw to 19) (C3)
         # ----------------------------------------------------------------------
+        gw19_deadline_str = None
+        if bootstrap and hasattr(bootstrap, "events") and bootstrap.events:
+            for ev in bootstrap.events:
+                if getattr(ev, "id", None) == 19:
+                    gw19_deadline_str = getattr(ev, "deadline_time", None)
+                    break
+        if not gw19_deadline_str:
+            gw19_deadline_str = "Saturday 2 January 2027"
+
         set_1_remaining = chips_status["set_1_remaining"] if current_gw <= 19 else []
         set_1_warning = None
         set_1_opportunity_cost: dict[str, float] = {}
@@ -326,13 +335,13 @@ class ChipPlanner:
             if len(set_1_remaining) > len(available_gws_set_1):
                 set_1_warning = (
                     f"CRITICAL CHIP CONGESTION: You have {len(set_1_remaining)} chips remaining in Set 1 "
-                    f"but only {len(available_gws_set_1)} gameweeks left before the GW19 deadline! "
+                    f"but only {len(available_gws_set_1)} gameweeks left before the GW19 deadline ({gw19_deadline_str})! "
                     f"Since only 1 chip can be played per gameweek, at least one chip will expire unused. "
                     f"Total opportunity cost of forfeiting remaining Set 1 chips: ~{round(total_opp_cost, 1)} pts."
                 )
             else:
                 set_1_warning = (
-                    f"SET 1 DEADLINE NOTICE: Gameweek 19 (Saturday 2 January 2027) is the hard deadline for your first set of chips. "
+                    f"SET 1 DEADLINE NOTICE: Gameweek 19 (deadline: {gw19_deadline_str}) is the hard deadline for your first set of chips. "
                     f"Any unused Set 1 chips ({', '.join([CHIP_DISPLAY_NAMES[c] for c in set_1_remaining])}) will be permanently forfeited without rollover. "
                     f"Total opportunity cost if unused: ~{round(total_opp_cost, 1)} expected points."
                 )
@@ -353,8 +362,17 @@ class ChipPlanner:
                         current_gw=current_gw,
                     )
                     alt_gw = alt_assign.get(c, rec_gw + 1 if rec_gw < 19 else rec_gw - 1)
-                    threshold = CHIP_RECOMMENDATION_THRESHOLDS.get(c, 8.0)
-                    is_recommended = (gain >= threshold) and (rec_gw == current_gw)
+                    base_threshold = CHIP_RECOMMENDATION_THRESHOLDS.get(c, 8.0)
+                    if current_gw == 19:
+                        # Use-it-or-lose-it rule: at the final gameweek of Set 1, any positive expected gain (>0) justifies recommendation
+                        threshold = 0.0
+                    elif current_gw == 18:
+                        # Lower threshold by 50% one gameweek before hard deadline to prioritize deploying expiring chips
+                        threshold = round(base_threshold * 0.5, 2)
+                    else:
+                        threshold = base_threshold
+
+                    is_recommended = (gain > 0.0 if threshold == 0.0 else gain >= threshold) and (rec_gw == current_gw)
 
                     chip_plan_table.append(
                         {
@@ -406,8 +424,17 @@ class ChipPlanner:
                 c, rec_gw, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget, current_gw=current_gw
             )
             alt_gw = alt2_assign.get(c, rec_gw + 1 if rec_gw < 38 else rec_gw - 1)
-            threshold = CHIP_RECOMMENDATION_THRESHOLDS.get(c, 8.0)
-            is_recommended = (gain >= threshold) and (rec_gw == current_gw)
+            base_threshold = CHIP_RECOMMENDATION_THRESHOLDS.get(c, 8.0)
+            if current_gw == 38:
+                # Use-it-or-lose-it rule: at the final gameweek of the season, any positive expected gain (>0) justifies recommendation
+                threshold = 0.0
+            elif current_gw == 37:
+                # Lower threshold by 50% one gameweek before final deadline
+                threshold = round(base_threshold * 0.5, 2)
+            else:
+                threshold = base_threshold
+
+            is_recommended = (gain > 0.0 if threshold == 0.0 else gain >= threshold) and (rec_gw == current_gw)
 
             chip_plan_table.append(
                 {
@@ -453,7 +480,9 @@ class ChipPlanner:
         transfer_advice = self.get_joint_transfer_advice(joint_schedule, current_gw)
 
         # Current GW Chip Decision
-        chip_for_curr_gw = next((item for item in chip_plan_table if item["recommended_gw"] == current_gw), None)
+        chip_for_curr_gw = next((item for item in chip_plan_table if item["recommended_gw"] == current_gw and item["is_recommended_this_gw"]), None)
+        if chip_for_curr_gw is None:
+            chip_for_curr_gw = next((item for item in chip_plan_table if item["recommended_gw"] == current_gw), None)
         recommend_chip_now = bool(chip_for_curr_gw["is_recommended_this_gw"]) if chip_for_curr_gw else False
 
         return {
@@ -462,6 +491,7 @@ class ChipPlanner:
             "recommend_chip_this_gw": recommend_chip_now,
             "current_gw_chip_recommendation": chip_for_curr_gw,
             "joint_transfer_advice": transfer_advice,
+            "set_1_warning": set_1_warning,
             "set_1_deadline_warning": set_1_warning,
             "set_1_opportunity_cost": set_1_opportunity_cost,
             "total_set_1_opportunity_cost": round(sum(set_1_opportunity_cost.values()), 1),
