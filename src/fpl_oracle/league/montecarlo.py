@@ -370,8 +370,8 @@ class MonteCarloSimulator:
                 if eid in first_map:
                     all_unique_teams.add(first_map[eid].get("team", 1))
 
-        user_wins = 0
-        user_top3 = 0
+        user_wins = 0.0
+        user_top3 = 0.0
         user_ranks = []
 
         # Run trials
@@ -411,13 +411,21 @@ class MonteCarloSimulator:
                     trial_rival_pts[i] += gw_rival
 
             all_scores = [trial_user_pts] + trial_rival_pts
-            rank = sum(1 for s in all_scores if s > trial_user_pts) + 1
+            strictly_ahead = sum(1 for s in all_scores if (s - trial_user_pts) > 1e-9)
+            tied_with_user = sum(1 for s in all_scores if abs(s - trial_user_pts) <= 1e-9)
+
+            # Midrank for user across tied group
+            rank = strictly_ahead + (tied_with_user + 1) / 2.0
             user_ranks.append(rank)
 
-            if rank == 1:
-                user_wins += 1
-            if rank <= 3:
-                user_top3 += 1
+            # Fractional win credit when tied for 1st
+            if strictly_ahead == 0:
+                user_wins += 1.0 / float(tied_with_user)
+
+            # Fractional podium credit when occupying top-3 spots
+            if strictly_ahead < 3:
+                slots_left = 3 - strictly_ahead
+                user_top3 += min(1.0, float(slots_left) / float(tied_with_user))
 
         win_prob = round((user_wins / float(self.n_simulations)) * 100.0, 1)
         top3_prob = round((user_top3 / float(self.n_simulations)) * 100.0, 1)
