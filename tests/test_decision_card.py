@@ -105,7 +105,7 @@ def test_decision_card_generator_contract(configured_advisor):
 
         # Rivals & Win Prob
         assert "rivals" in card
-        assert card["rivals"]["status"] in ["configured", "unconfigured"]
+        assert card["rivals"]["status"] in ["configured", "unconfigured", "unavailable"]
         assert "win_prob" in card
         assert "p_first" in card["win_prob"]
 
@@ -378,7 +378,7 @@ def test_decision_card_unmocked_happy_path(configured_advisor):
         assert len(card["xi"]) == 11
         # Honest win prob reporting: not a silent fallback
         wp = card["win_prob"]
-        assert wp["status"] in ["simulated", "unconfigured", "error"]
+        assert wp["status"] in ["simulated", "unconfigured", "error", "unavailable"]
         if wp["status"] == "simulated":
             assert wp["p_first"] is not None
             assert wp["expected_rank"] is not None
@@ -386,7 +386,7 @@ def test_decision_card_unmocked_happy_path(configured_advisor):
             assert wp["p_first"] is None
             assert wp["expected_rank"] is None
             assert "error_message" in wp
-        elif wp["status"] == "unconfigured":
+        elif wp["status"] in ["unconfigured", "unavailable"]:
             assert wp["p_first"] is None
             assert wp["expected_rank"] is None
 

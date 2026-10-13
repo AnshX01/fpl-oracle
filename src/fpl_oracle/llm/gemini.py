@@ -15,11 +15,12 @@ logger = logging.getLogger(__name__)
 class GeminiProvider:
     def __init__(self, api_key: str, model: str | None = None):
         self.api_key = api_key
-        model = (model if model is not None else os.getenv("GEMINI_MODEL", "")).strip() or "gemini-2.5-flash"
+        model = (model if model is not None else os.getenv("GEMINI_MODEL", "")).strip() or "gemini-flash-lite-latest"
         self.model = model
         self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    async def chat(self, messages, system_prompt):
+    async def _chat_with_model(self, model_name: str, messages, system_prompt, timeout_secs: float):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
         contents = [
             {"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]} for m in messages
         ]
@@ -28,7 +29,7 @@ class GeminiProvider:
             for t in TOOL_DEFINITIONS
         ]
         grounded = False
-        async with httpx.AsyncClient(timeout=45.0) as client:
+        async with httpx.AsyncClient(timeout=timeout_secs) as client:
             for _ in range(5):
                 payload = {
                     "system_instruction": {"parts": [{"text": system_prompt}]},
@@ -37,7 +38,7 @@ class GeminiProvider:
                     "tool_config": {"function_calling_config": {"mode": "AUTO" if grounded else "ANY"}},
                     "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
                 }
-                resp = await gemini_gate.post(client, self.base_url, json=payload, headers={"x-goog-api-key": self.api_key})
+                resp = await gemini_gate.post(client, url, json=payload, headers={"x-goog-api-key": self.api_key})
                 if resp.status_code != 200:
                     # Do not log API response bodies or secret-bearing URLs.
                     raise RuntimeError(f"Gemini returned status {resp.status_code}")
@@ -49,7 +50,8 @@ class GeminiProvider:
                 candidate = candidates[0]
                 parts = candidate.get("content", {}).get("parts", [])
                 logger.info(
-                    "Gemini chat response: round=%s finish_reason=%s function_calls=%s",
+                    "Gemini chat response: model=%s round=%s finish_reason=%s function_calls=%s",
+                    model_name,
                     _ + 1,
                     candidate.get("finishReason", "unspecified"),
                     sum("functionCall" in p for p in parts),
@@ -72,3 +74,27 @@ class GeminiProvider:
                     return text
                 raise RuntimeError("No grounded Gemini answer returned")
         raise RuntimeError("Gemini data-request limit reached")
+
+    async def chat(self, messages, system_prompt):
+        from fpl_oracle.llm.gemini_requests import GeminiRateLimitError
+
+        timeout_secs = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "60.0"))
+        candidate_models = [self.model]
+        for fallback in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]:
+            if fallback not in candidate_models:
+                candidate_models.append(fallback)
+
+        last_error = None
+        for cand in candidate_models:
+            try:
+                return await self._chat_with_model(cand, messages, system_prompt, timeout_secs)
+            except (GeminiRateLimitError, RuntimeError) as e:
+                is_rate_limit = isinstance(e, GeminiRateLimitError) or "429" in str(e)
+                if is_rate_limit and cand != candidate_models[-1]:
+                    logger.warning("Gemini model %s rate limited, attempting fallback to next model...", cand)
+                    last_error = e
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        raise RuntimeError("No Gemini response returned")

@@ -60,9 +60,12 @@ class NewsAnalyzer:
                                 candidate_players=roster_batch,
                                 target_gw=target_gw,
                             )
+                            if "429" in (extracted_payload.raw_response_snippet or ""):
+                                is_gemini_ready = False
                             candidate_evidences.extend(extracted_payload.evidences)
                         except Exception as e:
                             logger.warning(f"Error extracting evidence via Gemini: {e}")
+                            is_gemini_ready = False
                     else:
                         try:
                             # Production path: deterministic fallback extractor

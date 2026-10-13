@@ -21,7 +21,7 @@ from fpl_oracle.news.models import EvidenceCategory, ExtractedNewsPayload, Playe
 logger = logging.getLogger("fpl_oracle.news.gemini")
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest"
 MAX_DAILY_REQUESTS = 150
 MAX_DAILY_TOKENS = 500_000
 
@@ -100,6 +100,55 @@ class GeminiEvidenceExtractor:
             )
         return True, "Ready"
 
+    def _get_cached_payload(self, cache_key: str) -> ExtractedNewsPayload | None:
+        import time
+
+        now_ts = time.time()
+        if not hasattr(self, "_evidence_cache"):
+            self._evidence_cache = {}
+        cached = self._evidence_cache.get(cache_key)
+        if cached and (now_ts - cached[0] < 43200):
+            return cached[1].model_copy(deep=True)
+        disk_file = CACHE_DIR / "gemini_news_cache.json"
+        if disk_file.exists():
+            try:
+                data = json.loads(disk_file.read_text(encoding="utf-8"))
+                entry = data.get(cache_key)
+                if entry and (now_ts - entry.get("timestamp", 0) < 43200):
+                    payload = ExtractedNewsPayload.model_validate(entry["payload"])
+                    self._evidence_cache[cache_key] = (entry["timestamp"], payload)
+                    return payload.model_copy(deep=True)
+            except Exception as e:
+                logger.debug("Error reading disk news cache: %s", e)
+        return None
+
+    def _save_cached_payload(self, cache_key: str, payload: ExtractedNewsPayload):
+        import time
+
+        now_ts = time.time()
+        if not hasattr(self, "_evidence_cache"):
+            self._evidence_cache = {}
+        if len(self._evidence_cache) > 200:
+            self._evidence_cache.clear()
+        self._evidence_cache[cache_key] = (now_ts, payload.model_copy(deep=True))
+        try:
+            disk_file = CACHE_DIR / "gemini_news_cache.json"
+            data = {}
+            if disk_file.exists():
+                try:
+                    data = json.loads(disk_file.read_text(encoding="utf-8"))
+                except Exception:
+                    data = {}
+            data = {k: v for k, v in data.items() if (now_ts - v.get("timestamp", 0)) < 43200}
+            data[cache_key] = {
+                "timestamp": now_ts,
+                "payload": payload.model_dump(mode="json"),
+            }
+            disk_file.parent.mkdir(parents=True, exist_ok=True)
+            disk_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.debug("Error saving disk news cache: %s", e)
+
     async def extract_evidence_from_text(
         self,
         article_text: str,
@@ -114,7 +163,6 @@ class GeminiEvidenceExtractor:
         budget exhaustion, 429, or schema errors.
         """
         import hashlib
-        import time
 
         now_iso = datetime.now(UTC).isoformat()
         cache_key = hashlib.sha256(
@@ -123,18 +171,15 @@ class GeminiEvidenceExtractor:
                     article_text,
                     article_url,
                     published_at,
-                    candidate_players,
                     target_gw,
                     os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
                 ],
                 sort_keys=True,
             ).encode()
         ).hexdigest()
-        if not hasattr(self, "_evidence_cache"):
-            self._evidence_cache = {}
-        cached = self._evidence_cache.get(cache_key)
-        if cached and time.monotonic() - cached[0] < 900:
-            return cached[1].model_copy(deep=True)
+        cached = self._get_cached_payload(cache_key)
+        if cached:
+            return cached
         article_hash = f"hash_{len(article_text)}_{abs(hash(article_text))}"
 
         configured, reason = self.is_configured()
@@ -292,9 +337,7 @@ class GeminiEvidenceExtractor:
                     evidences=evidences,
                     raw_response_snippet="Success",
                 )
-                if len(self._evidence_cache) > 100:
-                    self._evidence_cache.clear()
-                self._evidence_cache[cache_key] = (time.monotonic(), result.model_copy(deep=True))
+                self._save_cached_payload(cache_key, result)
                 return result
 
         except Exception as e:
