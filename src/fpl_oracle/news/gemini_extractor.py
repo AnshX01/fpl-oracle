@@ -85,6 +85,7 @@ budget_manager = GeminiBudgetManager()
 class GeminiEvidenceExtractor:
     def __init__(self):
         self.budget = budget_manager
+        self._evidence_cache: dict[str, tuple[float, ExtractedNewsPayload]] = {}
 
     def is_configured(self) -> tuple[bool, str]:
         """Check whether Gemini extractor is safely configured for non-billable Free Tier."""
