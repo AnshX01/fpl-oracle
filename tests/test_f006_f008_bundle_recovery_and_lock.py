@@ -1,14 +1,11 @@
 import hashlib
 import json
-import multiprocessing
-import os
-import shutil
 import tempfile
 import time
 from pathlib import Path
+
 import pytest
 
-from fpl_oracle.ml.bundle_lock import bundle_locked, BUNDLE_LOCK
 from fpl_oracle.ml.model_registry import ModelRegistry
 
 
@@ -141,7 +138,7 @@ def test_cross_process_bundle_lock_mutual_exclusion():
         lock_dir = Path(td)
         log_file = lock_dir / "timing.log"
 
-        worker_script = f"""
+        worker_script = """
 import sys, time
 from pathlib import Path
 from fpl_oracle.ml.bundle_lock import get_bundle_file_lock
@@ -154,11 +151,11 @@ lock = get_bundle_file_lock(lock_dir)
 with lock:
     t_start = time.time()
     with open(log_file, "a") as f:
-        f.write(f"{{worker_id}},START,{{t_start}}\\n")
+        f.write(f"{worker_id},START,{t_start}\\n")
     time.sleep(0.4)
     t_end = time.time()
     with open(log_file, "a") as f:
-        f.write(f"{{worker_id}},END,{{t_end}}\\n")
+        f.write(f"{worker_id},END,{t_end}\\n")
 """
         script_file = lock_dir / "worker.py"
         script_file.write_text(worker_script, encoding="utf-8")

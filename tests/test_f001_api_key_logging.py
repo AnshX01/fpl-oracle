@@ -1,6 +1,6 @@
 import logging
 import re
-import pytest
+
 from fpl_oracle.utils.logging import SecretRedactingFilter, setup_logging
 
 

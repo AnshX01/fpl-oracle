@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+
 from fpl_oracle.api.models import BootstrapStatic, GameweekEvent
 from fpl_oracle.chips.planner import ChipPlanner
 

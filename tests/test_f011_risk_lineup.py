@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+
 from fpl_oracle.optimise.lineup import LineupOptimizer
 
 

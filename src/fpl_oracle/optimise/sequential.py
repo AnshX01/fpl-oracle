@@ -4,7 +4,6 @@ from typing import Any
 
 from fpl_oracle.optimise.squad import squad_optimizer
 
-
 _SOLVE_CACHES: dict[Any, Any] = {}
 _RANKING_CACHE: dict[Any, Any] = {}
 _LINEUP_CACHE: dict[Any, Any] = {}
