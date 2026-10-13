@@ -53,8 +53,8 @@ class SquadOptimizer:
         pos_of = df["position"].tolist()
         team_of = df["team"].tolist()
         elem_of = df["element"].tolist()
-        metric_of = df[metric_col].tolist() if metric_col in df else None
-        value_of = df["value"].tolist() if "value" in df else None
+        metric_of = df[metric_col].tolist() if metric_col in df else [0.0] * len(df)
+        value_of = df["value"].tolist() if "value" in df else [0.0] * len(df)
         unavailable_of = (
             [bool(v) for v in df["simulation_unavailable"].tolist()] if "simulation_unavailable" in df else None
         )

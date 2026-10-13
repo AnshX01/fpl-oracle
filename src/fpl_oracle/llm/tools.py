@@ -23,7 +23,7 @@ from fpl_oracle.server.analysis import analysis_service
 
 logger = logging.getLogger("fpl_oracle.llm.tools")
 
-chat_tool_cache = ContextVar("chat_tool_cache", default=None)
+chat_tool_cache: ContextVar[dict[tuple[str, str], Any] | None] = ContextVar("chat_tool_cache", default=None)
 
 
 TOOL_DEFINITIONS = [
@@ -244,8 +244,9 @@ class ToolExecutor:
         def clean_player(p: Any) -> dict[str, Any]:
             if not isinstance(p, dict):
                 return {}
-            val = p.get("value", p.get("cost", 50))
-            cost = round(float(val) / (10.0 if float(val) > 20 else 1.0), 1)
+            raw_val = p.get("value", p.get("cost", 50))
+            val = float(raw_val) if raw_val is not None else 50.0
+            cost = round(val / (10.0 if val > 20 else 1.0), 1)
             return {
                 "element": p.get("element"),
                 "web_name": p.get("web_name"),
