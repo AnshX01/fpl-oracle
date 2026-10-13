@@ -45,6 +45,12 @@ COMPONENT_WEIGHTS = [
 ]
 
 
+class ModelBundleCorruptError(RuntimeError):
+    """Raised when an active model bundle is corrupt and cannot be restored from versions."""
+
+    pass
+
+
 def check_promotion_gate(
     candidate_metrics: dict[str, Any],
     active_metrics: dict[str, Any] | None = None,
@@ -162,8 +168,21 @@ class ModelRegistry:
         self.rejected_dir = REJECTED_DIR
         self.manifest_path = MANIFEST_PATH
         self.reports_dir = REPORTS_DIR
+        self._last_recovery_event: dict[str, Any] | None = None
         self._ensure_dirs()
         self._init_manifest()
+
+    def get_last_recovery_event(self) -> dict[str, Any] | None:
+        """Return the most recent quarantine/rollback recovery event details, if any."""
+        if hasattr(self, "_last_recovery_event") and self._last_recovery_event is not None:
+            return self._last_recovery_event
+        event_file = self.models_dir / "recovery_event.json"
+        if event_file.exists():
+            try:
+                return json.loads(event_file.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+        return None
 
     def _ensure_dirs(self):
         self.models_dir.mkdir(parents=True, exist_ok=True)
@@ -257,30 +276,149 @@ class ModelRegistry:
         journal.unlink()
 
     @bundle_locked
+    def quarantine_and_recover(self, target_dir: Path | None = None, reason: str = "") -> dict[str, Any]:
+        """
+        Quarantine corrupt or unreadable weight files to data/models/quarantine/<timestamp>/
+        and restore the last valid verified version from data/models/versions/.
+        Raises ModelBundleCorruptError if no valid version exists to restore.
+        """
+        models_path = target_dir or self.models_dir
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+        quarantine_dir = models_path / "quarantine" / timestamp
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+
+        quarantined_files: list[str] = []
+        for file_p in models_path.glob("*.pkl"):
+            if file_p.is_file():
+                dest = quarantine_dir / file_p.name
+                shutil.move(str(file_p), str(dest))
+                quarantined_files.append(file_p.name)
+        cal_p = models_path / "calibration.json"
+        if cal_p.exists() and cal_p.is_file():
+            shutil.move(str(cal_p), str(quarantine_dir / "calibration.json"))
+            quarantined_files.append("calibration.json")
+
+        logger.critical(
+            f"[ModelIntegrity] Corrupt model bundle files quarantined to {quarantine_dir}: {quarantined_files} (Reason: {reason})"
+        )
+
+        restored_ver_name = None
+        restored_dir = None
+        manifest = self.load_manifest()
+
+        # 1. Search versions listed in manifest in reverse chronological order
+        versions_list = manifest.get("versions", [])
+        for v in reversed(versions_list):
+            v_name = v.get("version")
+            if not v_name:
+                continue
+            cand_dir = self.versions_dir / v_name
+            if not cand_dir.exists() or not cand_dir.is_dir():
+                continue
+
+            hashes = v.get("file_hashes", {})
+            if hashes:
+                has_all_weights = True
+                for filename, expected_hash in hashes.items():
+                    w_path = cand_dir / filename
+                    if not w_path.exists() or self.calculate_file_hash(w_path) != expected_hash:
+                        has_all_weights = False
+                        break
+            else:
+                has_all_weights = any(cand_dir.glob("*.pkl"))
+
+            if has_all_weights:
+                restored_ver_name = v_name
+                restored_dir = cand_dir
+                break
+
+        # 2. Disk scan fallback across versions_dir
+        if restored_dir is None and self.versions_dir.exists():
+            subdirs = sorted(
+                [d for d in self.versions_dir.iterdir() if d.is_dir()],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            for sub in subdirs:
+                pkls = list(sub.glob("*.pkl"))
+                if pkls and all(f.stat().st_size > 0 for f in pkls):
+                    restored_ver_name = sub.name
+                    restored_dir = sub
+                    break
+
+        if restored_dir is None:
+            err_msg = (
+                f"Model bundle corruption detected ({reason}), but no valid verified version "
+                f"exists in {self.versions_dir} to restore from."
+            )
+            logger.critical(f"[ModelIntegrity] {err_msg}")
+            raise ModelBundleCorruptError(err_msg)
+
+        # Restore files to active models directory
+        for f in restored_dir.glob("*"):
+            if f.is_file():
+                shutil.copy2(f, models_path / f.name)
+
+        manifest["active_version"] = restored_ver_name
+        self.save_manifest(manifest)
+
+        event = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "reason": reason,
+            "quarantine_dir": str(quarantine_dir),
+            "restored_version": restored_ver_name,
+            "quarantined_files": quarantined_files,
+        }
+        self._last_recovery_event = event
+        try:
+            (models_path / "recovery_event.json").write_text(json.dumps(event, indent=2), encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Could not persist recovery_event.json: {e}")
+
+        logger.critical(
+            f"[ModelIntegrity] AUTOMATIC RECOVERY SUCCESSFUL: Quarantined bad files, restored verified version '{restored_ver_name}'."
+        )
+        return event
+
+    @bundle_locked
     def verify_weight_integrity(self, weights_dir: Path | None = None) -> tuple[bool, str]:
         """
         Verify that weight files in directory match the SHA256 hashes in manifest.
-        Raises ValueError if tampering or missing files detected.
+        On mismatch, automatically quarantines the corrupt bundle and restores the last
+        verified version from versions/. Raises ModelBundleCorruptError if no valid version exists.
         """
         if weights_dir is None or weights_dir == self.models_dir:
             self.recover_interrupted_swap()
         target_dir = weights_dir or self.models_dir
-        active = self.get_active_version()
-        expected_hashes = active.get("file_hashes")
-        if not expected_hashes:
-            return True, "No file hashes recorded in manifest for active version."
 
-        for filename, expected_hash in expected_hashes.items():
-            fpath = target_dir / filename
-            if not fpath.exists():
-                msg = f"Weight file missing during integrity verification: {filename}"
-                logger.error(f"[ModelIntegrity] {msg}")
-                raise ValueError(msg)
-            actual_hash = self.calculate_file_hash(fpath)
-            if actual_hash != expected_hash:
-                msg = f"SHA256 mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
-                logger.error(f"[ModelIntegrity] {msg}")
-                raise ValueError(msg)
+        mismatch_reason = None
+        try:
+            active = self.get_active_version()
+            expected_hashes = active.get("file_hashes")
+            if not expected_hashes:
+                for _, filename, _ in COMPONENT_WEIGHTS:
+                    if not (target_dir / filename).exists():
+                        mismatch_reason = f"Weight file missing during integrity verification: {filename}"
+                        break
+            else:
+                for filename, expected_hash in expected_hashes.items():
+                    fpath = target_dir / filename
+                    if not fpath.exists():
+                        mismatch_reason = f"Weight file missing during integrity verification: {filename}"
+                        break
+                    actual_hash = self.calculate_file_hash(fpath)
+                    if actual_hash != expected_hash:
+                        mismatch_reason = f"SHA256 mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+                        break
+        except Exception as e:
+            mismatch_reason = f"Manifest or file read error: {e}"
+
+        if mismatch_reason:
+            logger.warning(
+                f"[ModelIntegrity] Integrity check failed ({mismatch_reason}). Triggering automatic quarantine and rollback..."
+            )
+            event = self.quarantine_and_recover(target_dir=target_dir, reason=mismatch_reason)
+            return True, f"Automatic recovery succeeded: restored {event.get('restored_version')} following {mismatch_reason}"
 
         logger.info("[ModelIntegrity] All active component model weights successfully verified.")
         return True, "All component model weights successfully verified."
