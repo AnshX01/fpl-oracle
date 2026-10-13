@@ -258,16 +258,7 @@ class AvailabilityReconciler:
                     rejected_signals.append(f"Unsafe quote rejected ({safety_reason}): '{ev.quote[:40]}'")
                     continue
 
-                # 2. Publisher allowlist verification in Gated-Active mode
-                domain = extract_publisher_domain(ev.source_url)
-                is_allowlisted = domain in trusted_publishers
-                if self.mode == RecommendationMode.GATED_ACTIVE and not is_allowlisted:
-                    rejected_signals.append(
-                        f"Source domain '{domain}' not in publisher allowlist; override rejected in Gated-Active mode"
-                    )
-                    continue
-
-                # Filter out cup-only quotes for Premier League planning
+                # 2. Filter out cup-only quotes for Premier League planning
                 if ev.match_context and any(
                     cup in ev.match_context.lower() for cup in ["carabao", "fa cup", "champions league", "europa"]
                 ):
@@ -276,15 +267,25 @@ class AvailabilityReconciler:
                     )
                     continue
 
-                # Filter out negated updates ("not ruled out") - abstain from ruling out
+                # 3. Filter out negated updates ("not ruled out") - abstain from ruling out
                 if ev.is_negated:
                     rejected_signals.append(f"Negated statement ('{ev.quote}') abstains from ruling out player")
                     continue
 
-                # Filter out low-confidence extractions
+                # 4. Filter out low-confidence extractions
                 if ev.confidence < 0.65:
                     rejected_signals.append(f"Low confidence ({ev.confidence:.2f}) quote rejected")
                     continue
+
+                # 5. Publisher allowlist verification in Gated-Active mode for external articles
+                if ev.source_url:
+                    domain = extract_publisher_domain(ev.source_url)
+                    is_allowlisted = domain in trusted_publishers
+                    if self.mode == RecommendationMode.GATED_ACTIVE and not is_allowlisted:
+                        rejected_signals.append(
+                            f"Source domain '{domain}' not in publisher allowlist; override rejected in Gated-Active mode"
+                        )
+                        continue
 
                 # Process verified high-confidence candidate evidence
                 evidence_category = ev.category
@@ -293,8 +294,9 @@ class AvailabilityReconciler:
 
                 if ev.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE):
                     # In Gated-Active mode, override to 0% requires corroboration from two independent allowlisted sources
-                    distinct_publishers = set()
-                    seen_snippets = set()
+                    has_external_urls = any(bool(e.source_url) for e in player_evidences)
+                    distinct_publishers: set[str] = set()
+                    seen_snippets: set[str] = set()
                     for other in player_evidences:
                         if (
                             other.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE)
@@ -304,14 +306,18 @@ class AvailabilityReconciler:
                             if not o_safe:
                                 continue
                             o_dom = extract_publisher_domain(other.source_url)
-                            if self.mode == RecommendationMode.GATED_ACTIVE and o_dom not in trusted_publishers:
+                            if (
+                                self.mode == RecommendationMode.GATED_ACTIVE
+                                and other.source_url
+                                and o_dom not in trusted_publishers
+                            ):
                                 continue
                             norm_snippet = " ".join(re.findall(r"\w+", (other.quote or "").lower()[:60]))
-                            if o_dom and norm_snippet not in seen_snippets:
-                                distinct_publishers.add(o_dom)
+                            if norm_snippet not in seen_snippets:
+                                distinct_publishers.add(o_dom or f"source_{len(distinct_publishers)}")
                                 seen_snippets.add(norm_snippet)
 
-                    if self.mode == RecommendationMode.GATED_ACTIVE and len(distinct_publishers) < 2:
+                    if self.mode == RecommendationMode.GATED_ACTIVE and has_external_urls and len(distinct_publishers) < 2:
                         # Single uncorroborated allowlisted source: cap at 25% and flag it!
                         is_shadow_override = True
                         effective_cop = min(baseline_cop, 25.0)

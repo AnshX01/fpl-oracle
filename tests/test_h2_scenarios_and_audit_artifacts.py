@@ -95,11 +95,11 @@ def test_scenario_7_price_rise_timing_warning_attached():
     for out, incoming in zip(rec_plan.get("transfers_out", []), rec_plan.get("transfers_in", []), strict=False):
         timing_warning = ""
         if incoming.get("element") in imminent_rise_ids:
-            timing_warning = " ⚠️ (Price rises tonight, act before 23:59 UK)"
+            timing_warning = " (Price rises tonight, act before 23:59 UK)"
         lines.append(f"- {out['web_name']} → {incoming['web_name']}{timing_warning}")
 
     assert len(lines) == 1
-    assert "- DEF_9 → DEF_14 ⚠️ (Price rises tonight, act before 23:59 UK)" == lines[0]
+    assert "- DEF_9 → DEF_14 (Price rises tonight, act before 23:59 UK)" == lines[0]
 
 
 def test_scenario_2_broken_squad_fixture_artifact_vs_fixed():
