@@ -49,27 +49,47 @@ def risk_test_squad():
     return pd.DataFrame(rows)
 
 
+def test_flag_off_preserves_pure_expected_points(risk_test_squad):
+    """
+    F-011: When risk_aware_lineup flag is False (default), all risk modes (conservative,
+    balanced, aggressive) use pure raw expected points for starter selection.
+    """
+    optimizer = LineupOptimizer()
+
+    for mode in ["balanced", "conservative", "aggressive"]:
+        res = optimizer.select_lineup_and_captain(risk_test_squad, risk_preference=mode, risk_aware_lineup=False)
+        starters = set(res["starters"]["element"])
+        assert 11 in starters, f"With flag OFF, MID_DOUBTFUL (5.0 xP) must start over DEF_SECURE (4.8 xP) in {mode} mode"
+        assert 6 not in starters, f"With flag OFF, DEF_SECURE must be benched in {mode} mode"
+
+
 def test_conservative_mode_benches_doubtful_starter_while_aggressive_starts(risk_test_squad):
     """
-    F-011: In conservative mode, a 75%-flagged high-variance player (MID_DOUBTFUL) must be
-    benched in favor of a secure starter (DEF_SECURE). In aggressive mode, the high-upside
+    F-011: When risk_aware_lineup is enabled, a 75%-flagged high-variance player (MID_DOUBTFUL) must be
+    benched in favor of a secure starter (DEF_SECURE) in conservative mode. In aggressive mode, the high-upside
     MID_DOUBTFUL must be started. Balanced mode must remain identical to raw expected points.
     """
     optimizer = LineupOptimizer()
 
     # 1. Balanced mode: raw expected points dictates that MID_DOUBTFUL (5.0) beats DEF_SECURE (4.8)
-    res_balanced = optimizer.select_lineup_and_captain(risk_test_squad, risk_preference="balanced")
+    res_balanced = optimizer.select_lineup_and_captain(
+        risk_test_squad, risk_preference="balanced", risk_aware_lineup=True
+    )
     balanced_starters = set(res_balanced["starters"]["element"])
     assert 11 in balanced_starters, "MID_DOUBTFUL should start in balanced mode (5.0 > 4.8)"
     assert 6 not in balanced_starters, "DEF_SECURE should be benched in balanced mode"
 
     # 2. Aggressive mode: MID_DOUBTFUL has high ceiling (p90=10.0) -> must start
-    res_aggressive = optimizer.select_lineup_and_captain(risk_test_squad, risk_preference="aggressive")
+    res_aggressive = optimizer.select_lineup_and_captain(
+        risk_test_squad, risk_preference="aggressive", risk_aware_lineup=True
+    )
     aggressive_starters = set(res_aggressive["starters"]["element"])
     assert 11 in aggressive_starters, "MID_DOUBTFUL should start in aggressive mode (seeking upside)"
 
     # 3. Conservative mode: MID_DOUBTFUL carries 75% flag and wide spread -> must be benched for DEF_SECURE
-    res_conservative = optimizer.select_lineup_and_captain(risk_test_squad, risk_preference="conservative")
+    res_conservative = optimizer.select_lineup_and_captain(
+        risk_test_squad, risk_preference="conservative", risk_aware_lineup=True
+    )
     conservative_starters = set(res_conservative["starters"]["element"])
     assert 11 not in conservative_starters, "MID_DOUBTFUL must be BENCHED in conservative mode!"
     assert 6 in conservative_starters, "DEF_SECURE must be STARTED in conservative mode!"

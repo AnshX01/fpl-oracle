@@ -10,6 +10,8 @@ from typing import Any
 import pandas as pd
 import pulp
 
+from fpl_oracle.config import SETTINGS, is_flag_enabled
+
 
 def normal_prob_greater(mu1: float, sigma1: float, mu2: float, sigma2: float) -> float:
     """Calculates P(X1 > X2) assuming independent normal distributions using math.erf."""
@@ -30,15 +32,33 @@ class LineupOptimizer:
         is_bench_boost: bool = False,
         risk_preference: str = "balanced",
         excluded_ids: set[int] | None = None,
-        downside_risk_lambda: float = 0.20,
+        downside_risk_lambda: float | None = None,
+        cop_doubt_penalty: float | None = None,
+        aggressive_upside_weight: float | None = None,
+        risk_aware_lineup: bool | None = None,
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
         Considers P10 floor and P90 ceiling distributions for risk-aware captaincy recommendations.
-        Modulates starter objective for conservative and aggressive risk postures.
+        Modulates starter objective for conservative and aggressive risk postures when risk_aware_lineup flag is enabled.
         """
         if len(squad_df) != 15:
             raise ValueError(f"Squad must have exactly 15 players, got {len(squad_df)}")
+
+        # Configurable risk parameters with calibrated rationales:
+        risk_cfg = SETTINGS.get("risk_lineup", {}) if isinstance(SETTINGS, dict) else {}
+        # 1. downside_risk_lambda: penalizes high variance (P90-P10 spread). Rationale: 0.20 ~ 0.5 sigma penalty
+        lam = downside_risk_lambda if downside_risk_lambda is not None else float(risk_cfg.get("downside_risk_lambda", 0.20))
+        # 2. cop_doubt_penalty: penalty per unit of playing probability doubt. Rationale: 2.0 accounts for cameo substitution friction
+        doubt_pen = cop_doubt_penalty if cop_doubt_penalty is not None else float(risk_cfg.get("cop_doubt_penalty", 2.0))
+        # 3. aggressive_upside_weight: weight on P90 ceiling in aggressive mode. Rationale: 0.30 provides 30% upside tilt
+        upside_wt = aggressive_upside_weight if aggressive_upside_weight is not None else float(risk_cfg.get("aggressive_upside_weight", 0.30))
+
+        flag_enabled = (
+            risk_aware_lineup
+            if risk_aware_lineup is not None
+            else is_flag_enabled("risk_aware_lineup", default=False)
+        )
 
         df = squad_df.copy().reset_index(drop=True)
 
@@ -64,22 +84,22 @@ class LineupOptimizer:
         else:  # balanced
             cap_scores = df["expected_points"] * 0.70 + p90_vals * 0.30
 
-        # Starter score based on risk preference:
-        if risk_preference == "conservative":
+        # Starter score based on risk preference and feature flag:
+        if flag_enabled and risk_preference == "conservative":
             spread = p90_vals - p10_vals
             cop_penalty = pd.Series(0.0, index=df.index)
             if "chance_of_playing" in df.columns:
                 cop = pd.to_numeric(df["chance_of_playing"], errors="coerce").fillna(100.0)
-                cop_penalty = (100.0 - cop).clip(lower=0.0) / 100.0 * 2.0
+                cop_penalty = (100.0 - cop).clip(lower=0.0) / 100.0 * doubt_pen
             elif "chance_of_playing_next_round" in df.columns:
                 cop = pd.to_numeric(df["chance_of_playing_next_round"], errors="coerce").fillna(100.0)
-                cop_penalty = (100.0 - cop).clip(lower=0.0) / 100.0 * 2.0
-            starter_scores = df["expected_points"] - (downside_risk_lambda * spread) - cop_penalty
-        elif risk_preference == "aggressive":
+                cop_penalty = (100.0 - cop).clip(lower=0.0) / 100.0 * doubt_pen
+            starter_scores = df["expected_points"] - (lam * spread) - cop_penalty
+        elif flag_enabled and risk_preference == "aggressive":
             # Aggressive mode prioritizes ceiling / P90 upside
-            starter_scores = df["expected_points"] * 0.70 + p90_vals * 0.30
+            starter_scores = df["expected_points"] * (1.0 - upside_wt) + p90_vals * upside_wt
         else:
-            # Balanced and points modes are numerically identical to existing baseline
+            # When flag is OFF, or in balanced/points mode, starter score is pure expected points
             starter_scores = df["expected_points"]
 
         prob += pulp.lpSum(
