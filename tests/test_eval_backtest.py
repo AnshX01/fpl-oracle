@@ -173,6 +173,19 @@ def test_row_alignment_and_shuffled_predictions_regression():
     assert (meta_gw["round"] == 10).all()
     assert (meta_gw["season"] == "2025-26").all()
 
+    # Assert row-alignment by (player_id, gameweek) against raw master dataset
+    for idx in meta_gw.index[:50]:
+        p_id = meta_gw.loc[idx, "element"]
+        gw_num = int(meta_gw.loc[idx, "round"])
+        s_val = str(meta_gw.loc[idx, "season"])
+        raw_match = df_raw[
+            (df_raw["element"] == p_id)
+            & (df_raw["round"] == gw_num)
+            & (df_raw["season"] == s_val)
+        ]
+        assert len(raw_match) == 1, f"Expected 1 raw row for element {p_id} GW{gw_num}, found {len(raw_match)}"
+        assert float(Y_gw.loc[idx, "target_points"]) == float(raw_match["total_points"].values[0])
+
     # Active players
     active_mask = Y_gw["target_minutes"].values > 0
     actual_pts = Y_gw.loc[active_mask, "target_points"].values
