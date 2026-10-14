@@ -241,6 +241,7 @@ def _make_dummy_projections():
     return {gw: df.copy() for gw in range(1, 40)}, df
 
 
+@pytest.mark.slow
 @pytest.mark.anyio
 async def test_decision_card_missing_manager_shows_unavailable(configured_advisor):
     """Verify decision card reflects explicit unavailable state when manager is missing from standings."""
@@ -283,6 +284,7 @@ async def test_decision_card_missing_manager_shows_unavailable(configured_adviso
     assert card["win_prob"]["status"] == "unavailable"
 
 
+@pytest.mark.slow
 @pytest.mark.anyio
 async def test_decision_card_leader_no_close_chasers(configured_advisor):
     """Verify decision card reflects 'leader, no close chasers' state without forcing 10 rivals."""

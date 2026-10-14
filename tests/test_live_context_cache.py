@@ -3,9 +3,12 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pandas as pd
+import pytest
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.data.features import FeatureEngineering, player_identity_resolver
+
+pytestmark = pytest.mark.slow
 
 
 def test_horizon_reuses_identity_and_stats_without_changing_values(monkeypatch):

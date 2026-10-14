@@ -19,6 +19,7 @@ cache:
 
 fpl:
   base_url: "https://fantasy.premierleague.com/api"
+  target_league_id: 435956  # IceMakers League
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 FPLOracle/1.0"
   max_concurrency: 5
   request_timeout_seconds: 15
