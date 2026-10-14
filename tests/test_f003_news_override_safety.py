@@ -184,3 +184,133 @@ def test_hidden_text_and_prompt_injection_variants_rejected(sample_haaland):
 
     assert rec.effective_chance_of_playing == 100.0
     assert any("injection" in s.lower() or "html" in s.lower() for s in rec.rejected_signals)
+
+
+def test_two_independent_outlets_with_identical_quote_counts_as_two(sample_haaland, monkeypatch):
+    """
+    F-003: Two different allowlisted publishers (BBC and Guardian) quoting the EXACT same manager quote
+    must count as two independent sources, permitting full override to 0.0.
+    """
+    reconciler = AvailabilityReconciler(mode=RecommendationMode.GATED_ACTIVE)
+    monkeypatch.setattr(
+        "fpl_oracle.news.reconcile.check_news_benchmark_gate",
+        lambda *args, **kwargs: (True, "Gate OPEN", {}),
+    )
+
+    identical_manager_sentence = "Pep confirms Erling Haaland has a hamstring tear and is definitely ruled out."
+
+    ev1 = PlayerEvidence(
+        player_id=350,
+        player_name="Erling Haaland",
+        team_name="Man City",
+        category=EvidenceCategory.RULED_OUT,
+        quote=identical_manager_sentence,
+        target_gw=7,
+        confidence=0.95,
+        source_url="https://www.bbc.co.uk/sport/football/articles/12345",
+        surrounding_text="Manchester City are facing a major selection headache ahead of the weekend clash as reported by BBC Sport.",
+    )
+    ev2 = PlayerEvidence(
+        player_id=350,
+        player_name="Erling Haaland",
+        team_name="Man City",
+        category=EvidenceCategory.RULED_OUT,
+        quote=identical_manager_sentence,
+        target_gw=7,
+        confidence=0.95,
+        source_url="https://www.theguardian.com/football/2026/oct/12/man-city-haaland-injury",
+        surrounding_text="The Premier League champions have suffered a blow with news that their star striker will not feature.",
+    )
+
+    rec = reconciler.reconcile_player_fixture(
+        element=sample_haaland,
+        target_gw=7,
+        candidate_evidence=[ev1, ev2],
+    )
+
+    assert rec.effective_chance_of_playing == 0.0, "Identical quote from two distinct publishers should count as 2 independent sources!"
+    assert rec.applied_to_production is True
+
+
+def test_syndicated_wire_copies_count_as_single_source(sample_haaland, monkeypatch):
+    """
+    F-003: Two different publisher domains carrying the same syndicated wire story
+    (matching wire_agency or identical surrounding wire text) must count as a single source.
+    """
+    reconciler = AvailabilityReconciler(mode=RecommendationMode.GATED_ACTIVE)
+    monkeypatch.setattr(
+        "fpl_oracle.news.reconcile.check_news_benchmark_gate",
+        lambda *args, **kwargs: (True, "Gate OPEN", {}),
+    )
+
+    ev1 = PlayerEvidence(
+        player_id=350,
+        player_name="Erling Haaland",
+        team_name="Man City",
+        category=EvidenceCategory.RULED_OUT,
+        quote="Pep confirms Erling Haaland is ruled out.",
+        target_gw=7,
+        confidence=0.95,
+        source_url="https://www.bbc.co.uk/sport/football/pa-wire-haaland",
+        wire_agency="PA Media",
+        article_id="pa-wire-20261012-998",
+        surrounding_text="By PA Media Staff. Manchester City forward Erling Haaland has been ruled out of action for the upcoming round.",
+    )
+    ev2 = PlayerEvidence(
+        player_id=350,
+        player_name="Erling Haaland",
+        team_name="Man City",
+        category=EvidenceCategory.RULED_OUT,
+        quote="Pep confirms Erling Haaland is ruled out.",
+        target_gw=7,
+        confidence=0.95,
+        source_url="https://www.theguardian.com/sport/wire-haaland",
+        wire_agency="PA Media",  # Same wire agency
+        article_id="pa-wire-20261012-998",
+        surrounding_text="By PA Media Staff. Manchester City forward Erling Haaland has been ruled out of action for the upcoming round.",
+    )
+
+    rec = reconciler.reconcile_player_fixture(
+        element=sample_haaland,
+        target_gw=7,
+        candidate_evidence=[ev1, ev2],
+    )
+
+    assert rec.effective_chance_of_playing > 0.0, "Syndicated wire copies from different domains must NOT count as 2 independent sources!"
+    assert rec.effective_chance_of_playing <= 25.0
+    assert "single uncorroborated" in rec.reconciliation_reason.lower()
+
+
+def test_configurable_single_source_cap_and_official_flag(sample_haaland, monkeypatch):
+    """
+    F-003: Single source cap is configurable via ReconcileProbabilitySettings
+    and the reconciliation reason documents the official FPL status.
+    """
+    from fpl_oracle.news.reconcile import ReconcileProbabilitySettings
+
+    custom_settings = ReconcileProbabilitySettings(single_source_cop_cap=35.0)
+    reconciler = AvailabilityReconciler(mode=RecommendationMode.GATED_ACTIVE, prob_settings=custom_settings)
+    monkeypatch.setattr(
+        "fpl_oracle.news.reconcile.check_news_benchmark_gate",
+        lambda *args, **kwargs: (True, "Gate OPEN", {}),
+    )
+
+    single_ev = PlayerEvidence(
+        player_id=350,
+        player_name="Erling Haaland",
+        team_name="Man City",
+        category=EvidenceCategory.RULED_OUT,
+        quote="Pep confirms Erling Haaland is out.",
+        target_gw=7,
+        confidence=0.95,
+        source_url="https://www.bbc.co.uk/sport/football/articles/haaland",
+    )
+
+    rec = reconciler.reconcile_player_fixture(
+        element=sample_haaland,
+        target_gw=7,
+        candidate_evidence=[single_ev],
+    )
+
+    assert rec.effective_chance_of_playing == 35.0, f"Expected 35.0% cap, got {rec.effective_chance_of_playing}"
+    assert "Official FPL: 'a' 100%" in rec.reconciliation_reason
