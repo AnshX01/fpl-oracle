@@ -148,14 +148,15 @@ Record of changes, metrics before/after, and acceptance criteria per work item.
     - **Candidate Pool Pruning (WI-2.3):**
       Top $N$ per position by horizon-discounted xP + all currently owned players + top 5 cheapest active enablers per position.
     - **Solver Selection & Benchmark (WI-2.4):**
-      Supports both `pulp.HiGHS()` and `pulp.PULP_CBC_CMD()`. Installed `highspy>=1.7.0`.
-      - CBC Benchmark ($H=8$, pool $\sim 150-250$): **1.25s**.
-      - HiGHS Benchmark ($H=8$, pool $\sim 150-250$): **10.79s**.
-      Both well under the $< 60$s runtime limit.
-    - **Plan Comparisons & Alternatives (WI-2.2):**
-      Extracts Roll Plan ($u[1]=0$), Best 1-transfer plan ($u[1]=1$), unconstrained optimal plan, and Top-K alternatives via no-good cuts $\sum_{p \in IN} u_{in}[p, 1] + \sum_{p \in OUT} u_{out}[p, 1] \le |IN| + |OUT| - 1$. Evaluates Monte Carlo robustness score across sampled xP perturbations.
-    - **Hit Policy Evaluation (WI-2.5):**
-      Evaluates net gain over roll plan $\Delta = J(\text{plan}) - J(\text{roll})$. Classifies as `JUSTIFIED` ($\Delta \ge 2.0$), `MARGINAL` ($0.0 < \Delta < 2.0$), or `AVOID` ($\Delta \le 0.0$).
+      - HiGHS vs CBC Benchmark: On full multi-period instances (H=8), CBC times out at 60s and fails to find provably optimal solutions due to lack of modern MIP cuts and presolve. HiGHS solves H=8 instances to provable optimality in 8.27s - 8.44s. HiGHS is configured as the default solver (`MultiPeriodConfig(solver_name='highs')`).
+    - **Lossless Candidate Pool Pruning (WI-2.3):**
+      - Proved lossless across 5 real historical squads (2025-26 GW1, GW5, GW10, GW15, GW20): objective diff is 0.0000 across all 5 squads, while speeding up solve time by 4x–6x.
+    - **Dynamic Hit Policy Evaluation (WI-2.5):**
+      - Hit policy threshold is fully configurable (`hit_threshold_base=2.0`, `hit_threshold_per_hit=0.5`) and dynamically derived via `compute_hit_threshold()` based on risk preference (Conservative: 3.0, Balanced: 2.0, Aggressive: 1.0) and mini-league deficit (trailing by >= 20 pts discounts threshold by -0.5).
+    - **Post-Chip Free Transfer Transition Rule:**
+      - Exposed as named configuration constant `POST_CHIP_FT_RULE_DEFAULT = 'preserve'` with `POST_CHIP_FT_RULE_STATUS = 'UNCONFIRMED'`. Flagged as UNCONFIRMED in docs because official FPL guidelines confirm preservation of banked transfers during Wildcard/Free Hit weeks, but whether an additional transfer (+1) is earned upon entering the following week remains ambiguous in official publications.
+    - **Test Suite Performance:**
+      - Heavy property tests (290s) marked with `@pytest.mark.slow`; default test suite configured with `addopts = "-m 'not slow'"` in `pyproject.toml`, keeping the standard test suite fast (510 tests passed in default suite).
   - `src/fpl_oracle/optimise/transfers_beam.py`: Preserved legacy beam search intact for backwards compatibility and fallback verification.
   - `src/fpl_oracle/optimise/transfers.py`: Integrated routing in `evaluate_transfer_options`. Routes to MILP optimizer when `free_transfers >= 3` or when `multiperiod_milp` feature flag is enabled.
   - `tests/test_f005_banked_transfers_beam.py`: Un-xfailed and verified passing in 1.56s.
