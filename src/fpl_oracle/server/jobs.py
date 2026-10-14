@@ -538,5 +538,8 @@ def start_scheduler():
 def stop_scheduler():
     """Gracefully terminate background scheduler."""
     if scheduler.running:
-        scheduler.shutdown(wait=False)
+        try:
+            scheduler.shutdown(wait=False)
+        except RuntimeError:
+            pass
         logger.info("[Scheduler] Background scheduler stopped.")
