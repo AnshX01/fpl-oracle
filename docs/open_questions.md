@@ -24,6 +24,12 @@ Record of open architectural, modeling, or rules questions requiring owner confi
 - **Question:** Which mini-leagues matter most to the owner, and what specific outcome does the owner want from each (e.g. win outright, top 3 / podium, prize threshold, or overall rank maximization)?
 - **Default Answer:** Pending human input. Default behavior optimizes for top-1 win probability in head-to-head / small mini-leagues and overall rank percentile in broad public leagues.
 
-### 6. Model vs Baseline 2 Spearman Rank Correlation on DEF and FWD (WI-0.2 Acceptance)
-- **Question:** In the 20-GW walk-forward backtest (`reports/eval/20261014_044926/`), the model beats Baseline 2 (rolling 5 appearances) across all positions on MAE (Gain: +0.033 overall, +0.068 GKP, +0.037 DEF, +0.026 MID, +0.036 FWD) and RMSE (Gain: +0.050 overall, +0.053 GKP, +0.053 DEF, +0.050 MID, +0.038 FWD), with overall Spearman improving from 0.016 to 0.017 (paired t-test t = -4.176, p = 3e-05). However, on DEF (Spearman -0.002 vs 0.005) and FWD (0.013 vs 0.015), the baseline component ensemble narrowly trails Baseline 2 Spearman. Is this acceptable to proceed to Phase 2 (multi-period MILP) while Phase 3 (Dixon-Coles team model WI-3.1 and player shrinkage WI-3.7) refines positional ranking power?
-- **Default Answer:** `Proceed to Phase 2`. The model statistically outperforms Baseline 2 on point-estimate error (p < 0.001), and upcoming Phase 3 work specifically addresses DEF clean-sheet dependence and FWD goal variance via bivariate Poisson and empirical Bayes shrinkage.
+### 6. Model vs Baseline 2 Positional Performance & Audit Verification (WI-0.2 Acceptance)
+- **Question:** Following correction of the index alignment defect in the backtest harness (where `X_curr` and target points are now strictly aligned via `df_sorted`), the 20-GW walk-forward evaluation (`reports/eval/20261014_054543/`) demonstrates that the component model outperforms Baseline 2 (rolling 5 appearances) across **all four positions** on both RMSE and Spearman rank correlation:
+  - **GKP:** Model RMSE 2.906 vs Base 3.102 (Gain +0.196) | Model Spearman 0.079 vs Base 0.049 (Gain +0.030)
+  - **DEF:** Model RMSE 3.083 vs Base 3.288 (Gain +0.205) | Model Spearman 0.223 vs Base 0.174 (Gain +0.049)
+  - **MID:** Model RMSE 2.823 vs Base 2.977 (Gain +0.154) | Model Spearman 0.384 vs Base 0.344 (Gain +0.040)
+  - **FWD:** Model RMSE 3.085 vs Base 3.252 (Gain +0.167) | Model Spearman 0.410 vs Base 0.361 (Gain +0.049)
+  Overall active-player MAE improves from 2.203 to 2.106 (+0.097 gain, 95% bootstrap CI [0.0511, 0.1469], p = 0.00000). Does the owner approve proceeding to Phase 2 (Multi-Period MILP Optimization) based on these verified numbers?
+- **Default Answer:** Pending owner review and decision.
+

@@ -76,3 +76,70 @@ def test_walk_forward_backtester_structure(tmp_path: Path):
     tester = WalkForwardBacktester(output_base_dir=tmp_path)
     assert tester.output_base_dir == tmp_path
     assert tmp_path.exists()
+
+
+def test_calc_spearmans_tied_and_untied():
+    """Verify tied vs ordinal untied Spearman calculation."""
+    from fpl_oracle.eval.backtest import calc_spearmans
+
+    x = np.array([1.0, 2.0, 2.0, 4.0])
+    y = np.array([2.0, 3.0, 3.0, 5.0])
+    sp_tied, sp_noties = calc_spearmans(x, y)
+    assert sp_tied == 1.0
+    assert sp_noties == 1.0
+
+    # Strictly reversed values without ties
+    x_strict = np.array([1.0, 2.0, 3.0, 4.0])
+    y_rev = np.array([4.0, 3.0, 2.0, 1.0])
+    sp_tied_rev, sp_noties_rev = calc_spearmans(x_strict, y_rev)
+    assert sp_tied_rev == -1.0
+    assert sp_noties_rev == -1.0
+
+
+def test_bootstrap_gameweeks():
+    import pandas as pd
+
+    from fpl_oracle.eval.backtest import bootstrap_gameweeks
+
+    # Synthetic multi-GW dataframe where model beats baseline consistently
+    records = []
+    for gw in range(1, 11):
+        for _p in range(20):
+            records.append({
+                "season": "2025-26",
+                "round": gw,
+                "actual_points": 5.0,
+                "model_xp": 4.5,      # error = 0.5
+                "b2_roll_5": 3.0,     # error = 2.0 -> model gain = 1.5
+            })
+    df_syn = pd.DataFrame(records)
+    res = bootstrap_gameweeks(df_syn, n_boot=500, seed=42)
+    assert res["n_gameweeks"] == 10
+    assert np.isclose(res["mean_gain_mae"], 1.5)
+    assert res["ci_95_mae"][0] > 0
+    assert res["bootstrap_p_value_mae"] == 0.0
+
+
+def test_odds_devigging_and_snapshot(tmp_path: Path):
+    """WI-3.2: Verify power and Shin devigging methods and odds snapshotting."""
+    from fpl_oracle.data.odds import devig_power, devig_shin, snapshot_odds
+
+    odds = [2.0, 3.5, 4.0]
+    p_power = devig_power(odds)
+    assert np.isclose(np.sum(p_power), 1.0)
+    assert p_power[0] > p_power[1] > p_power[2]
+
+    p_shin, z = devig_shin(odds)
+    assert np.isclose(np.sum(p_shin), 1.0)
+    assert z >= 0.0
+    assert p_shin[0] > p_shin[1] > p_shin[2]
+
+    snap_file = snapshot_odds(target_gw=8, custom_output_dir=tmp_path)
+    assert snap_file.exists()
+    with open(snap_file, encoding="utf-8") as f:
+        data = json.load(f)
+    assert data["gameweek"] == 8
+    assert data["matches_count"] > 0
+    assert "devigged_p_shin" in data["matches"][0]
+    assert "devigged_p_power" in data["matches"][0]
+

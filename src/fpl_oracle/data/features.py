@@ -762,6 +762,10 @@ class FeatureEngineering:
         grouped = df_player.groupby("norm_name", group_keys=False)
 
         # Shifted rolling stats (Strictly pre-match!)
+        df_player["prev_points"] = grouped["total_points"].apply(lambda s: s.shift(1)).fillna(0.0)
+        df_player["season_points_mean"] = (
+            grouped["total_points"].apply(lambda s: s.shift(1).expanding(min_periods=1).mean()).fillna(0.0)
+        )
         for window in [3, 5, 8]:
             df_player[f"roll_minutes_{window}"] = (
                 grouped["minutes"].apply(lambda s, w=window: s.shift(1).rolling(w, min_periods=1).mean()).fillna(0.0)
@@ -908,7 +912,20 @@ class FeatureEngineering:
             }
         )
 
-        meta_cols = [c for c in ["season", "round", "name", "element", "team", "position"] if c in df_sorted.columns]
+        meta_cols = [
+            c
+            for c in [
+                "season",
+                "round",
+                "name",
+                "element",
+                "team",
+                "position",
+                "prev_points",
+                "season_points_mean",
+            ]
+            if c in df_sorted.columns
+        ]
         meta = df_sorted[meta_cols].copy()
         X.attrs["meta"] = meta
         X.attrs["schema_hash"] = self._schema_hash
