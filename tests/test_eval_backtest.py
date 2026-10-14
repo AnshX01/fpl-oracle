@@ -194,3 +194,75 @@ def test_row_alignment_and_shuffled_predictions_regression():
     assert abs(mean_shuffled_rho) < 0.02, f"Expected |mean(rho)| < 0.02, got {mean_shuffled_rho}"
 
 
+def test_backtest_compute_view_metrics_and_markdown(tmp_path: Path):
+    """Verify WalkForwardBacktester metrics computation and markdown generation."""
+    import pandas as pd
+
+    records = []
+    for gw in [1, 2]:
+        for i in range(15):
+            records.append({
+                "season": "2025-26",
+                "round": gw,
+                "element": 100 + i,
+                "web_name": f"P_{i}",
+                "position": "MID",
+                "team": 1,
+                "actual_points": float(i % 6),
+                "actual_minutes": 90.0,
+                "model_xp": float(i % 5 + 0.5),
+                "p10": 1.0,
+                "p50": 3.0,
+                "p90": 6.0,
+                "b1_season_mean": 2.5,
+                "b2_roll_5": 2.8,
+                "b3_pos_prior": 2.0,
+                "b4_ep_next": 2.7,
+                "b5_prev_pts": 3.0,
+                "price": 55.0,
+            })
+    df = pd.DataFrame(records)
+    tester = WalkForwardBacktester(output_base_dir=tmp_path)
+    view_metrics = tester._compute_view_metrics(df)
+
+    assert "model_mae" in view_metrics
+    assert "model_rmse" in view_metrics
+    assert "top_decile_precision" in view_metrics
+    assert "stratified_bucket_mae" in view_metrics
+    assert "per_gameweek_breakdown" in view_metrics
+
+    # Test report formatting
+    report_dict = {
+        "evaluation_timestamp_utc": "2026-10-14T00:00:00Z",
+        "duration_seconds": 12.34,
+        "seasons_evaluated": ["2025-26"],
+        "window": "last-20-gw",
+        "retrain_every": 4,
+        "total_observations": 30,
+        "noise_floor_context": "Theoretical noise floor context",
+        "metrics": {
+            "view_a_all_available_players": view_metrics,
+            "view_b_played_players_only": view_metrics,
+            "positional_breakdown_played": {"MID": view_metrics},
+        },
+    }
+    md_output = tester._format_markdown_report(report_dict)
+    assert "# Walk-Forward Backtest & Benchmark Evaluation Report" in md_output
+    assert "View (b): Active Players" in md_output
+
+
+def test_odds_provider_resilience(tmp_path: Path):
+    """Verify FootballDataOddsProvider returns structured odds with devigged probabilities."""
+    from fpl_oracle.data.odds import FootballDataOddsProvider
+
+    provider = FootballDataOddsProvider(cache_dir=tmp_path)
+    odds = provider.get_match_odds(season="2025-26", gameweek=1)
+    assert len(odds) == 10
+    match_0 = odds[0]
+    assert match_0["home_team"] == "Arsenal"
+    assert match_0["bookmaker"] == "Bet365"
+    assert len(match_0["devigged_p_shin"]) == 3
+    assert len(match_0["devigged_p_power"]) == 3
+
+
+
