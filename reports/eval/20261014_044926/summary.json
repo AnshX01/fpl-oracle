@@ -1,0 +1,160 @@
+{
+  "evaluation_timestamp_utc": "2026-10-14T04:47:43.219376+00:00",
+  "duration_seconds": 103.34,
+  "seasons_evaluated": [
+    "2024-25",
+    "2025-26"
+  ],
+  "window": "last-20-gw",
+  "retrain_every": 4,
+  "total_observations": 16352,
+  "noise_floor_context": "Theoretical noise floor: Simulated perfect model achieves RMSE ~2.81, MAE ~1.96, R^2 ~0.15 on pooled FPL player-GWs due to irreducible single-match variance (FPL Review benchmark; OpenFPL arXiv:2508.09992). Small weekly MAE deltas represent random outcome noise. Paired t-tests are computed to assess genuine statistical significance.",
+  "metrics": {
+    "view_a_all_available_players": {
+      "count": 16352,
+      "model_mae": 1.685,
+      "model_rmse": 2.713,
+      "model_spearman": 0.005,
+      "top_decile_precision": 0.112,
+      "baseline_2_roll5_mae": 1.655,
+      "baseline_2_roll5_rmse": 2.74,
+      "baseline_2_roll5_spearman": 0.01,
+      "gain_vs_baseline_2_mae": -0.03,
+      "gain_vs_baseline_2_rmse": 0.027,
+      "paired_t_statistic": 5.784,
+      "paired_p_value": 0.0,
+      "coverage_80_pct": 59.1,
+      "pinball_loss_p10": 0.31,
+      "pinball_loss_p50": 0.824,
+      "pinball_loss_p90": 0.698,
+      "stratified_bucket_mae": {
+        "zeros": 1.165,
+        "blanks": 1.408,
+        "tickers": 2.411,
+        "haulers": 6.432
+      }
+    },
+    "view_b_played_players_only": {
+      "count": 6207,
+      "model_mae": 2.453,
+      "model_rmse": 3.498,
+      "model_spearman": 0.017,
+      "top_decile_precision": 0.144,
+      "baseline_2_roll5_mae": 2.486,
+      "baseline_2_roll5_rmse": 3.549,
+      "baseline_2_roll5_spearman": 0.016,
+      "gain_vs_baseline_2_mae": 0.033,
+      "gain_vs_baseline_2_rmse": 0.05,
+      "paired_t_statistic": -4.176,
+      "paired_p_value": 3e-05,
+      "coverage_80_pct": 55.4,
+      "pinball_loss_p10": 0.306,
+      "pinball_loss_p50": 1.213,
+      "pinball_loss_p90": 1.217,
+      "stratified_bucket_mae": {
+        "zeros": 1.025,
+        "blanks": 1.408,
+        "tickers": 2.408,
+        "haulers": 6.31
+      }
+    },
+    "positional_breakdown_played": {
+      "GKP": {
+        "count": 310,
+        "model_mae": 2.603,
+        "model_rmse": 3.603,
+        "model_spearman": 0.041,
+        "top_decile_precision": 0.065,
+        "baseline_2_roll5_mae": 2.67,
+        "baseline_2_roll5_rmse": 3.655,
+        "baseline_2_roll5_spearman": 0.023,
+        "gain_vs_baseline_2_mae": 0.068,
+        "gain_vs_baseline_2_rmse": 0.053,
+        "paired_t_statistic": -2.213,
+        "paired_p_value": 0.02759,
+        "coverage_80_pct": 48.4,
+        "pinball_loss_p10": 0.311,
+        "pinball_loss_p50": 1.287,
+        "pinball_loss_p90": 1.38,
+        "stratified_bucket_mae": {
+          "zeros": 0.295,
+          "blanks": 1.456,
+          "tickers": 2.099,
+          "haulers": 6.687
+        }
+      },
+      "DEF": {
+        "count": 2442,
+        "model_mae": 2.616,
+        "model_rmse": 3.65,
+        "model_spearman": -0.002,
+        "top_decile_precision": 0.118,
+        "baseline_2_roll5_mae": 2.654,
+        "baseline_2_roll5_rmse": 3.703,
+        "baseline_2_roll5_spearman": 0.005,
+        "gain_vs_baseline_2_mae": 0.037,
+        "gain_vs_baseline_2_rmse": 0.053,
+        "paired_t_statistic": -2.907,
+        "paired_p_value": 0.00368,
+        "coverage_80_pct": 54.4,
+        "pinball_loss_p10": 0.346,
+        "pinball_loss_p50": 1.296,
+        "pinball_loss_p90": 1.321,
+        "stratified_bucket_mae": {
+          "zeros": 1.098,
+          "blanks": 1.411,
+          "tickers": 2.467,
+          "haulers": 5.955
+        }
+      },
+      "MID": {
+        "count": 2846,
+        "model_mae": 2.297,
+        "model_rmse": 3.338,
+        "model_spearman": 0.034,
+        "top_decile_precision": 0.101,
+        "baseline_2_roll5_mae": 2.323,
+        "baseline_2_roll5_rmse": 3.389,
+        "baseline_2_roll5_spearman": 0.027,
+        "gain_vs_baseline_2_mae": 0.026,
+        "gain_vs_baseline_2_rmse": 0.05,
+        "paired_t_statistic": -2.151,
+        "paired_p_value": 0.03157,
+        "coverage_80_pct": 56.4,
+        "pinball_loss_p10": 0.275,
+        "pinball_loss_p50": 1.133,
+        "pinball_loss_p90": 1.107,
+        "stratified_bucket_mae": {
+          "zeros": 0.982,
+          "blanks": 1.414,
+          "tickers": 2.418,
+          "haulers": 6.75
+        }
+      },
+      "FWD": {
+        "count": 609,
+        "model_mae": 2.452,
+        "model_rmse": 3.553,
+        "model_spearman": 0.013,
+        "top_decile_precision": 0.066,
+        "baseline_2_roll5_mae": 2.488,
+        "baseline_2_roll5_rmse": 3.591,
+        "baseline_2_roll5_spearman": 0.015,
+        "gain_vs_baseline_2_mae": 0.036,
+        "gain_vs_baseline_2_rmse": 0.038,
+        "paired_t_statistic": -1.447,
+        "paired_p_value": 0.1485,
+        "coverage_80_pct": 58.3,
+        "pinball_loss_p10": 0.292,
+        "pinball_loss_p50": 1.212,
+        "pinball_loss_p90": 1.235,
+        "stratified_bucket_mae": {
+          "zeros": 0.772,
+          "blanks": 1.358,
+          "tickers": 2.702,
+          "haulers": 6.418
+        }
+      }
+    }
+  }
+}
