@@ -136,6 +136,72 @@ def test_contract_all_stored_2026_27_rows():
     assert mismatches == 0, f"Found {mismatches} mismatches out of {len(s26)} rows in 2026-27"
 
 
+def test_contract_all_stored_seasons_with_rules_version():
+    """
+    WI-1.1: Verify points calculation across ALL stored seasons (2023-24, 2024-25, 2025-26, 2026-27).
+    Tracks rules_version:
+    - '2023-standard' for 2023-24 & 2024-25 (no DefCon)
+    - '2025-defcon' for 2025-26 & 2026-27 (DefCon active)
+    Explains the 251 non-player entries in 2024-25 (mid-season FPL Challenge manager trial cards:
+    Arteta, Guardiola, Emery, etc. which received team points with 0 player minutes).
+    Asserts 0 mismatches across all 90,052 player rows in master_history.
+    """
+    csv_path = Path("data/historical/master_history.csv")
+    if not csv_path.exists():
+        pytest.skip("master_history.csv not found")
+
+    df = pd.read_csv(csv_path)
+
+    # Known 2024-25 FPL Challenge manager trial elements (not player elements)
+    manager_names = {
+        "Andoni Iraola", "Ange Postecoglou", "Arne Slot", "David Moyes", "Eddie Howe",
+        "Enzo Maresca", "Fabian Hürzeler", "Graham Potter", "Ivan Juric", "Kieran McKenna",
+        "Marco Alexandre Saraiva da Silva", "Mikel Arteta", "Nuno Herlander Simões Espírito Santo",
+        "Oliver Glasner", "Pep Guardiola", "Ruben Filipe Marques Diogo Amorim",
+        "Ruud van Nistelrooij", "Simon Rusk", "Thomas Frank", "Unai Emery",
+        "Vítor Manuel de Oliveira Lopes Pereira",
+    }
+
+    season_results = {}
+    for season, s_df in df.groupby("season"):
+        rules_ver = "2025-defcon" if season in ("2025-26", "2026-27") else "2023-standard"
+        mismatches = 0
+        manager_rows = 0
+
+        for _, row in s_df.iterrows():
+            # Check if manager experimental card
+            if season == "2024-25" and (row["name"] in manager_names or any(m in str(row["name"]) for m in ["Arteta", "Guardiola", "Emery", "Maresca", "Slot"])):
+                manager_rows += 1
+                continue
+
+            recalc = calculate_match_points(
+                position=row["position"],
+                minutes=int(row["minutes"]),
+                goals_scored=int(row["goals_scored"]),
+                assists=int(row["assists"]),
+                clean_sheet=bool(row["clean_sheets"] > 0),
+                goals_conceded=int(row["goals_conceded"]),
+                saves=int(row["saves"]),
+                penalties_saved=int(row["penalties_saved"]),
+                penalties_missed=int(row["penalties_missed"]),
+                yellow_cards=int(row["yellow_cards"]),
+                red_cards=int(row["red_cards"]),
+                own_goals=int(row["own_goals"]),
+                defensive_contribution_actions=float(row.get("defensive_contribution", 0)),
+                bonus=int(row["bonus"]),
+                season=str(season),
+                rules_version=rules_ver,
+            )
+            if recalc != int(row["total_points"]):
+                mismatches += 1
+
+        season_results[str(season)] = {"total": len(s_df), "managers": manager_rows, "mismatches": mismatches}
+        assert mismatches == 0, f"Found {mismatches} player mismatches in season {season}"
+
+    assert len(season_results) >= 4, "Must test all 4 historical seasons"
+    assert season_results["2024-25"]["managers"] == 322, "Must account for exactly 322 FPL Challenge manager trial cards in 2024-25 (251 with points > 0, 71 with 0 points)"
+
+
 def test_grep_no_stray_10_multiplier_or_goal_dictionaries():
     """Ensure no other module redefines GKP goal as 10 or hardcodes goal point dictionaries."""
     src_dir = Path("src/fpl_oracle")

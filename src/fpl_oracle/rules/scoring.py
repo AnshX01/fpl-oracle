@@ -95,10 +95,13 @@ def calculate_match_points(
     bonus: int = 0,
     multiplier: int = 1,
     season: str = "2026-27",
+    rules_version: str | None = None,
 ) -> int:
     """
     Deterministic FPL match points calculator enforcing verified official rules.
-    Accurately supports historical rules eras via season parameter.
+    Accurately supports historical rules eras via season parameter or explicit rules_version:
+    - '2023-standard': Seasons 2023-24 and 2024-25 without DefCon rule.
+    - '2025-defcon': Seasons 2025-26 and 2026-27 with DefCon rule active.
     """
     pos = position.upper()
     pts = 0
@@ -138,7 +141,12 @@ def calculate_match_points(
 
     # 9. Defensive Contribution (2025/26 and 2026/27 rules)
     # Triggered when actions reach pos threshold: DEF >= 10, MID/FWD >= 12
-    if season in ("2025-26", "2026-27") and pos != "GKP":
+    has_defcon = (
+        (rules_version == "2025-defcon")
+        if rules_version is not None
+        else (season in ("2025-26", "2026-27"))
+    )
+    if has_defcon and pos != "GKP":
         thresh = DEFCON_THRESHOLDS.get(pos)
         if thresh is not None and defensive_contribution_actions >= thresh:
             pts += DEFCON_POINTS
