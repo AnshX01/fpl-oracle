@@ -79,7 +79,7 @@ class BacktestHarness:
 
         # 2. Isolate 2026-27 season rounds
         s26_mask = meta["season"] == "2026-27"
-        available_rounds = sorted(meta.loc[s26_mask, "round"].unique())
+        available_rounds = [int(r) for r in sorted(meta.loc[s26_mask, "round"].unique())]
         rounds = available_rounds[:num_gws]
 
         oracle_scores = []
