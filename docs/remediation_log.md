@@ -11,7 +11,7 @@ This document provides a verified, evidence-backed audit trail for every finding
 | **F-001** | RESOLVED | `b8b880d` | `tests/test_f001_api_key_logging.py` | PASS (`git log -S"AIza"`: 0 real keys in git history; secrets redacted) |
 | **F-002** | RESOLVED | `e004253` | `tests/test_f002_monte_carlo_ties.py` | PASS (`test_symmetric_tie.py`: 50.0% win, 1.5 rank) |
 | **F-003** | RESOLVED | `95f7e72` | `tests/test_f003_news_override_safety.py` | PASS (`test_prompt_injection.py`: untrusted blog rejected in gated-active) |
-| **F-005** | RESOLVED | Pending Phase 2 commit | `tests/test_f005_banked_transfers_beam.py` | PASS (3-transfer hit-free plan found via multi-period MILP optimizer) |
+| **F-005** | RESOLVED | `30e51c0` | `tests/test_f005_banked_transfers_beam.py` | PASS (3-transfer hit-free plan found via multi-period MILP optimizer) |
 | **F-006** | RESOLVED | `6dfcf32` | `tests/test_f006_f008_bundle_recovery_and_lock.py` | PASS (`test_corrupt_bundle.py`: auto-recovered and restored v1.0.0) |
 | **F-007** | RESOLVED | `3beb262` | `tests/test_f007_chip_expiry.py` | PASS (`test_four_unused_set1_chips_at_gw16_to_gw19_schedule_count`: all 4 scheduled) |
 | **F-008** | RESOLVED | `2b1162b` | `tests/test_f006_f008_bundle_recovery_and_lock.py` | PASS (Cross-process FileLock mutual exclusion verified) |
@@ -178,7 +178,7 @@ This document provides a verified, evidence-backed audit trail for every finding
 
 ### F-005: Banked Free Transfers (3-5 FTs) Beam Search Truncation (Resolved via Spec WI-2.1)
 - **Date**: 2026-10-14
-- **Commit**: Pending Phase 2 commit (`WI-2.1-2.5: Implement Multi-Period MILP Transfer Optimizer with HiGHS/CBC and resolve F-005`)
+- **Commit**: `30e51c0` (`WI-2.1-2.5: Implement Multi-Period MILP Transfer Optimizer with HiGHS/CBC and resolve F-005`)
 - **Test**: `tests/test_f005_banked_transfers_beam.py::test_beam_finds_optimal_3_transfer_hit_free_plan`
 - **Before Output**:
   ```text
