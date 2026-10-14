@@ -24,7 +24,7 @@ from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.game_state import game_state_manager
-from fpl_oracle.config import DATA_DIR, HOLDOUT_DIR, REPORTS_DIR
+from fpl_oracle.config import DATA_DIR, HOLDOUT_DIR, REPORTS_DIR, SNAPSHOTS_DIR
 from fpl_oracle.ml.model_registry import model_registry
 
 logger = logging.getLogger("fpl_oracle.ml.holdout")
@@ -71,6 +71,57 @@ def compute_manifest_sha256() -> str:
     return sha.hexdigest()
 
 
+def save_official_ep_snapshot(
+    bootstrap: Any,
+    target_gw: int,
+    custom_snapshots_dir: Path | None = None,
+) -> Path:
+    """
+    WI-0.2: Snapshot official FPL ep_next and ep_this for all elements
+    at each pre-deadline checkpoint into data/snapshots/.
+    """
+    out_dir = custom_snapshots_dir or SNAPSHOTS_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    elements_list = []
+    for el in getattr(bootstrap, "elements", []):
+        try:
+            ep_n = float(getattr(el, "ep_next", 0.0)) if getattr(el, "ep_next", None) is not None else None
+        except (ValueError, TypeError):
+            ep_n = None
+        try:
+            ep_t = float(getattr(el, "ep_this", 0.0)) if getattr(el, "ep_this", None) is not None else None
+        except (ValueError, TypeError):
+            ep_t = None
+
+        elements_list.append(
+            {
+                "element": int(getattr(el, "id", 0)),
+                "web_name": str(getattr(el, "web_name", "")),
+                "team": int(getattr(el, "team", 0)),
+                "element_type": int(getattr(el, "element_type", 0)),
+                "now_cost": int(getattr(el, "now_cost", 0)),
+                "status": str(getattr(el, "status", "a")),
+                "ep_next": ep_n,
+                "ep_this": ep_t,
+            }
+        )
+
+    payload = {
+        "gameweek": target_gw,
+        "snapshot_at": datetime.now(UTC).isoformat(),
+        "player_count": len(elements_list),
+        "elements": elements_list,
+    }
+
+    target_file = out_dir / f"gw{target_gw}_official_ep.json"
+    with open(target_file, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+    logger.info(f"[Snapshots] Successfully saved official EP benchmark snapshot for GW{target_gw} to {target_file}")
+    return target_file
+
+
 async def freeze_predictions(
     target_gw: int | None = None,
     force: bool = False,
@@ -112,6 +163,11 @@ async def freeze_predictions(
     from fpl_oracle.server.analysis import analysis_service
 
     bootstrap, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
+    # WI-0.2: Snapshot official ep_next / ep_this benchmark inputs
+    try:
+        save_official_ep_snapshot(bootstrap, target_gw)
+    except Exception as ep_err:
+        logger.warning(f"[Snapshots] Official EP snapshotting non-fatal failure: {ep_err}")
     fixtures, fix_stale = await fpl_client.get_fixtures(force_refresh=True)
     event = next((e for e in bootstrap.events if e.id == target_gw), None)
     if event is None or not event.deadline_time or stale or fix_stale:
