@@ -26,6 +26,8 @@ This document provides a verified, evidence-backed audit trail for every finding
 | **F-016** | RESOLVED | `25009da` | `tests/test_feature_table_doc_parity.py` | PASS (All 62 columns synchronized with architecture doc) |
 | **Scenarios 2 & 3** | RESOLVED | `699ea1b` | `tests/test_h2_scenarios_and_audit_artifacts.py` | PASS (Full path recommends Wildcard, 0 broken retained) |
 | **WI-1.1** | RESOLVED | `82afc35` | `tests/rules/test_scoring_contract.py` | PASS (All 4 historical seasons verified with rules_version) |
+| **WI-1.2** | RESOLVED | Core / Tests | `tests/rules/test_ensemble_completeness.py` | PASS (Exact decomposition arithmetic verified across all positions) |
+| **WI-1.5** | NOT DONE | - | - | NOT DONE (Scheduled for Phase 1 of Improvement Spec) |
 
 ---
 
@@ -288,3 +290,25 @@ This document provides a verified, evidence-backed audit trail for every finding
   - Audit cited: 57 features cited in architecture prose vs 62 active in schema (`FEATURE_COLUMNS`). The markdown table previously listed only 39 features.
   - Fix: Generated full 62-row markdown table covering all 11 feature clusters via `scripts/generate_architecture_feature_table.py`.
   - Verification: `tests/test_feature_table_doc_parity.py` validates that all 62 columns are documented.
+- Status: Fully synchronized.
+
+---
+
+## 4. Improvement Spec Tracking: WI-1.2 & WI-1.5 Status
+
+### WI-1.2: Ensemble Completeness & Exact Arithmetic Decomposition
+- **Status**: COMPLETED & VERIFIED.
+- **Implementation**: [`src/fpl_oracle/ml/ensemble.py`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/ml/ensemble.py)
+- **Tests**: [`tests/rules/test_ensemble_completeness.py`](file:///C:/Users/anshw/Documents/fpl-oracle/tests/rules/test_ensemble_completeness.py) (8 test cases passing).
+- **Verified Criteria**:
+  1. Exact arithmetic decomposition:
+     `raw_expected_points == exp_appearance + exp_goals_pts + exp_assists_pts + exp_cs_pts + exp_defcon_pts + exp_bonus_pts + exp_saves_pts + exp_pen_saves_pts - exp_gc_deduction - exp_card_deduction - exp_og_deduction - exp_pen_miss_deduction` holds with 0 error across all rows.
+  2. Conceded goals deduction applies strictly to GKP and DEF only (0.0 for MID/FWD).
+  3. Clean sheet points require $\ge 60$ minutes (`p_min60`).
+  4. DefCon actions never apply to GKP.
+  5. Own goals deduct $-2$ points per expected occurrence.
+  6. Penalties missed deduct $-2$ points per expected miss.
+
+### WI-1.5: Recompute Points for All Finalised Current-Season Gameweeks
+- **Status**: NOT DONE.
+- **Details**: Scheduled for Phase 1 of the Improvement Spec (to be executed after the backtest runner and odds snapshotting jobs in Phase 0). Current implementation relies on live FPL API element summaries.
