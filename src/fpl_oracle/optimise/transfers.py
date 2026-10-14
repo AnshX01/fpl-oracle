@@ -1219,7 +1219,7 @@ class TransferOptimizer:
         # Robustness Re-ranking across Monte Carlo Scenarios (T5)
         # ----------------------------------------------------------------------
         if num_mc_scenarios > 0 and len(candidate_plans) > 1:
-            win_counts = {i: 0 for i in range(len(candidate_plans))}
+            win_counts = {i: 0.0 for i in range(len(candidate_plans))}
             for _ in range(num_mc_scenarios):
                 # Sample noise per player
                 noise_map = {eid: float(np.random.normal(1.0, 0.15)) for eid in target_pmap}
@@ -1233,9 +1233,10 @@ class TransferOptimizer:
                         mult = np.mean([noise_map.get(e, 1.0) for e in in_elems])
                         score = plan["horizon_net_xp"] * mult
                     scores.append((score, p_idx))
-                scores.sort(key=lambda x: x[0], reverse=True)
-                top_idx = scores[0][1]
-                win_counts[top_idx] += 1
+                max_score = max(s[0] for s in scores)
+                tied_indices = [p_idx for score, p_idx in scores if abs(score - max_score) <= 1e-9]
+                for p_idx in tied_indices:
+                    win_counts[p_idx] += 1.0 / len(tied_indices)
 
             for p_idx, plan in enumerate(candidate_plans):
                 r_score = round(win_counts[p_idx] / float(num_mc_scenarios), 2)
