@@ -393,6 +393,7 @@ def test_decision_card_unmocked_happy_path(configured_advisor):
     asyncio.run(_run())
 
 
+@pytest.mark.slow
 def test_decision_card_error_path_honest_reporting(configured_advisor):
     """Verify that Monte Carlo exceptions emit status='error' with null metrics rather than swallowing."""
 

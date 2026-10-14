@@ -19,6 +19,8 @@ from fpl_oracle.server.routes.api import (
     run_optimizer,
 )
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.mark.parametrize(
     "bank,ft,chip,target,stale,manual",

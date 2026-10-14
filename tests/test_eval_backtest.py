@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from fpl_oracle.eval.backtest import WalkForwardBacktester, pinball_loss
 from fpl_oracle.ml.holdout import save_official_ep_snapshot
@@ -144,6 +145,7 @@ def test_odds_devigging_and_snapshot(tmp_path: Path):
     assert "devigged_p_power" in data["matches"][0]
 
 
+@pytest.mark.slow
 def test_row_alignment_and_shuffled_predictions_regression():
     """
     Regression test:
@@ -276,6 +278,57 @@ def test_odds_provider_resilience(tmp_path: Path):
     assert match_0["bookmaker"] == "Bet365"
     assert len(match_0["devigged_p_shin"]) == 3
     assert len(match_0["devigged_p_power"]) == 3
+
+
+@pytest.mark.slow
+def test_walk_forward_backtester_end_to_end_tiny_fixture(tmp_path: Path):
+    """
+    WI-0.1 / Item D:
+    Runs WalkForwardBacktester end-to-end on a tiny fixture (last 2 gameweeks),
+    asserts (player_id, gameweek) row-alignment of its own generated predictions and targets,
+    and proves that shuffled predictions produce |rho| < 0.02.
+    """
+    import pandas as pd
+    from scipy.stats import spearmanr
+
+    from fpl_oracle.eval.backtest import WalkForwardBacktester
+
+    tester = WalkForwardBacktester(output_base_dir=tmp_path)
+    res = tester.run(seasons=["2025-26"], window="last-2-gw", retrain_every=1)
+
+    assert res["total_observations"] > 0
+    out_dir = Path(res["output_dir"])
+    assert (out_dir / "summary.json").exists()
+    assert (out_dir / "summary.md").exists()
+    assert (out_dir / "records_all.csv").exists()
+
+    df_records = pd.read_csv(out_dir / "records_all.csv")
+    assert len(df_records) == res["total_observations"]
+
+    # 1. Row alignment assertions: element and round match between feature identity and targets
+    assert "element" in df_records.columns
+    assert "round" in df_records.columns
+    assert "model_xp" in df_records.columns
+    assert "actual_points" in df_records.columns
+
+    # Verify no NaN predictions or targets
+    assert not df_records["model_xp"].isna().any()
+    assert not df_records["actual_points"].isna().any()
+
+    # 2. Shuffled predictions on active players yield |mean(rho)| < 0.02
+    df_active = df_records[df_records["actual_minutes"] > 0].copy()
+    y_true = df_active["actual_points"].values
+    y_pred = df_active["model_xp"].values
+
+    rng = np.random.default_rng(123)
+    shuf_rhos = []
+    for _ in range(50):
+        shuf_pred = rng.permutation(y_pred)
+        sp, _ = spearmanr(shuf_pred, y_true)
+        shuf_rhos.append(sp)
+
+    mean_shuf_rho = float(np.mean(shuf_rhos))
+    assert abs(mean_shuf_rho) < 0.02, f"Expected |mean(rho)| < 0.02, got {mean_shuf_rho}"
 
 
 

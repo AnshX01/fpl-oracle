@@ -236,6 +236,38 @@ class WalkForwardBacktester:
                     "bonus": bon_m,
                     "cards_saves": crd_m,
                 }
+
+                # Disjoint calibration refitting using strictly pre-cutoff data (WI-0.1, Item C)
+                cal_mask = meta[train_filter]["season"] == s_curr
+                if cal_mask.sum() < 300:
+                    cal_mask = meta[train_filter]["season"] == meta[train_filter]["season"].max()
+                X_cal = X_tr[cal_mask].copy()
+                Y_cal = Y_tr[cal_mask].copy()
+                if len(X_cal) >= 200:
+                    mins_cal = min_m.predict(X_cal)
+                    att_cal = att_m.predict(X_cal)
+                    def_cal = def_m.predict(X_cal)
+                    defc_cal = defc_m.predict(X_cal)
+                    bon_cal = bon_m.predict(X_cal)
+                    crd_cal = crd_m.predict(X_cal)
+                    cal_comps = {
+                        "p_min60": mins_cal.get("p_min60", np.ones(len(X_cal))),
+                        "p_starts": mins_cal.get("p_starts", np.ones(len(X_cal))),
+                        "expected_minutes": mins_cal.get("expected_minutes", np.full(len(X_cal), 60.0)),
+                        "expected_goals": att_cal.get("expected_goals", np.zeros(len(X_cal))),
+                        "expected_assists": att_cal.get("expected_assists", np.zeros(len(X_cal))),
+                        "p_clean_sheet": def_cal.get("p_clean_sheet", np.zeros(len(X_cal))),
+                        "expected_goals_conceded": def_cal.get("expected_goals_conceded", np.zeros(len(X_cal))),
+                        "p_defcon": defc_cal.get("p_defcon", np.zeros(len(X_cal))),
+                        "expected_bonus": bon_cal.get("expected_bonus", np.zeros(len(X_cal))),
+                        "expected_saves": crd_cal.get("expected_saves", np.zeros(len(X_cal))),
+                        "expected_card_deduction": crd_cal.get("expected_card_deductions", np.zeros(len(X_cal))),
+                        "expected_penalties_saved": crd_cal.get("expected_penalties_saved", np.zeros(len(X_cal))),
+                        "expected_own_goals": X_cal.get("roll_own_goals_5", pd.Series(0, index=X_cal.index)).values * 0.05,
+                        "expected_penalties_missed": X_cal.get("roll_penalties_missed_5", pd.Series(0, index=X_cal.index)).values * 0.05,
+                    }
+                    self.ensemble.calibrate(cal_comps, X_cal, Y_cal)
+
                 last_train_idx = step_idx
 
             # Current GW test slice (strictly aligned from X, Y, meta)
@@ -307,12 +339,14 @@ class WalkForwardBacktester:
             actual_mins = Y_curr["target_minutes"].values
             pos_labels = meta_curr["position"].values
             names = meta_curr["name"].values
+            elements = meta_curr["element"].values
 
             for idx in range(len(X_curr)):
                 all_predictions.append(
                     {
                         "season": str(s_curr),
                         "round": r_int,
+                        "element": int(elements[idx]),
                         "name": str(names[idx]),
                         "position": str(pos_labels[idx]),
                         "price": float(prices[idx]),
@@ -360,6 +394,8 @@ class WalkForwardBacktester:
             "metrics": summary_metrics,
         }
 
+        eval_df.to_csv(run_output_dir / "records_all.csv", index=False)
+        report_data["output_dir"] = str(run_output_dir)
         with open(summary_json_path, "w", encoding="utf-8") as f:
             json.dump(report_data, f, indent=2)
 
@@ -587,17 +623,18 @@ class WalkForwardBacktester:
 
 ## 4. Positional Breakdown (View b: Active Players)
 
-| Position | Count | Model MAE | Base 2 MAE | Gain vs Base | Model RMSE | Base 2 RMSE | Model Spearman | Base 2 Spearman |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Position | Count | Model MAE | Base 2 MAE | Gain vs Base | Model RMSE | Base 2 RMSE | Model Spearman | Base 2 Spearman | Coverage (80%) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 """
         for p_name, p_met in pos.items():
             p_base = p_met.get("baselines", {})
             gain = p_met.get("gain_vs_baseline_2_mae", 0.0)
+            cov = p_met.get("coverage_80_pct", 0.0)
             md += (
                 f"| **{p_name}** | {p_met.get('count', 0):,} | {p_met.get('model_mae')} | "
                 f"{p_base.get('b2_roll5_mae')} | **{gain:+0.3f}** | {p_met.get('model_rmse')} | "
                 f"{p_base.get('b2_roll5_rmse')} | {p_met.get('model_spearman_tied')} | "
-                f"{p_base.get('b2_roll5_spearman_tied')} |\n"
+                f"{p_base.get('b2_roll5_spearman_tied')} | {cov:.1f}% |\n"
             )
 
         md += """

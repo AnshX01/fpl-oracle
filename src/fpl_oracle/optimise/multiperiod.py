@@ -59,6 +59,8 @@ class MultiPeriodConfig:
     # Hit policy configuration (WI-2.5)
     hit_threshold_base: float = 2.0  # Default base net xP gain over roll required to justify a hit
     hit_threshold_per_hit: float = 0.5  # Compounding margin required per additional hit beyond the first
+    hit_p_star_base: float = 0.60  # Base required P(J_plan > J_roll) to recommend a hit
+    hit_k_sigma_base: float = 1.00  # Base hurdle multiplier k for Delta > k * sigma_Delta
     hit_risk_adjustments: dict[str, float] = field(
         default_factory=lambda: {
             "conservative": 1.0,
@@ -69,6 +71,58 @@ class MultiPeriodConfig:
             "chase_deficit": -1.0,
         }
     )
+    hit_risk_p_star_adjustments: dict[str, float] = field(
+        default_factory=lambda: {
+            "conservative": 0.15,
+            "protect_lead": 0.15,
+            "balanced": 0.0,
+            "points": 0.0,
+            "aggressive": -0.10,
+            "chase_deficit": -0.10,
+        }
+    )
+    hit_risk_k_adjustments: dict[str, float] = field(
+        default_factory=lambda: {
+            "conservative": 0.50,
+            "protect_lead": 0.50,
+            "balanced": 0.0,
+            "points": 0.0,
+            "aggressive": -0.50,
+            "chase_deficit": -0.50,
+        }
+    )
+
+    def compute_hit_parameters(
+        self,
+        risk_preference: str = "balanced",
+        mini_league_mode: str | None = None,
+        mini_league_deficit: float | None = None,
+    ) -> tuple[float, float]:
+        """
+        Derives p* and k hurdle parameters from risk preference and mini-league deficit (WI-2.5).
+        - Balanced / Points: p* = 0.60, k = 1.00
+        - Conservative / Defending lead: p* = 0.75, k = 1.50
+        - Aggressive / Chasing deficit: p* = 0.50, k = 0.50
+        - Deficit >= 20 pts: additional -0.05 discount on p* and -0.25 on k
+        - Lead >= 20 pts (deficit <= -20): additional +0.05 on p* and +0.25 on k
+        """
+        risk_key = (mini_league_mode or risk_preference).lower()
+        p_adj = self.hit_risk_p_star_adjustments.get(risk_key, 0.0)
+        k_adj = self.hit_risk_k_adjustments.get(risk_key, 0.0)
+
+        deficit_p_adj = 0.0
+        deficit_k_adj = 0.0
+        if mini_league_deficit is not None:
+            if mini_league_deficit >= 20.0:
+                deficit_p_adj = -0.05
+                deficit_k_adj = -0.25
+            elif mini_league_deficit <= -20.0:
+                deficit_p_adj = 0.05
+                deficit_k_adj = 0.25
+
+        p_star = max(0.40, min(0.95, self.hit_p_star_base + p_adj + deficit_p_adj))
+        k = max(0.20, min(3.0, self.hit_k_sigma_base + k_adj + deficit_k_adj))
+        return round(p_star, 2), round(k, 2)
 
     def compute_hit_threshold(
         self,
@@ -925,12 +979,26 @@ class MultiPeriodOptimizer:
                     break
 
         # 5. Robustness evaluation across MC scenarios (T5)
+        num_mc_scenarios = 100
+        p_star, k_hurdle = self.config.compute_hit_parameters(
+            risk_preference=risk_preference,
+            mini_league_mode=mini_league_mode,
+            mini_league_deficit=mini_league_deficit,
+        )
         if num_mc_scenarios > 0 and len(candidate_plans) > 1:
             win_counts = {i: 0.0 for i in range(len(candidate_plans))}
             rng_mc = np.random.default_rng(42)
+            mc_scores: list[list[float]] = [[] for _ in range(len(candidate_plans))]
+            roll_idx = None
+            for idx, p in enumerate(candidate_plans):
+                if p["plan_type"] == "ROLL_TRANSFER":
+                    roll_idx = idx
+
             for _ in range(num_mc_scenarios):
                 noise_mult = rng_mc.normal(1.0, 0.15, size=len(candidate_plans))
                 scores = [p["horizon_net_xp"] * m for p, m in zip(candidate_plans, noise_mult, strict=True)]
+                for idx, s in enumerate(scores):
+                    mc_scores[idx].append(s)
                 max_s = max(scores)
                 ties = [idx for idx, s in enumerate(scores) if abs(s - max_s) <= 1e-9]
                 for idx in ties:
@@ -940,6 +1008,15 @@ class MultiPeriodOptimizer:
                 r_score = round(win_counts[idx] / float(num_mc_scenarios), 2)
                 p["robustness_score"] = r_score
                 p["is_no_regret"] = bool(r_score >= 0.70)
+                if roll_idx is not None and idx != roll_idx:
+                    p_deltas = np.array(mc_scores[idx]) - np.array(mc_scores[roll_idx])
+                    p["p_beat_roll"] = round(float((p_deltas > 0).mean()), 3)
+                    p["sigma_delta"] = round(float(p_deltas.std()), 3)
+                    p["mc_delta_mean"] = round(float(p_deltas.mean()), 3)
+                else:
+                    p["p_beat_roll"] = 1.0
+                    p["sigma_delta"] = 0.0
+                    p["mc_delta_mean"] = 0.0
 
         # Sort candidate plans by horizon gain vs roll
         candidate_plans.sort(key=lambda p: float(p.get("horizon_gain_vs_roll", 0.0)), reverse=True)
@@ -958,9 +1035,12 @@ class MultiPeriodOptimizer:
         else:
             rec_plan = top_cand
 
-        # Hit policy verdict (WI-2.5)
+        # Hit policy verdict derived from MC distributions (WI-2.5)
         delta = rec_plan.get("horizon_gain_vs_roll", 0.0)
         hits = rec_plan.get("hits", 0)
+        p_beat_roll = rec_plan.get("p_beat_roll", 0.5)
+        sigma_delta = rec_plan.get("sigma_delta", 2.0)
+        k_hurdle_threshold = round(k_hurdle * sigma_delta, 2)
         hit_threshold = self.config.compute_hit_threshold(
             hits=hits,
             risk_preference=risk_preference,
@@ -970,12 +1050,20 @@ class MultiPeriodOptimizer:
         if hits == 0:
             hit_verdict = "No hit recommended"
         else:
-            if delta >= hit_threshold:
-                hit_verdict = f"JUSTIFIED: Hit of -{hits * 4} pts gains +{delta:.2f} net xP across the horizon (threshold={hit_threshold:.2f} xP)."
+            if p_beat_roll >= p_star or delta >= k_hurdle_threshold or delta >= hit_threshold:
+                hit_verdict = (
+                    f"JUSTIFIED: Hit of -{hits * 4} pts justified: "
+                    f"P(J_plan > J_roll) = {p_beat_roll:.2f} >= {p_star:.2f} "
+                    f"(Delta={delta:+.2f} xP vs hurdle {k_hurdle_threshold:.2f} xP)."
+                )
             elif delta > 0.0:
-                hit_verdict = f"MARGINAL: Hit yields +{delta:.2f} net xP (below {hit_threshold:.2f} xP threshold). Rolling or single transfer preferred."
+                hit_verdict = (
+                    f"MARGINAL: Hit yields +{delta:.2f} net xP but fails hurdle: "
+                    f"P(J_plan > J_roll) = {p_beat_roll:.2f} < {p_star:.2f} and "
+                    f"Delta < {k_hurdle:.2f}*sigma ({k_hurdle_threshold:.2f} xP). Rolling or single FT preferred."
+                )
             else:
-                hit_verdict = f"AVOID: Hit fails to recover points (delta={delta:.2f} xP)."
+                hit_verdict = f"AVOID: Hit fails to recover points (delta={delta:.2f} xP, P(J_plan > J_roll) = {p_beat_roll:.2f})."
 
         # Free transfer option value
         ft_option_value = 0.8
@@ -989,6 +1077,10 @@ class MultiPeriodOptimizer:
             "candidate_plans": candidate_plans,
             "hit_verdict": hit_verdict,
             "hit_threshold": hit_threshold,
+            "p_star": p_star,
+            "k_hurdle": k_hurdle,
+            "p_beat_roll": p_beat_roll,
+            "sigma_delta": sigma_delta,
             "transfer_roadmap": [
                 {
                     "gameweek": act["gameweek"],

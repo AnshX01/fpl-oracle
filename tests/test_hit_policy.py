@@ -129,3 +129,46 @@ def test_price_watch_never_promises_tonight_change():
     assert "unconfirmed" in row["urgency_message"]
     assert "Buy before" not in row["urgency_message"]
     assert row["calibrated_price_forecast"] is False
+
+
+def test_multiperiod_mc_hit_policy_hurdle_and_parameters():
+    """Verify Monte Carlo hit policy parameter derivation and distribution hurdles (WI-2.5)."""
+    from fpl_oracle.optimise.multiperiod import MultiPeriodConfig
+
+    cfg = MultiPeriodConfig()
+
+    # 1. Balanced / Points default
+    p_star, k = cfg.compute_hit_parameters(risk_preference="balanced")
+    assert p_star == 0.60
+    assert k == 1.00
+
+    # 2. Conservative / Protect Lead
+    p_star_c, k_c = cfg.compute_hit_parameters(risk_preference="conservative")
+    assert p_star_c == 0.75
+    assert k_c == 1.50
+
+    p_star_lead, k_lead = cfg.compute_hit_parameters(mini_league_mode="protect_lead")
+    assert p_star_lead == 0.75
+    assert k_lead == 1.50
+
+    # 3. Aggressive / Chase Deficit
+    p_star_a, k_a = cfg.compute_hit_parameters(risk_preference="aggressive")
+    assert p_star_a == 0.50
+    assert k_a == 0.50
+
+    # 4. Large deficit (>= 20 pts) provides discount
+    p_star_def, k_def = cfg.compute_hit_parameters(
+        risk_preference="aggressive",
+        mini_league_deficit=25.0,
+    )
+    assert p_star_def == 0.45
+    assert k_def == 0.25
+
+    # 5. Large lead (deficit <= -20 pts) increases hurdle
+    p_star_lead2, k_lead2 = cfg.compute_hit_parameters(
+        risk_preference="conservative",
+        mini_league_deficit=-25.0,
+    )
+    assert p_star_lead2 == 0.80
+    assert k_lead2 == 1.75
+
