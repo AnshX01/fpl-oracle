@@ -55,12 +55,11 @@ class BacktestHarness:
         logger.info(f"Starting Blind Out-of-Time Backtest across {num_gws} completed gameweeks...")
         df = historical_manager.ensure_dataset_ready()
 
-        # Build pre-deadline features on historical master data (grouped by name, shifted by 1)
-        X, Y = feature_engineering.build_historical_features(df)
-        df_sorted = df.sort_values(by=["name", "season", "round"]).reset_index(drop=True)
+        # Build pre-deadline features on historical master data (aligned X, Y, meta)
+        X, Y, meta = feature_engineering.build_historical_features(df, return_meta=True)
 
         # 1. Strict Out-of-Time Model Fitting: Train strictly on seasons before 2026-27
-        train_mask = df_sorted["season"] < "2026-27"
+        train_mask = meta["season"] < "2026-27"
         X_train = X[train_mask].copy()
         Y_train = Y[train_mask].copy()
 
@@ -79,10 +78,8 @@ class BacktestHarness:
         crd_m.fit(X_train, Y_train)
 
         # 2. Isolate 2026-27 season rounds
-        s26_mask = df_sorted["season"] == "2026-27"
-        s26_df = df_sorted[s26_mask].copy()
-
-        available_rounds = sorted(s26_df["round"].unique())
+        s26_mask = meta["season"] == "2026-27"
+        available_rounds = sorted(meta.loc[s26_mask, "round"].unique())
         rounds = available_rounds[:num_gws]
 
         oracle_scores = []
@@ -115,9 +112,12 @@ class BacktestHarness:
                 user_elem_ids = set(profile.manual_squad)
 
         for r in rounds:
-            r_idx = s26_df[s26_df["round"] == r].index
-            X_r = X.loc[r_idx].copy()
-            actual_r = s26_df.loc[r_idx].copy()
+            r_mask = (meta["season"] == "2026-27") & (meta["round"] == r)
+            X_r = X[r_mask].copy()
+            actual_r = meta[r_mask].copy()
+            actual_r["total_points"] = Y.loc[r_mask, "target_points"].values
+            actual_r["minutes"] = Y.loc[r_mask, "target_minutes"].values
+            actual_r["value"] = X_r["value"].values
 
             # Predict component models using only pre-deadline features
             mins_p = min_m.predict(X_r)
