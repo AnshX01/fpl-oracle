@@ -56,6 +56,51 @@ class MultiPeriodConfig:
     )
     enablers_count: int = 5
     ft_terminal_increments: tuple[float, float, float, float] = (1.0, 0.8, 0.6, 0.4)
+    # Hit policy configuration (WI-2.5)
+    hit_threshold_base: float = 2.0  # Default base net xP gain over roll required to justify a hit
+    hit_threshold_per_hit: float = 0.5  # Compounding margin required per additional hit beyond the first
+    hit_risk_adjustments: dict[str, float] = field(
+        default_factory=lambda: {
+            "conservative": 1.0,
+            "protect_lead": 1.0,
+            "balanced": 0.0,
+            "points": 0.0,
+            "aggressive": -1.0,
+            "chase_deficit": -1.0,
+        }
+    )
+
+    def compute_hit_threshold(
+        self,
+        hits: int = 1,
+        risk_preference: str = "balanced",
+        mini_league_mode: str | None = None,
+        mini_league_deficit: float | None = None,
+    ) -> float:
+        """
+        Derives the dynamic hit justification threshold from risk preference and mini-league context (WI-2.5).
+        - Default: 2.0 net xP gain over roll for 1 hit in balanced mode.
+        - Conservative / Defending lead: +1.0 xP threshold hurdle (3.0 xP required).
+        - Aggressive / Chasing deficit: -1.0 xP threshold hurdle (1.0 xP required).
+        - Deficit >= 20 pts: additional -0.5 xP discount to encourage upside moves.
+        - Compounding: +0.5 xP margin per additional hit beyond the first.
+        """
+        if hits <= 0:
+            return 0.0
+
+        risk_key = (mini_league_mode or risk_preference).lower()
+        risk_adj = self.hit_risk_adjustments.get(risk_key, 0.0)
+
+        deficit_adj = 0.0
+        if mini_league_deficit is not None:
+            if mini_league_deficit >= 20.0:
+                deficit_adj = -0.5
+            elif mini_league_deficit <= -20.0:
+                deficit_adj = 0.5
+
+        compounding = max(0, hits - 1) * self.hit_threshold_per_hit
+        effective_threshold = max(0.5, self.hit_threshold_base + risk_adj + deficit_adj + compounding)
+        return round(effective_threshold, 2)
 
 
 @dataclass
@@ -314,9 +359,9 @@ class MultiPeriodOptimizer:
         # Total FH squad budget cap: current squad sell value + bank
         initial_team_value = sum(sell_vals[p] for p in squad_ids) + init_bank
 
-        init_club_counts: dict[int, int] = {}
+        init_club_counts: dict[Any, int] = {}
         for p in squad_ids:
-            tm = int(player_dict[p]["team"])
+            tm = player_dict[p]["team"]
             init_club_counts[tm] = init_club_counts.get(tm, 0) + 1
 
         for idx, t in enumerate(horizon_gws):
@@ -559,7 +604,7 @@ class MultiPeriodOptimizer:
             t_ins = [
                 {
                     "element": p,
-                    "web_name": player_dict[p]["web_name"],
+                    "web_name": player_dict[p].get("web_name", player_dict[p].get("name", f"Player {p}")),
                     "position": player_dict[p]["position"],
                     "team": player_dict[p]["team"],
                     "cost": buy_costs[p],
@@ -570,7 +615,7 @@ class MultiPeriodOptimizer:
             t_outs = [
                 {
                     "element": p,
-                    "web_name": player_dict[p]["web_name"],
+                    "web_name": player_dict[p].get("web_name", player_dict[p].get("name", f"Player {p}")),
                     "position": player_dict[p]["position"],
                     "team": player_dict[p]["team"],
                     "sell_price": sell_vals[p],
@@ -690,6 +735,8 @@ class MultiPeriodOptimizer:
         chips_available: set[str] | list[str] | None = None,
         previous_chip: str | None = None,
         risk_preference: str = "balanced",
+        mini_league_mode: str | None = None,
+        mini_league_deficit: float | None = None,
         include_price_gain: bool = False,
         stability_threshold: float = 0.3,
         num_mc_scenarios: int = 50,
@@ -914,13 +961,19 @@ class MultiPeriodOptimizer:
         # Hit policy verdict (WI-2.5)
         delta = rec_plan.get("horizon_gain_vs_roll", 0.0)
         hits = rec_plan.get("hits", 0)
+        hit_threshold = self.config.compute_hit_threshold(
+            hits=hits,
+            risk_preference=risk_preference,
+            mini_league_mode=mini_league_mode,
+            mini_league_deficit=mini_league_deficit,
+        )
         if hits == 0:
             hit_verdict = "No hit recommended"
         else:
-            if delta >= 2.0:
-                hit_verdict = f"JUSTIFIED: Hit of -{hits * 4} pts gains +{delta:.2f} net xP across the horizon."
+            if delta >= hit_threshold:
+                hit_verdict = f"JUSTIFIED: Hit of -{hits * 4} pts gains +{delta:.2f} net xP across the horizon (threshold={hit_threshold:.2f} xP)."
             elif delta > 0.0:
-                hit_verdict = f"MARGINAL: Hit yields +{delta:.2f} net xP. Rolling or single transfer preferred."
+                hit_verdict = f"MARGINAL: Hit yields +{delta:.2f} net xP (below {hit_threshold:.2f} xP threshold). Rolling or single transfer preferred."
             else:
                 hit_verdict = f"AVOID: Hit fails to recover points (delta={delta:.2f} xP)."
 
@@ -935,6 +988,7 @@ class MultiPeriodOptimizer:
             "recommended_plan": rec_plan,
             "candidate_plans": candidate_plans,
             "hit_verdict": hit_verdict,
+            "hit_threshold": hit_threshold,
             "transfer_roadmap": [
                 {
                     "gameweek": act["gameweek"],

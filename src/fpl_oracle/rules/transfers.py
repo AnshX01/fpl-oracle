@@ -35,9 +35,17 @@ def sell_price_millions(purchase: float, current: float) -> float:
     return sell_price(p10, c10) / 10.0
 
 
+# Named config constant for post-chip free-transfer state transition rule (WI-1.3, WI-1.4).
+# Flagged as UNCONFIRMED in official documentation: FPL rules confirm banked transfers are
+# preserved when Wildcard or Free Hit is deployed, but whether an additional transfer (+1)
+# is earned for the subsequent gameweek is ambiguous in the rulebook.
+POST_CHIP_FT_RULE_DEFAULT: Literal["preserve", "preserve_plus_one"] = "preserve"
+POST_CHIP_FT_RULE_STATUS: str = "UNCONFIRMED"
+
+
 @dataclass(frozen=True)
 class TransferStateConfig:
-    chip_week_ft_rule: Literal["preserve", "preserve_plus_one"] = "preserve"
+    chip_week_ft_rule: Literal["preserve", "preserve_plus_one"] = POST_CHIP_FT_RULE_DEFAULT
     max_banked: int = MAX_BANKED_FREE_TRANSFERS
     hit_cost: int = HIT_COST_POINTS
 

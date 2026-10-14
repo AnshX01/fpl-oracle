@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-13T14:44:45.886620",
+  "generated_at": "2026-10-14T13:50:04.765800",
   "simulation_type": "proxy_simulation",
   "is_synthetic_league": true,
   "synthetic_league_reason": "Real mini-league standings and squad histories are private manager data requiring authenticated API access not present in historical offline dumps. Mini-league states and rival squads are modeled as synthetic proxy scenarios under strict FPL legality rules.",
