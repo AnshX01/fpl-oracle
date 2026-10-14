@@ -125,4 +125,48 @@ Record of changes, metrics before/after, and acceptance criteria per work item.
     - MID (2,727 rows): Model MAE 1.961 (Gain +0.059) | RMSE 2.823 vs 2.977 (Gain +0.154) | Spearman 0.384 vs 0.344. Model beats Baseline 2 on all metrics.
     - FWD (792 rows): Model MAE 2.175 (Gain +0.064) | RMSE 3.085 vs 3.252 (Gain +0.167) | Spearman 0.410 vs 0.361. Model beats Baseline 2 on all metrics.
 
+---
+
+## Phase 2: Multi-Period Mixed-Integer Linear Programming (MILP) Transfer Optimizer (WI-2.1 to WI-2.5)
+- **Date:** 2026-10-14
+- **Modules Created / Updated:**
+  - `src/fpl_oracle/optimise/multiperiod.py`: `MultiPeriodTransferOptimizer` implementing the full mathematical program across horizon $T$:
+    - **Decision Variables:**
+      - Squad membership $x[p, t] \in \{0, 1\}$.
+      - Starting lineup $s[p, t] \in \{0, 1\}$.
+      - Captaincy $c[p, t] \in \{0, 1\}$ ($c[p, t] \le s[p, t]$).
+      - Transfers IN $u_{in}[p, t] \in \{0, 1\}$ and Transfers OUT $u_{out}[p, t] \in \{0, 1\}$.
+      - Free transfer state $ft[t] \in [1, 5]$ and transfer hit count $h[t] \ge 0$.
+      - Binary hit activation indicator $z[t] \in \{0, 1\}$.
+      - Chip indicators: Wildcard $wc[t]$, Free Hit $fh[t]$, Bench Boost $bb[t]$, Triple Captain $tc[t]$.
+    - **Exact FT Linearization:**
+      $u[t] - ft[t] \le 15 \cdot z[t]$ with $ft[t+1] \le ft[t] - u[t] + 1 + 5 \cdot z[t]$ and $ft[t+1] \le 1 + 4 \cdot (1 - z[t])$. This matches `rules/transfers.py:next_free_transfers` exactly, preventing artificial hit inflation to exploit future FT caps.
+    - **Budget & Selling Price Oracle:**
+      Integrated with `rules/transfers.py:sell_price_millions`. Free Hit reversion preserves base squad composition and selling price state.
+    - **Terminal Valuation:**
+      $V_{term} = \sum_p x[p, T] \cdot \bar{xP}[p] \cdot \gamma_{term} + \lambda_{bank} \cdot \text{bank}[T]$.
+    - **Candidate Pool Pruning (WI-2.3):**
+      Top $N$ per position by horizon-discounted xP + all currently owned players + top 5 cheapest active enablers per position.
+    - **Solver Selection & Benchmark (WI-2.4):**
+      Supports both `pulp.HiGHS()` and `pulp.PULP_CBC_CMD()`. Installed `highspy>=1.7.0`.
+      - CBC Benchmark ($H=8$, pool $\sim 150-250$): **1.25s**.
+      - HiGHS Benchmark ($H=8$, pool $\sim 150-250$): **10.79s**.
+      Both well under the $< 60$s runtime limit.
+    - **Plan Comparisons & Alternatives (WI-2.2):**
+      Extracts Roll Plan ($u[1]=0$), Best 1-transfer plan ($u[1]=1$), unconstrained optimal plan, and Top-K alternatives via no-good cuts $\sum_{p \in IN} u_{in}[p, 1] + \sum_{p \in OUT} u_{out}[p, 1] \le |IN| + |OUT| - 1$. Evaluates Monte Carlo robustness score across sampled xP perturbations.
+    - **Hit Policy Evaluation (WI-2.5):**
+      Evaluates net gain over roll plan $\Delta = J(\text{plan}) - J(\text{roll})$. Classifies as `JUSTIFIED` ($\Delta \ge 2.0$), `MARGINAL` ($0.0 < \Delta < 2.0$), or `AVOID` ($\Delta \le 0.0$).
+  - `src/fpl_oracle/optimise/transfers_beam.py`: Preserved legacy beam search intact for backwards compatibility and fallback verification.
+  - `src/fpl_oracle/optimise/transfers.py`: Integrated routing in `evaluate_transfer_options`. Routes to MILP optimizer when `free_transfers >= 3` or when `multiperiod_milp` feature flag is enabled.
+  - `tests/test_f005_banked_transfers_beam.py`: Un-xfailed and verified passing in 1.56s.
+  - `tests/optimise/test_multiperiod.py`: Implemented 6 property tests.
+- **Property Test Results (6 / 6 Passed in 290.24s):**
+  1. `test_property_1_h1_equivalence_to_lineup_optimizer`: Equivalent to single-gameweek lineup optimizer on 50 random squads (starters, captain, and points match exactly).
+  2. `test_property_2_dominance_over_beam_search`: MILP objective $\ge$ beam search objective across 30 test squad states ($J_{MILP} \ge J_{beam}$).
+  3. `test_property_3_rules_oracle_agreement`: Replaying chosen MILP plan through `rules/transfers.py` yields identical hits, free transfer counts, and bank balances.
+  4. `test_property_4_feasibility_across_horizon`: Squad size = 15, club caps $\le 3$, 11 starters, formation bounds, bank $\ge 0$ satisfied at every gameweek $t$.
+  5. `test_property_5_chip_logic_and_legality`: Enforces $\le 1$ chip per gameweek, no Free Hit in GW1, no back-to-back Free Hit across GW19/20, Set 1 expiry at GW19.
+  6. `test_property_6_brute_force_toy_optimum`: Matches exhaustive combinatorial enumeration optimum on a toy league.
+
+
 

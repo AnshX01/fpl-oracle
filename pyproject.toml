@@ -26,6 +26,7 @@ dependencies = [
     "scipy>=1.12.0",
     "statsmodels>=0.14.0",
     "pulp==3.3.2",
+    "highspy>=1.7.0",
     "feedparser>=6.0.0",
     "beautifulsoup4>=4.12.0",
     "pyyaml>=6.0.0",

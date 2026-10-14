@@ -9,12 +9,10 @@ Deferred to spec WI-2.1 (Multi-period MILP optimizer).
 """
 
 import pandas as pd
-import pytest
 
 from fpl_oracle.optimise.transfers import transfer_optimizer
 
 
-@pytest.mark.xfail(strict=True, reason="Deferred to spec WI-2.1 (Multi-period MILP optimizer)")
 def test_beam_finds_optimal_3_transfer_hit_free_plan():
     # Base pool
     rows = []
