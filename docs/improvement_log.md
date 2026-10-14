@@ -88,30 +88,41 @@ Record of changes, metrics before/after, and acceptance criteria per work item.
 
 ---
 
-## Phase 0: Evaluation Harness & Baselines (Completed)
+## Phase 0: Evaluation Harness & Baselines (Completed & Validated)
 - **Date:** 2026-10-14
 - **Modules Created/Updated:**
-  - `src/fpl_oracle/eval/backtest.py`: `WalkForwardBacktester` implementing strict temporal walk-forward evaluation, retraining barriers (`--retrain-every k`), dual evaluation views (View a: all available players; View b: played players with minutes > 0), return-bucket stratification, 4 baselines, and probabilistic quantile loss (P10/P50/P90).
-  - `scripts/run_backtest.py`: Reproducible CLI entry point.
-  - `src/fpl_oracle/ml/holdout.py`: Added `save_official_ep_snapshot` capturing `ep_next` and `ep_this` into `data/snapshots/gw{gw}_official_ep.json`.
-  - `tests/test_eval_backtest.py`: Acceptance and unit tests for backtester and snapshotting (3 tests passing).
+  - `src/fpl_oracle/eval/backtest.py`: `WalkForwardBacktester` implementing strict temporal walk-forward evaluation, retraining barriers (`--retrain-every k`), dual evaluation views (View a: all available players; View b: played players with minutes > 0), return-bucket stratification, 6 baselines, tied & untied (ordinal) Spearman correlations, and gameweek block bootstrap.
+  - `src/fpl_oracle/data/features.py`: Added strictly shifted `prev_points` (lag 1) and expanding `season_points_mean` to `meta_cols` and resolved index alignment so `X_curr`, `Y_curr`, and `meta_curr` share identical sorted row order with 0 index scrambling.
+  - `src/fpl_oracle/data/odds.py`: Added `OddsProvider`, `FootballDataOddsProvider`, Shin and power de-vigging algorithms, and `snapshot_odds` saving raw pre-deadline match odds into `data/snapshots/odds/`.
+  - `src/fpl_oracle/server/jobs.py`: Added `odds_snapshot_job` scheduled hourly and callable on-demand via `run_job_on_demand("odds_snapshot")`.
+  - `scripts/run_backtest.py`: CLI entry point with gameweek block bootstrap reporting.
+  - `tests/test_eval_backtest.py`: 6 unit and acceptance tests covering backtest structure, official EP snapshots, tied/untied Spearman, gameweek block bootstrap, and odds devigging/snapshotting.
 - **Acceptance Run:**
   - Command: `python scripts/run_backtest.py --seasons 2024-25 2025-26 --window last-20-gw --retrain-every 4`
-  - Duration: 103.34s (< 2 minutes, well within 30 min budget).
-  - Evaluated Observations: 16,352 player-gameweek observations.
-  - Reports Generated: `reports/eval/20261014_044926/summary.json` and `summary.md`.
+  - Duration: 113.61s (< 2 minutes, well within 30 min budget).
+  - Evaluated Observations: 16,352 player-gameweek observations (6,004 active appearances).
+  - Reports Generated: `reports/eval/20261014_054543/summary.json` and `summary.md`.
 - **Results vs Baseline 2 (Rolling 5 Appearances):**
-  - **View (a) All Available Players (16,352 rows):** Model MAE 1.685 | RMSE 2.713 | Spearman 0.005.
-  - **View (b) Active Players Only (6,207 rows):**
-    - Model MAE: **2.453** vs Baseline 2 **2.486** (Gain: **+0.033**, p = 0.00003, paired t = -4.176).
-    - Model RMSE: **3.498** vs Baseline 2 **3.549** (Gain: **+0.050**).
-    - Spearman: **0.017** vs Baseline 2 **0.016** (Gain: **+0.001**).
-    - Empirical 80% Coverage: 55.4% (Nominal 80.0%).
-  - **Positional Performance (Active Players):**
-    - GKP (310 rows): Model MAE 2.603 (Gain +0.068), RMSE 3.603 (Gain +0.053), Spearman 0.041 vs 0.023. Model beats Baseline 2 on all 3 metrics.
-    - DEF (2,442 rows): Model MAE 2.616 (Gain +0.037), RMSE 3.650 (Gain +0.053), Spearman -0.002 vs 0.005.
-    - MID (2,846 rows): Model MAE 2.297 (Gain +0.026), RMSE 3.338 (Gain +0.050), Spearman 0.034 vs 0.027. Model beats Baseline 2 on all 3 metrics.
-    - FWD (609 rows): Model MAE 2.452 (Gain +0.036), RMSE 3.553 (Gain +0.038), Spearman 0.013 vs 0.015.
-  - **Baselines & Open Questions:**
-    - Per spec acceptance criteria, logged Question 6 in `docs/open_questions.md` regarding DEF and FWD Spearman correlation prior to Phase 3 component models (Dixon-Coles WI-3.1 and empirical Bayes shrinkage WI-3.7).
+  - **View (a) All Available Players (16,352 rows):** Model MAE 0.973 | RMSE 1.912 | Spearman (Tied): 0.705 | Spearman (NoTies): 0.617 | 80% Coverage: 80.2%.
+  - **View (b) Active Players Only (6,004 rows):**
+    - Model MAE: **2.106** vs Baseline 2 **2.203** (Gain: **+0.097**).
+    - Model RMSE: **2.956** vs Baseline 2 **3.133** (Gain: **+0.177**).
+    - Spearman (With Ties): Model **0.311** vs Baseline 2 **0.266** (Gain: **+0.045**).
+    - Spearman (Without Ties, Ordinal): Model **0.329** vs Baseline 2 **0.260** (Gain: **+0.069**).
+    - Empirical 80% Coverage: **73.8%** (Nominal: 80.0%).
+    - **Gameweek Block Bootstrap (B=10,000 resamples):**
+      - MAE Gain 95% CI: **[+0.0511, +0.1469]** ($p = 0.00000$).
+      - RMSE Gain 95% CI: **[+0.1548, +0.2000]** ($p = 0.00000$).
+  - **Benchmark Feature Correlations on Active Players (View b):**
+    - Model xP: **0.311** (tied) / **0.329** (ordinal)
+    - Baseline 2 (Rolling 5): **0.266** (tied) / **0.260** (ordinal)
+    - Baseline 1 (Season-to-Date Mean): **0.235** (tied) / **0.233** (ordinal)
+    - Baseline 5 (Previous GW Points): **0.234** (tied) / **0.253** (ordinal)
+    - Player Price / Value: **0.118** (tied) / **0.123** (ordinal)
+  - **Positional Breakdown (Active Players):**
+    - GKP (405 rows): Model MAE 2.167 (Gain +0.208) | RMSE 2.906 vs 3.102 (Gain +0.196) | Spearman 0.079 vs 0.049. Model beats Baseline 2 on all metrics.
+    - DEF (2,080 rows): Model MAE 2.257 (Gain +0.139) | RMSE 3.083 vs 3.288 (Gain +0.205) | Spearman 0.223 vs 0.174. Model beats Baseline 2 on all metrics.
+    - MID (2,727 rows): Model MAE 1.961 (Gain +0.059) | RMSE 2.823 vs 2.977 (Gain +0.154) | Spearman 0.384 vs 0.344. Model beats Baseline 2 on all metrics.
+    - FWD (792 rows): Model MAE 2.175 (Gain +0.064) | RMSE 3.085 vs 3.252 (Gain +0.167) | Spearman 0.410 vs 0.361. Model beats Baseline 2 on all metrics.
+
 
