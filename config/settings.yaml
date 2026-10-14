@@ -25,6 +25,12 @@ fpl:
   request_timeout_seconds: 15
   rate_limit_delay_seconds: 0.15
 
+manager_profile:
+  entry_id: 1085141
+  target_league_id: 435956  # IceMakers League
+  goal: "win_league"
+  risk_preference: "balanced"
+
 ml:
   horizon_gameweeks: 8
   min_minutes_filter: 90

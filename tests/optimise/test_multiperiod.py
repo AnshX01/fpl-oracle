@@ -499,7 +499,7 @@ def test_multiperiod_config_defaults():
     assert cfg.horizon_len == 8
     assert cfg.solver_name == "highs"
     assert cfg.gamma == 0.95
-    assert cfg.mip_gap == 0.005
+    assert cfg.mip_gap == 1e-4
     assert cfg.time_limit_sec == 60
 
 
@@ -519,7 +519,7 @@ def test_multiperiod_fast_single_gw_solve():
         horizon_len=1,
         forced_w1_transfers=0,
     )
-    assert plan.solver_status == "Optimal"
+    assert plan.solver_status.startswith("OPTIMAL")
     assert len(plan.recommended_action.starters) == 11
     assert plan.recommended_action.captain in plan.recommended_action.starters
 
