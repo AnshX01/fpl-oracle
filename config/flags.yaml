@@ -11,4 +11,4 @@ flags:
   staged_ft_chip_planner: false
   squad_health_diagnosis: false
   efficient_frontier_advisor: false
-  risk_aware_lineup: true
+  risk_aware_lineup: false

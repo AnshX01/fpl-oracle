@@ -44,6 +44,22 @@ def load_scoring_config() -> dict[str, Any]:
     return _load_yaml(CONFIG_DIR / "scoring.yaml")
 
 
+def load_flags_config() -> dict[str, Any]:
+    return _load_yaml(CONFIG_DIR / "flags.yaml")
+
+
+def is_flag_enabled(flag_name: str, default: bool = False) -> bool:
+    """Check whether a feature flag is enabled in config/flags.yaml."""
+    flags_path = CONFIG_DIR / "flags.yaml"
+    if not flags_path.exists():
+        return default
+    try:
+        data = _load_yaml(flags_path)
+        return bool(data.get("flags", {}).get(flag_name, default))
+    except Exception:
+        return default
+
+
 class FPLSettings(BaseModel):
     """Typed runtime settings loaded strictly from project-local .env."""
 
