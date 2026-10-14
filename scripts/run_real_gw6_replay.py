@@ -79,7 +79,7 @@ async def run_gw6_replay():
     cfg = MultiPeriodConfig(
         horizon_len=H,
         solver_name="highs",
-        mip_gap=0.005,
+        mip_gap=1e-4,  # rel gap <= 1e-4 (abs gap <= 0.05 xP)
         time_limit_sec=60,
         pruning_limits=pruning_limits,
     )
@@ -96,6 +96,7 @@ async def run_gw6_replay():
         current_gw=5,
         target_gw=6,
         horizon_len=H,
+        chips_available=[],
         forced_w1_transfers=0,
     )
     t_roll = time.perf_counter() - t0
@@ -111,6 +112,7 @@ async def run_gw6_replay():
         current_gw=5,
         target_gw=6,
         horizon_len=H,
+        chips_available=[],
         forced_w1_transfers=1,
     )
     t_1 = time.perf_counter() - t0
@@ -126,6 +128,7 @@ async def run_gw6_replay():
         current_gw=5,
         target_gw=6,
         horizon_len=H,
+        chips_available=[],
         forced_w1_transfers=2,
     )
     t_hit = time.perf_counter() - t0
@@ -169,6 +172,7 @@ async def run_gw6_replay():
         chip = act.active_chip or "None"
         cap = elements_map[act.captain].web_name
         moves = format_act(act)
+        decomp = p.objective_decomposition
         print(f"\n[{name}]")
         print(f"  Plan Type:       {p.plan_type}")
         print(f"  Transfers:       {act.transfers_count} (Hits: {act.hits}, Cost: -{act.hit_cost} pts)")
@@ -177,21 +181,48 @@ async def run_gw6_replay():
         print(f"  Starting XI:     {[elements_map[s].web_name for s in act.starters]} (Cap: {cap})")
         print(f"  GW6 Net xP:      {act.net_xp:.2f} (Lineup: {act.lineup_xp:.2f}, Cap: {act.captain_xp:.2f})")
         print(f"  Horizon Net xP:  {p.horizon_net_xp:.2f}")
-        print(f"  J(plan):         {j_val:.2f} (Delta J vs Roll: {delta_j:+.2f})")
+        print(f"  J(plan):         {j_val:.3f} (Delta J vs Roll: {delta_j:+.3f})")
+        print(f"  J Decomposition: Lineup={decomp.get('discounted_lineup_xp', 0):.2f}, Cap={decomp.get('discounted_captain_xp', 0):.2f}, Bench={decomp.get('discounted_bench_xp', 0):.2f}, Hits={decomp.get('discounted_hits_cost', 0):.2f}, TermFT={decomp.get('terminal_ft_value', 0):.2f}, TermBank={decomp.get('terminal_bank_value', 0):.2f}, FTIncentive={decomp.get('ft_banking_incentive', 0):.4f}")
         print(f"  Bank End:        £{act.bank_end/10:.1f}m | FT Next: {act.free_transfers_next}")
-        print(f"  Solver Time:     {elap:.2f}s (Status: {p.solver_status})")
+        print(f"  Solver Status:   {p.solver_status} | Gap: {p.solver_gap:.6f} | Time: {elap:.2f}s")
 
-    # Hit policy evaluation
-    delta_hit = plan_hit.total_objective - j_roll
-    thresh = cfg.compute_hit_threshold(hits=1, risk_preference="balanced", mini_league_deficit=26.0)
+    # Monte Carlo hit policy evaluation
+    import numpy as np
+    rng = np.random.default_rng(42)
+    n_sims = 2000
+    noise_hit = rng.normal(0, 3.5, size=(n_sims, H))
+    noise_roll = rng.normal(0, 3.5, size=(n_sims, H))
+    disc_weights = np.array([cfg.gamma ** t for t in range(H)])
+    sim_hit = np.sum((np.array([a.net_xp for a in plan_hit.trajectory]) + noise_hit) * disc_weights, axis=1) + plan_hit.objective_decomposition.get("terminal_ft_value", 0.0)
+    sim_roll = np.sum((np.array([a.net_xp for a in roll_plan.trajectory]) + noise_roll) * disc_weights, axis=1) + roll_plan.objective_decomposition.get("terminal_ft_value", 0.0)
+    deltas = sim_hit - sim_roll
+
+    p_gain = float(np.mean(deltas > 0))
+    mean_delta = float(np.mean(deltas))
+    sigma_delta = float(np.std(deltas))
+
+    p_star, k = cfg.compute_hit_parameters(risk_preference="balanced", mini_league_deficit=26.0)
+    hit_justified = (p_gain >= p_star) or (mean_delta > k * sigma_delta)
+    hit_verdict = "RECOMMEND_HIT" if hit_justified else "AVOID_HIT"
+
     print("\n" + "=" * 80)
-    print("HIT POLICY & CHIP VERDICT (WI-2.5)")
+    print("MONTE CARLO HIT POLICY & PARAMETERS (WI-2.5)")
     print("=" * 80)
-    print(f"Hit Threshold required: +{thresh:.2f} xP")
-    print(f"Actual Hit Delta vs Roll: {delta_hit:+.2f} xP")
-    hit_verdict = "JUSTIFIED" if delta_hit >= thresh else ("MARGINAL" if delta_hit > 0 else "AVOID")
-    print(f"Hit Decision: {hit_verdict} (Hit does not clear hurdle threshold; 1 free transfer or rolling is optimal)")
-    print(f"Wildcard Decision: PRESERVE WILDCARD. Wildcard Delta J over 1-FT plan is negative/marginal (+{wc_plan.total_objective - plan_1.total_objective:.2f} xP) and burns irreplaceable Set 1 chip prematurely.")
+    print(f"P(Delta > 0):       {p_gain:.4f}")
+    print(f"Mean Delta:         {mean_delta:+.2f} xP")
+    print(f"Sigma Delta:        {sigma_delta:.2f} xP")
+    print(f"p* [PROVISIONAL]:   {p_star:.2f} (derived from balanced mode & deficit=26.0)")
+    print(f"k  [PROVISIONAL]:   {k:.2f} (derived from balanced mode & deficit=26.0)")
+    print(f"Hit Verdict:        {hit_verdict} (p_gain={p_gain:.2f} vs p*={p_star:.2f}, Mean Delta={mean_delta:+.2f} vs k*sigma={k*sigma_delta:.2f})")
+
+    best_non_chip = max([roll_plan, plan_1, plan_hit], key=lambda x: x.total_objective)
+    wc_delta = wc_plan.total_objective - best_non_chip.total_objective
+    option_value_waiting = 18.0
+    if wc_delta > option_value_waiting:
+        wc_decision = f"WILDCARD NOW (Edge {wc_delta:+.2f} xP exceeds option value of waiting {option_value_waiting:.1f} xP)"
+    else:
+        wc_decision = f"DEFER WILDCARD (Edge {wc_delta:+.2f} xP is below option value of waiting {option_value_waiting:.1f} xP; staged transfer plan captures {best_non_chip.total_objective - roll_plan.total_objective:+.2f} xP)"
+    print(f"Wildcard Decision:  {wc_decision}")
 
     print("\n" + "=" * 80)
     print("LEGACY SYSTEM VS NEW MULTI-PERIOD OPTIMIZER COMPARISON")

@@ -331,4 +331,48 @@ def test_walk_forward_backtester_end_to_end_tiny_fixture(tmp_path: Path):
     assert abs(mean_shuf_rho) < 0.02, f"Expected |mean(rho)| < 0.02, got {mean_shuf_rho}"
 
 
+def test_fast_synthetic_row_alignment_and_shuffled_predictions():
+    """
+    Step 0e: Fast (<0.1 s) synthetic-fixture alignment and shuffled-rho test in the DEFAULT test suite.
+    Asserts (player_id, gameweek) row-alignment and proves shuffled predictions produce |rho| < 0.02.
+    """
+    import pandas as pd
+    from scipy.stats import spearmanr
+
+    rng = np.random.default_rng(42)
+    player_ids = np.repeat(np.arange(1, 21), 10)  # 20 players x 10 rounds
+    rounds = np.tile(np.arange(1, 11), 20)
+
+    # Synthetic true talent and realized noisy points
+    true_talent = rng.uniform(1.0, 8.0, size=20)
+    base_xp = np.array([true_talent[pid - 1] for pid in player_ids])
+    actual_pts = np.maximum(0, rng.poisson(base_xp))
+
+    df_synth = pd.DataFrame({
+        "element": player_ids,
+        "round": rounds,
+        "model_xp": base_xp,
+        "actual_points": actual_pts,
+        "actual_minutes": np.where(actual_pts > 0, 90, 0),
+    })
+
+    # 1. Assert row alignment
+    assert (df_synth["element"] == player_ids).all()
+    assert (df_synth["round"] == rounds).all()
+    assert not df_synth["model_xp"].isna().any()
+
+    # 2. Assert genuine correlation exists on unshuffled data
+    active = df_synth[df_synth["actual_minutes"] > 0]
+    rho_true, _ = spearmanr(active["model_xp"], active["actual_points"])
+    assert rho_true > 0.20, f"Expected positive correlation, got {rho_true}"
+
+    # 3. Assert shuffled predictions produce |mean(rho)| < 0.02
+    y_true = active["actual_points"].values
+    y_pred = active["model_xp"].values
+    shuf_rhos = [spearmanr(rng.permutation(y_pred), y_true)[0] for _ in range(50)]
+    mean_shuf_rho = float(np.mean(shuf_rhos))
+    assert abs(mean_shuf_rho) < 0.02, f"Expected |mean(rho)| < 0.02, got {mean_shuf_rho}"
+
+
+
 

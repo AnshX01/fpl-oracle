@@ -45,7 +45,7 @@ class MultiPeriodConfig:
     horizon_len: int = 8
     gamma: float = 0.95
     solver_name: Literal["highs", "cbc"] = "highs"
-    mip_gap: float = 0.005  # 0.5%
+    mip_gap: float = 1e-4  # 0.01% (rel gap <= 1e-4, abs gap <= 0.05 xP on 500 xP horizon)
     time_limit_sec: int = 60
     bench_weights: tuple[float, float, float, float] = (0.10, 0.05, 0.02, 0.0)
     w_bench_mean: float = 0.05
@@ -100,6 +100,7 @@ class MultiPeriodConfig:
     ) -> tuple[float, float]:
         """
         Derives p* and k hurdle parameters from risk preference and mini-league deficit (WI-2.5).
+        [PROVISIONAL: hand-set heuristics; to be tuned on walk-forward backtest after WI-4.1]
         - Balanced / Points: p* = 0.60, k = 1.00
         - Conservative / Defending lead: p* = 0.75, k = 1.50
         - Aggressive / Chasing deficit: p* = 0.50, k = 0.50
@@ -197,6 +198,8 @@ class MultiPeriodPlan:
     hit_prob_gain: float
     solve_time_sec: float
     solver_status: str
+    solver_gap: float = 0.0
+    objective_decomposition: dict[str, float] = field(default_factory=dict)
     top_k_alternatives: list[dict[str, Any]] = field(default_factory=list)
     chip_plans: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -310,8 +313,11 @@ class MultiPeriodOptimizer:
         H = len(horizon_gws)
         t0 = horizon_gws[0]
 
-        # Ensure squad selling prices
         squad_df = current_squad_df.copy()
+        if "value" not in squad_df.columns and "now_cost" in squad_df.columns:
+            squad_df["value"] = squad_df["now_cost"]
+        if "now_cost" not in squad_df.columns and "value" in squad_df.columns:
+            squad_df["now_cost"] = squad_df["value"]
         if "selling_price" not in squad_df.columns:
             squad_df["selling_price"] = squad_df["value"]
         if "purchase_price" not in squad_df.columns:
@@ -355,10 +361,6 @@ class MultiPeriodOptimizer:
 
         all_teams = sorted(set(player_dict[p]["team"] for p in players))
         club_map = {tm: [p for p in players if player_dict[p]["team"] == tm] for tm in all_teams}
-
-        # Available chips processing
-        raw_chips = set(c.lower().strip() for c in (chips_available or []))
-        # Valid chips: 3xc, bboost, freehit, wildcard
 
         # Initialize PuLP Problem
         prob = pulp.LpProblem("FPL_MultiPeriod_MILP", pulp.LpMaximize)
@@ -536,11 +538,16 @@ class MultiPeriodOptimizer:
         t1_gws = [t for t in horizon_gws if t <= SET_1_LAST_GW]
         t2_gws = [t for t in horizon_gws if t > SET_1_LAST_GW]
 
-        # Check chip eligibility
-        wc_avail = "wildcard" in raw_chips or not chips_available
-        fh_avail = "freehit" in raw_chips or not chips_available
-        bb_avail = "bboost" in raw_chips or not chips_available
-        tc_avail = "3xc" in raw_chips or not chips_available
+        # Check chip eligibility: None means unconstrained; [] or set() means NO chips allowed
+        if chips_available is None:
+            raw_chips_set = {"wildcard", "freehit", "bboost", "3xc"}
+        else:
+            raw_chips_set = set(c.lower().strip() for c in chips_available)
+
+        wc_avail = "wildcard" in raw_chips_set
+        fh_avail = "freehit" in raw_chips_set
+        bb_avail = "bboost" in raw_chips_set
+        tc_avail = "3xc" in raw_chips_set
 
         if t1_gws:
             prob += pulp.lpSum(wc[t] for t in t1_gws) <= (1 if wc_avail else 0)
@@ -647,7 +654,30 @@ class MultiPeriodOptimizer:
         solver = self._get_solver()
         solve_status = prob.solve(solver)
         solve_time = time.perf_counter() - t_start
-        status_str = pulp.LpStatus[solve_status]
+
+        real_gap = 0.0
+        if hasattr(prob, "solverModel") and prob.solverModel is not None:
+            try:
+                highs_m = prob.solverModel
+                model_status_str = highs_m.modelStatusToString(highs_m.getModelStatus())
+                gap_val = highs_m.getInfoValue("mip_gap")[1]
+                real_gap = float(gap_val) if gap_val is not None and not np.isnan(gap_val) else 0.0
+                if model_status_str.lower() == "optimal":
+                    status_str = f"OPTIMAL (gap={real_gap:.4%})"
+                elif "time limit" in model_status_str.lower():
+                    status_str = f"TIME_LIMIT (gap={real_gap:.4%})"
+                else:
+                    status_str = f"{model_status_str.upper()} (gap={real_gap:.4%})"
+            except Exception as ex:
+                logger.debug(f"Failed extracting HiGHS solverModel stats: {ex}")
+                status_str = f"{pulp.LpStatus[solve_status].upper()}"
+        else:
+            if solve_status == pulp.constants.LpStatusOptimal:
+                status_str = f"OPTIMAL (gap<={self.config.mip_gap:.4%})"
+            elif solve_status == pulp.constants.LpStatusNotSolved:
+                status_str = "TIME_LIMIT / NOT_SOLVED"
+            else:
+                status_str = f"{pulp.LpStatus[solve_status].upper()}"
 
         # Extract Trajectory
         trajectory: list[GameweekAction] = []
@@ -756,6 +786,43 @@ class MultiPeriodOptimizer:
 
         obj_val = float(pulp.value(prob.objective) or 0.0)
 
+        # Objective decomposition calculation
+        disc_lineup_xp = 0.0
+        disc_captain_xp = 0.0
+        disc_bench_xp = 0.0
+        disc_hits_cost = 0.0
+        for idx, t in enumerate(horizon_gws):
+            discount = gamma ** idx
+            df_gw = horizon_projections.get(t, player_pool_df)
+            gw_xp = {int(r["element"]): float(r.get("expected_points", 0.0)) for _, r in df_gw.iterrows()}
+            l_val = sum(gw_xp.get(p, 0.0) for p in players if s[p, t].varValue is not None and s[p, t].varValue > 0.5)
+            c_val = sum(gw_xp.get(p, 0.0) for p in players if c[p, t].varValue is not None and c[p, t].varValue > 0.5)
+            if tc[t].varValue is not None and tc[t].varValue > 0.5:
+                c_val *= 2.0
+            b_mult = 1.0 if (bb[t].varValue is not None and bb[t].varValue > 0.5) else w_bench
+            b_val = b_mult * sum(gw_xp.get(p, 0.0) for p in players if b[p, t].varValue is not None and b[p, t].varValue > 0.5)
+            h_val = float(HIT_COST_POINTS) * float(h[t].varValue or 0.0)
+
+            disc_lineup_xp += discount * l_val
+            disc_captain_xp += discount * c_val
+            disc_bench_xp += discount * b_val
+            disc_hits_cost += discount * h_val
+
+        term_ft_val = (gamma ** H) * sum(w * float(var.varValue or 0.0) for w, var in zip(v_weights, v, strict=True))
+        micro_ft_val = 1e-4 * sum(float(ft_var[t].varValue or 0.0) for t in horizon_gws + [horizon_gws[-1] + 1])
+        term_bank_val = self.config.lambda_bank * (float(bank_var[horizon_gws[-1]].varValue or 0.0) / 10.0)
+
+        decomp = {
+            "discounted_lineup_xp": round(disc_lineup_xp, 3),
+            "discounted_captain_xp": round(disc_captain_xp, 3),
+            "discounted_bench_xp": round(disc_bench_xp, 3),
+            "discounted_hits_cost": round(disc_hits_cost, 3),
+            "terminal_ft_value": round(term_ft_val, 3),
+            "terminal_bank_value": round(term_bank_val, 3),
+            "ft_banking_incentive": round(micro_ft_val, 4),
+            "total_objective": round(obj_val, 3),
+        }
+
         return MultiPeriodPlan(
             plan_type=p_type,
             target_gw=t0,
@@ -772,6 +839,8 @@ class MultiPeriodOptimizer:
             hit_prob_gain=1.0 if rec_action.hits == 0 else 0.75,
             solve_time_sec=round(solve_time, 2),
             solver_status=status_str,
+            solver_gap=real_gap,
+            objective_decomposition=decomp,
         )
 
     def evaluate_transfer_options(

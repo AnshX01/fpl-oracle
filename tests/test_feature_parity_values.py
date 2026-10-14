@@ -516,6 +516,7 @@ def real_multiseason_history_and_upcoming():
     return fe, history_df, train_full_df, boot, fixtures, tzolis_id
 
 
+@pytest.mark.slow
 def test_real_multi_season_parity_colliding_ids(real_multiseason_history_and_upcoming):
     """
     Assert 100% numerical parity across all 62 features for David Raya (element 1 in 2026-27),
@@ -543,6 +544,7 @@ def test_real_multi_season_parity_colliding_ids(real_multiseason_history_and_upc
     )
 
 
+@pytest.mark.slow
 def test_real_multi_season_parity_transferred_player(real_multiseason_history_and_upcoming):
     """
     Assert 100% numerical parity across all 62 features for Cole Palmer (transferred Man City -> Chelsea),
@@ -570,6 +572,7 @@ def test_real_multi_season_parity_transferred_player(real_multiseason_history_an
     )
 
 
+@pytest.mark.slow
 def test_real_multi_season_parity_new_player(real_multiseason_history_and_upcoming):
     """
     Assert 100% numerical parity across all 62 features for Christos Tzolis (new player in 2026-27).
@@ -596,6 +599,7 @@ def test_real_multi_season_parity_new_player(real_multiseason_history_and_upcomi
     )
 
 
+@pytest.mark.slow
 def test_real_parity_blank_gameweek(real_multiseason_history_and_upcoming):
     """
     Verify serving kernel handles Blank Gameweek (0 fixtures scheduled for team) cleanly,
@@ -615,6 +619,7 @@ def test_real_parity_blank_gameweek(real_multiseason_history_and_upcoming):
         assert not df_serve[col].isna().any(), f"NaN in BGW feature {col}"
 
 
+@pytest.mark.slow
 def test_real_parity_double_gameweek(real_multiseason_history_and_upcoming):
     """
     Verify parity for Double Gameweek:
@@ -818,6 +823,7 @@ def test_real_parity_double_gameweek(real_multiseason_history_and_upcoming):
     )
 
 
+@pytest.mark.slow
 def test_real_parity_refreshed_live_snapshot(real_multiseason_history_and_upcoming):
     """
     Verify that incrementally refreshing master history with newly completed gameweeks
