@@ -88,6 +88,30 @@ Record of changes, metrics before/after, and acceptance criteria per work item.
 
 ---
 
-## Phase 0: Evaluation Harness & Baselines (In Progress)
-- **WI-0.1:** Walk-forward backtest runner (`src/fpl_oracle/eval/backtest.py`, `scripts/run_backtest.py`).
-- **WI-0.2:** Baselines & `ep_next` snapshotting (`holdout_forward` extension to `data/snapshots/`).
+## Phase 0: Evaluation Harness & Baselines (Completed)
+- **Date:** 2026-10-14
+- **Modules Created/Updated:**
+  - `src/fpl_oracle/eval/backtest.py`: `WalkForwardBacktester` implementing strict temporal walk-forward evaluation, retraining barriers (`--retrain-every k`), dual evaluation views (View a: all available players; View b: played players with minutes > 0), return-bucket stratification, 4 baselines, and probabilistic quantile loss (P10/P50/P90).
+  - `scripts/run_backtest.py`: Reproducible CLI entry point.
+  - `src/fpl_oracle/ml/holdout.py`: Added `save_official_ep_snapshot` capturing `ep_next` and `ep_this` into `data/snapshots/gw{gw}_official_ep.json`.
+  - `tests/test_eval_backtest.py`: Acceptance and unit tests for backtester and snapshotting (3 tests passing).
+- **Acceptance Run:**
+  - Command: `python scripts/run_backtest.py --seasons 2024-25 2025-26 --window last-20-gw --retrain-every 4`
+  - Duration: 103.34s (< 2 minutes, well within 30 min budget).
+  - Evaluated Observations: 16,352 player-gameweek observations.
+  - Reports Generated: `reports/eval/20261014_044926/summary.json` and `summary.md`.
+- **Results vs Baseline 2 (Rolling 5 Appearances):**
+  - **View (a) All Available Players (16,352 rows):** Model MAE 1.685 | RMSE 2.713 | Spearman 0.005.
+  - **View (b) Active Players Only (6,207 rows):**
+    - Model MAE: **2.453** vs Baseline 2 **2.486** (Gain: **+0.033**, p = 0.00003, paired t = -4.176).
+    - Model RMSE: **3.498** vs Baseline 2 **3.549** (Gain: **+0.050**).
+    - Spearman: **0.017** vs Baseline 2 **0.016** (Gain: **+0.001**).
+    - Empirical 80% Coverage: 55.4% (Nominal 80.0%).
+  - **Positional Performance (Active Players):**
+    - GKP (310 rows): Model MAE 2.603 (Gain +0.068), RMSE 3.603 (Gain +0.053), Spearman 0.041 vs 0.023. Model beats Baseline 2 on all 3 metrics.
+    - DEF (2,442 rows): Model MAE 2.616 (Gain +0.037), RMSE 3.650 (Gain +0.053), Spearman -0.002 vs 0.005.
+    - MID (2,846 rows): Model MAE 2.297 (Gain +0.026), RMSE 3.338 (Gain +0.050), Spearman 0.034 vs 0.027. Model beats Baseline 2 on all 3 metrics.
+    - FWD (609 rows): Model MAE 2.452 (Gain +0.036), RMSE 3.553 (Gain +0.038), Spearman 0.013 vs 0.015.
+  - **Baselines & Open Questions:**
+    - Per spec acceptance criteria, logged Question 6 in `docs/open_questions.md` regarding DEF and FWD Spearman correlation prior to Phase 3 component models (Dixon-Coles WI-3.1 and empirical Bayes shrinkage WI-3.7).
+
