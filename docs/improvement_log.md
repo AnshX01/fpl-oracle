@@ -148,15 +148,19 @@ Record of changes, metrics before/after, and acceptance criteria per work item.
     - **Candidate Pool Pruning (WI-2.3):**
       Top $N$ per position by horizon-discounted xP + all currently owned players + top 5 cheapest active enablers per position.
     - **Solver Selection & Benchmark (WI-2.4):**
-      - HiGHS vs CBC Benchmark: On full multi-period instances (H=8), CBC times out at 60s and fails to find provably optimal solutions due to lack of modern MIP cuts and presolve. HiGHS solves H=8 instances to provable optimality in 8.27s - 8.44s. HiGHS is configured as the default solver (`MultiPeriodConfig(solver_name='highs')`).
+      - HiGHS vs CBC Benchmark: On full multi-period instances (H=8), CBC times out at 60s and fails to find provably optimal solutions (Status: Not Solved). HiGHS solves H=8 instances to provable optimality in 9.48s - 10.20s with mip_rel_gap=0.005. HiGHS is configured as the default solver. If CBC must be used, fallback policy automatically truncates horizon to H=3.
     - **Lossless Candidate Pool Pruning (WI-2.3):**
-      - Proved lossless across 5 real historical squads (2025-26 GW1, GW5, GW10, GW15, GW20): objective diff is 0.0000 across all 5 squads, while speeding up solve time by 4x–6x.
+      - Pruned candidate pool is defined as Position Limits (10 GKP + 25 DEF + 25 MID + 15 FWD = 75) + 20 price enablers + 15 squad members = 130 to 161 unique candidates.
+      - Lossless benchmark across 5 real 2026-27 squads (GW1-GW5, H=8, Wildcard, Free Hit): When unpruned finishes, objective diff is 0.0000 (lossless). On GW1 (no chips, H=8), unpruned times out at 100s without a feasible integer solution (status Not Solved), demonstrating the operational necessity of pruning.
     - **Dynamic Hit Policy Evaluation (WI-2.5):**
-      - Hit policy threshold is fully configurable (`hit_threshold_base=2.0`, `hit_threshold_per_hit=0.5`) and dynamically derived via `compute_hit_threshold()` based on risk preference (Conservative: 3.0, Balanced: 2.0, Aggressive: 1.0) and mini-league deficit (trailing by >= 20 pts discounts threshold by -0.5).
+      - Evaluated from Monte Carlo scenario distributions: recommend hit only if $P(J_{plan} > J_{roll}) \ge p^*$ or $\Delta > k \cdot \sigma_\Delta$.
+      - Derived parameters: Balanced ($p^*=0.60, k=1.00$), Conservative ($p^*=0.75, k=1.50$), Aggressive ($p^*=0.50, k=0.50$), with trailing $\ge 20$ pts discount of $-0.05$ / $-0.25$.
     - **Post-Chip Free Transfer Transition Rule:**
       - Exposed as named configuration constant `POST_CHIP_FT_RULE_DEFAULT = 'preserve'` with `POST_CHIP_FT_RULE_STATUS = 'UNCONFIRMED'`. Flagged as UNCONFIRMED in docs because official FPL guidelines confirm preservation of banked transfers during Wildcard/Free Hit weeks, but whether an additional transfer (+1) is earned upon entering the following week remains ambiguous in official publications.
     - **Test Suite Performance:**
-      - Heavy property tests (290s) marked with `@pytest.mark.slow`; default test suite configured with `addopts = "-m 'not slow'"` in `pyproject.toml`, keeping the standard test suite fast (510 tests passed in default suite).
+      - Heavy property tests and backtests marked with `@pytest.mark.slow`; default test suite configured with `addopts = "-m 'not slow'"` in `pyproject.toml`, executing 477 tests in 2m24s (144s). Documented `slow` target for nightly/pre-merge execution.
+    - **Real GW6 Replay (Entry 1085141, Red Djed Redemption):**
+      - Rebuilt deadline state: Selling Value £98.0m, Bank £1.8m, 1 FT, 4 chips. Multi-period optimizer recommended 1 FT (or Roll) with 0 hits, exactly matching the user's real move (Mbeumo -> Saka) and preserving Set 1 Wildcard.
   - `src/fpl_oracle/optimise/transfers_beam.py`: Preserved legacy beam search intact for backwards compatibility and fallback verification.
   - `src/fpl_oracle/optimise/transfers.py`: Integrated routing in `evaluate_transfer_options`. Routes to MILP optimizer when `free_transfers >= 3` or when `multiperiod_milp` feature flag is enabled.
   - `tests/test_f005_banked_transfers_beam.py`: Un-xfailed and verified passing in 1.56s.
@@ -168,6 +172,7 @@ Record of changes, metrics before/after, and acceptance criteria per work item.
   4. `test_property_4_feasibility_across_horizon`: Squad size = 15, club caps $\le 3$, 11 starters, formation bounds, bank $\ge 0$ satisfied at every gameweek $t$.
   5. `test_property_5_chip_logic_and_legality`: Enforces $\le 1$ chip per gameweek, no Free Hit in GW1, no back-to-back Free Hit across GW19/20, Set 1 expiry at GW19.
   6. `test_property_6_brute_force_toy_optimum`: Matches exhaustive combinatorial enumeration optimum on a toy league.
+
 
 
 

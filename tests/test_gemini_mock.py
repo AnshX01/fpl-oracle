@@ -127,6 +127,7 @@ def test_gemini_hallucinated_quote_penalized(extractor):
     asyncio.run(_run())
 
 
+@pytest.mark.slow
 def test_gemini_http_429_graceful_fallback(extractor):
     mock_resp = httpx.Response(429, text="Rate limit exceeded", request=httpx.Request("POST", "http://test"))
 

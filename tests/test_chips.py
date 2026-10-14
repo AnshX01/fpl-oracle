@@ -3,6 +3,7 @@ Unit tests for 2026/27 Chip Strategy Engine, Set boundaries, and Banking rules (
 """
 
 import pandas as pd
+import pytest
 
 from fpl_oracle.api.models import ChipHistoryItem, ManagerHistory
 from fpl_oracle.chips.planner import chip_planner
@@ -80,6 +81,7 @@ def test_joint_chip_assignment_no_conflicts():
     assert len(alts) > 0
 
 
+@pytest.mark.slow
 def test_chip_set_1_expiry_opportunity_cost():
     """Verify that Set 1 expiry warning includes non-zero opportunity cost for unplayed chips."""
     positions = ["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3
@@ -115,6 +117,7 @@ def test_chip_set_1_expiry_opportunity_cost():
         assert "alternative_gw" in row
 
 
+@pytest.mark.slow
 def test_chip_calendar_benefit_vs_baseline():
     """C1: Verifies multi-GW chip calendar computes expected benefit vs no-chip baseline and labels low-confidence beyond horizon."""
     positions = ["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3
@@ -200,6 +203,7 @@ def test_strict_recommendation_threshold_and_set1_cutoff():
     assert len(set1_rows) == 0
 
 
+@pytest.mark.slow
 def test_rival_chips_tracking_context():
     """C4: Verifies tracking rivals' remaining chips, used percentages, and tactical context."""
     positions = ["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3

@@ -107,6 +107,7 @@ def test_assert_legal_squad_enforces_rules():
     assert_legal_squad(df_legal, max_budget=1000.0)
 
 
+@pytest.mark.slow
 def test_proxy_simulation_execution_and_artifacts():
     """Verify proxy simulation execution, JSON artifact generation, sample size, and Brier metrics."""
     res = run_proxy_simulation(quick=False)

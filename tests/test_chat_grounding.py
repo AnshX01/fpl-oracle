@@ -38,6 +38,7 @@ async def test_chat_grounding_captaincy_recommendation():
     assert "as an ai language model" not in ans.lower()
 
 
+@pytest.mark.slow
 @pytest.mark.anyio
 async def test_chat_grounding_chip_strategy():
     """Verify chip questions cite official 2026/27 rules and Set 1 GW19 boundary."""
