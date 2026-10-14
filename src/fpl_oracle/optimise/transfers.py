@@ -899,6 +899,29 @@ class TransferOptimizer:
         locked_out = set(locked_out_ids or [])
         excluded_teams = set(excluded_team_ids or [])
 
+        from fpl_oracle.config import is_flag_enabled
+
+        if is_flag_enabled("multiperiod_milp", default=False) or free_transfers >= 3:
+            from fpl_oracle.optimise.multiperiod import multiperiod_optimizer
+
+            return multiperiod_optimizer.evaluate_transfer_options(
+                current_squad_df=current_squad_df,
+                player_pool_df=player_pool_df,
+                bank=bank,
+                free_transfers=free_transfers,
+                horizon_projections=horizon_projections,
+                current_gw=current_gw,
+                target_gw=target_gw,
+                locked_in_ids=locked_in_ids,
+                locked_out_ids=locked_out_ids,
+                excluded_team_ids=excluded_team_ids,
+                risk_preference=risk_preference,
+                include_price_gain=include_price_gain,
+                stability_threshold=stability_threshold,
+                num_mc_scenarios=num_mc_scenarios,
+                horizon_len=horizon_len,
+            )
+
         # Ensure current_squad_df has selling_price and purchase_price
         if "selling_price" not in current_squad_df.columns:
             current_squad_df = self.compute_squad_selling_prices(current_squad_df)
