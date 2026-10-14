@@ -35,7 +35,10 @@ def clean_scheduler(monkeypatch):
     """Ensure scheduler and client are cleanly terminated for tests."""
     yield
     if scheduler.running:
-        scheduler.shutdown(wait=False)
+        try:
+            scheduler.shutdown(wait=False)
+        except RuntimeError:
+            pass
     try:
         import asyncio
 
@@ -50,7 +53,7 @@ def clean_scheduler(monkeypatch):
 
 @pytest.mark.anyio
 async def test_scheduler_job_registration():
-    """Verify all 5 background jobs are properly registered with appropriate triggers."""
+    """Verify all 8 background jobs are properly registered with appropriate triggers."""
     start_scheduler()
     assert scheduler.running is True
 
@@ -63,14 +66,15 @@ async def test_scheduler_job_registration():
         "deadline_alert",
         "holdout_forward",
         "history_refresh",
+        "odds_snapshot",
     ]
     for j_id in expected_ids:
         assert j_id in registered_ids
 
     status = get_jobs_status()
     assert status["scheduler_running"] is True
-    assert status["total_jobs"] == 7
-    assert len(status["jobs"]) == 7
+    assert status["total_jobs"] == len(expected_ids)
+    assert len(status["jobs"]) == len(expected_ids)
     stop_scheduler()
 
 
