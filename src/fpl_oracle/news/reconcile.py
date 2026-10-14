@@ -174,6 +174,67 @@ class ReconcileProbabilitySettings:
     prob_start_returned_training: float = 0.65
     prob_avail_doubtful: float = 0.50
     prob_start_doubtful: float = 0.40
+    single_source_cop_cap: float = 25.0
+
+
+def normalize_publisher_group(domain: str) -> str:
+    """Normalize publisher domains belonging to the same media entity."""
+    d = (domain or "").lower()
+    if "bbc" in d:
+        return "bbc"
+    if "theguardian" in d or "guardian" in d:
+        return "guardian"
+    if "skysports" in d or "sky" in d:
+        return "sky"
+    if "athletic" in d:
+        return "theathletic"
+    if "telegraph" in d:
+        return "telegraph"
+    return d
+
+
+def are_syndicated_copies(e1: PlayerEvidence, e2: PlayerEvidence) -> bool:
+    """
+    Determine whether two evidence items originate from the same wire story or syndicate.
+    Returns True if evidence shows they are syndicated copies of the same original source,
+    even if hosted on different publisher domains.
+    """
+    dom1 = extract_publisher_domain(e1.source_url)
+    dom2 = extract_publisher_domain(e2.source_url)
+    if dom1 and dom2:
+        if dom1 == dom2 or normalize_publisher_group(dom1) == normalize_publisher_group(dom2):
+            return True
+
+    # 1. Canonical URL match
+    canon1 = (getattr(e1, "canonical_url", None) or "").strip().lower()
+    canon2 = (getattr(e2, "canonical_url", None) or "").strip().lower()
+    if canon1 and canon2 and canon1 == canon2:
+        return True
+
+    # 2. Shared wire agency / wire service attribution (e.g. PA Media, Reuters, AP)
+    wire1 = (getattr(e1, "wire_agency", None) or "").strip().lower()
+    wire2 = (getattr(e2, "wire_agency", None) or "").strip().lower()
+    if wire1 and wire2 and wire1 == wire2:
+        return True
+
+    # 3. Matching syndicate article ID
+    art_id1 = (getattr(e1, "article_id", None) or "").strip()
+    art_id2 = (getattr(e2, "article_id", None) or "").strip()
+    if art_id1 and art_id2 and art_id1 == art_id2:
+        return True
+
+    # 4. Textual similarity of surrounding article body outside the quote
+    surr1 = getattr(e1, "surrounding_text", None) or ""
+    surr2 = getattr(e2, "surrounding_text", None) or ""
+    if surr1 and surr2:
+        words1 = set(re.findall(r"\w+", surr1.lower()))
+        words2 = set(re.findall(r"\w+", surr2.lower()))
+        if len(words1) >= 10 and len(words2) >= 10:
+            jaccard = len(words1 & words2) / len(words1 | words2)
+            if jaccard >= 0.60:
+                return True
+
+    return False
 
 
 class AvailabilityReconciler:
@@ -293,10 +354,8 @@ class AvailabilityReconciler:
                 source_url = ev.source_url
 
                 if ev.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE):
-                    # In Gated-Active mode, override to 0% requires corroboration from two independent allowlisted sources
-                    has_external_urls = any(bool(e.source_url) for e in player_evidences)
-                    distinct_publishers: set[str] = set()
-                    seen_snippets: set[str] = set()
+                    # Filter matching high-confidence candidate evidence
+                    valid_ruled_out: list[PlayerEvidence] = []
                     for other in player_evidences:
                         if (
                             other.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE)
@@ -312,20 +371,33 @@ class AvailabilityReconciler:
                                 and o_dom not in trusted_publishers
                             ):
                                 continue
-                            norm_snippet = " ".join(re.findall(r"\w+", (other.quote or "").lower()[:60]))
-                            if norm_snippet not in seen_snippets:
-                                distinct_publishers.add(o_dom or f"source_{len(distinct_publishers)}")
-                                seen_snippets.add(norm_snippet)
+                            valid_ruled_out.append(other)
 
-                    if self.mode == RecommendationMode.GATED_ACTIVE and has_external_urls and len(distinct_publishers) < 2:
-                        # Single uncorroborated allowlisted source: cap at 25% and flag it!
+                    # Group evidence items into independent source clusters using syndication detection
+                    source_clusters: list[list[PlayerEvidence]] = []
+                    for item in valid_ruled_out:
+                        placed = False
+                        for cluster in source_clusters:
+                            if any(are_syndicated_copies(item, member) for member in cluster):
+                                cluster.append(item)
+                                placed = True
+                                break
+                        if not placed:
+                            source_clusters.append([item])
+
+                    num_independent_sources = len(source_clusters)
+                    has_external_urls = any(bool(e.source_url) for e in valid_ruled_out)
+
+                    if self.mode == RecommendationMode.GATED_ACTIVE and has_external_urls and num_independent_sources < 2:
+                        # Single uncorroborated allowlisted source: cap at configurable single_source_cop_cap and flag it!
                         is_shadow_override = True
-                        effective_cop = min(baseline_cop, 25.0)
-                        p_avail = min(baseline_p_avail, 0.25)
+                        cap_val = self.prob_settings.single_source_cop_cap
+                        effective_cop = min(baseline_cop, cap_val)
+                        p_avail = min(baseline_p_avail, cap_val / 100.0)
                         p_start_given_avail = 0.0
                         reconciliation_reason = (
                             f"Candidate Evidence: Single uncorroborated allowlisted source; "
-                            f"availability capped at {effective_cop:.0f}% ('{ev.quote[:50]}...')"
+                            f"availability capped at {effective_cop:.0f}% (Official FPL: '{status}' {baseline_cop:.0f}%) ('{ev.quote[:50]}...')"
                         )
                         break
                     else:
