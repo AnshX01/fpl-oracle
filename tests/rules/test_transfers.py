@@ -5,6 +5,8 @@ Tests for Centralised FPL Transfer Rules and Selling Price Oracle (WI-1.3, WI-1.
 import pytest
 
 from fpl_oracle.rules.transfers import (
+    POST_CHIP_FT_RULE_DEFAULT,
+    POST_CHIP_FT_RULE_STATUS,
     TransferStateConfig,
     next_free_transfers,
     sell_price,
@@ -96,3 +98,62 @@ def test_chip_legality_r2_and_boundaries():
     # Wildcard in Set 2 is legal if only used in Set 1
     valid, msg = validate_chip_legality("wildcard", 25, chips_already_used=used_set1_wc)
     assert valid is True
+
+
+def test_post_chip_ft_rule_named_constant_status():
+    """Verify that post-chip free-transfer rule is exposed as a named constant flagged UNCONFIRMED."""
+    assert POST_CHIP_FT_RULE_DEFAULT == "preserve"
+    assert POST_CHIP_FT_RULE_STATUS == "UNCONFIRMED"
+    cfg = TransferStateConfig()
+    assert cfg.chip_week_ft_rule == POST_CHIP_FT_RULE_DEFAULT
+
+
+def test_selling_price_real_player_trajectories():
+    """
+    Validates selling price rule (half profit rounded down, price falls pass through)
+    against real player price movements from historical FPL seasons.
+    """
+    import pandas as pd
+
+    df = pd.read_csv("data/historical/master_history.csv")
+
+    # 1. Cole Palmer 2023-24: started at 50 (£5.0m), peaked at 63 (£6.3m), trough at 49 (£4.9m)
+    palmer_23 = df[(df["name"].str.contains("Cole Palmer", na=False)) & (df["season"] == "2023-24")]
+    assert not palmer_23.empty
+    buy_palmer = int(palmer_23.iloc[0]["value"])  # 50
+    peak_palmer = int(palmer_23["value"].max())    # 63
+    trough_palmer = int(palmer_23["value"].min())  # 49
+    # Profit = 63 - 50 = 13 -> 13 // 2 = 6 -> sell price = 56
+    assert sell_price(buy_palmer, peak_palmer) == 56
+    assert sell_price_millions(buy_palmer / 10.0, peak_palmer / 10.0) == 5.6
+    # Dip below purchase -> full pass-through -> 49
+    assert sell_price(buy_palmer, trough_palmer) == 49
+
+    # 2. Morgan Rogers 2024-25: started at 50 (£5.0m), peaked at 58 (£5.8m)
+    rogers_24 = df[(df["name"].str.contains("Morgan Rogers", na=False)) & (df["season"] == "2024-25")]
+    assert not rogers_24.empty
+    buy_rogers = int(rogers_24.iloc[0]["value"])   # 50
+    peak_rogers = int(rogers_24["value"].max())    # 58
+    # Profit = 58 - 50 = 8 -> 8 // 2 = 4 -> sell price = 54
+    assert sell_price(buy_rogers, peak_rogers) == 54
+
+    # 3. Erling Haaland 2024-25: started at 150 (£15.0m), peaked at 154 (£15.4m), dipped to 147 (£14.7m)
+    haaland_24 = df[(df["name"].str.contains("Erling Haaland", na=False)) & (df["season"] == "2024-25")]
+    assert not haaland_24.empty
+    buy_haaland = int(haaland_24.iloc[0]["value"])   # 150
+    peak_haaland = int(haaland_24["value"].max())    # 154
+    trough_haaland = int(haaland_24["value"].min())  # 147
+    # Profit = 154 - 150 = 4 -> 4 // 2 = 2 -> sell price = 152
+    assert sell_price(buy_haaland, peak_haaland) == 152
+    assert sell_price(buy_haaland, trough_haaland) == 147
+
+    # 4. Ollie Watkins 2023-24: started at 80 (£8.0m), peaked at 90 (£9.0m), dipped to 79 (£7.9m)
+    watkins_23 = df[(df["name"].str.contains("Ollie Watkins", na=False)) & (df["season"] == "2023-24")]
+    assert not watkins_23.empty
+    buy_watkins = int(watkins_23.iloc[0]["value"])   # 80
+    peak_watkins = int(watkins_23["value"].max())    # 90
+    trough_watkins = int(watkins_23["value"].min())  # 79
+    # Profit = 90 - 80 = 10 -> 10 // 2 = 5 -> sell price = 85
+    assert sell_price(buy_watkins, peak_watkins) == 85
+    assert sell_price(buy_watkins, trough_watkins) == 79
+

@@ -12,6 +12,7 @@ Required Property Tests:
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.multiperiod import MultiPeriodConfig, MultiPeriodOptimizer
@@ -114,6 +115,7 @@ def _generate_candidate_pool(squad_df: pd.DataFrame, rng: np.random.Generator, e
 # ==============================================================================
 # Property Test 1: Equivalence at H=1, no transfers
 # ==============================================================================
+@pytest.mark.slow
 def test_property_1_h1_equivalence_to_lineup_optimizer():
     """
     Property Test 1:
@@ -170,6 +172,7 @@ def test_property_1_h1_equivalence_to_lineup_optimizer():
 # ==============================================================================
 # Property Test 2: Dominance: MILP objective >= beam objective on 30 states
 # ==============================================================================
+@pytest.mark.slow
 def test_property_2_dominance_over_beam_search():
     """
     Property Test 2:
@@ -221,6 +224,7 @@ def test_property_2_dominance_over_beam_search():
 # ==============================================================================
 # Property Test 3: Rules oracle agreement
 # ==============================================================================
+@pytest.mark.slow
 def test_property_3_rules_oracle_agreement():
     """
     Property Test 3:
@@ -276,6 +280,7 @@ def test_property_3_rules_oracle_agreement():
 # ==============================================================================
 # Property Test 4: Feasibility across horizon
 # ==============================================================================
+@pytest.mark.slow
 def test_property_4_feasibility_across_horizon():
     """
     Property Test 4:
@@ -357,6 +362,7 @@ def test_property_4_feasibility_across_horizon():
 # ==============================================================================
 # Property Test 5: Chip logic & legality
 # ==============================================================================
+@pytest.mark.slow
 def test_property_5_chip_logic_and_legality():
     """
     Property Test 5:
@@ -409,6 +415,7 @@ def test_property_5_chip_logic_and_legality():
 # ==============================================================================
 # Property Test 6: Brute force match on toy league
 # ==============================================================================
+@pytest.mark.slow
 def test_property_6_brute_force_toy_optimum():
     """
     Property Test 6:
@@ -482,4 +489,57 @@ def test_property_6_brute_force_toy_optimum():
     assert milp_obj >= round(best_brute_val, 2) - 0.05, (
         f"MILP optimum {milp_obj} != Brute-force optimum {best_brute_val:.2f}"
     )
+
+
+# ==============================================================================
+# Fast Unit Tests (Run in default test suite)
+# ==============================================================================
+def test_multiperiod_config_defaults():
+    cfg = MultiPeriodConfig()
+    assert cfg.horizon_len == 8
+    assert cfg.solver_name == "highs"
+    assert cfg.gamma == 0.95
+    assert cfg.mip_gap == 0.005
+    assert cfg.time_limit_sec == 60
+
+
+def test_multiperiod_fast_single_gw_solve():
+    """Fast smoke test solving a 1-GW instance in under 0.1s."""
+    rng = np.random.default_rng(7007)
+    squad_df = _generate_valid_random_squad(rng)
+    opt = MultiPeriodOptimizer(MultiPeriodConfig(horizon_len=1))
+    plan = opt.optimize(
+        current_squad_df=squad_df,
+        player_pool_df=squad_df,
+        bank=10.0,
+        free_transfers=1,
+        horizon_projections={1: squad_df},
+        current_gw=0,
+        target_gw=1,
+        horizon_len=1,
+        forced_w1_transfers=0,
+    )
+    assert plan.solver_status == "Optimal"
+    assert len(plan.recommended_action.starters) == 11
+    assert plan.recommended_action.captain in plan.recommended_action.starters
+
+
+def test_hit_threshold_derivation_and_configuration():
+    """Verify configurable hit policy threshold derivation across risk preferences and deficit contexts (WI-2.5)."""
+    cfg = MultiPeriodConfig(hit_threshold_base=2.0)
+    # Default 1 hit balanced: 2.0
+    assert cfg.compute_hit_threshold(hits=1, risk_preference="balanced") == 2.0
+    # Conservative / protect lead: +1.0 -> 3.0
+    assert cfg.compute_hit_threshold(hits=1, risk_preference="conservative") == 3.0
+    assert cfg.compute_hit_threshold(hits=1, mini_league_mode="protect_lead") == 3.0
+    # Aggressive / chase deficit: -1.0 -> 1.0
+    assert cfg.compute_hit_threshold(hits=1, risk_preference="aggressive") == 1.0
+    # Chasing with big deficit (>=20): -0.5 extra discount -> 0.5
+    assert cfg.compute_hit_threshold(hits=1, risk_preference="aggressive", mini_league_deficit=25.0) == 0.5
+    # Compounding for 2 hits: 2.0 + (2-1)*0.5 = 2.5
+    assert cfg.compute_hit_threshold(hits=2, risk_preference="balanced") == 2.5
+    # 0 hits: 0.0
+    assert cfg.compute_hit_threshold(hits=0) == 0.0
+
+
 
