@@ -248,6 +248,7 @@ class MonteCarloSimulator:
         rival_behavior_model: str = "consensus_template",
         fixture_cs_prob_map: dict[Any, float] | None = None,
         projections_by_gw: dict[int, pd.DataFrame] | None = None,
+        n_simulations: int | None = None,
     ) -> dict[str, Any]:
         """
         Run Monte Carlo simulations across user and rivals over the horizon.
@@ -255,6 +256,7 @@ class MonteCarloSimulator:
         and per-GW projections across the horizon.
         """
         rng = np.random.default_rng(seed)
+        sim_count = n_simulations if n_simulations is not None else self.n_simulations
 
         if not rival_squads:
             return {
@@ -264,6 +266,7 @@ class MonteCarloSimulator:
                 "expected_final_rank": 1.0,
                 "simulations_count": 0,
                 "rank_distribution": {"rank_1": 0.0, "top_3": 0.0},
+                "rival_probabilities": [],
                 "rival_behavior_assumptions": {
                     "captaincy_model": "None (No rivals loaded)",
                     "transfer_model": "None",
@@ -372,10 +375,14 @@ class MonteCarloSimulator:
 
         user_wins = 0.0
         user_top3 = 0.0
-        user_ranks = []
+        user_ranks: list[float] = []
+
+        rival_wins = [0.0] * len(rival_entries)
+        rival_top3 = [0.0] * len(rival_entries)
+        rival_ranks: list[list[float]] = [[] for _ in rival_entries]
 
         # Run trials
-        for _ in range(self.n_simulations):
+        for _ in range(sim_count):
             trial_user_pts = user_points
             trial_rival_pts = [r["current_points"] for r in rival_entries]
 
@@ -390,8 +397,10 @@ class MonteCarloSimulator:
                     return {
                         "status": "MISSING_PROJECTIONS",
                         "user_win_probability_pct": None,
+                        "user_top3_probability_pct": None,
                         "expected_final_rank": None,
                         "simulations_count": 0,
+                        "rival_probabilities": [],
                     }
                 player_draws = self.draw_gameweek(
                     {eid: proj_map[eid] for eid in all_unique_elements}, rng, fixture_cs_prob_map=fixture_cs_prob_map
@@ -427,16 +436,42 @@ class MonteCarloSimulator:
                 slots_left = 3 - strictly_ahead
                 user_top3 += min(1.0, float(slots_left) / float(tied_with_user))
 
-        win_prob = round((user_wins / float(self.n_simulations)) * 100.0, 1)
-        top3_prob = round((user_top3 / float(self.n_simulations)) * 100.0, 1)
+            for i, r_pts in enumerate(trial_rival_pts):
+                r_strictly_ahead = sum(1 for s in all_scores if (s - r_pts) > 1e-9)
+                r_tied = sum(1 for s in all_scores if abs(s - r_pts) <= 1e-9)
+                r_rank = r_strictly_ahead + (r_tied + 1) / 2.0
+                rival_ranks[i].append(r_rank)
+                if r_strictly_ahead == 0:
+                    rival_wins[i] += 1.0 / float(r_tied)
+                if r_strictly_ahead < 3:
+                    slots_left = 3 - r_strictly_ahead
+                    rival_top3[i] += min(1.0, float(slots_left) / float(r_tied))
+
+        win_prob = round((user_wins / float(sim_count)) * 100.0, 1)
+        top3_prob = round((user_top3 / float(sim_count)) * 100.0, 1)
         avg_rank = round(float(np.mean(user_ranks)), 2)
+
+        rival_probabilities = []
+        for i, r in enumerate(rival_entries):
+            r_win = round((rival_wins[i] / float(sim_count)) * 100.0, 1)
+            r_top3 = round((rival_top3[i] / float(sim_count)) * 100.0, 1)
+            r_avg_rank = round(float(np.mean(rival_ranks[i])), 2)
+            rival_probabilities.append(
+                {
+                    "entry_id": r["entry_id"],
+                    "player_name": r["name"],
+                    "win_probability_pct": r_win,
+                    "top3_probability_pct": r_top3,
+                    "expected_final_rank": r_avg_rank,
+                }
+            )
 
         return {
             "status": "SIMULATION_SUCCESS",
             "user_win_probability_pct": win_prob,
             "user_top3_probability_pct": top3_prob,
             "expected_final_rank": avg_rank,
-            "simulations_count": self.n_simulations,
+            "simulations_count": sim_count,
             "scope": "conditional selected-rival horizon, not season-winning probability",
             "variance_model": "approximate hurdle/gamma; not empirically certified",
             "rank_distribution": {
@@ -444,6 +479,7 @@ class MonteCarloSimulator:
                 "top_3": top3_prob,
                 "rank_4_plus": round(100.0 - top3_prob, 1),
             },
+            "rival_probabilities": rival_probabilities,
             "rival_behavior_assumptions": {
                 "captaincy_model": "Conditional scenario using observed prior-GW captain; upcoming captain unknown",
                 "transfer_model": "Frozen observed rosters; not actual future transfers",
