@@ -75,17 +75,22 @@ def main():
 
     va = report["metrics"]["view_a_all_available_players"]
     vb = report["metrics"]["view_b_played_players_only"]
+    vb_base = vb.get("baselines", {})
+    boot = vb.get("gameweek_bootstrap", {})
 
     print("\n" + "=" * 80)
     print("WALK-FORWARD BACKTEST SUMMARY RESULTS")
     print("=" * 80)
     print(f"Evaluated Observations: {report['total_observations']:,}")
-    print(f"View (a) All Players:   Model MAE: {va['model_mae']} | RMSE: {va['model_rmse']} | Spearman: {va['model_spearman']}")
-    print(f"View (b) Active Only:   Model MAE: {vb['model_mae']} | Baseline 2 MAE: {vb['baseline_2_roll5_mae']} | Gain: {vb['gain_vs_baseline_2_mae']:+0.3f}")
-    print(f"                        Model RMSE: {vb['model_rmse']} | Baseline 2 RMSE: {vb['baseline_2_roll5_rmse']} | Gain: {vb['gain_vs_baseline_2_rmse']:+0.3f}")
-    print(f"                        Spearman: {vb['model_spearman']} (vs Baseline 2: {vb['baseline_2_roll5_spearman']})")
-    print(f"                        Empirical 80% Coverage: {vb['coverage_80_pct']}% (Nominal: 80.0%)")
-    print(f"                        Paired t-test vs Baseline 2: t = {vb['paired_t_statistic']} (p = {vb['paired_p_value']})")
+    print(f"View (a) All Players:   Model MAE: {va.get('model_mae')} | RMSE: {va.get('model_rmse')} | Spearman (Tied): {va.get('model_spearman_tied')}")
+    print(f"View (b) Active Only:   Model MAE: {vb.get('model_mae')} | Baseline 2 MAE: {vb_base.get('b2_roll5_mae')} | Gain: {vb.get('gain_vs_baseline_2_mae'):+0.3f}")
+    print(f"                        Model RMSE: {vb.get('model_rmse')} | Baseline 2 RMSE: {vb_base.get('b2_roll5_rmse')} | Gain: {vb.get('gain_vs_baseline_2_rmse'):+0.3f}")
+    print(f"                        Spearman (Tied):   Model: {vb.get('model_spearman_tied')} vs Base 2: {vb_base.get('b2_roll5_spearman_tied')} (Price: {vb_base.get('b6_price_spearman_tied')}, Prev-GW: {vb_base.get('b5_prev_gw_spearman_tied')})")
+    print(f"                        Spearman (NoTies): Model: {vb.get('model_spearman_noties')} vs Base 2: {vb_base.get('b2_roll5_spearman_noties')}")
+    print(f"                        Empirical 80% Coverage: {vb.get('coverage_80_pct')}% (Nominal: 80.0%)")
+    print("                        Gameweek Bootstrap (B=10,000):")
+    print(f"                          MAE Gain 95% CI:  [{boot.get('ci_95_mae', [0, 0])[0]}, {boot.get('ci_95_mae', [0, 0])[1]}] (p = {boot.get('bootstrap_p_value_mae')})")
+    print(f"                          RMSE Gain 95% CI: [{boot.get('ci_95_rmse', [0, 0])[0]}, {boot.get('ci_95_rmse', [0, 0])[1]}] (p = {boot.get('bootstrap_p_value_rmse')})")
     print("=" * 80)
     print("Reports successfully generated in reports/eval/")
 

@@ -98,6 +98,16 @@ class JobExecutionTracker:
                 "duration_seconds": 0.0,
                 "details": "Awaiting initial execution",
             },
+            "odds_snapshot": {
+                "name": "Pre-Deadline Match Odds Snapshot",
+                "schedule": "Hourly",
+                "status": "IDLE",
+                "last_run": None,
+                "next_run": None,
+                "run_count": 0,
+                "duration_seconds": 0.0,
+                "details": "Awaiting initial execution",
+            },
         }
         self.triggered_deadline_alerts: set[tuple[int, str]] = set()
         self.retrained_gameweeks: set[int] = set()
@@ -394,6 +404,35 @@ async def holdout_forward_job():
             logger.warning("League forward evidence not recorded/scored: %s", error)
 
 
+async def odds_snapshot_job():
+    """WI-3.2: Snapshots current betting market odds for upcoming matches."""
+    job_id = "odds_snapshot"
+    job_name = "Pre-Deadline Match Odds Snapshot"
+    start_t = datetime.now(UTC)
+
+    run_id = data_store.record_job_start(job_id, job_name)
+    tracker.update_job_start(job_id)
+
+    try:
+        from fpl_oracle.data.odds import snapshot_odds
+
+        _, next_gw = await fpl_client.get_current_and_next_gw()
+        target_gw = next_gw or 1
+        path = snapshot_odds(target_gw=target_gw)
+        details = f"Snapshotted match odds for GW{target_gw} to {path.name}"
+
+        dur = (datetime.now(UTC) - start_t).total_seconds()
+        data_store.record_job_finish(run_id, "SUCCESS", dur, details)
+        tracker.update_job_finish(job_id, True, dur, details)
+        logger.info(f"[Scheduler] {details}")
+    except Exception as e:
+        dur = (datetime.now(UTC) - start_t).total_seconds()
+        err_msg = f"Odds snapshot error: {str(e)}"
+        data_store.record_job_finish(run_id, "FAILED", dur, err_msg)
+        tracker.update_job_finish(job_id, False, dur, err_msg)
+        logger.warning(f"[Scheduler] {job_name} failed: {e}")
+
+
 def get_jobs_status() -> dict[str, Any]:
     """Return execution status of all scheduler background jobs."""
     jobs_summary = []
@@ -440,6 +479,7 @@ async def run_job_on_demand(job_id: str) -> dict[str, Any]:
         "deadline_alert": deadline_alert_job,
         "holdout_forward": holdout_forward_job,
         "history_refresh": history_refresh_job,
+        "odds_snapshot": odds_snapshot_job,
     }
 
     if job_id not in job_map:
@@ -480,10 +520,16 @@ def start_scheduler():
         # Job 6: Forward Holdout freeze and scoring every 15 minutes
         scheduler.add_job(holdout_forward_job, "interval", minutes=15, id="holdout_forward", replace_existing=True)
 
+        # Job 7: Pre-deadline match odds snapshotting hourly
+        scheduler.add_job(odds_snapshot_job, "interval", hours=1, id="odds_snapshot", replace_existing=True)
+
         try:
             scheduler.start()
-            logger.info("[Scheduler] All 7 automated background jobs registered and scheduler started.")
+            logger.info("[Scheduler] All 8 automated background jobs registered and scheduler started.")
         except RuntimeError:
+            logger.warning(
+                "[Scheduler] No running asyncio event loop. Scheduler jobs registered; starting deferred until event loop starts."
+            )
             logger.warning(
                 "[Scheduler] No running asyncio event loop. Scheduler jobs registered; starting deferred until event loop starts."
             )
