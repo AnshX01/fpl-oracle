@@ -117,6 +117,9 @@ def bootstrap_gameweeks(df_view: pd.DataFrame, n_boot: int = 10000, seed: int = 
     p_val_mae = 2.0 * min(float(np.mean(boot_mae_means_arr <= 0)), float(np.mean(boot_mae_means_arr >= 0)))
     p_val_rmse = 2.0 * min(float(np.mean(boot_rmse_means_arr <= 0)), float(np.mean(boot_rmse_means_arr >= 0)))
 
+    p_mae_repr: str | float = "< 1e-4" if p_val_mae < 1e-4 else round(float(p_val_mae), 4)
+    p_rmse_repr: str | float = "< 1e-4" if p_val_rmse < 1e-4 else round(float(p_val_rmse), 4)
+
     return {
         "n_gameweeks": int(n_gws),
         "mean_gain_mae": round(float(np.mean(gw_deltas_mae_arr)), 4),
@@ -124,13 +127,13 @@ def bootstrap_gameweeks(df_view: pd.DataFrame, n_boot: int = 10000, seed: int = 
             round(float(np.percentile(boot_mae_means_arr, 2.5)), 4),
             round(float(np.percentile(boot_mae_means_arr, 97.5)), 4),
         ],
-        "bootstrap_p_value_mae": round(float(p_val_mae), 5),
+        "bootstrap_p_value_mae": p_mae_repr,
         "mean_gain_rmse": round(float(np.mean(gw_deltas_rmse_arr)), 4),
         "ci_95_rmse": [
             round(float(np.percentile(boot_rmse_means_arr, 2.5)), 4),
             round(float(np.percentile(boot_rmse_means_arr, 97.5)), 4),
         ],
-        "bootstrap_p_value_rmse": round(float(p_val_rmse), 5),
+        "bootstrap_p_value_rmse": p_rmse_repr,
     }
 
 

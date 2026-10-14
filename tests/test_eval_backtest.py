@@ -117,7 +117,7 @@ def test_bootstrap_gameweeks():
     assert res["n_gameweeks"] == 10
     assert np.isclose(res["mean_gain_mae"], 1.5)
     assert res["ci_95_mae"][0] > 0
-    assert res["bootstrap_p_value_mae"] == 0.0
+    assert res["bootstrap_p_value_mae"] == "< 1e-4"
 
 
 def test_odds_devigging_and_snapshot(tmp_path: Path):
@@ -142,4 +142,55 @@ def test_odds_devigging_and_snapshot(tmp_path: Path):
     assert data["matches_count"] > 0
     assert "devigged_p_shin" in data["matches"][0]
     assert "devigged_p_power" in data["matches"][0]
+
+
+def test_row_alignment_and_shuffled_predictions_regression():
+    """
+    Regression test:
+    1. Asserts row-alignment between meta, X, and Y (player, round, season).
+    2. Demonstrates aligned features achieve positive Spearman (> 0.25).
+    3. Demonstrates shuffled predictions yield Spearman about 0 (|mean(rho)| < 0.02).
+    """
+    from scipy.stats import spearmanr
+
+    from fpl_oracle.data.features import feature_engineering
+    from fpl_oracle.data.historical import historical_manager
+
+    df_raw = historical_manager.ensure_dataset_ready()
+    X, Y, meta = feature_engineering.build_historical_features(df_raw, return_meta=True)
+
+    # 1. Row alignment assertions across index and identity
+    assert (X.index == Y.index).all(), "X and Y indices must match exactly"
+    assert (X.index == meta.index).all(), "X and meta indices must match exactly"
+
+    # Slice a sample gameweek
+    gw_mask = (meta["season"] == "2025-26") & (meta["round"] == 10)
+    X_gw = X[gw_mask]
+    Y_gw = Y[gw_mask]
+    meta_gw = meta[gw_mask]
+
+    assert len(X_gw) > 500
+    assert (meta_gw["round"] == 10).all()
+    assert (meta_gw["season"] == "2025-26").all()
+
+    # Active players
+    active_mask = Y_gw["target_minutes"].values > 0
+    actual_pts = Y_gw.loc[active_mask, "target_points"].values
+    aligned_signal = X_gw.loc[active_mask, "roll_points_5"].values
+
+    # 2. Aligned signal correlation is positive and substantial
+    sp_aligned, _ = spearmanr(aligned_signal, actual_pts)
+    assert sp_aligned > 0.25, f"Expected aligned Spearman > 0.25, got {sp_aligned}"
+
+    # 3. Shuffled predictions give Spearman about 0 (|mean(rho)| < 0.02)
+    rng = np.random.default_rng(42)
+    shuffled_rhos = []
+    for _ in range(50):
+        shuffled_signal = rng.permutation(aligned_signal)
+        sp_shuf, _ = spearmanr(shuffled_signal, actual_pts)
+        shuffled_rhos.append(sp_shuf)
+
+    mean_shuffled_rho = float(np.mean(shuffled_rhos))
+    assert abs(mean_shuffled_rho) < 0.02, f"Expected |mean(rho)| < 0.02, got {mean_shuffled_rho}"
+
 
