@@ -332,17 +332,32 @@ class ChipPlanner:
                 set_1_opportunity_cost[c] = util
                 total_opp_cost += util
 
-            if len(set_1_remaining) > len(available_gws_set_1):
+            num_avail = len(available_gws_set_1)
+            num_chips = len(set_1_remaining)
+
+            chip_feasibility_lines = []
+            for c in set_1_remaining:
+                rec_gw = set1_best_assign.get(c)
+                latest_feasible = rec_gw if rec_gw is not None else 19
+                chip_feasibility_lines.append(
+                    f"{CHIP_DISPLAY_NAMES[c]} (recommended: GW{rec_gw if rec_gw else 'None'}, latest feasible: GW{latest_feasible})"
+                )
+            details_str = "; ".join(chip_feasibility_lines)
+
+            if num_chips > num_avail:
                 set_1_warning = (
-                    f"CRITICAL CHIP CONGESTION: You have {len(set_1_remaining)} chips remaining in Set 1 "
-                    f"but only {len(available_gws_set_1)} gameweeks left before the GW19 deadline ({gw19_deadline_str})! "
-                    f"Since only 1 chip can be played per gameweek, at least one chip will expire unused. "
+                    f"CRITICAL CHIP CONGESTION: You have {num_chips} chips remaining in Set 1 "
+                    f"but only {num_avail} gameweeks left before the GW19 deadline ({gw19_deadline_str})! "
+                    f"Since only 1 chip can be played per gameweek, at least {num_chips - num_avail} chip(s) will expire unused. "
+                    f"Feasible assignments: [{details_str}]. "
                     f"Total opportunity cost of forfeiting remaining Set 1 chips: ~{round(total_opp_cost, 1)} pts."
                 )
-            else:
+            elif current_gw >= 14 or num_chips >= (num_avail - 1):
+                urgency = "HIGH CHIP CONGESTION" if num_chips == num_avail else "SET 1 DEADLINE NOTICE"
                 set_1_warning = (
-                    f"SET 1 DEADLINE NOTICE: Gameweek 19 (deadline: {gw19_deadline_str}) is the hard deadline for your first set of chips. "
-                    f"Any unused Set 1 chips ({', '.join([CHIP_DISPLAY_NAMES[c] for c in set_1_remaining])}) will be permanently forfeited without rollover. "
+                    f"{urgency}: Gameweek 19 (deadline: {gw19_deadline_str}) is the hard deadline for your first set of chips. "
+                    f"Remaining Set 1 chips: [{details_str}]. "
+                    f"Any unused Set 1 chips will be permanently forfeited without rollover after GW19. "
                     f"Total opportunity cost if unused: ~{round(total_opp_cost, 1)} expected points."
                 )
 
@@ -363,8 +378,8 @@ class ChipPlanner:
                     )
                     alt_gw = alt_assign.get(c, rec_gw + 1 if rec_gw < 19 else rec_gw - 1)
                     base_threshold = CHIP_RECOMMENDATION_THRESHOLDS.get(c, 8.0)
-                    if current_gw == 19:
-                        # Use-it-or-lose-it rule: at the final gameweek of Set 1, any positive expected gain (>0) justifies recommendation
+                    if num_chips >= num_avail or current_gw == 19:
+                        # Full congestion / deadline: any positive expected gain justifies recommendation to prevent expiry
                         threshold = 0.0
                     elif current_gw == 18:
                         # Lower threshold by 50% one gameweek before hard deadline to prioritize deploying expiring chips
