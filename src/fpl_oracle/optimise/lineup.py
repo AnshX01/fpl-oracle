@@ -7,6 +7,7 @@ subject to valid formation rules, autosub dynamics, and P10/P50/P90 risk distrib
 import math
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import pulp
 
@@ -194,18 +195,29 @@ class LineupOptimizer:
         safe_pick = starters_df.sort_values(by=["p10", "expected_points"], ascending=False).iloc[0]
         ceiling_pick = starters_df.sort_values(by=["p90", "expected_points"], ascending=False).iloc[0]
 
-        # Probability of outscoring next best option
-        cap_mu = float(captain_row["expected_points"])
-        cap_p10 = float(captain_row.get("p10", cap_mu * 0.4))
-        cap_p90 = float(captain_row.get("p90", cap_mu * 1.8))
-        cap_sigma = max(1.0, (cap_p90 - cap_p10) / 2.56)
+        # Probability of outscoring next best option using scoreline simulator (WI-4.3)
+        cap_id = int(captain_row["element"])
+        vice_id = int(vice_captain_row["element"])
+        try:
+            from fpl_oracle.sim.match_sim import match_simulator
 
-        next_mu = float(vice_captain_row["expected_points"])
-        next_p10 = float(vice_captain_row.get("p10", next_mu * 0.4))
-        next_p90 = float(vice_captain_row.get("p90", next_mu * 1.8))
-        next_sigma = max(1.0, (next_p90 - next_p10) / 2.56)
+            sim_res = match_simulator.simulate_gameweek(starters_df, n_sims=1000, seed=42)
+            prob_outscore = round(sim_res.get_captain_win_probability(cap_id, vice_id), 3)
+            cap_draws = sim_res.get_player_draws(cap_id)
+            cap_p10 = float(np.percentile(cap_draws, 10))
+            cap_p90 = float(np.percentile(cap_draws, 90))
+        except Exception:
+            cap_mu = float(captain_row["expected_points"])
+            cap_p10 = float(captain_row.get("p10", cap_mu * 0.4))
+            cap_p90 = float(captain_row.get("p90", cap_mu * 1.8))
+            cap_sigma = max(1.0, (cap_p90 - cap_p10) / 2.56)
 
-        prob_outscore = normal_prob_greater(cap_mu, cap_sigma, next_mu, next_sigma)
+            next_mu = float(vice_captain_row["expected_points"])
+            next_p10 = float(vice_captain_row.get("p10", next_mu * 0.4))
+            next_p90 = float(vice_captain_row.get("p90", next_mu * 1.8))
+            next_sigma = max(1.0, (next_p90 - next_p10) / 2.56)
+
+            prob_outscore = normal_prob_greater(cap_mu, cap_sigma, next_mu, next_sigma)
 
         # Starting points and bench points
         starters_xp = float(starters_df["expected_points"].sum())

@@ -1,0 +1,276 @@
+# Audit Findings Register
+
+This document contains the detailed adversarial audit findings for `fpl-oracle`. Every finding is verified against the codebase with line-level citations, execution proof, reproduction scripts, and remediation plans.
+
+---
+
+## Summary of Findings by Severity
+
+| Severity | Count | IDs |
+|---|---|---|
+| **CRITICAL** | 3 | F-001, F-002, F-003 |
+| **HIGH** | 5 | F-004, F-005, F-006, F-007, F-008 |
+| **MEDIUM** | 5 | F-009, F-010, F-011, F-012, F-013 |
+| **LOW** | 2 | F-014, F-015 |
+| **INFO** | 1 | F-016 |
+| **TOTAL** | **16** | |
+
+---
+
+## Detailed Findings
+
+### F-001: Live Plaintext Google Gemini API Key Leaked into Persistent Application Logs
+- **Severity:** CRITICAL
+- **Category:** security
+- **Location:** [`logs/fpl_oracle.log:16592-20062`](file:///C:/Users/anshw/Documents/fpl-oracle/logs/fpl_oracle.log)
+- **Pass:** 1
+- **Verification:** `REPRODUCED`
+- **What is wrong:** httpx logs outgoing HTTP request URLs at INFO level. Because Google Gemini REST endpoints receive the API key in the URL query string (?key=...), the live active API key is persisted in plaintext across thousands of log lines in logs/fpl_oracle.log.
+- **Evidence:** Inspected logs/fpl_oracle.log:16592-20062. Verified active API key strings are present in persistent application log files.
+- **Impact:** Total credential compromise. Anyone with read access to the server, filesystem, or backup artifacts can hijack the user's Google Cloud / Gemini API account.
+- **Likelihood:** 100% of LLM operations (triggers on every news extraction and briefing generation).
+- **Recommended fix:** Set httpx logger level to WARNING in src/fpl_oracle/utils/logging.py and install a SecretFilter regex-masking any URL parameter containing 'key'. Rotate compromised key immediately.
+- **Test that would catch it:** `test_no_plaintext_keys_in_logs: Runs a sample extraction and asserts regex r'key=AIza[0-9A-Za-z-_]{35}' does not match log output.`
+- **Related:** SETUP.md:45, DECISIONS.md:310, F-003
+
+---
+
+### F-002: Monte Carlo Symmetric Tie-Breaking Defect (100% Win Probability on Tied Squads)
+- **Severity:** CRITICAL
+- **Category:** simulation
+- **Location:** [`src/fpl_oracle/league/montecarlo.py:414`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/league/montecarlo.py)
+- **Pass:** 2
+- **Verification:** `REPRODUCED`
+- **What is wrong:** User trial rank is computed by counting competitors strictly exceeding the user's score: sum(1 for s in all_scores if s > trial_user_pts) + 1. When the user and rivals have identical or tied squads, s > trial_user_pts evaluates to False, assigning the user rank 1 on 100% of trials (user_win_probability_pct = 100.0%) instead of splitting win probability symmetrically (50.0% for 2 tied teams).
+- **Evidence:** audit/scratch/test_symmetric_tie.py output: identical user and rival squads produced user_win_probability_pct: 100.0% instead of 50.0%.
+- **Impact:** Severely inflates win probabilities in tight mini-leagues with high template overlap, giving users false security and driving unsound differential gambles.
+- **Likelihood:** Common (triggers in any simulation trial where user and rival share rosters or tie on points).
+- **Recommended fix:** Distribute win probability symmetrically: win_credit = 1.0 / (1 + tied_count) when strictly_ahead == 0.
+- **Test that would catch it:** `test_identical_rosters_yield_50_percent_win_prob: Seeds identical squads in simulate_league_ranks and asserts win probability is within [49.0%, 51.0%].`
+- **Related:** DECISIONS.md:228, WI-4.1, F-006
+
+---
+
+### F-003: Gated-Active Prompt Injection / RSS Fabrication Vulnerability
+- **Severity:** CRITICAL
+- **Category:** news-llm
+- **Location:** [`src/fpl_oracle/news/reconcile.py:214-222, src/fpl_oracle/news/gemini_extractor.py:231`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/news/reconcile.py)
+- **Pass:** 2
+- **Verification:** `REPRODUCED`
+- **What is wrong:** Quote verification in reconcile.py relies strictly on case-insensitive substring containment within article text. Untrusted RSS feeds containing fabricated text (e.g. 'Erling Haaland ruled out with ankle injury') easily satisfy containment. In Gated-Active mode, this overrides official FPL chance_of_playing, setting effective_chance_of_playing to 0.0 without domain allowlisting.
+- **Evidence:** audit/scratch/test_prompt_injection.py output: simulated RSS article with fabricated quote successfully zeroed out Haaland's availability in Gated-Active mode.
+- **Impact:** Third-party RSS feeds or prompt injections can force the system to bench star players and destroy gameweek advice.
+- **Likelihood:** High if external untrusted RSS feeds or web searches are enabled.
+- **Recommended fix:** Implement an explicit domain allowlist for Gated-Active overrides in config/news_sources.yaml and require corroboration across two independent Tier 1 news sources.
+- **Test that would catch it:** `test_untrusted_rss_source_cannot_override_status: Ingests an article from an unapproved domain and asserts official FPL status remains untouched.`
+- **Related:** DECISIONS.md:266, WI-3.5, F-010
+
+---
+
+### F-004: Truncation Collapse in expected_floor_div for Event Rates > 10
+- **Severity:** HIGH
+- **Category:** rules
+- **Location:** [`src/fpl_oracle/domain/scoring.py:95-107`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/domain/scoring.py)
+- **Pass:** 2
+- **Verification:** `REPRODUCED`
+- **What is wrong:** expected_floor_div hardcodes max_k = 20. For Poisson rates lambda > 10, substantial probability mass lies above k = 20. Truncating at 20 causes the expectation E[floor(X / divisor)] to collapse toward 0 rather than scaling with lambda / divisor.
+- **Evidence:** audit/scratch/test_poisson_and_probability.py output: rate=15 yields 6.33 vs 7.25 exact; rate=20 yields 4.57 vs 9.75 exact; rate=25 yields 1.63 vs 12.25 exact.
+- **Impact:** Severe underestimation of defensive contribution points, goalkeeper saves, and double-gameweek projections for high-rate events.
+- **Likelihood:** Common on defensive events, multi-match aggregates, and double gameweeks.
+- **Recommended fix:** Dynamically scale max_k = max(40, int(rate + 6 * math.sqrt(rate))) or sum until residual Poisson CDF mass is below 1e-9.
+- **Test that would catch it:** `test_expected_floor_div_monotonic_high_lambda: Computes floor expectations across rates 0.1 to 30.0 and asserts monotonic increase matching brute-force summation.`
+- **Related:** fpl_oracle_improvement_spec.md:549, DECISIONS.md:45
+
+---
+
+### F-005: Beam Search Incapable of >2 Transfers (Cannot Exploit Banked 3-5 FTs)
+- **Severity:** HIGH
+- **Category:** optimiser
+- **Location:** [`src/fpl_oracle/optimise/sequential.py:183-220, src/fpl_oracle/optimise/transfers.py:503`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/optimise/sequential.py)
+- **Pass:** 2
+- **Verification:** `READ`
+- **What is wrong:** The sequential beam search only generates candidates for 0, 1, or 2 transfers per gameweek. When a manager banks 3, 4, or 5 free transfers under official 2024-27 rules, the beam search cannot discover hit-free 3-, 4-, or 5-player transfer sequences in a single week.
+- **Evidence:** Traced sequential.py:183-220 and transfers.py:503. Verified candidate generation methods exist only for _get_candidate_1_transfers and _get_candidate_2_transfers.
+- **Impact:** Suboptimal transfer recommendations; managers with banked transfers miss high-upside restructuring moves.
+- **Likelihood:** 100% of gameweeks where banked free transfers >= 3.
+- **Recommended fix:** Implement multi-period MILP solver (multiperiod.py) or extend candidate generation to branch on N transfers when banked FTs >= N.
+- **Test that would catch it:** `test_beam_finds_optimal_3_transfer_hit_free_plan: Constructs scenario where 3-transfer move beats all 1- and 2-transfer moves with 3 FTs banked and asserts 3-transfer plan is selected.`
+- **Related:** fpl_oracle_improvement_spec.md:162, WI-2.1
+
+---
+
+### F-006: False Claims of Automatic Model Rollback on Corrupt Bundle
+- **Severity:** HIGH
+- **Category:** model
+- **Location:** [`src/fpl_oracle/ml/predict.py:59-71, src/fpl_oracle/ml/model_registry.py:278-283`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/ml/predict.py)
+- **Pass:** 2
+- **Verification:** `REPRODUCED`
+- **What is wrong:** Documentation asserts that corrupt model bundles are automatically recovered via checkpoint rollback. In reality, SHA256 checksum mismatches raise an unhandled ValueError that crashes the prediction pipeline.
+- **Evidence:** audit/scratch/test_corrupt_bundle.py output: corrupted weight byte raised unhandled ValueError('Corrupt model weights: SHA256 mismatch...') without triggering rollback.
+- **Impact:** Single-point-of-failure server crash if model weights suffer disk corruption or interrupted write.
+- **Likelihood:** Triggers whenever active bundle files are damaged or desynced.
+- **Recommended fix:** Wrap bundle loading in try/except; on ValueError/SHA mismatch, quarantine corrupt file and automatically restore the last validated bundle from data/models/versions/.
+- **Test that would catch it:** `test_corrupt_bundle_auto_recovers_to_previous_version: Corrupts active bundle file, calls load_active_bundle, and asserts successful rollback without exception.`
+- **Related:** HANDOFF.md:19, DECISIONS.md:295
+
+---
+
+### F-007: Expiring Chips Forfeited at GW19 Deadline Due to Rigid Static Gain Gates
+- **Severity:** HIGH
+- **Category:** optimiser
+- **Location:** [`src/fpl_oracle/chips/planner.py:356-358`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/chips/planner.py)
+- **Pass:** 3
+- **Verification:** `REPRODUCED`
+- **What is wrong:** At GW19 (the final gameweek before Set 1 chips expire permanently), the chip planner applies static recommendation thresholds (e.g. 4.0 for 3xC, 10.0 for FH). If an unplayed chip has positive expected gain that is slightly below the threshold (e.g. 3.8 xP), is_recommended evaluates to False. The planner recommends NO chip at GW19, allowing it to expire for 0 points.
+- **Evidence:** audit/scenario_results.md Scenario 4 output: at GW19 with 4 unused Set 1 chips, gw19_chip_plan_table_recommended returned [] (0 chips recommended).
+- **Impact:** Unforced forfeiture of unplayed Set 1 chips at the mid-season deadline.
+- **Likelihood:** 100% of cases where an unplayed chip at GW19 has gain below static threshold.
+- **Recommended fix:** Incorporate use-it-or-lose-it backward induction: at GW19 (or the final valid window for a chip set), lower the recommendation threshold to 0.0 xP.
+- **Test that would catch it:** `test_gw19_forces_chip_usage_on_sub_threshold_positive_gain: Sets up GW19 with unused Triple Captain having 3.5 xP gain and asserts it is recommended rather than forfeited.`
+- **Related:** fpl_oracle_improvement_spec.md:59, WI-5.1, WI-5.2
+
+---
+
+### F-008: In-Process Thread Lock Only (BUNDLE_LOCK) Offers Zero Cross-Process Concurrency Protection
+- **Severity:** HIGH
+- **Category:** server
+- **Location:** [`src/fpl_oracle/ml/bundle_lock.py:6`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/ml/bundle_lock.py)
+- **Pass:** 2
+- **Verification:** `READ`
+- **What is wrong:** BUNDLE_LOCK relies on threading.RLock(). When running in multi-process production deployments (e.g. multiple Uvicorn workers or separate scheduler worker processes), in-process locks cannot serialize access across independent process memories.
+- **Evidence:** Inspected src/fpl_oracle/ml/bundle_lock.py:6. Confirmed use of threading.RLock() without file-level locking.
+- **Impact:** Race conditions and weight file corruption during concurrent model promotion writes across worker processes.
+- **Likelihood:** High in multi-worker Uvicorn deployments.
+- **Recommended fix:** Replace threading.RLock() with an OS-level file lock (e.g. portalocker or filelock) on a shared lockfile.
+- **Test that would catch it:** `test_concurrent_multiprocess_promotion_lock: Spawns two independent OS processes attempting simultaneous bundle write and asserts clean mutual exclusion.`
+- **Related:** HANDOFF.md:22, F-006
+
+---
+
+### F-009: Arbitrary 5x Weights on 2026/27 Rows Reduce Effective Sample Size by ~26k Rows
+- **Severity:** MEDIUM
+- **Category:** model
+- **Location:** [`src/fpl_oracle/ml/components/bonus.py:26, src/fpl_oracle/ml/components/defcon.py:27`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/ml/components/bonus.py)
+- **Pass:** 2
+- **Verification:** `REPRODUCED`
+- **What is wrong:** Component models apply a hardcoded 5x sample weight to 2026/27 records. Because 2026/27 currently contains only 1,538 active player records out of 90,303 total records, this extreme weighting distorts gradient updates and drops the Kish effective sample size from 90,303 to 63,548.
+- **Evidence:** audit/scratch/check_effective_sample_size.py output: Kish ESS drops by 26,755 rows without cross-validation justification.
+- **Impact:** Degrades generalization on stable features (clean sheet baselines, appearance rates) and increases variance on early-season noise.
+- **Likelihood:** 100% of model training runs.
+- **Recommended fix:** Tune sample weights via out-of-fold temporal cross-validation or use exponential half-life time weighting.
+- **Test that would catch it:** `test_sample_weight_cv_tuning: Asserts sample weights are selected via temporal CV on holdout validation rather than fixed constants.`
+- **Related:** DECISIONS.md:180, GOAL.md:35
+
+---
+
+### F-010: Entity Resolution Collision on Shared-Surname Players
+- **Severity:** MEDIUM
+- **Category:** news-llm
+- **Location:** [`src/fpl_oracle/data/fuzzy_match.py:61-75`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/data/fuzzy_match.py)
+- **Pass:** 2
+- **Verification:** `REPRODUCED`
+- **What is wrong:** Fuzzy matching searches candidates sequentially and returns the first player whose name matches the query token with 1.0 confidence. For players sharing surnames (e.g. Jurrien vs Quinten Timber, Bernardo vs Thiago Silva), common news headlines attach injury statuses to the wrong player.
+- **Evidence:** audit/scratch/test_same_surname.py output: query 'Timber' matches the first candidate with 1.0 confidence without checking club or position.
+- **Impact:** Incorrect availability reconciliation; active players may be benched due to injuries belonging to another player.
+- **Likelihood:** Common on players sharing surnames across Premier League clubs.
+- **Recommended fix:** Require club and position cross-referencing in fuzzy resolution; apply an ambiguity penalty when multiple active players share the surname.
+- **Test that would catch it:** `test_shared_surname_requires_club_disambiguation: Queries 'Timber' and asserts confidence < 0.5 unless club 'Arsenal' is explicitly matched.`
+- **Related:** DECISIONS.md:266, F-003
+
+---
+
+### F-011: Starting Lineup Selection Completely Insensitive to Risk Modes
+- **Severity:** MEDIUM
+- **Category:** optimiser
+- **Location:** [`src/fpl_oracle/optimise/lineup.py:67`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/optimise/lineup.py)
+- **Pass:** 2
+- **Verification:** `REPRODUCED`
+- **What is wrong:** In lineup optimization, the risk_preference argument modulates cap_scores for the captaincy term, but leaves the starter decision coefficients strictly as df.loc[i, 'expected_points'] * starter[i]. Consequently, conservative mode cannot penalize high-variance or doubtful starters in the starting XI.
+- **Evidence:** audit/scenario_results.md Scenario 8 output: starting XI is 100% identical across conservative, balanced, and aggressive modes.
+- **Impact:** Users selecting conservative mode receive identical starting lineups as aggressive users, failing to protect against downside risk.
+- **Likelihood:** 100% of lineup solves.
+- **Recommended fix:** Incorporate quantile spreads (e.g. expected_points - lambda * (p90 - p10)) into starter objective coefficients for conservative posture.
+- **Test that would catch it:** `test_conservative_mode_benches_doubtful_starter: Configures a high-variance 75% flagged starter and asserts conservative mode benches them for a secure starter.`
+- **Related:** fpl_expert_antigravity_goal_prompt.md:108
+
+---
+
+### F-012: Architectural Claims of 'Dixon-Coles Model' Contradicted by Fixed Poisson Implementation
+- **Severity:** MEDIUM
+- **Category:** docs
+- **Location:** [`DECISIONS.md:88, src/fpl_oracle/data/features.py:568-650`](file:///C:/Users/anshw/Documents/fpl-oracle/DECISIONS.md)
+- **Pass:** 1
+- **Verification:** `READ`
+- **What is wrong:** Documentation repeatedly claims the implementation of a bivariate Dixon-Coles model. In reality, the codebase uses independent univariate Poisson expectations with hardcoded 1.35 league constants and fixed home multipliers; low-score dependency (rho) and time-decay weighting are absent.
+- **Evidence:** Inspected src/fpl_oracle/data/features.py lines 568-650. Verified absence of bivariate likelihood fitting or rho parameters.
+- **Impact:** Misleading documentation claims; underestimates low-scoring match correlations (0-0, 1-0, 0-1).
+- **Likelihood:** Constant in all fixture and odds modeling.
+- **Recommended fix:** Fit genuine Dixon-Coles parameters via maximum likelihood or honestly rename the module to Independent Poisson Attack-Defence.
+- **Test that would catch it:** `test_dixon_coles_fits_low_score_rho: Asserts rho parameter is fitted and produces non-zero adjustment on 0-0 and 1-0 scorelines.`
+- **Related:** fpl_oracle_improvement_spec.md:57, WI-3.1
+
+---
+
+### F-013: Non-Deterministic Wall-Clock Timing Assertion in Test Suite
+- **Severity:** MEDIUM
+- **Category:** tests
+- **Location:** [`tests/test_league_strategy_mc.py:370`](file:///C:/Users/anshw/Documents/fpl-oracle/tests/test_league_strategy_mc.py)
+- **Pass:** 1
+- **Verification:** `REPRODUCED`
+- **What is wrong:** test_side_by_side_plan_win_prob_comparison asserts that 10,000 Monte Carlo trials complete in under 2.0 seconds wall-clock time. Under coverage tracing (pytest-cov) or on resource-constrained CI agents, runtime reaches 3.45s, causing deterministic CI failures.
+- **Evidence:** audit/commands_run.md Section 5.1 output: pytest --cov=src failed with AssertionError: Simulation took too long: 3.45s.
+- **Impact:** Flaky CI test failures unrelated to code correctness.
+- **Likelihood:** Triggers whenever tests run under coverage, profiling, or loaded CI runners.
+- **Recommended fix:** Remove wall-clock assertions or gate them behind a performance-test flag.
+- **Test that would catch it:** `pytest tests/test_league_strategy_mc.py under coverage runs cleanly without timing failure.`
+- **Related:** F-002
+
+---
+
+### F-014: 20 Ruff Linting Errors Across Core Modules
+- **Severity:** LOW
+- **Category:** quality
+- **Location:** [`src/fpl_oracle/rules/scoring.py:150, src/fpl_oracle/optimise/squad.py:115`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/rules/scoring.py)
+- **Pass:** 1
+- **Verification:** `REPRODUCED`
+- **What is wrong:** Running ruff check . reports 20 errors including unused local variables (starters_clean, bench_clean) and unsorted import blocks across 6 modules.
+- **Evidence:** audit/commands_run.md Section 3.1 output: ruff check . exited with code 1 and 20 error lines.
+- **Impact:** Code clutter, lint warnings, and potential dead code execution.
+- **Likelihood:** 100% of lint checks.
+- **Recommended fix:** Run ruff check --fix . to automatically clean imports and remove unused variables.
+- **Test that would catch it:** `ruff check . exits with 0 errors.`
+- **Related:** F-015
+
+---
+
+### F-015: 7 Static Type Checking Errors in Source Code
+- **Severity:** LOW
+- **Category:** quality
+- **Location:** [`src/fpl_oracle/optimise/squad.py, src/fpl_oracle/news/gemini_extractor.py, src/fpl_oracle/llm/tools.py, src/fpl_oracle/llm/agent.py`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/optimise/squad.py, src/fpl_oracle/news/gemini_extractor.py, src/fpl_oracle/llm/tools.py, src/fpl_oracle/llm/agent.py)
+- **Pass:** 1
+- **Verification:** `REPRODUCED`
+- **What is wrong:** Static type analysis via mypy src reports 7 type mismatch and indexing errors across squad optimization, gemini extraction, and LLM tools.
+- **Evidence:** audit/commands_run.md Section 3.2 output: mypy src exited with code 1 and 7 error lines.
+- **Impact:** Risk of runtime AttributeError or TypeError during unexpected payload types.
+- **Likelihood:** Edge case runtime execution.
+- **Recommended fix:** Add proper type annotations and type narrowing checks across the 4 offending files.
+- **Test that would catch it:** `mypy src exits with 0 errors.`
+- **Related:** F-014
+
+---
+
+### F-016: Feature Count Discrepancy Between Documentation (57) and Schema (62)
+- **Severity:** INFO
+- **Category:** docs
+- **Location:** [`src/fpl_oracle/data/features.py:20-97, fpl_oracle_system_architecture.md:§2.1`](file:///C:/Users/anshw/Documents/fpl-oracle/src/fpl_oracle/data/features.py)
+- **Pass:** 1
+- **Verification:** `CONFIRMED`
+- **What is wrong:** The system architecture document repeatedly cites 57 features. Inspection of FEATURE_COLUMNS in features.py reveals 62 active feature definitions. The schema hash locks 62 columns.
+- **Evidence:** Python verification: len(FEATURE_COLUMNS) == 62.
+- **Impact:** Documentation drift; external readers and audits encounter conflicting feature counts.
+- **Likelihood:** Static documentation inconsistency.
+- **Recommended fix:** Update architectural documentation to reflect 62 features.
+- **Test that would catch it:** `test_feature_count_matches_doc: Asserts len(FEATURE_COLUMNS) == 62 and docs match.`
+- **Related:** fpl_oracle_system_architecture.md:§2.1
+
+---

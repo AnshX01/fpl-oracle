@@ -390,7 +390,7 @@ class ContingencyEngine:
         ruled_out_ids: list[int] | None = None,
     ) -> dict[str, Any]:
         """
-        Emergency 1-click crisis solver for breaking team news (e.g. 'Saka ruled out 6 weeks').
+        Emergency 1-click crisis solver for breaking team news (e.g. 'Star player ruled out 6 weeks').
         Instantly identifies ruled-out squad player, zeros their minutes/points, and solves:
         1. Clean bench promotion & revised captaincy.
         2. Best immediate 1-transfer market replacement.

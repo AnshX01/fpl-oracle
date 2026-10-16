@@ -36,48 +36,40 @@ Core Operating Principles:
 """
 
 
+OFFLINE_MODE_PREFIX = "[OFFLINE EXPERT MODE: Running purely on live local data, projections, and mathematical optimizations without external LLM keys.]\n\n"
+
+
 class OfflineExpertProvider:
     """
     Offline data-grounded expert analyst that executes live tools
-    and generates structured FPL Oracle recommendations without external API keys.
+    and generates structured FPL Oracle recommendations without external API keys (WI-6.3).
     """
 
+    is_offline: bool = True
+
     async def chat(self, messages: list[dict[str, str]], system_prompt: str) -> str:
+        raw_res = await self._generate_response(messages, system_prompt)
+        if not raw_res.startswith(OFFLINE_MODE_PREFIX):
+            return OFFLINE_MODE_PREFIX + raw_res
+        return raw_res
+
+    async def _generate_response(self, messages: list[dict[str, str]], system_prompt: str) -> str:
         last_raw = messages[-1]["content"] if messages else ""
         last_msg = last_raw.lower()
         import re
 
         tokens = set(re.findall(r"\w+", last_msg))
 
-        # 1. Comparison questions (e.g., "Explain why you picked Saka over Palmer", "compare Saka vs Palmer")
-        if (
-            "compare" in tokens
-            or "vs" in tokens
-            or (
-                "over" in tokens
-                and any(p in tokens for p in ["saka", "palmer", "haaland", "watkins", "foden", "salah"])
-            )
-        ):
-            players_to_compare = []
-            known_stars = [
-                "saka",
-                "palmer",
-                "haaland",
-                "watkins",
-                "foden",
-                "salah",
-                "fernandes",
-                "mbeumo",
-                "diaz",
-                "son",
-            ]
-            for star in known_stars:
-                if star in tokens:
-                    players_to_compare.append(star.capitalize())
+        # 1. Comparison questions (e.g., "compare A vs B", "A over B", "A or B")
+        if "compare" in tokens or "vs" in tokens or ("over" in tokens and len(tokens) >= 3):
+            # Resolve player names dynamically from active projections
+            proj = await tool_executor.execute("get_projections", {"horizon": 1})
+            all_web_names = {p["web_name"].lower(): p["web_name"] for p in proj.get("players", [])}
+            players_to_compare = [full_name for lower_name, full_name in all_web_names.items() if lower_name in tokens]
             if len(players_to_compare) < 2:
                 return "Name both players you want to compare."
 
-            res = await tool_executor.execute("compare_players", {"player_names": players_to_compare})
+            res = await tool_executor.execute("compare_players", {"player_names": players_to_compare[:2]})
             comps = res.get("comparisons", [])
             if len(comps) >= 2:
                 p1, p2 = comps[0], comps[1]
@@ -273,7 +265,7 @@ class OfflineExpertProvider:
             )
 
         # 9. Transfer & Hit questions
-        if any(w in tokens for w in ["transfer", "transfers", "hit", "hits", "sell", "buy", "haaland"]):
+        if any(w in tokens for w in ["transfer", "transfers", "hit", "hits", "sell", "buy", "swap", "move", "replace"]):
             res = await tool_executor.execute("optimise_transfers", {})
             if "error" in res:
                 return f"### Transfer Strategy & Hit Analysis\nUnable to optimize transfers: {res['error']}"

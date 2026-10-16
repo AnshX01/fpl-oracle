@@ -64,3 +64,7 @@ data/retraining_state.json.tmp
 
 # Private forward manager evidence
 data/league_forward/
+
+# Agent skills and skill lock
+.agents/
+skills-lock.json

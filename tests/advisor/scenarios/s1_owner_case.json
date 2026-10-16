@@ -1,0 +1,16 @@
+{
+  "scenario_id": "S1",
+  "name": "Owner's Reference Case (Healthy Core, Wildcard Available)",
+  "gameweek": 6,
+  "bank_tenths": 18,
+  "free_transfers": 1,
+  "chips_available": ["wildcard", "freehit", "3xc", "bboost"],
+  "expected_behavior": {
+    "recommend_wildcard": false,
+    "diagnose_healthy_core": true,
+    "max_transfers_recommended": 1,
+    "max_hits": 0,
+    "include_chip_timeline": true,
+    "include_staged_ft_alternative": true
+  }
+}
