@@ -191,3 +191,80 @@ with lock:
         assert second_start_t >= first_end_t - 0.05, (
             f"Processes overlapped! P1 end={first_end_t}, P2 start={second_start_t}"
         )
+
+
+def test_cqr_tampering_triggers_quarantine_and_rollback():
+    """
+    WI-3.8 / G1: Tampering with a CQR file triggers quarantine and rollback to verified restore point.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        models_dir = tmp / "models"
+        models_dir.mkdir()
+        versions_dir = models_dir / "versions"
+        v1_dir = versions_dir / "v1.0.0"
+        (v1_dir / "cqr").mkdir(parents=True)
+
+        legit_cqr_data = b"cqr_quantile_model_data_verified"
+        (v1_dir / "cqr" / "cqr_DEF_q10.txt").write_bytes(legit_cqr_data)
+        v1_hash = hashlib.sha256(legit_cqr_data).hexdigest()
+
+        # Active models dir has tampered CQR file
+        (models_dir / "cqr").mkdir(parents=True)
+        (models_dir / "cqr" / "cqr_DEF_q10.txt").write_bytes(b"tampered_cqr_bytes")
+
+        manifest_data = {
+            "active_version": "v1.0.0",
+            "versions": [
+                {
+                    "version": "v1.0.0",
+                    "file_hashes": {"cqr/cqr_DEF_q10.txt": v1_hash},
+                }
+            ],
+        }
+        (models_dir / "manifest.json").write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        reg = ModelRegistry()
+        reg.models_dir = models_dir
+        reg.manifest_path = models_dir / "manifest.json"
+        reg.versions_dir = versions_dir
+
+        success, msg = reg.verify_weight_integrity()
+        assert success is True, f"Verification failed: {msg}"
+
+        # Verified data restored
+        assert (models_dir / "cqr" / "cqr_DEF_q10.txt").read_bytes() == legit_cqr_data
+        # Tampered data quarantined
+        quarantine_root = models_dir / "quarantine"
+        assert quarantine_root.exists()
+
+
+def test_production_quarantine_and_recover_has_valid_restore_point_and_does_not_raise():
+    """
+    G1: Active production models have a valid restore point in versions/ and quarantine_and_recover does not raise.
+    """
+    from fpl_oracle.config import MODELS_DIR
+
+    reg = ModelRegistry()
+    active = reg.get_active_version()
+    assert active is not None
+    # Verify versions_dir has at least one valid restore point
+    versions = [d for d in reg.versions_dir.iterdir() if d.is_dir()]
+    assert len(versions) >= 1, "Must have at least one valid restore point in data/models/versions/"
+
+    # In a temp copy of production models, simulate quarantine_and_recover
+    with tempfile.TemporaryDirectory() as td:
+        tmp_models = Path(td) / "models"
+        import shutil
+
+        shutil.copytree(MODELS_DIR, tmp_models)
+
+        temp_reg = ModelRegistry()
+        temp_reg.models_dir = tmp_models
+        temp_reg.manifest_path = tmp_models / "manifest.json"
+        temp_reg.versions_dir = tmp_models / "versions"
+
+        # Calling quarantine_and_recover must succeed and not raise ModelBundleCorruptError
+        event = temp_reg.quarantine_and_recover(reason="Simulated test corruption")
+        assert event["restored_version"] is not None
+        assert Path(event["quarantine_dir"]).exists()

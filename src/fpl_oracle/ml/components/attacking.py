@@ -81,18 +81,25 @@ class AttackingModel(BaseComponent):
         goal_shares = np.zeros(n, dtype=float)
         assist_shares = np.zeros(n, dtype=float)
 
+        meta_df = X.attrs.get("meta") if hasattr(X, "attrs") else None
+        if isinstance(meta_df, pd.DataFrame):
+            if (
+                len(meta_df) != n
+                and X.index.is_unique
+                and meta_df.index.is_unique
+                and set(X.index).issubset(meta_df.index)
+            ):
+                meta_df = meta_df.loc[X.index]
+            elif len(meta_df) != n:
+                meta_df = None
+
         # 1. Resolve team grouping
         if team_ids is not None:
             teams = np.asarray(team_ids)
         elif "team" in X.columns:
             teams = X["team"].values
-        elif (
-            hasattr(X, "attrs")
-            and "meta" in X.attrs
-            and isinstance(X.attrs["meta"], pd.DataFrame)
-            and "team" in X.attrs["meta"].columns
-        ):
-            teams = X.attrs["meta"]["team"].values
+        elif meta_df is not None and "team" in meta_df.columns:
+            teams = meta_df["team"].values
         else:
             surrogate_cols = [
                 c for c in ["implied_team_xG", "was_home", "days_rest", "team_strength_attack"] if c in X.columns
@@ -107,20 +114,10 @@ class AttackingModel(BaseComponent):
             fixtures = np.asarray(fixture_ids)
         elif "fixture_id" in X.columns:
             fixtures = X["fixture_id"].values
-        elif (
-            hasattr(X, "attrs")
-            and "meta" in X.attrs
-            and isinstance(X.attrs["meta"], pd.DataFrame)
-            and "fixture_id" in X.attrs["meta"].columns
-        ):
-            fixtures = X.attrs["meta"]["fixture_id"].values
-        elif (
-            hasattr(X, "attrs")
-            and "meta" in X.attrs
-            and isinstance(X.attrs["meta"], pd.DataFrame)
-            and "round" in X.attrs["meta"].columns
-        ):
-            fixtures = X.attrs["meta"]["round"].values
+        elif meta_df is not None and "fixture_id" in meta_df.columns:
+            fixtures = meta_df["fixture_id"].values
+        elif meta_df is not None and "round" in meta_df.columns:
+            fixtures = meta_df["round"].values
         else:
             fixtures = np.zeros(n, dtype=int)
 
