@@ -31,6 +31,7 @@ def clean_client():
         pass
 
 
+@pytest.mark.slow
 def test_decision_card_generator_contract(configured_advisor):
     async def _run():
         card = await decision_card_generator.generate_decision_card()
@@ -366,6 +367,7 @@ def test_format_decision_card_markdown():
     assert "Legends League" in md
 
 
+@pytest.mark.slow
 def test_decision_card_unmocked_happy_path(configured_advisor):
     """Verify unmocked end-to-end decision card execution and honest metrics."""
 

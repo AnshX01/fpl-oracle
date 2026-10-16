@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
+
 from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.api.models import BootstrapStatic
 from fpl_oracle.domain.manager_state import ManagerStateService
@@ -76,6 +78,7 @@ def test_repeated_sync_triggers_coalesce_before_task_starts(monkeypatch):
     asyncio.run(run())
 
 
+@pytest.mark.slow
 def test_weekly_briefing_uses_canonical_zero_ft_bank_and_joint_action(configured_advisor, monkeypatch):
     from fpl_oracle.briefing.decision_card import decision_card_generator
     from fpl_oracle.briefing.weekly import weekly_briefing_generator

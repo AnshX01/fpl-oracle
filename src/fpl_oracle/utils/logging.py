@@ -146,7 +146,9 @@ class SecretRedactingFilter(logging.Filter):
                 record.args = tuple(redact_text(a) if isinstance(a, str) else a for a in record.args)
         if record.exc_text:
             record.exc_text = redact_text(record.exc_text)
-        # Note: Do NOT clear record.exc_info! RedactingFormatter will format and redact the traceback.
+        elif record.exc_info:
+            # Pre-format and redact traceback so any handler scrubs secrets while preserving record.exc_info intact
+            record.exc_text = redact_text(logging.Formatter().formatException(record.exc_info))
         return True
 
 

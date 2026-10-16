@@ -12,6 +12,8 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from fpl_oracle.server.routes.api import (
     OptimizeRequest,
     get_chip_strategy,
@@ -28,6 +30,7 @@ def _get_json_data(response):
     return response
 
 
+@pytest.mark.slow
 def test_cross_surface_recommendation_consistency(configured_advisor):
     """Assert that decision card, squad, and optimizer agree on transfers, captaincy, and chips."""
 
