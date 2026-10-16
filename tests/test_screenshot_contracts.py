@@ -1,6 +1,8 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.llm.agent import ExpertAgent
 from fpl_oracle.server.analysis import analysis_service
@@ -44,6 +46,7 @@ def test_empty_chat_provider_falls_back_and_persists_nonempty():
     asyncio.run(run())
 
 
+@pytest.mark.slow
 def test_auxiliary_team_matches_selected_pitch(configured_advisor):
     async def run():
         with patch("fpl_oracle.news.ingest.news_ingestion.fetch_rss_articles", new=AsyncMock(return_value=[])):

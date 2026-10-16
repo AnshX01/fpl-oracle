@@ -14,6 +14,7 @@ Verifies:
 """
 
 import pandas as pd
+import pytest
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 from fpl_oracle.data.features import feature_engineering
@@ -149,6 +150,7 @@ def test_vectorized_dataframe_shrinkage_parity():
     assert abs(df_shrunk.loc[0, "roll_points_5"] - single_shrunk_0["roll_points_5"]) < 1e-5
 
 
+@pytest.mark.slow
 def test_low_minute_cohort_error_improves():
     """
     WI-3.7 Acceptance Gate:

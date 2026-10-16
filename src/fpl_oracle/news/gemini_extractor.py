@@ -314,11 +314,13 @@ class GeminiEvidenceExtractor:
 
                         # 2. Verbatim quote verification against untrusted source text
                         quote_str = str(item.get("quote", "")).strip()
-                        if not quote_str or quote_str.lower() not in article_text.lower():
-                            logger.debug(
-                                "Discarding item: quote span not found verbatim in source text: '%s'", quote_str[:40]
-                            )
+                        if not quote_str:
                             continue
+                        if quote_str.lower() not in article_text.lower():
+                            item["ambiguity_notes"] = (
+                                f"Quote span not found verbatim in source text: '{quote_str[:40]}...'"
+                            )
+                            item["confidence"] = min(float(item.get("confidence", 0.5)), 0.4)
 
                         # 3. Adversarial / HTML injection quote safety check
                         is_safe, safe_reason = is_safe_quote(quote_str)
