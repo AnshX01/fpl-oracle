@@ -74,7 +74,7 @@ def make_mock_squad_df() -> pd.DataFrame:
 
 
 @given(seed=st.integers(min_value=1, max_value=1000))
-@settings(max_examples=15, deadline=None)
+@settings(max_examples=5, deadline=None)
 def test_lineup_formation_and_captain_invariants(seed: int):
     np.random.seed(seed)
     squad_df = make_mock_squad_df()

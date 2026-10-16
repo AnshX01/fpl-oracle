@@ -17,6 +17,11 @@ def master_df():
     return pd.read_csv(MASTER_CSV)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def setup_identity_resolver(master_df):
+    player_identity_resolver.load(history_df=master_df)
+
+
 def test_normalize_player_name():
     """Verify name normalization strips diacritics and unifies spelling."""
     assert normalize_player_name("David Raya Martín") == "david raya martin"
@@ -27,15 +32,13 @@ def test_normalize_player_name():
     assert normalize_player_name(None) == ""
 
 
-def test_no_cross_season_element_id_contamination(master_df):
+def test_no_cross_season_element_id_contamination():
     """
     CRITICAL G4 TEST:
     Element ID 1 mapped to Balogun (2023-24), Vieira (2024-25), and Raya (2025-26 & 2026-27).
     Verify that resolving Raya (element 1 in 2026-27) yields ONLY David Raya matches,
     with ZERO matches belonging to Balogun or Vieira.
     """
-    player_identity_resolver.load(history_df=master_df)
-
     raya_hist = player_identity_resolver.get_player_history(
         elem_id=1,
         season="2026-27",
@@ -61,13 +64,11 @@ def test_no_cross_season_element_id_contamination(master_df):
         assert "Vieira" not in name, f"Vieira contaminated Raya history: {name}"
 
 
-def test_haaland_multi_season_identity(master_df):
+def test_haaland_multi_season_identity():
     """
     Verify Haaland's trajectory is correctly assembled across 4 seasons
     despite changing element IDs (355 -> 351 -> 430 -> 411).
     """
-    player_identity_resolver.load(history_df=master_df)
-
     haaland_hist = player_identity_resolver.get_player_history(
         elem_id=411,
         season="2026-27",

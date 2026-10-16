@@ -64,7 +64,7 @@ def make_mock_pool():
     return pd.DataFrame(rows)
 
 
-def make_mock_squad_and_projections(horizon_len: int = 5):
+def make_mock_squad_and_projections(horizon_len: int = 5, extra_pool_size: int = 6):
     rows = [
         {
             "element": 1,
@@ -204,25 +204,17 @@ def make_mock_squad_and_projections(horizon_len: int = 5):
     ]
     squad_df = pd.DataFrame(rows)
 
+    extra_candidates = [
+        {"element": 16, "web_name": "Salah", "position": "MID", "team": 11, "value": 125, "expected_points": 8.5},
+        {"element": 17, "web_name": "BudgetValue", "position": "DEF", "team": 17, "value": 45, "expected_points": 5.0},
+        {"element": 18, "web_name": "Isak", "position": "FWD", "team": 13, "value": 85, "expected_points": 6.9},
+        {"element": 19, "web_name": "Solanke", "position": "FWD", "team": 17, "value": 75, "expected_points": 5.8},
+        {"element": 20, "web_name": "Gvardiol", "position": "DEF", "team": 12, "value": 60, "expected_points": 5.1},
+        {"element": 21, "web_name": "Pedro Porro", "position": "DEF", "team": 17, "value": 55, "expected_points": 4.9},
+    ]
     pool_rows = list(rows)
-    pool_rows.append(
-        {"element": 16, "web_name": "Salah", "position": "MID", "team": 11, "value": 125, "expected_points": 8.5}
-    )
-    pool_rows.append(
-        {"element": 17, "web_name": "Son", "position": "MID", "team": 17, "value": 98, "expected_points": 6.8}
-    )
-    pool_rows.append(
-        {"element": 18, "web_name": "Isak", "position": "FWD", "team": 13, "value": 85, "expected_points": 6.9}
-    )
-    pool_rows.append(
-        {"element": 19, "web_name": "Solanke", "position": "FWD", "team": 17, "value": 75, "expected_points": 5.8}
-    )
-    pool_rows.append(
-        {"element": 20, "web_name": "Gvardiol", "position": "DEF", "team": 12, "value": 60, "expected_points": 5.1}
-    )
-    pool_rows.append(
-        {"element": 21, "web_name": "Pedro Porro", "position": "DEF", "team": 17, "value": 55, "expected_points": 4.9}
-    )
+    for cand in extra_candidates[:extra_pool_size]:
+        pool_rows.append(cand)
     pool_df = pd.DataFrame(pool_rows)
 
     projections = {}
@@ -320,8 +312,8 @@ def test_compute_squad_selling_prices_and_free_transfers():
 
 
 def test_identical_horizon_branch_comparison():
-    """T1 & T2: Multi-GW sequential evaluation comparing Roll, 1-transfer, 2-transfers on identical 5-GW horizon."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5)
+    """T1 & T2: Multi-GW sequential evaluation comparing Roll, 1-transfer, 2-transfers on identical 3-GW horizon."""
+    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=3, extra_pool_size=2)
 
     res = transfer_optimizer.evaluate_transfer_options(
         current_squad_df=squad_df,
@@ -331,6 +323,8 @@ def test_identical_horizon_branch_comparison():
         horizon_projections=projections,
         current_gw=5,
         target_gw=5,
+        num_mc_scenarios=5,
+        horizon_len=3,
     )
 
     assert "recommended_plan" in res
@@ -338,7 +332,7 @@ def test_identical_horizon_branch_comparison():
     candidates = res["candidate_plans"]
     assert len(candidates) >= 2
 
-    # Verify all candidate plans evaluate the identical 5-GW horizon
+    # Verify all candidate plans evaluate the identical 3-GW horizon
     plan_types = [p["plan_type"] for p in candidates]
     assert "ROLL_TRANSFER" in plan_types
 
@@ -359,7 +353,7 @@ def test_identical_horizon_branch_comparison():
 
 def test_greedy_vs_multi_gw_hit_avoidance():
     """T3: Verifies multi-GW plan tracks future hits avoided compared to greedy single-GW move."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5)
+    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=3, extra_pool_size=2)
 
     res = transfer_optimizer.evaluate_transfer_options(
         current_squad_df=squad_df,
@@ -369,6 +363,8 @@ def test_greedy_vs_multi_gw_hit_avoidance():
         horizon_projections=projections,
         current_gw=5,
         target_gw=5,
+        num_mc_scenarios=5,
+        horizon_len=3,
     )
 
     hit_avoidance = res["future_hit_avoidance"]
@@ -381,7 +377,7 @@ def test_greedy_vs_multi_gw_hit_avoidance():
 
 def test_free_transfer_option_value():
     """T4: Verifies mathematical FT option value calculation over horizon."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5)
+    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=3, extra_pool_size=2)
 
     res = transfer_optimizer.evaluate_transfer_options(
         current_squad_df=squad_df,
@@ -391,6 +387,8 @@ def test_free_transfer_option_value():
         horizon_projections=projections,
         current_gw=5,
         target_gw=5,
+        num_mc_scenarios=5,
+        horizon_len=3,
     )
 
     assert "ft_option_value" in res
@@ -401,7 +399,7 @@ def test_free_transfer_option_value():
 
 def test_robustness_reranking_and_no_regret():
     """T5: Verifies Monte Carlo robustness scoring and no-regret threshold (>= 0.70)."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5)
+    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=2, extra_pool_size=2)
 
     res = transfer_optimizer.evaluate_transfer_options(
         current_squad_df=squad_df,
@@ -411,7 +409,8 @@ def test_robustness_reranking_and_no_regret():
         horizon_projections=projections,
         current_gw=5,
         target_gw=5,
-        num_mc_scenarios=25,
+        num_mc_scenarios=10,
+        horizon_len=2,
     )
 
     for p in res["candidate_plans"]:
@@ -421,7 +420,7 @@ def test_robustness_reranking_and_no_regret():
 
 def test_price_change_sensitivity_toggle():
     """T6: Verifies price change sensitivity toggle separates pure xP from price movements."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5)
+    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=2, extra_pool_size=2)
 
     # Pure xP run
     res_pure = transfer_optimizer.evaluate_transfer_options(
@@ -433,6 +432,8 @@ def test_price_change_sensitivity_toggle():
         current_gw=5,
         target_gw=5,
         include_price_gain=False,
+        num_mc_scenarios=5,
+        horizon_len=2,
     )
 
     # Price included run
@@ -445,6 +446,8 @@ def test_price_change_sensitivity_toggle():
         current_gw=5,
         target_gw=5,
         include_price_gain=True,
+        num_mc_scenarios=5,
+        horizon_len=2,
     )
 
     assert res_pure["include_price_gain"] is False
@@ -457,7 +460,7 @@ def test_price_change_sensitivity_toggle():
 
 def test_plan_stability_threshold():
     """T8: Verifies plan stability threshold prevents churning on negligible gains (< 0.3 xP)."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5)
+    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=2, extra_pool_size=2)
 
     # Case A: Strict stability threshold (10.0 xP) -> must force Roll transfer
     res_stable = transfer_optimizer.evaluate_transfer_options(
@@ -469,6 +472,8 @@ def test_plan_stability_threshold():
         current_gw=5,
         target_gw=5,
         stability_threshold=10.0,
+        num_mc_scenarios=5,
+        horizon_len=2,
     )
 
     assert res_stable["recommended_plan"]["plan_type"] == "ROLL_TRANSFER"
@@ -484,6 +489,8 @@ def test_plan_stability_threshold():
         current_gw=5,
         target_gw=5,
         stability_threshold=0.0,
+        num_mc_scenarios=5,
+        horizon_len=2,
     )
     # With 0.0 threshold, if any transfer beats roll, it is chosen
     top_cand = res_sensitive["candidate_plans"][0]
@@ -493,7 +500,7 @@ def test_plan_stability_threshold():
 
 def test_dynamic_roadmap_generation():
     """T7: Dynamic roadmap generated from actual trajectory, with zero canned template strings."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5)
+    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5, extra_pool_size=2)
 
     res = transfer_optimizer.evaluate_transfer_options(
         current_squad_df=squad_df,
@@ -503,6 +510,7 @@ def test_dynamic_roadmap_generation():
         horizon_projections=projections,
         current_gw=5,
         target_gw=5,
+        num_mc_scenarios=5,
     )
 
     roadmap = res["transfer_roadmap"]

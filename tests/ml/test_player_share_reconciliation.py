@@ -183,10 +183,21 @@ def test_property_reconciliation_on_live_upcoming_pipeline(fitted_attacking_mode
         Fixture(id=101, code=101, event=7, team_h=1, team_a=2, kickoff_time="2026-10-18T15:00:00Z"),
     ]
 
+    dummy_hist = pd.DataFrame(
+        {
+            "element": [99999],
+            "name": ["Player 99999"],
+            "round": [1],
+            "season": ["2026-27"],
+            "minutes": [90],
+            "total_points": [2],
+        }
+    )
     features_df = feature_engineering.extract_live_features_for_upcoming(
         bootstrap=bootstrap,
         fixtures=fixtures,
         target_gw=7,
+        history_df=dummy_hist,
     )
 
     assert not features_df.empty
