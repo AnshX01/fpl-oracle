@@ -1,5 +1,6 @@
 import asyncio
 import time
+from typing import Any
 
 import pandas as pd
 
@@ -150,9 +151,27 @@ async def run_gw6_replay():
     t_wc = time.perf_counter() - t0
 
     def format_act(act):
-        outs = [f"{elements_map[t['element']].web_name} (£{t.get('sell_price', elements_map[t['element']].now_cost)/10:.1f}m)" for t in act.transfers_out]
-        ins = [f"{elements_map[t['element']].web_name} (£{t.get('cost', elements_map[t['element']].now_cost)/10:.1f}m)" for t in act.transfers_in]
-        return ", ".join(outs) + " -> " + ", ".join(ins) if outs or ins else "None (Roll Transfer)"
+        if not act.transfers_out and not act.transfers_in:
+            return "None (Roll Transfer)"
+        squad_ids = set(squad_df["element"].astype(int))
+        assert all(int(t["element"]) in squad_ids for t in act.transfers_out), "Transfers OUT contains unowned player!"
+        outs_by_pos: dict[str, list[dict[str, Any]]] = {}
+        ins_by_pos: dict[str, list[dict[str, Any]]] = {}
+        for t in act.transfers_out:
+            outs_by_pos.setdefault(t["position"], []).append(t)
+        for t in act.transfers_in:
+            ins_by_pos.setdefault(t["position"], []).append(t)
+        pairs: list[str] = []
+        for pos in ["GKP", "DEF", "MID", "FWD"]:
+            o_list = outs_by_pos.get(pos, [])
+            i_list = ins_by_pos.get(pos, [])
+            for o, i in zip(o_list, i_list, strict=False):
+                o_n = elements_map[o["element"]].web_name
+                i_n = elements_map[i["element"]].web_name
+                o_c = o.get("sell_price", elements_map[o["element"]].now_cost) / 10.0
+                i_c = i.get("cost", elements_map[i["element"]].now_cost) / 10.0
+                pairs.append(f"[{pos}] {o_n} (£{o_c:.1f}m) -> [{pos}] {i_n} (£{i_c:.1f}m)")
+        return ", ".join(pairs) if pairs else "None"
 
     print("\n" + "=" * 80)
     print("MULTI-PERIOD MILP PLAN COMPARISON (Horizon H=5, Gamma=0.95)")

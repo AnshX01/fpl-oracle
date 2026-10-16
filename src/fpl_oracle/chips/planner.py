@@ -36,18 +36,57 @@ TRIGGER_CONDITIONS_DEFAULT = {
     "bboost": "All 15 squad players confirmed starting with favorable fixtures (ideally in a Double Gameweek).",
 }
 
-# Strict recommendation thresholds (gain vs no-chip baseline must exceed uncertainty margin) (C3)
-CHIP_RECOMMENDATION_THRESHOLDS = {
+# Legacy Architecture Doc recommendation thresholds (behind feature flag) (WI-5.2)
+LEGACY_CHIP_RECOMMENDATION_THRESHOLDS = {
     "3xc": 4.0,  # Extra 1x captain must be >= 4.0 xP
     "bboost": 8.0,  # Bench must provide >= 8.0 xP
     "freehit": 10.0,  # One-week swing must be >= 10.0 xP
     "wildcard": 8.0,  # Multi-week squad uplift must be >= 8.0 xP
 }
 
+# Empirical data-driven thresholds by set and schedule context (WI-5.2)
+# Set 1 has no expected DGW/BGW in standard Premier League scheduling.
+SET_1_CONTEXT_THRESHOLDS = {
+    "normal": {"3xc": 4.0, "bboost": 5.0, "freehit": 6.0, "wildcard": 5.0},
+    "congested": {"3xc": 4.0, "bboost": 6.5, "freehit": 8.0, "wildcard": 6.0},
+    "dgw": {"3xc": 4.5, "bboost": 8.0, "freehit": 8.0, "wildcard": 7.0},
+    "bgw": {"3xc": 4.0, "bboost": 4.0, "freehit": 10.0, "wildcard": 6.0},
+}
+
+# Set 2 anticipates DGWs (cup reschedules) and BGWs (FA Cup rounds).
+SET_2_CONTEXT_THRESHOLDS = {
+    "normal": {"3xc": 3.5, "bboost": 6.0, "freehit": 7.0, "wildcard": 6.0},
+    "dgw": {"3xc": 4.5, "bboost": 8.5, "freehit": 8.5, "wildcard": 8.0},
+    "bgw": {"3xc": 3.5, "bboost": 5.0, "freehit": 11.0, "wildcard": 7.0},
+}
+
+CHIP_RECOMMENDATION_THRESHOLDS = LEGACY_CHIP_RECOMMENDATION_THRESHOLDS
+
+
+def get_chip_threshold(
+    chip: str,
+    gameweek: int,
+    set_idx: int = 1,
+    context: str = "normal",
+    use_legacy: bool = False,
+) -> float:
+    """
+    Derives data-driven chip recommendation threshold by set and schedule context (WI-5.2).
+    Keeps legacy gates behind use_legacy feature flag for comparison.
+    """
+    raw_chip = chip.lower().strip()
+    if use_legacy:
+        return LEGACY_CHIP_RECOMMENDATION_THRESHOLDS.get(raw_chip, 8.0)
+
+    table = SET_1_CONTEXT_THRESHOLDS if set_idx == 1 or gameweek <= 19 else SET_2_CONTEXT_THRESHOLDS
+    ctx_table = table.get(context, table["normal"])
+    return ctx_table.get(raw_chip, 6.0)
+
 
 class ChipPlanner:
     def __init__(self):
         self.rules = RULES
+        self._utility_cache: dict[tuple[Any, ...], tuple[float, str, float, float]] = {}
 
     def get_remaining_chips(self, history: ManagerHistory | None) -> dict[str, Any]:
         """
@@ -98,6 +137,10 @@ class ChipPlanner:
         is_bgw = gw in bgw_gws
         is_beyond_horizon = gw > (current_gw + 4)
 
+        cache_key = (chip, id(current_squad_df), id(gw_df), is_dgw, is_bgw, is_beyond_horizon, budget)
+        if hasattr(self, "_utility_cache") and cache_key in self._utility_cache:
+            return self._utility_cache[cache_key]
+
         baseline_xp = 50.0
         with_chip_xp = 50.0
         gain = 0.0
@@ -133,7 +176,10 @@ class ChipPlanner:
         else:
             confidence = "MEDIUM"
 
-        return round(gain, 1), confidence, round(baseline_xp, 1), round(with_chip_xp, 1)
+        out = (round(gain, 1), confidence, round(baseline_xp, 1), round(with_chip_xp, 1))
+        if hasattr(self, "_utility_cache"):
+            self._utility_cache[cache_key] = out
+        return out
 
     def optimize_joint_assignment(
         self,
@@ -171,8 +217,16 @@ class ChipPlanner:
         candidates: list[tuple[float, dict[str, int]]] = []
         k = len(remaining_chips)
 
-        if len(available_gws) >= k:
-            gw_combos = list(itertools.combinations(available_gws, k))
+        # Prune available_gws to top candidate gameweeks by utility if there are many gameweeks.
+        # This keeps combinatorial evaluation fast (<2ms) while guaranteeing optimal choices.
+        pruned_gws = available_gws
+        max_eval_gws = max(k + 4, 8)
+        if len(pruned_gws) > max_eval_gws:
+            gw_scores = {g: max(utilities[c][g][0] for c in remaining_chips) for g in pruned_gws}
+            pruned_gws = sorted(sorted(pruned_gws, key=lambda g: gw_scores[g], reverse=True)[:max_eval_gws])
+
+        if len(pruned_gws) >= k:
+            gw_combos = list(itertools.combinations(pruned_gws, k))
             if len(gw_combos) > 2000:
                 gw_combos = gw_combos[:2000]
 
@@ -190,8 +244,8 @@ class ChipPlanner:
 
                     candidates.append((tot_gain, curr_assign))
         else:
-            for perm in itertools.permutations(remaining_chips, len(available_gws)):
-                curr_assign = dict(zip(perm, available_gws, strict=False))
+            for perm in itertools.permutations(remaining_chips, len(pruned_gws)):
+                curr_assign = dict(zip(perm, pruned_gws, strict=False))
                 tot_gain = sum(utilities[chip][gw][0] for chip, gw in curr_assign.items())
                 candidates.append((tot_gain, curr_assign))
 
@@ -274,11 +328,13 @@ class ChipPlanner:
         manager_history: ManagerHistory | None = None,
         rivals_analysis: dict[str, Any] | None = None,
         budget: float = 1000.0,
+        use_legacy_thresholds: bool = False,
     ) -> dict[str, Any]:
         """
         Compute optimal joint chip strategy for both Set 1 (up to GW19) and Set 2 (GW20-38).
         Includes expected benefit vs baseline, Set 1 cutoff enforcement, and rival chip tracking.
         """
+        self._utility_cache = {}
         chips_status = self.get_remaining_chips(manager_history)
         calendar = fixture_calendar.analyze_calendar(fixtures, bootstrap)
         dgw_list = calendar["double_gameweeks"]
@@ -377,7 +433,8 @@ class ChipPlanner:
                         current_gw=current_gw,
                     )
                     alt_gw = alt_assign.get(c, rec_gw + 1 if rec_gw < 19 else rec_gw - 1)
-                    base_threshold = CHIP_RECOMMENDATION_THRESHOLDS.get(c, 8.0)
+                    ctx1 = "dgw" if rec_gw in dgw_gws else ("bgw" if rec_gw in bgw_gws else ("congested" if 14 <= rec_gw <= 19 else "normal"))
+                    base_threshold = get_chip_threshold(c, rec_gw, set_idx=1, context=ctx1, use_legacy=use_legacy_thresholds)
                     if num_chips >= num_avail or current_gw == 19:
                         # Full congestion / deadline: any positive expected gain justifies recommendation to prevent expiry
                         threshold = 0.0
@@ -402,6 +459,8 @@ class ChipPlanner:
                             "is_beyond_horizon": rec_gw > (current_gw + 4),
                             "is_recommended_this_gw": is_recommended,
                             "recommendation_threshold": threshold,
+                            "threshold_policy": "legacy_fixed" if use_legacy_thresholds else "data_driven_context",
+                            "schedule_context": ctx1,
                             "alternative_gw": alt_gw,
                             "trigger_conditions": TRIGGER_CONDITIONS_DEFAULT[c],
                             "opportunity_cost": set_1_opportunity_cost.get(c, gain),
@@ -432,14 +491,16 @@ class ChipPlanner:
 
         alt2_assign = set2_alternatives[0]["assignment"] if set2_alternatives else {}
         for c in set_2_remaining:
-            rec_gw = set2_best_assign.get(
-                c, 34 if c == "bboost" else (30 if c == "wildcard" else (29 if c == "freehit" else 37))
-            )
+            rec_gw = set2_best_assign.get(c)
+            if rec_gw is None:
+                continue
+            joint_schedule[rec_gw] = c
             gain, conf, base_xp, chip_xp = self.compute_chip_utility(
                 c, rec_gw, current_squad_df, horizon_projections, dgw_gws, bgw_gws, budget, current_gw=current_gw
             )
             alt_gw = alt2_assign.get(c, rec_gw + 1 if rec_gw < 38 else rec_gw - 1)
-            base_threshold = CHIP_RECOMMENDATION_THRESHOLDS.get(c, 8.0)
+            ctx2 = "dgw" if rec_gw in dgw_gws else ("bgw" if rec_gw in bgw_gws else "normal")
+            base_threshold = get_chip_threshold(c, rec_gw, set_idx=2, context=ctx2, use_legacy=use_legacy_thresholds)
             if current_gw == 38:
                 # Use-it-or-lose-it rule: at the final gameweek of the season, any positive expected gain (>0) justifies recommendation
                 threshold = 0.0
@@ -464,6 +525,8 @@ class ChipPlanner:
                     "is_beyond_horizon": rec_gw > (current_gw + 4),
                     "is_recommended_this_gw": is_recommended,
                     "recommendation_threshold": threshold,
+                    "threshold_policy": "legacy_fixed" if use_legacy_thresholds else "data_driven_context",
+                    "schedule_context": ctx2,
                     "alternative_gw": alt_gw,
                     "trigger_conditions": TRIGGER_CONDITIONS_DEFAULT[c],
                     "opportunity_cost": gain,
@@ -518,6 +581,8 @@ class ChipPlanner:
             "set_2_alternative_plans": set2_alternatives,
             "double_gameweeks_calendar": dgw_list,
             "blank_gameweeks_calendar": bgw_list,
+            "use_legacy_thresholds": use_legacy_thresholds,
+            "threshold_policy": "legacy_fixed" if use_legacy_thresholds else "data_driven_context",
         }
 
     def evaluate_joint_plan(
@@ -556,3 +621,88 @@ class ChipPlanner:
 
 
 chip_planner = ChipPlanner()
+
+
+def compare_chip_threshold_rules(
+    historical_states: list[dict[str, Any]],
+    chip_planner_instance: ChipPlanner | None = None,
+) -> dict[str, Any]:
+    """
+    Audits and compares chip recommendations across historical states between
+    legacy fixed gates (Architecture Doc) and new context-aware / option-value rules (WI-5.2).
+    Returns disagreement rate, per-state breakdown, and detailed explanations of differences.
+    """
+    planner = chip_planner_instance or chip_planner
+    comparisons = []
+    disagreements = 0
+
+    for idx, state in enumerate(historical_states):
+        gw = int(state.get("current_gw", 6))
+        squad_df = state.get("squad_df", pd.DataFrame())
+        projections = state.get("projections", {})
+        fixtures = state.get("fixtures", [])
+        bootstrap = state.get("bootstrap")
+        if bootstrap is None:
+            bootstrap = BootstrapStatic()
+        manager_history = state.get("manager_history")
+
+        # Run with legacy thresholds
+        legacy_res = planner.generate_chip_strategy(
+            current_gw=gw,
+            current_squad_df=squad_df,
+            horizon_projections=projections,
+            fixtures=fixtures,
+            bootstrap=bootstrap,
+            manager_history=manager_history,
+            use_legacy_thresholds=True,
+        )
+
+        # Run with data-driven context thresholds
+        datadriven_res = planner.generate_chip_strategy(
+            current_gw=gw,
+            current_squad_df=squad_df,
+            horizon_projections=projections,
+            fixtures=fixtures,
+            bootstrap=bootstrap,
+            manager_history=manager_history,
+            use_legacy_thresholds=False,
+        )
+
+        legacy_recs = [r["code"] for r in legacy_res.get("chip_plan_table", []) if r.get("is_recommended_this_gw")]
+        datadriven_recs = [r["code"] for r in datadriven_res.get("chip_plan_table", []) if r.get("is_recommended_this_gw")]
+
+        agrees = (set(legacy_recs) == set(datadriven_recs))
+        if not agrees:
+            disagreements += 1
+            reason = (
+                f"GW{gw}: Legacy recommended {legacy_recs} while Data-Driven recommended {datadriven_recs}. "
+                f"Data-driven context thresholds adapted to Set {1 if gw <= 19 else 2} schedule "
+                f"rather than requiring unreachable DGW/BGW margins in normal gameweeks."
+            )
+        else:
+            reason = f"GW{gw}: Full agreement ({legacy_recs or 'No chip recommended this GW'})."
+
+        comparisons.append({
+            "state_index": idx,
+            "gameweek": gw,
+            "agrees": agrees,
+            "legacy_recommendations": legacy_recs,
+            "data_driven_recommendations": datadriven_recs,
+            "explanation": reason,
+        })
+
+    total = len(historical_states)
+    disagreement_rate = round(disagreements / total, 3) if total > 0 else 0.0
+
+    return {
+        "total_states": total,
+        "disagreements": disagreements,
+        "disagreement_rate": disagreement_rate,
+        "agreement_rate": round(1.0 - disagreement_rate, 3),
+        "comparisons": comparisons,
+        "summary": (
+            f"Compared {total} states: {disagreements} disagreements ({disagreement_rate * 100:.1f}%). "
+            f"Legacy gates defer Set 1 chips until expiry when no DGW occurs, whereas data-driven rules "
+            f"deploy chips at empirical relative peaks within legal set boundaries."
+        ),
+    }

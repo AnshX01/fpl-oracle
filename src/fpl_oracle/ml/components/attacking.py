@@ -1,16 +1,27 @@
 """
-Attacking component model.
-Predicts expected goals (xG) and expected assists (xA).
+Attacking component model and player share reconciliation engine (WI-3.3).
+Predicts expected goals (xG) and expected assists (xA), models player share
+of team attacking output conditional on playing, incorporates set-piece hierarchy,
+and strictly reconciles player expectations to match Dixon-Coles/market team lambda.
 """
+
+import logging
 
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
+from fpl_oracle.data.features import FEATURE_COLUMNS
 from fpl_oracle.ml.components.base import BaseComponent
+
+logger = logging.getLogger("fpl_oracle.ml.components.attacking")
 
 
 class AttackingModel(BaseComponent):
+    """
+    Player attacking expectation component with coherent team-goal reconciliation (WI-3.3).
+    """
+
     def __init__(self):
         super().__init__("attacking_model")
         self.reg_goals = lgb.LGBMRegressor(
@@ -35,21 +46,246 @@ class AttackingModel(BaseComponent):
         )
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
-        self.reg_goals.fit(X, Y["target_goals"].values)
-        self.reg_assists.fit(X, Y["target_assists"].values)
+        feat_cols = [c for c in FEATURE_COLUMNS if c in X.columns]
+        X_train = X[feat_cols].copy()
+        for c in X_train.columns:
+            X_train[c] = pd.to_numeric(X_train[c], errors="coerce").fillna(0.0)
+        self.reg_goals.fit(X_train, Y["target_goals"].values)
+        self.reg_assists.fit(X_train, Y["target_assists"].values)
         self.is_fitted = True
 
-    def predict(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
+    def reconcile_team_goals_and_assists(
+        self,
+        exp_goals: np.ndarray,
+        exp_assists: np.ndarray,
+        X: pd.DataFrame,
+        team_ids: pd.Series | np.ndarray | None = None,
+        fixture_ids: pd.Series | np.ndarray | None = None,
+        assist_rate: float = 0.85,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        WI-3.3: Reconcile player-level expectations with team-level expectations.
+
+        Rescales player goals and assists within each team-fixture so that:
+            sum_{p in team} E[goals_p] == implied_team_xG (within 5% tolerance)
+            sum_{p in team} E[assists_p] == assist_rate * implied_team_xG
+        Logs scaling factors for auditability.
+        """
+        n = len(exp_goals)
+        if n == 0:
+            empty = np.array([])
+            return empty, empty, empty, empty
+
+        reconciled_goals = exp_goals.copy()
+        reconciled_assists = exp_assists.copy()
+        goal_shares = np.zeros(n, dtype=float)
+        assist_shares = np.zeros(n, dtype=float)
+
+        # 1. Resolve team grouping
+        if team_ids is not None:
+            teams = np.asarray(team_ids)
+        elif "team" in X.columns:
+            teams = X["team"].values
+        elif (
+            hasattr(X, "attrs")
+            and "meta" in X.attrs
+            and isinstance(X.attrs["meta"], pd.DataFrame)
+            and "team" in X.attrs["meta"].columns
+        ):
+            teams = X.attrs["meta"]["team"].values
+        else:
+            surrogate_cols = [
+                c
+                for c in ["implied_team_xG", "was_home", "days_rest", "team_strength_attack"]
+                if c in X.columns
+            ]
+            if surrogate_cols:
+                teams = pd.factorize(X[surrogate_cols].apply(tuple, axis=1))[0]
+            else:
+                teams = np.zeros(n, dtype=int)
+
+        # 2. Resolve fixture grouping
+        if fixture_ids is not None:
+            fixtures = np.asarray(fixture_ids)
+        elif "fixture_id" in X.columns:
+            fixtures = X["fixture_id"].values
+        elif (
+            hasattr(X, "attrs")
+            and "meta" in X.attrs
+            and isinstance(X.attrs["meta"], pd.DataFrame)
+            and "fixture_id" in X.attrs["meta"].columns
+        ):
+            fixtures = X.attrs["meta"]["fixture_id"].values
+        elif (
+            hasattr(X, "attrs")
+            and "meta" in X.attrs
+            and isinstance(X.attrs["meta"], pd.DataFrame)
+            and "round" in X.attrs["meta"].columns
+        ):
+            fixtures = X.attrs["meta"]["round"].values
+        else:
+            fixtures = np.zeros(n, dtype=int)
+
+        # Group players by team-fixture
+        group_keys = [f"{t}_{f}" for t, f in zip(teams, fixtures, strict=False)]
+        s_keys = pd.Series(group_keys, index=np.arange(n))
+
+        for key, idx_list in s_keys.groupby(s_keys).groups.items():
+            idx = idx_list.values if hasattr(idx_list, "values") else np.array(idx_list)
+            # Guard against single-player or tiny evaluation queries (<3 players)
+            if len(idx) < 3:
+                lam_fallback = (
+                    float(np.mean(X["implied_team_xG"].iloc[idx]))
+                    if "implied_team_xG" in X.columns
+                    else 1.35
+                )
+                if lam_fallback > 0:
+                    goal_shares[idx] = reconciled_goals[idx] / lam_fallback
+                    assist_shares[idx] = reconciled_assists[idx] / (lam_fallback * assist_rate)
+                continue
+
+            # Target team lambda from Dixon-Coles / market blend
+            if "implied_team_xG" in X.columns:
+                lambda_team = float(np.mean(X["implied_team_xG"].iloc[idx]))
+            else:
+                lambda_team = 1.35
+
+            if lambda_team <= 0.01:
+                continue
+
+            # Goals reconciliation
+            s_goals = float(np.sum(reconciled_goals[idx]))
+            if s_goals > 1e-6:
+                kappa_g = float(lambda_team / s_goals)
+                reconciled_goals[idx] = reconciled_goals[idx] * kappa_g
+                new_s_goals = float(np.sum(reconciled_goals[idx]))
+                goal_shares[idx] = reconciled_goals[idx] / lambda_team
+                logger.debug(
+                    "WI-3.3: Reconciled goals for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
+                    key,
+                    kappa_g,
+                    lambda_team,
+                    s_goals,
+                    new_s_goals,
+                )
+            else:
+                goal_shares[idx] = 0.0
+
+            # Assists reconciliation
+            lambda_assists = lambda_team * assist_rate
+            s_assists = float(np.sum(reconciled_assists[idx]))
+            if s_assists > 1e-6:
+                kappa_a = float(lambda_assists / s_assists)
+                reconciled_assists[idx] = reconciled_assists[idx] * kappa_a
+                new_s_assists = float(np.sum(reconciled_assists[idx]))
+                assist_shares[idx] = reconciled_assists[idx] / lambda_assists
+                logger.debug(
+                    "WI-3.3: Reconciled assists for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
+                    key,
+                    kappa_a,
+                    lambda_assists,
+                    s_assists,
+                    new_s_assists,
+                )
+            else:
+                assist_shares[idx] = 0.0
+
+        return reconciled_goals, reconciled_assists, goal_shares, assist_shares
+
+    def predict(
+        self,
+        X: pd.DataFrame,
+        team_ids: pd.Series | np.ndarray | None = None,
+        fixture_ids: pd.Series | np.ndarray | None = None,
+        reconcile: bool = True,
+        assist_rate: float = 0.85,
+    ) -> dict[str, np.ndarray]:
+        """
+        Produce expected goals and assists, incorporating set-piece hierarchy and
+        reconciling with team fixture expected goals (WI-3.3).
+        """
         if not self.is_fitted:
             raise RuntimeError("AttackingModel is not fitted.")
 
-        exp_goals = np.clip(self.reg_goals.predict(X), 0.0, 3.5)
-        exp_assists = np.clip(self.reg_assists.predict(X), 0.0, 3.0)
+        if X.empty:
+            empty = np.array([])
+            return {
+                "expected_goals": empty,
+                "expected_assists": empty,
+                "goal_shares": empty,
+                "assist_shares": empty,
+            }
 
-        # Suppress attacking expectations for GKP
+        # 1. Base individual predictions from Tweedie regressors
+        # Strictly extract only numeric FEATURE_COLUMNS for booster evaluation
+        feat_cols = getattr(self.reg_goals, "feature_name_", None)
+        if feat_cols is not None:
+            use_cols = [c for c in feat_cols if c in X.columns]
+        else:
+            use_cols = [c for c in FEATURE_COLUMNS if c in X.columns]
+
+        X_feat = X[use_cols].copy()
+        for c in X_feat.columns:
+            X_feat[c] = pd.to_numeric(X_feat[c], errors="coerce").fillna(0.0)
+
+        exp_goals = np.clip(self.reg_goals.predict(X_feat), 0.0, 3.5)
+        exp_assists = np.clip(self.reg_assists.predict(X_feat), 0.0, 3.0)
+
+        # 2. Suppress attacking expectations for GKP
         if "pos_GKP" in X.columns:
-            is_gkp = X["pos_GKP"].values
+            is_gkp = pd.to_numeric(X["pos_GKP"], errors="coerce").fillna(0.0).values
             exp_goals = exp_goals * (1.0 - is_gkp * 0.98)
             exp_assists = exp_assists * (1.0 - is_gkp * 0.95)
 
-        return {"expected_goals": exp_goals, "expected_assists": exp_assists}
+        # 3. Set-piece hierarchy adjustments (WI-3.3)
+        if "chance_of_playing" in X.columns:
+            cop = pd.to_numeric(X["chance_of_playing"], errors="coerce").fillna(100.0).values
+            m_weight = np.clip(cop / 100.0, 0.0, 1.0)
+        else:
+            m_weight = np.ones(len(X), dtype=float)
+
+        # Penalty taker boost: ~0.12 goals/match for primary, ~0.03 for secondary
+        if "penalties_order" in X.columns:
+            p_ord = pd.to_numeric(X["penalties_order"], errors="coerce").fillna(99).values
+            pen_boost = np.where(p_ord == 1, 0.12, np.where(p_ord == 2, 0.03, 0.0)) * m_weight
+            exp_goals = exp_goals + pen_boost
+
+        # Direct free-kick boost: ~0.03 goals/match
+        if "direct_freekicks_order" in X.columns:
+            fk_ord = pd.to_numeric(X["direct_freekicks_order"], errors="coerce").fillna(99).values
+            fk_boost = np.where(fk_ord == 1, 0.03, np.where(fk_ord == 2, 0.01, 0.0)) * m_weight
+            exp_goals = exp_goals + fk_boost
+
+        # Corner / indirect free-kick boost: ~0.08 assists/match for primary
+        if "corners_and_indirect_freekicks_order" in X.columns:
+            cn_ord = (
+                pd.to_numeric(X["corners_and_indirect_freekicks_order"], errors="coerce")
+                .fillna(99)
+                .values
+            )
+            cn_boost = np.where(cn_ord == 1, 0.08, np.where(cn_ord == 2, 0.03, 0.0)) * m_weight
+            exp_assists = exp_assists + cn_boost
+
+        # 4. Team-level reconciliation (WI-3.3)
+        if reconcile:
+            rec_g, rec_a, g_shares, a_shares = self.reconcile_team_goals_and_assists(
+                exp_goals=exp_goals,
+                exp_assists=exp_assists,
+                X=X,
+                team_ids=team_ids,
+                fixture_ids=fixture_ids,
+                assist_rate=assist_rate,
+            )
+            return {
+                "expected_goals": rec_g,
+                "expected_assists": rec_a,
+                "goal_shares": g_shares,
+                "assist_shares": a_shares,
+            }
+
+        return {
+            "expected_goals": exp_goals,
+            "expected_assists": exp_assists,
+            "goal_shares": np.zeros(len(X)),
+            "assist_shares": np.zeros(len(X)),
+        }

@@ -78,3 +78,28 @@ def test_no_hardcoded_player_names_in_health_module():
     content = health_py.read_text(encoding="utf-8").lower()
     for forbidden in ["haaland", "saka", "palmer", "mbeumo", "tarkowski", "saliba", "foden"]:
         assert forbidden not in content, f"Found hard-coded player name '{forbidden}' in health.py"
+
+
+def test_availability_under_100_triggers_watch_and_reason():
+    """Verify that player with 75% availability triggers AVAILABILITY_DOUBT and WATCH status."""
+    rows = []
+    for i in range(1, 16):
+        pos = "GKP" if i <= 2 else ("DEF" if i <= 7 else ("MID" if i <= 12 else "FWD"))
+        chance = 75.0 if i == 10 else 100.0
+        rows.append({
+            "element": i,
+            "position": pos,
+            "expected_points": 5.0,
+            "chance_of_playing": chance,
+            "news": "Minor knock" if chance == 75.0 else "",
+            "value": 50.0,
+            "purchase_price": 50.0,
+        })
+    df = pd.DataFrame(rows)
+    diag = SquadHealthDiagnosis()
+    report = diag.diagnose_squad(df)
+
+    p10 = report.player_diagnoses[10]
+    assert p10.status == "WATCH"
+    assert any("AVAILABILITY_DOUBT" in r for r in p10.reasons)
+

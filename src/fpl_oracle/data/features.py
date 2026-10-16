@@ -14,6 +14,7 @@ import pandas as pd
 from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.config import HISTORICAL_DIR
 from fpl_oracle.data.player_identity import normalize_player_name, player_identity_resolver
+from fpl_oracle.ml.components.dixon_coles import dixon_coles_model
 
 logger = logging.getLogger("fpl_oracle.features")
 
@@ -557,6 +558,17 @@ class FeatureEngineering:
         implied_opp_xg_list = []
         implied_opp_cs_list = []
 
+        legacy_implied_team_xg_list = []
+        legacy_implied_team_cs_list = []
+        legacy_implied_opp_xg_list = []
+        legacy_implied_opp_cs_list = []
+
+        mkt_lam_list = []
+        mkt_mu_list = []
+        mkt_cs_list = []
+        mkt_win_list = []
+        mkt_tot_list = []
+
         t_roll_g3, t_roll_g5, t_roll_g8 = [], [], []
         t_roll_xg3, t_roll_xg5, t_roll_xg8 = [], [], []
 
@@ -667,13 +679,39 @@ class FeatureEngineering:
             home_mult = 1.10 if was_h else 0.90
             away_mult = 0.90 if was_h else 1.10
 
-            imp_team_xg = float(np.clip(1.35 * (my_att / 1.35) * (opp_def / 1.35) * home_mult, 0.25, 4.5))
-            imp_opp_xg = float(np.clip(1.35 * (opp_att / 1.35) * (my_def / 1.35) * away_mult, 0.25, 4.5))
+            leg_imp_team_xg = float(np.clip(1.35 * (my_att / 1.35) * (opp_def / 1.35) * home_mult, 0.25, 4.5))
+            leg_imp_opp_xg = float(np.clip(1.35 * (opp_att / 1.35) * (my_def / 1.35) * away_mult, 0.25, 4.5))
 
-            implied_team_xg_list.append(imp_team_xg)
-            implied_team_cs_list.append(float(np.exp(-imp_opp_xg)))
-            implied_opp_xg_list.append(imp_opp_xg)
-            implied_opp_cs_list.append(float(np.exp(-imp_team_xg)))
+            legacy_implied_team_xg_list.append(leg_imp_team_xg)
+            legacy_implied_team_cs_list.append(float(np.exp(-leg_imp_opp_xg)))
+            legacy_implied_opp_xg_list.append(leg_imp_opp_xg)
+            legacy_implied_opp_cs_list.append(float(np.exp(-leg_imp_team_xg)))
+
+            # Bivariate Dixon-Coles match expectations with market odds blending (WI-3.1, WI-3.2)
+            h_team = t_name if was_h else opp_name
+            a_team = opp_name if was_h else t_name
+            dc_fix = dixon_coles_model.predict_fixture(h_team, a_team, is_home=was_h, season=s)
+
+            implied_team_xg_list.append(dc_fix["implied_team_xG"])
+            implied_team_cs_list.append(dc_fix["implied_team_cs_prob"])
+            implied_opp_xg_list.append(dc_fix["implied_opp_xG"])
+            implied_opp_cs_list.append(dc_fix["implied_opp_cs_prob"])
+
+            from fpl_oracle.data.odds import odds_provider
+
+            mkt_exp = odds_provider.get_fixture_market_expectations(s, h_team, a_team, is_home=was_h)
+            if mkt_exp is not None:
+                mkt_lam_list.append(mkt_exp["mkt_lambda"])
+                mkt_mu_list.append(mkt_exp["mkt_mu"])
+                mkt_cs_list.append(mkt_exp["mkt_cs_prob"])
+                mkt_win_list.append(mkt_exp["mkt_win_prob"])
+                mkt_tot_list.append(mkt_exp["mkt_total_goals"])
+            else:
+                mkt_lam_list.append(dc_fix["implied_team_xG"])
+                mkt_mu_list.append(dc_fix["implied_opp_xG"])
+                mkt_cs_list.append(dc_fix["implied_team_cs_prob"])
+                mkt_win_list.append(0.40)
+                mkt_tot_list.append(dc_fix["implied_team_xG"] + dc_fix["implied_opp_xG"])
 
             # Team attack form
             t_roll_g3.append(t_metrics["team_roll_goals_3"])
@@ -704,6 +742,17 @@ class FeatureEngineering:
         df["implied_team_cs_prob"] = implied_team_cs_list
         df["implied_opp_xG"] = implied_opp_xg_list
         df["implied_opp_cs_prob"] = implied_opp_cs_list
+
+        df["mkt_lambda"] = mkt_lam_list
+        df["mkt_mu"] = mkt_mu_list
+        df["mkt_cs_prob"] = mkt_cs_list
+        df["mkt_win_prob"] = mkt_win_list
+        df["mkt_total_goals"] = mkt_tot_list
+
+        df["legacy_implied_team_xG"] = legacy_implied_team_xg_list
+        df["legacy_implied_team_cs_prob"] = legacy_implied_team_cs_list
+        df["legacy_implied_opp_xG"] = legacy_implied_opp_xg_list
+        df["legacy_implied_opp_cs_prob"] = legacy_implied_opp_cs_list
 
         df["team_roll_goals_3"] = t_roll_g3
         df["team_roll_goals_5"] = t_roll_g5
@@ -902,7 +951,11 @@ class FeatureEngineering:
                 "target_clean_sheet": df_sorted["clean_sheets"].astype(float),
                 "target_goals_conceded": df_sorted["goals_conceded"].astype(float),
                 "target_saves": df_sorted["saves"].astype(float),
-                "target_defcon": (df_sorted["defensive_contribution"] >= 2).astype(float),
+                "target_defcon": (
+                    (df_sorted["defensive_contribution"] >= np.where(df_sorted["position"] == "DEF", 10.0, np.where(df_sorted["position"].isin(["MID", "FWD"]), 12.0, 9999.0)))
+                    & (df_sorted["position"] != "GKP")
+                ).astype(float),
+                "target_defcon_actions": df_sorted["defensive_contribution"].fillna(0).astype(float),
                 "target_bonus": df_sorted["bonus"].astype(float),
                 "target_card_deduction": df_sorted["target_card_deduction"].astype(float),
                 "target_penalties_saved": df_sorted.get("penalties_saved", pd.Series(0, index=df_sorted.index))
@@ -1036,6 +1089,7 @@ class FeatureEngineering:
                         if pd.notnull(max_ko):
                             last_team_kickoff[found_tid] = max_ko
 
+        tid_to_name = {t.id: t.name for t in bootstrap.teams}
         rows = []
         for elem in bootstrap.elements:
             pos_code = pos_map.get(elem.element_type, "MID")
@@ -1092,6 +1146,15 @@ class FeatureEngineering:
                     "implied_team_cs_prob": 0.25,
                     "implied_opp_xG": 1.35,
                     "implied_opp_cs_prob": 0.25,
+                    "mkt_lambda": 1.30,
+                    "mkt_mu": 1.35,
+                    "mkt_cs_prob": 0.25,
+                    "mkt_win_prob": 0.38,
+                    "mkt_total_goals": 2.65,
+                    "legacy_implied_team_xG": 1.30,
+                    "legacy_implied_team_cs_prob": 0.25,
+                    "legacy_implied_opp_xG": 1.35,
+                    "legacy_implied_opp_cs_prob": 0.25,
                     "team_roll_goals_3": PRIOR_TEAM_GOALS,
                     "team_roll_goals_5": PRIOR_TEAM_GOALS,
                     "team_roll_goals_8": PRIOR_TEAM_GOALS,
@@ -1222,8 +1285,40 @@ class FeatureEngineering:
                 home_mult = 1.10 if was_h else 0.90
                 away_mult = 0.90 if was_h else 1.10
 
-                imp_team_xg = float(np.clip(1.35 * (my_att / 1.35) * (opp_def / 1.35) * home_mult, 0.25, 4.5))
-                imp_opp_xg = float(np.clip(1.35 * (opp_att / 1.35) * (my_def / 1.35) * away_mult, 0.25, 4.5))
+                leg_imp_team_xg = float(np.clip(1.35 * (my_att / 1.35) * (opp_def / 1.35) * home_mult, 0.25, 4.5))
+                leg_imp_opp_xg = float(np.clip(1.35 * (opp_att / 1.35) * (my_def / 1.35) * away_mult, 0.25, 4.5))
+                leg_imp_team_cs = float(np.exp(-leg_imp_opp_xg))
+                leg_imp_opp_cs = float(np.exp(-leg_imp_team_xg))
+
+                # Bivariate Dixon-Coles match expectations with market odds blending (WI-3.1, WI-3.2)
+                my_team_name = tid_to_name.get(elem.team, str(elem.team))
+                opp_team_name = tid_to_name.get(int(fix.get("opponent") or 0), str(fix.get("opponent") or 0))
+                h_team = my_team_name if was_h else opp_team_name
+                a_team = opp_team_name if was_h else my_team_name
+                dc_fix = dixon_coles_model.predict_fixture(
+                    h_team, a_team, is_home=was_h, season="2026-27", horizon_step=1
+                )
+
+                imp_team_xg = dc_fix["implied_team_xG"]
+                imp_team_cs = dc_fix["implied_team_cs_prob"]
+                imp_opp_xg = dc_fix["implied_opp_xG"]
+                imp_opp_cs = dc_fix["implied_opp_cs_prob"]
+
+                from fpl_oracle.data.odds import odds_provider
+
+                mkt_exp = odds_provider.get_fixture_market_expectations("2026-27", h_team, a_team, is_home=was_h)
+                if mkt_exp is not None:
+                    mkt_lam = mkt_exp["mkt_lambda"]
+                    mkt_mu = mkt_exp["mkt_mu"]
+                    mkt_cs = mkt_exp["mkt_cs_prob"]
+                    mkt_win = mkt_exp["mkt_win_prob"]
+                    mkt_tot = mkt_exp["mkt_total_goals"]
+                else:
+                    mkt_lam = imp_team_xg
+                    mkt_mu = imp_opp_xg
+                    mkt_cs = imp_team_cs
+                    mkt_win = 0.40
+                    mkt_tot = imp_team_xg + imp_opp_xg
 
                 diff_val = 3.0 + (1.35 - opp_def) * 1.2
                 if not was_h:
@@ -1251,9 +1346,18 @@ class FeatureEngineering:
                     "opponent_difficulty": opp_diff_val,
                     "days_rest": days_rest_val,
                     "implied_team_xG": imp_team_xg,
-                    "implied_team_cs_prob": float(np.exp(-imp_opp_xg)),
+                    "implied_team_cs_prob": imp_team_cs,
                     "implied_opp_xG": imp_opp_xg,
-                    "implied_opp_cs_prob": float(np.exp(-imp_team_xg)),
+                    "implied_opp_cs_prob": imp_opp_cs,
+                    "mkt_lambda": mkt_lam,
+                    "mkt_mu": mkt_mu,
+                    "mkt_cs_prob": mkt_cs,
+                    "mkt_win_prob": mkt_win,
+                    "mkt_total_goals": mkt_tot,
+                    "legacy_implied_team_xG": leg_imp_team_xg,
+                    "legacy_implied_team_cs_prob": leg_imp_team_cs,
+                    "legacy_implied_opp_xG": leg_imp_opp_xg,
+                    "legacy_implied_opp_cs_prob": leg_imp_opp_cs,
                     "team_roll_goals_3": t_g3,
                     "team_roll_goals_5": t_g5,
                     "team_roll_goals_8": t_g8,
@@ -1277,6 +1381,9 @@ class FeatureEngineering:
                     "value": float(elem.now_cost),
                     "is_2026_27": 1.0,
                     "chance_of_playing": cop,
+                    "penalties_order": getattr(elem, "penalties_order", None),
+                    "direct_freekicks_order": getattr(elem, "direct_freekicks_order", None),
+                    "corners_and_indirect_freekicks_order": getattr(elem, "corners_and_indirect_freekicks_order", None),
                 }
                 rows.append(row)
 

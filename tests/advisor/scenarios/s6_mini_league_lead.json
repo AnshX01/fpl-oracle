@@ -1,0 +1,12 @@
+{
+  "scenario_id": "S6",
+  "name": "Mini-League Lead Small With Template Rival",
+  "gameweek": 6,
+  "leader_gap": 10,
+  "rival_template_eo": 85.0,
+  "expected_behavior": {
+    "safe_profile_favors_template": true,
+    "differential_profile_favors_differential": true,
+    "profiles_diverge": true
+  }
+}

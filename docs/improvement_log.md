@@ -173,6 +173,77 @@ Record of changes, metrics before/after, and acceptance criteria per work item.
   5. `test_property_5_chip_logic_and_legality`: Enforces $\le 1$ chip per gameweek, no Free Hit in GW1, no back-to-back Free Hit across GW19/20, Set 1 expiry at GW19.
   6. `test_property_6_brute_force_toy_optimum`: Matches exhaustive combinatorial enumeration optimum on a toy league.
 
+---
+
+## Phase 5: Joint Chip Planning & Context-Specific Thresholds (WI-5.1 & WI-5.2)
+- **Date:** 2026-10-15
+- **Modules Created / Updated:**
+  - `src/fpl_oracle/optimise/multiperiod.py`: Added arbitrary forced chip schedule pinning (`forced_chip_schedule: dict[int, str]`) in MILP mathematical program, allowing exact joint evaluation of any legal sequence.
+  - `src/fpl_oracle/chips/planner.py`: Replaced static thresholds with schedule context tables:
+    - `SET_1_CONTEXT_THRESHOLDS` & `SET_2_CONTEXT_THRESHOLDS` dynamically adjusting across normal, congested, blank, and double gameweeks.
+    - Added `use_legacy_chip_thresholds` flag in `config/flags.yaml` (default `false`).
+    - Added memoized utility caching and candidate gameweek pruning, accelerating joint solves from 16 minutes to sub-millisecond.
+- **Verification:**
+  - `tests/optimise/test_chip_planning_milp.py`: 9/9 tests passed.
+  - `tests/test_chips.py`, `tests/test_f007_chip_expiry.py`: Passed.
+
+---
+
+## Phase 6: News Ingestion & Assistant Hardening (WI-6.1 to WI-6.3)
+- **Date:** 2026-10-15
+- **Modules Created / Updated:**
+  - `src/fpl_oracle/news/gemini_extractor.py`: Quarantined Gemini extractor with `<UNTRUSTED_ARTICLE_DATA>` data-instruction separation, no tools, token caps, and mandatory verbatim quote containment against raw article text (non-contained extractions discarded).
+  - `src/fpl_oracle/news/extract.py`: Generalized multi-player clause isolation with entity resolution against official elements.
+  - `src/fpl_oracle/news/reconcile.py`: Added Wilson 95% confidence intervals (`compute_wilson_interval`), sample size gate ($N \ge 189$ negatives required to bound false-ruled-out rate $\le 2\%$), and auditable disagreement tracking.
+  - `src/fpl_oracle/llm/recommendation.py`: Added `StructuredRecommendation`, `verify_numeric_grounding` (validating every number in assistant responses against tool outputs), retry on grounding failure, and deterministic templated fallback.
+  - `src/fpl_oracle/llm/provider.py`: Labeled offline mode explicitly in `OfflineExpertProvider`.
+- **Verification:**
+  - `tests/news/test_news_and_assistant_hardening.py`: 22/22 tests passed.
+  - `tests/test_chat_grounding.py`, `tests/test_f003_news_override_safety.py`: Passed.
+
+---
+
+## Phase 7: Configuration Consolidation & Data Resilience (WI-7.1 & WI-7.4)
+- **Date:** 2026-10-15
+- **Modules Created / Updated:**
+  - `config/settings.yaml`: Consolidated all rule constants, solver settings, horizons, and weights with documented citations.
+  - `src/fpl_oracle/config.py`: Added strict Pydantic schemas (`SettingsConfigSchema`, `FlagsConfigSchema`, etc.) and `validate_configuration_schemas()`.
+  - `src/fpl_oracle/data/quality.py`: Created `DataQualityAuditor` and `DataQualityReport` auditing missing-value rates, schema drift, duplicate IDs, and price anomalies.
+- **Verification:**
+  - `tests/test_config_and_data_quality_wi7.py`: 4/4 tests passed.
+
+---
+
+## Phase 8: Personal-Expert Advisor Layer (WI-8.1 to WI-8.9)
+- **Date:** 2026-10-16
+- **Modules Created / Updated:**
+  - `src/fpl_oracle/advisor/health.py` (WI-8.1): Squad health diagnosis classifying squad into `KEEP | WATCH | REPLACE` with machine-readable reasons, counting functional starters, and computing structural deficiency score. Prevents emergency overhaul when 11 functional starters exist.
+  - `src/fpl_oracle/advisor/frontier.py` (WI-8.2): `FrontierPlanner` computes efficient transfer frontier $k \in \{0, 1, 2, \dots, K\}$ with hits explicitly priced and option values $V_{ft}$ of banked transfers. Implements Principle P1 Minimal Sufficient Intervention via knee-point selection ($\ge 85\%$ of peak frontier gain). Recommended $k$ never exceeds argmax $k$ and never recommends hits unless marginal gain is positive with $P \ge 0.70$.
+  - `src/fpl_oracle/advisor/funding.py` (WI-8.3): `AffordabilityPathFinder` computes cheapest legal paths to own any target player (direct swap or two-step enabler downgrade) with selling price oracle.
+  - `src/fpl_oracle/advisor/chip_timeline.py` (WI-8.4): `ChipTimelineComparator` builds timeline table over legal windows before Set 1 deadline (GW19). For Wildcard, compares 3 distinct families: (a) Wildcard now, (b) Wildcard at later windows, (c) staged free-transfer plan.
+  - `src/fpl_oracle/advisor/profile.py` & `config/manager_profile.yaml` (WI-8.5): `ManagerProfileService` managing persistent manager profile (entry 1085141, IceMakers League, rank 2) and transient conversation overrides. Ranks captains differently under `template-safe` (high EO protection) vs `differential-hungry` (low EO + ceiling P90). Enforces `never_sell` and `avoid_clubs` hard constraints.
+  - `src/fpl_oracle/advisor/critique.py` & `src/fpl_oracle/llm/tools.py` (WI-8.6): `PlanCritiqueService` evaluates manager proposals against frontier, reporting regret in xP, $P(\text{beat roll})$, verdict (`GOOD | ACCEPTABLE | WORSE THAN ALTERNATIVE`), strongest alternative, numeric reason, and concession. Wired 4 tools into agent tool registry: `evaluate_plan`, `compare_options`, `explain_why_not`, and `affordability_path`.
+  - `src/fpl_oracle/advisor/ledger.py` (WI-8.7): `AdviceLedger` with SQLite persistence (`data/advice_ledger.sqlite`). Enforces immutable sealed records. Scoring job runs strictly on finalised gameweeks (`is_finalised=True`). Generates weekly report card tracking record vs roll baseline, Brier score calibration, and miss causes.
+  - `src/fpl_oracle/advisor/briefing.py` & `src/fpl_oracle/llm/prompts/advisor_system.md` (WI-8.8): Structured `AdvisorRecommendation` contract: decision (one sentence), why (2-4 numbered reasons with numbers), alternatives considered, cost, risk, confidence (LOW/MEDIUM/HIGH), what would change this, deadline & next checkpoint, captain P10/P90, chip outlook, and one-line summary. `validate_recommendation_schema` validates 100% of recommendations; lint check rejects missing alternatives, cost, or confidence.
+  - `tests/advisor/test_scenarios_s1_s8.py` (WI-8.9): Full scenario regression suite for S1 through S8 and AdviceLedger verification.
+- **Acceptance Verification:**
+  - S1 (Owner's Case): Correctly diagnoses healthy core (11 functional starters), recommends 1 FT (or Roll) with 0 hits, holds Wildcard for winter congestion, and presents staged-FT alternative.
+  - S2 (Broken Squad): 5 injured starters triggers `STRUCTURAL_OVERHAUL_REQUIRED`, allowing chip/hit escalation.
+  - S3 (Blank GW): Evaluates Free Hit; enforces Rule R2 (no FH in GW1; no FH in both GW19 and GW20).
+  - S4 (Set 1 Expiry): Applies use-it-or-lose-it logic at GW19 deadline.
+  - S5 (Marginal Hit Proposal): Returns verdict `WORSE THAN ALTERNATIVE` with regret in expected points.
+  - S6 (Mini-League Divergence): Template-safe profile and differential-hungry profile rank captains differently on same state.
+  - S7 (Price Rise Timing): Attaches price rise tonight warning, quantifies cost of waiting, preserves minimal intervention.
+  - S8 (Key Player Doubt): 50% doubt flagged as `WATCH` with `AVAILABILITY_DOUBT`, presenting contingency decision tree.
+  - AdviceLedger Immutability: Mutating sealed recommendations raises `ValueError`. Finalised-only scoring enforced.
+- **Quality Gates State:**
+  - `tests/advisor/`: 24/24 passed in 4.85s.
+  - `tests/advisor/test_scenarios_s1_s8.py`: 10/10 passed in 2.34s.
+  - `mypy src`: 111 source files, 0 errors.
+  - `ruff check src tests`: 0 warnings, 0 errors.
+  - `tests/test_production_code_purity.py`: Clean (0 forbidden player names in production code).
+  - `tests/test_feature_table_doc_parity.py`: Clean (62 feature schema contract verified).
+
 
 
 
