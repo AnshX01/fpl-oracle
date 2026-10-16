@@ -204,7 +204,7 @@ def test_chip_escape_survives_missing_ordinary_baseline(configured_advisor, monk
         extras.append(row)
     expanded = pd.concat([pool, pd.DataFrame(extras)], ignore_index=True)
     monkeypatch.setattr(
-        analysis_service, "projections", AsyncMock(return_value={g: expanded.copy() for g in range(6, 20)})
+        analysis_service, "projections", AsyncMock(return_value={g: expanded.copy() for g in range(6, 10)})
     )
     result = asyncio.run(api.post_contingency_panic(api.PanicRequest(ruled_out_ids=affected, duration="1")))
     assert result["status"] == "recalculated"

@@ -114,25 +114,25 @@ def test_contract_all_stored_2026_27_rows():
         pytest.skip("No 2026-27 data found")
 
     mismatches = 0
-    for _, row in s26.iterrows():
+    for row in s26.itertuples():
         recalc = calculate_match_points(
-            position=row["position"],
-            minutes=int(row["minutes"]),
-            goals_scored=int(row["goals_scored"]),
-            assists=int(row["assists"]),
-            clean_sheet=bool(row["clean_sheets"] > 0),
-            goals_conceded=int(row["goals_conceded"]),
-            saves=int(row["saves"]),
-            penalties_saved=int(row["penalties_saved"]),
-            penalties_missed=int(row["penalties_missed"]),
-            yellow_cards=int(row["yellow_cards"]),
-            red_cards=int(row["red_cards"]),
-            own_goals=int(row["own_goals"]),
-            defensive_contribution_actions=float(row.get("defensive_contribution", 0)),
-            bonus=int(row["bonus"]),
+            position=row.position,
+            minutes=int(row.minutes),
+            goals_scored=int(row.goals_scored),
+            assists=int(row.assists),
+            clean_sheet=bool(row.clean_sheets > 0),
+            goals_conceded=int(row.goals_conceded),
+            saves=int(row.saves),
+            penalties_saved=int(row.penalties_saved),
+            penalties_missed=int(row.penalties_missed),
+            yellow_cards=int(row.yellow_cards),
+            red_cards=int(row.red_cards),
+            own_goals=int(row.own_goals),
+            defensive_contribution_actions=float(getattr(row, "defensive_contribution", 0)),
+            bonus=int(row.bonus),
             season="2026-27",
         )
-        if recalc != int(row["total_points"]):
+        if recalc != int(row.total_points):
             mismatches += 1
 
     assert mismatches == 0, f"Found {mismatches} mismatches out of {len(s26)} rows in 2026-27"
@@ -185,34 +185,35 @@ def test_contract_all_stored_seasons_with_rules_version():
         mismatches = 0
         manager_rows = 0
 
-        for _, row in s_df.iterrows():
+        for row in s_df.itertuples():
             # Check if manager experimental card
+            row_name = str(row.name)
             if season == "2024-25" and (
-                row["name"] in manager_names
-                or any(m in str(row["name"]) for m in ["Arteta", "Guardiola", "Emery", "Maresca", "Slot"])
+                row_name in manager_names
+                or any(m in row_name for m in ["Arteta", "Guardiola", "Emery", "Maresca", "Slot"])
             ):
                 manager_rows += 1
                 continue
 
             recalc = calculate_match_points(
-                position=row["position"],
-                minutes=int(row["minutes"]),
-                goals_scored=int(row["goals_scored"]),
-                assists=int(row["assists"]),
-                clean_sheet=bool(row["clean_sheets"] > 0),
-                goals_conceded=int(row["goals_conceded"]),
-                saves=int(row["saves"]),
-                penalties_saved=int(row["penalties_saved"]),
-                penalties_missed=int(row["penalties_missed"]),
-                yellow_cards=int(row["yellow_cards"]),
-                red_cards=int(row["red_cards"]),
-                own_goals=int(row["own_goals"]),
-                defensive_contribution_actions=float(row.get("defensive_contribution", 0)),
-                bonus=int(row["bonus"]),
+                position=row.position,
+                minutes=int(row.minutes),
+                goals_scored=int(row.goals_scored),
+                assists=int(row.assists),
+                clean_sheet=bool(row.clean_sheets > 0),
+                goals_conceded=int(row.goals_conceded),
+                saves=int(row.saves),
+                penalties_saved=int(row.penalties_saved),
+                penalties_missed=int(row.penalties_missed),
+                yellow_cards=int(row.yellow_cards),
+                red_cards=int(row.red_cards),
+                own_goals=int(row.own_goals),
+                defensive_contribution_actions=float(getattr(row, "defensive_contribution", 0)),
+                bonus=int(row.bonus),
                 season=str(season),
                 rules_version=rules_ver,
             )
-            if recalc != int(row["total_points"]):
+            if recalc != int(row.total_points):
                 mismatches += 1
 
         season_results[str(season)] = {"total": len(s_df), "managers": manager_rows, "mismatches": mismatches}

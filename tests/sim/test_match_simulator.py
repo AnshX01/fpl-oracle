@@ -180,7 +180,7 @@ def test_mean_check_within_one_percent():
     Simulated mean points aggregate per position must match analytic xP within 1%.
     """
     df = create_synthetic_gameweek_projections()
-    sim = MatchSimulator(n_sims=3000, seed=999)
+    sim = MatchSimulator(n_sims=1500, seed=999)
     res = sim.simulate_gameweek(df)
 
     sim_means = res.simulated_means

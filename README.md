@@ -73,4 +73,10 @@ Forward model scoring needs future pre-deadline freezes and checked results. Syn
 .\.venv\Scripts\python.exe -m pytest -m "not slow"
 ```
 
+For nightly/pre-merge full integration verification, run the slow target (~33 min):
+```powershell
+.\.venv\Scripts\python.exe -m pytest -m "slow"
+```
+
 Model training and promotion are separate explicit tasks, not routine setup steps.
+

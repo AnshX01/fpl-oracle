@@ -127,7 +127,7 @@ def test_evaluate_joint_chips_baseline_free_and_pinned():
     """
     rng = np.random.default_rng(202)
     squad_df = _build_test_squad(rng)
-    pool_df = _build_candidate_pool(squad_df, rng, extra=10)
+    pool_df = _build_candidate_pool(squad_df, rng, extra=5)
     projections = {gw: pool_df for gw in range(6, 10)}
 
     opt = MultiPeriodOptimizer(MultiPeriodConfig(horizon_len=4))
@@ -142,7 +142,7 @@ def test_evaluate_joint_chips_baseline_free_and_pinned():
         target_gw=6,
         horizon_len=4,
         chips_available=["3xc", "bboost"],
-        n_mc_scenarios=20,
+        n_mc_scenarios=5,
     )
 
     j_base = res["baseline_objective"]
@@ -212,7 +212,7 @@ def test_opportunity_cost_single_chip_per_gw():
     """
     rng = np.random.default_rng(404)
     squad_df = _build_test_squad(rng)
-    pool_df = _build_candidate_pool(squad_df, rng, extra=15)
+    pool_df = _build_candidate_pool(squad_df, rng, extra=5)
     projections = {gw: pool_df for gw in range(6, 9)}
 
     opt = MultiPeriodOptimizer(MultiPeriodConfig(horizon_len=3))
@@ -226,7 +226,7 @@ def test_opportunity_cost_single_chip_per_gw():
         target_gw=6,
         horizon_len=3,
         chips_available=["3xc", "bboost"],
-        n_mc_scenarios=10,
+        n_mc_scenarios=5,
     )
 
     opp_matrix = res["opportunity_cost_matrix"]

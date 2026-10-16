@@ -933,7 +933,9 @@ class TransferOptimizer:
         if len(curr_squad_target) < 15:
             curr_squad_target = current_squad_df.copy()
 
-        curr_lineup = lineup_optimizer.select_lineup_and_captain(curr_squad_target, risk_preference=risk_preference)
+        curr_lineup = lineup_optimizer.select_lineup_and_captain(
+            curr_squad_target, risk_preference=risk_preference, simulate_captaincy=False
+        )
         base_xp = curr_lineup["total_gameweek_expected_points"]
 
         # ----------------------------------------------------------------------
@@ -1035,7 +1037,9 @@ class TransferOptimizer:
                 ]
             ).reset_index(drop=True)
 
-            trial_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad, risk_preference=risk_preference)
+            trial_lineup = lineup_optimizer.select_lineup_and_captain(
+                trial_squad, risk_preference=risk_preference, simulate_captaincy=False
+            )
             trial_xp = trial_lineup["total_gameweek_expected_points"]
             hits = 0 if free_transfers >= 1 else 1
             hit_cost = hits * self.hit_penalty
@@ -1144,7 +1148,9 @@ class TransferOptimizer:
                 ]
             ).reset_index(drop=True)
 
-            trial2_lineup = lineup_optimizer.select_lineup_and_captain(trial_squad_2, risk_preference=risk_preference)
+            trial2_lineup = lineup_optimizer.select_lineup_and_captain(
+                trial_squad_2, risk_preference=risk_preference, simulate_captaincy=False
+            )
             trial2_xp = trial2_lineup["total_gameweek_expected_points"]
             hits_2 = max(0, 2 - free_transfers)
             hit_cost_2 = hits_2 * self.hit_penalty

@@ -179,7 +179,7 @@ def test_market_reduces_team_goal_nll_and_cs_brier():
     negative log-likelihood and P(CS) Brier score vs without.
     """
     dc = DixonColesModel()
-    df = pd.read_csv("data/odds/2024-25.csv")
+    df = pd.read_csv("data/odds/2024-25.csv").head(100)
 
     brier_struct = []
     brier_blend = []

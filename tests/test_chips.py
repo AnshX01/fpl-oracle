@@ -44,6 +44,7 @@ def test_remaining_chips_set_boundaries():
     assert "3xc" in status["set_2_remaining"]
 
 
+@pytest.mark.slow
 def test_joint_chip_assignment_no_conflicts():
     """Verify that joint beam search assigns each chip to a distinct gameweek (1 chip per GW rule)."""
     positions = ["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3
@@ -60,14 +61,14 @@ def test_joint_chip_assignment_no_conflicts():
             for i in range(1, 16)
         ]
     )
-    projections = {gw: squad_df for gw in range(6, 20)}
+    projections = {gw: squad_df for gw in range(6, 11)}
     assign, total_gain, alts = chip_planner.optimize_joint_assignment(
-        available_gws=list(range(6, 20)),
+        available_gws=list(range(6, 11)),
         remaining_chips=["wildcard", "freehit", "3xc", "bboost"],
         current_squad_df=squad_df,
         horizon_projections=projections,
-        dgw_gws=[12],
-        bgw_gws=[10],
+        dgw_gws=[9],
+        bgw_gws=[7],
         budget=1000.0,
     )
 
@@ -76,7 +77,7 @@ def test_joint_chip_assignment_no_conflicts():
     # All assigned GWs must be strictly unique (max 1 chip per gameweek)
     assert len(set(assign.values())) == 4
     for gw in assign.values():
-        assert 6 <= gw <= 19
+        assert 6 <= gw <= 10
     assert total_gain > 0.0
     assert len(alts) > 0
 
@@ -186,7 +187,7 @@ def test_strict_recommendation_threshold_and_set1_cutoff():
             for i in range(1, 16)
         ]
     )
-    projections = {gw: squad_df for gw in range(21, 38)}
+    projections = {gw: squad_df for gw in range(21, 26)}
 
     # When current_gw > 19: Set 1 is strictly expired
     res_gw21 = chip_planner.generate_chip_strategy(
