@@ -281,10 +281,12 @@ class WalkForwardBacktester:
 
             # Model Component Predictions
             mins_pred = fitted_models["minutes"].predict(X_curr)
-            att_pred = fitted_models["attacking"].predict(X_curr)
+            t_vals = meta_curr["team"].values if "team" in meta_curr.columns else None
+            r_vals = meta_curr["round"].values if "round" in meta_curr.columns else None
+            att_pred = fitted_models["attacking"].predict(X_curr, team_ids=t_vals, fixture_ids=r_vals)
             def_pred = fitted_models["defending"].predict(X_curr)
             defc_pred = fitted_models["defcon"].predict(X_curr)
-            bon_pred = fitted_models["bonus"].predict(X_curr)
+            bon_pred = fitted_models["bonus"].predict(X_curr, fixture_ids=r_vals)
             crd_pred = fitted_models["cards_saves"].predict(X_curr)
 
             components = {

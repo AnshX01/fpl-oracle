@@ -39,7 +39,7 @@ class SquadOptimizer:
         """
         Solve optimal 15-man squad within budget.
         When optimizing for expected_points, uses joint Starter/Captain/Bench weighting
-        to ensure high-value captaincy talismans (e.g. Haaland/Salah/Bruno) and realistic
+        to ensure high-value captaincy talismans and realistic
         starting XI output.
         """
         df = player_pool_df.copy().reset_index(drop=True)

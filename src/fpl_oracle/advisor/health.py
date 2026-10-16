@@ -114,9 +114,12 @@ class SquadHealthDiagnosis:
             if chance_val == 0.0 or "loan" in news.lower() or "suspended" in news.lower() or "ruled out" in news.lower():
                 status = "REPLACE"
                 reasons.append(f"UNAVAILABLE: {news if news else '0% chance of playing'}")
-            elif chance_val < 75.0 or (news and "doubt" in news.lower()):
+            elif chance_val <= 25.0:
+                status = "REPLACE"
+                reasons.append(f"MAJOR_INJURY_RISK: {chance_val:.0f}% chance ({news if news else 'doubtful'})")
+            elif chance_val < 100.0 or (news and "doubt" in news.lower()):
                 status = "WATCH"
-                reasons.append(f"INJURY_DOUBT: {chance_val:.0f}% chance ({news})")
+                reasons.append(f"AVAILABILITY_DOUBT: {chance_val:.0f}% chance of playing ({news if news else 'flagged'})")
 
             # Reason 2: Minutes risk / Low projection
             pos_floor = self.position_floors.get(pos, 3.0)
@@ -205,6 +208,7 @@ class SquadHealthDiagnosis:
             watch_ids=watch_list,
             replace_ids=replace_list,
             thresholds_used={
+                "status": "[PLACEHOLDER - TO BE FITTED ON BACKTEST]",
                 "min_play_prob": self.min_play_prob,
                 "position_floors": self.position_floors,
                 "position_benchmarks": benchmarks,

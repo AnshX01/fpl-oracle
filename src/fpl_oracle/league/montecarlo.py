@@ -21,6 +21,7 @@ from fpl_oracle.config import (
     CLEAN_SHEET_HOME_FACTOR,
     DEFAULT_CLEAN_SHEET_PROBABILITY,
 )
+from fpl_oracle.sim.match_sim import match_simulator
 
 
 class MonteCarloSimulator:
@@ -175,8 +176,20 @@ class MonteCarloSimulator:
             mu_other = xp - exp_app_cs
             mu_other_play = mu_other / max(1e-4, p_play)
             if mu_other_play > 1e-4:
-                # Non-negative Gamma draw with exact expectation mu_other_play
-                var_other = max(0.2, mu_other_play * 1.5)
+                # Calibrate dispersion from CQR [p10, p90] interval width when available.
+                # NOTE (WI-3.8 / Review Audit):
+                # The conversion cqr_sigma = (p90 - p10) / 2.563 assumes an interim Gaussian quantile spread
+                # (where z_0.90 - z_0.10 = 2 * 1.28155 = 2.5631). This is an interim approximation to map
+                # conformalized interval width to hurdle gamma variance. Full non-parametric multi-quantile
+                # inverse-CDF sampling (P10, P25, P50, P75, P90) is scheduled for WI-4.1.
+                p10_in = player_data.get("p10")
+                p90_in = player_data.get("p90")
+                if p10_in is not None and p90_in is not None and float(p90_in) > float(p10_in):
+                    cqr_w = float(p90_in) - float(p10_in)
+                    cqr_sigma = max(0.4, cqr_w / 2.563)
+                    var_other = max(0.2, (cqr_sigma**2) * 0.70)
+                else:
+                    var_other = max(0.2, mu_other_play * 1.5)
                 # Exact marginal variance matching needs hurdle covariance; report this model as approximate.
                 # Never call this calibrated variance merely because a variance field exists.
                 k = (mu_other_play**2) / var_other
@@ -255,7 +268,6 @@ class MonteCarloSimulator:
         Uses position-specific component decomposition, shared team clean sheets,
         and per-GW projections across the horizon.
         """
-        rng = np.random.default_rng(seed)
         sim_count = n_simulations if n_simulations is not None else self.n_simulations
 
         if not rival_squads:
@@ -381,71 +393,88 @@ class MonteCarloSimulator:
         rival_top3 = [0.0] * len(rival_entries)
         rival_ranks: list[list[float]] = [[] for _ in rival_entries]
 
-        # Run trials
-        for _ in range(sim_count):
-            trial_user_pts = user_points
-            trial_rival_pts = [r["current_points"] for r in rival_entries]
+        # Check for missing projections across all gameweeks
+        for gw_step in range(horizon_gws):
+            proj_map = step_proj_maps[gw_step]
+            if any(eid not in proj_map for eid in all_unique_elements):
+                return {
+                    "status": "MISSING_PROJECTIONS",
+                    "user_win_probability_pct": None,
+                    "user_top3_probability_pct": None,
+                    "expected_final_rank": None,
+                    "simulations_count": 0,
+                    "rival_probabilities": [],
+                }
 
-            trial_rival_rosters = [list(r["starters"]) for r in rival_entries]
-            trial_rival_caps = [r["captain"] for r in rival_entries]
+        # Vectorized simulation across all trials using scoreline-based match simulator (WI-4.1)
+        trial_user_pts = np.full(sim_count, user_points, dtype=np.float64)
+        trial_rival_pts = np.array(
+            [[r["current_points"] for _ in range(sim_count)] for r in rival_entries],
+            dtype=np.float64,
+        )
 
-            for gw_step in range(horizon_gws):
-                proj_map = step_proj_maps[gw_step]
+        base_seed = seed if seed is not None else 42
 
-                # One draw per player and one clean-sheet event per fixture/team.
-                if any(eid not in proj_map for eid in all_unique_elements):
-                    return {
-                        "status": "MISSING_PROJECTIONS",
-                        "user_win_probability_pct": None,
-                        "user_top3_probability_pct": None,
-                        "expected_final_rank": None,
-                        "simulations_count": 0,
-                        "rival_probabilities": [],
-                    }
-                player_draws = self.draw_gameweek(
-                    {eid: proj_map[eid] for eid in all_unique_elements}, rng, fixture_cs_prob_map=fixture_cs_prob_map
-                )
+        for gw_step in range(horizon_gws):
+            p_df = horizon_projs[gw_step]
+            step_seed = (base_seed + gw_step * 10007) % (2**31 - 1)
 
-                # User points this GW
-                gw_user = sum(
-                    player_draws.get(elem, 0.0) * (2.0 if elem == user_cap else 1.0) for elem in user_starters
-                )
-                trial_user_pts += gw_user
+            # Run vectorized scoreline match simulator
+            sim_res = match_simulator.simulate_gameweek(
+                p_df,
+                n_sims=sim_count,
+                seed=step_seed,
+                fixture_cs_prob_map=fixture_cs_prob_map,
+            )
 
-                # Rivals points this GW
-                for i, _r in enumerate(rival_entries):
-                    r_roster = trial_rival_rosters[i]
-                    r_cap = trial_rival_caps[i]
-                    gw_rival = sum(player_draws.get(elem, 0.0) * (2.0 if elem == r_cap else 1.0) for elem in r_roster)
-                    trial_rival_pts[i] += gw_rival
+            id_to_idx = {pid: idx for idx, pid in enumerate(sim_res.player_ids)}
 
-            all_scores = [trial_user_pts] + trial_rival_pts
-            strictly_ahead = sum(1 for s in all_scores if (s - trial_user_pts) > 1e-9)
-            tied_with_user = sum(1 for s in all_scores if abs(s - trial_user_pts) <= 1e-9)
+            # Accumulate User points for this gameweek
+            for elem in user_starters:
+                if elem in id_to_idx:
+                    p_scores = sim_res.scores[id_to_idx[elem]]
+                    mult = 2.0 if elem == user_cap else 1.0
+                    trial_user_pts += p_scores * mult
 
-            # Midrank for user across tied group
-            rank = strictly_ahead + (tied_with_user + 1) / 2.0
-            user_ranks.append(rank)
+            # Accumulate Rivals points for this gameweek
+            for i, r in enumerate(rival_entries):
+                r_roster = r["starters"]
+                r_cap = r["captain"]
+                for elem in r_roster:
+                    if elem in id_to_idx:
+                        p_scores = sim_res.scores[id_to_idx[elem]]
+                        mult = 2.0 if elem == r_cap else 1.0
+                        trial_rival_pts[i] += p_scores * mult
 
-            # Fractional win credit when tied for 1st
-            if strictly_ahead == 0:
-                user_wins += 1.0 / float(tied_with_user)
+        # Vectorized ranking across all simulations
+        if len(rival_entries) > 0:
+            all_scores = np.vstack([trial_user_pts[None, :], trial_rival_pts])  # Shape: (1 + n_rivals, sim_count)
+            strictly_ahead = np.sum((all_scores - trial_user_pts) > 1e-9, axis=0)
+            tied_with_user = np.sum(np.abs(all_scores - trial_user_pts) <= 1e-9, axis=0)
 
-            # Fractional podium credit when occupying top-3 spots
-            if strictly_ahead < 3:
-                slots_left = 3 - strictly_ahead
-                user_top3 += min(1.0, float(slots_left) / float(tied_with_user))
+            user_ranks = (strictly_ahead + (tied_with_user + 1) / 2.0).tolist()
+            user_wins = float(np.sum(np.where(strictly_ahead == 0, 1.0 / tied_with_user, 0.0)))
+            user_top3 = float(np.sum(np.where(strictly_ahead < 3, np.minimum(1.0, (3.0 - strictly_ahead) / tied_with_user), 0.0)))
 
-            for i, r_pts in enumerate(trial_rival_pts):
-                r_strictly_ahead = sum(1 for s in all_scores if (s - r_pts) > 1e-9)
-                r_tied = sum(1 for s in all_scores if abs(s - r_pts) <= 1e-9)
+            rival_wins = [0.0] * len(rival_entries)
+            rival_top3 = [0.0] * len(rival_entries)
+            rival_ranks = [[] for _ in rival_entries]
+
+            for i in range(len(rival_entries)):
+                r_pts = trial_rival_pts[i]
+                r_strictly_ahead = np.sum((all_scores - r_pts) > 1e-9, axis=0)
+                r_tied = np.sum(np.abs(all_scores - r_pts) <= 1e-9, axis=0)
                 r_rank = r_strictly_ahead + (r_tied + 1) / 2.0
-                rival_ranks[i].append(r_rank)
-                if r_strictly_ahead == 0:
-                    rival_wins[i] += 1.0 / float(r_tied)
-                if r_strictly_ahead < 3:
-                    slots_left = 3 - r_strictly_ahead
-                    rival_top3[i] += min(1.0, float(slots_left) / float(r_tied))
+                rival_ranks[i] = r_rank.tolist()
+                rival_wins[i] = float(np.sum(np.where(r_strictly_ahead == 0, 1.0 / r_tied, 0.0)))
+                rival_top3[i] = float(np.sum(np.where(r_strictly_ahead < 3, np.minimum(1.0, (3.0 - r_strictly_ahead) / r_tied), 0.0)))
+        else:
+            user_ranks = [1.0] * sim_count
+            user_wins = float(sim_count)
+            user_top3 = float(sim_count)
+            rival_wins = []
+            rival_top3 = []
+            rival_ranks = []
 
         win_prob = round((user_wins / float(sim_count)) * 100.0, 1)
         top3_prob = round((user_top3 / float(sim_count)) * 100.0, 1)

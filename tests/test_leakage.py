@@ -130,3 +130,49 @@ def test_first_career_match_has_no_lookahead():
     assert match_0["roll_goals_5"] == 0.0
     assert match_0["roll_assists_5"] == 0.0
     assert match_0["roll_defcon_5"] == 0.0
+
+
+def test_dixon_coles_point_in_time_season_leakage():
+    """
+    WI-3.1 / Item C.(5):
+    Assert that Dixon-Coles model fitted up to cutoff t_cutoff does not leak
+    information from future matches (t > t_cutoff).
+    """
+    import numpy as np
+
+    from fpl_oracle.ml.components.dixon_coles import DixonColesModel
+
+    rows = []
+    base_date = pd.Timestamp("2024-08-01")
+    for m in range(200):
+        rows.append(
+            {
+                "season": "2024-25" if m < 100 else "2025-26",
+                "round": (m % 38) + 1,
+                "home_team": "TeamA" if m % 2 == 0 else "TeamB",
+                "away_team": "TeamB" if m % 2 == 0 else "TeamA",
+                "home_goals": 1,
+                "away_goals": 1,
+                "kickoff_time": (base_date + pd.Timedelta(days=m * 3)).isoformat(),
+            }
+        )
+    df_clean = pd.DataFrame(rows)
+
+    # Point-in-time model fitted only on 2024-25 matches
+    df_pit = df_clean[df_clean["season"] == "2024-25"]
+    m_pit = DixonColesModel().fit(matches_df=df_pit)
+    pred_clean = m_pit.predict_fixture("TeamA", "TeamB", is_home=True)
+
+    # Corrupt all future 2025-26 matches radically (99 goals)
+    df_corrupted = df_clean.copy()
+    df_corrupted.loc[df_corrupted["season"] == "2025-26", "home_goals"] = 99
+
+    # Re-evaluate point-in-time model with 2024-25 cutoff
+    df_pit_re = df_corrupted[df_corrupted["season"] == "2024-25"]
+    m_pit_re = DixonColesModel().fit(matches_df=df_pit_re)
+    pred_re = m_pit_re.predict_fixture("TeamA", "TeamB", is_home=True)
+
+    for k in pred_clean:
+        assert np.isclose(pred_clean[k], pred_re[k], atol=1e-9), (
+            f"Point-in-time leakage detected in {k}: {pred_clean[k]} vs {pred_re[k]}"
+        )

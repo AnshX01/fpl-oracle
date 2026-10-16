@@ -101,6 +101,9 @@ class Element(FPLBaseModel):
     price_change_hourly_rate: int | None = None
     price_change_projections: list[dict[str, Any]] | None = None
     code: int | None = None
+    penalties_order: int | None = None
+    direct_freekicks_order: int | None = None
+    corners_and_indirect_freekicks_order: int | None = None
 
 
 class BootstrapStatic(FPLBaseModel):

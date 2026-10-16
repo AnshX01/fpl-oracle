@@ -1,0 +1,11 @@
+{
+  "scenario_id": "S7",
+  "name": "Price Rise Imminent for Target Player",
+  "gameweek": 6,
+  "rising_element_id": 14,
+  "expected_behavior": {
+    "warns_price_rise_tonight": true,
+    "quantifies_waiting_cost": true,
+    "obeys_minimal_intervention": true
+  }
+}

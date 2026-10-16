@@ -1197,7 +1197,7 @@ async def get_contingency_matrix():
 
 @router.post("/contingency/panic")
 async def post_contingency_panic(req: PanicRequest):
-    """Emergency 1-click crisis solver for breaking team news (e.g. 'Saka ruled out 6 weeks')."""
+    """Emergency 1-click crisis solver for breaking team news (e.g. 'Star player ruled out 6 weeks')."""
     boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale

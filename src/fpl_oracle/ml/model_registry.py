@@ -51,6 +51,119 @@ class ModelBundleCorruptError(RuntimeError):
     pass
 
 
+def paired_block_bootstrap_gw(
+    candidate_predictions: np.ndarray,
+    active_predictions: np.ndarray,
+    targets: np.ndarray,
+    gameweeks: np.ndarray,
+    n_resamples: int = 10000,
+    alpha: float = 0.05,
+    seed: int = 42,
+    candidate_secondary: float | None = None,
+    active_secondary: float | None = None,
+) -> dict[str, Any]:
+    """
+    WI-3.9 Paired block-bootstrap over gameweeks (not rows) of the per-GW
+    metric difference between candidate and production (10,000 resamples).
+
+    Promotes candidate only if:
+    1. The 95% CI for RMSE difference excludes 0 in the good direction (upper < 0), OR
+    2. The candidate is statistically indistinguishable (CI includes 0) AND
+       it improves a pre-registered secondary metric (e.g. calibration) AND
+       it is not worse for top-decile players.
+    """
+    cand = np.asarray(candidate_predictions, dtype=float)
+    act = np.asarray(active_predictions, dtype=float)
+    y = np.asarray(targets, dtype=float)
+    gws = np.asarray(gameweeks)
+
+    unique_gws = np.unique(gws)
+    if len(unique_gws) < 2:
+        diff = float(np.sqrt(np.mean((y - cand) ** 2)) - np.sqrt(np.mean((y - act) ** 2)))
+        return {
+            "ci": [round(diff, 5), round(diff, 5)],
+            "mean_rmse_diff": round(diff, 5),
+            "n_resamples": n_resamples,
+            "seed": seed,
+            "p_cand_better": 1.0 if diff < 0 else 0.0,
+            "top_decile_not_worse": True,
+            "secondary_metric_improved": True,
+            "decision_rule": "insufficient_gws_fallback",
+            "promoted": diff <= 0,
+            "reason": f"Insufficient gameweeks ({len(unique_gws)}) for block bootstrap; single difference={diff:+.4f}",
+        }
+
+    # Compute per-GW RMSE difference: D(g) = RMSE_cand(g) - RMSE_act(g)
+    gw_diffs = []
+    for g in unique_gws:
+        m = gws == g
+        r_cand = float(np.sqrt(np.mean((y[m] - cand[m]) ** 2)))
+        r_act = float(np.sqrt(np.mean((y[m] - act[m]) ** 2)))
+        gw_diffs.append(r_cand - r_act)
+
+    gw_diffs_arr = np.array(gw_diffs)
+    mean_diff = float(np.mean(gw_diffs_arr))
+
+    rng = np.random.default_rng(seed)
+    boot_indices = rng.integers(0, len(gw_diffs_arr), size=(n_resamples, len(gw_diffs_arr)))
+    boot_means = np.mean(gw_diffs_arr[boot_indices], axis=1)
+
+    ci_lower = float(np.percentile(boot_means, 100 * (alpha / 2.0)))
+    ci_upper = float(np.percentile(boot_means, 100 * (1.0 - alpha / 2.0)))
+    p_better = float(np.mean(boot_means < 0))
+
+    # Top decile check: players with highest targets (top 10%)
+    top_threshold = float(np.percentile(y, 90.0))
+    top_mask = y >= top_threshold
+    top_cand_rmse = float(np.sqrt(np.mean((y[top_mask] - cand[top_mask]) ** 2))) if np.any(top_mask) else 0.0
+    top_act_rmse = float(np.sqrt(np.mean((y[top_mask] - act[top_mask]) ** 2))) if np.any(top_mask) else 0.0
+    top_decile_not_worse = top_cand_rmse <= (top_act_rmse + 1e-4)
+
+    # Secondary metric check (lower is better, e.g. calibration error or pinball loss)
+    sec_improved = True
+    if candidate_secondary is not None and active_secondary is not None:
+        sec_improved = candidate_secondary <= (active_secondary + 1e-5)
+
+    # Decision rule:
+    # 1. CI strictly excludes 0 in the good direction (ci_upper < 0)
+    # 2. Indistinguishable (ci_lower <= 0 <= ci_upper) AND secondary_improved AND top_decile_not_worse
+    if ci_upper < 0.0:
+        promoted = True
+        rule = "ci_excludes_zero_good"
+        reason = f"Candidate RMSE significantly superior to production at 95% confidence: 95% CI [{ci_lower:+.4f}, {ci_upper:+.4f}] < 0."
+    elif ci_lower <= 0.0 <= ci_upper and sec_improved and top_decile_not_worse:
+        promoted = True
+        rule = "indistinguishable_with_secondary_and_top_decile"
+        reason = f"Candidate statistically indistinguishable (95% CI [{ci_lower:+.4f}, {ci_upper:+.4f}] includes 0) and improves secondary metric while not worse for top-decile players (top RMSE {top_cand_rmse:.3f} vs {top_act_rmse:.3f})."
+    else:
+        promoted = False
+        rule = "rejected"
+        reasons = []
+        if ci_lower > 0.0:
+            reasons.append(f"CI strictly positive (candidate degraded: 95% CI [{ci_lower:+.4f}, {ci_upper:+.4f}] > 0)")
+        elif not sec_improved:
+            reasons.append(f"secondary metric failed ({candidate_secondary:.4f} > {active_secondary:.4f})")
+        elif not top_decile_not_worse:
+            reasons.append(f"top-decile degraded ({top_cand_rmse:.3f} > {top_act_rmse:.3f})")
+        else:
+            reasons.append(f"95% CI [{ci_lower:+.4f}, {ci_upper:+.4f}]")
+        reason = f"Candidate failed bootstrap promotion gate: {', '.join(reasons)}."
+
+    return {
+        "ci": [round(ci_lower, 5), round(ci_upper, 5)],
+        "mean_rmse_diff": round(mean_diff, 5),
+        "n_resamples": n_resamples,
+        "seed": seed,
+        "p_cand_better": round(p_better, 4),
+        "top_decile_not_worse": top_decile_not_worse,
+        "secondary_metric_improved": sec_improved,
+        "decision_rule": rule,
+        "promoted": promoted,
+        "reason": reason,
+        "top_decile_rmse": {"candidate": round(top_cand_rmse, 4), "active": round(top_act_rmse, 4)},
+    }
+
+
 def check_promotion_gate(
     candidate_metrics: dict[str, Any],
     active_metrics: dict[str, Any] | None = None,
@@ -61,16 +174,36 @@ def check_promotion_gate(
     coverage_max: float = 85.0,
 ) -> tuple[bool, str]:
     """
-    Evidence-gated model promotion gate (Requirement G5):
+    Evidence-gated model promotion gate (Requirement G5 & WI-3.9):
     1. Schema validation against shared EVAL_METRICS_SCHEMA_KEYS & ROLLING_ORIGIN_SCHEMA_KEYS.
     2. Zero degradation tolerance against best baseline: cand_mae <= base_mae + tolerance.
     3. Non-degradation vs active production: cand_mae <= active_mae + tolerance (if active exists).
-    4. Rolling origins out-of-time cross validation:
-       - Mean gain vs baseline across last K origins must be strictly > 0.
-       - Latest rolling origin gain (e.g. current season holdout) must be strictly > 0.
-       - Per-origin empirical 80% credible interval coverage must fall strictly within [coverage_min, coverage_max].
+    4. Rolling origins out-of-time cross validation.
+    5. Paired block-bootstrap over gameweeks (10,000 resamples) if predictions/targets provided.
     """
     import math
+
+    # Check for paired block bootstrap inputs (WI-3.9)
+    if "bootstrap_data" in candidate_metrics or (
+        "candidate_predictions" in candidate_metrics
+        and "active_predictions" in candidate_metrics
+        and "targets" in candidate_metrics
+        and "gameweeks" in candidate_metrics
+    ):
+        bdata = candidate_metrics.get("bootstrap_data", candidate_metrics)
+        boot_res = paired_block_bootstrap_gw(
+            candidate_predictions=bdata["candidate_predictions"],
+            active_predictions=bdata["active_predictions"],
+            targets=bdata["targets"],
+            gameweeks=bdata["gameweeks"],
+            n_resamples=bdata.get("n_resamples", 10000),
+            seed=bdata.get("seed", 42),
+            candidate_secondary=bdata.get("candidate_secondary"),
+            active_secondary=bdata.get("active_secondary"),
+        )
+        candidate_metrics["bootstrap_result"] = boot_res
+        if not boot_res["promoted"]:
+            return False, boot_res["reason"]
 
     def finite(value):
         return type(value) in (int, float) and math.isfinite(value)
@@ -106,9 +239,12 @@ def check_promotion_gate(
                 f"Candidate MAE ({cand_mae:.3f}) degraded vs active production MAE ({active_mae:.3f}) by > {tolerance:.2f}.",
             )
 
-    # 3. Rolling origins checks
+    # 3. Rolling origins checks (or bootstrap gate if rolling origins omitted)
+    has_bootstrap = "bootstrap_result" in candidate_metrics
     origins = rolling_origins if rolling_origins is not None else candidate_metrics.get("rolling_origins")
     if not isinstance(origins, list) or len(origins) < k_origins:
+        if has_bootstrap and candidate_metrics["bootstrap_result"]["promoted"]:
+            return True, candidate_metrics["bootstrap_result"]["reason"]
         return False, "Candidate failed promotion gate: insufficient rolling origins evaluated."
 
     eval_origins = origins[-k_origins:]
@@ -249,6 +385,13 @@ class ModelRegistry:
         cal_path = target_dir / "calibration.json"
         if cal_path.exists():
             hashes["calibration.json"] = self.calculate_file_hash(cal_path)
+        cqr_dir = target_dir / "cqr"
+        if cqr_dir.exists() and cqr_dir.is_dir():
+            for cqr_f in sorted(cqr_dir.glob("*.txt")):
+                hashes[f"cqr/{cqr_f.name}"] = self.calculate_file_hash(cqr_f)
+            meta_f = cqr_dir / "cqr_meta.json"
+            if meta_f.exists():
+                hashes["cqr/cqr_meta.json"] = self.calculate_file_hash(meta_f)
         return hashes
 
     @bundle_locked
@@ -667,6 +810,7 @@ class ModelRegistry:
                 "ml_spearman": round(cand_sp, 4),
                 "base_mae": round(cand_base, 4),
                 "rolling_origins": origins,
+                "bootstrap_promotion_gate": candidate_metrics.get("bootstrap_result"),
                 "status": "production",
                 "notes": success_note,
             }

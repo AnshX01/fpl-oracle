@@ -1,0 +1,18 @@
+{
+  "nominal_coverage": 0.8,
+  "conformal_offsets": {
+    "GKP": 0.1905,
+    "DEF": 0.2871,
+    "MID": 0.0,
+    "FWD": -0.0769
+  },
+  "cal_sample_counts": {
+    "GKP": 161,
+    "DEF": 829,
+    "MID": 1133,
+    "FWD": 298
+  },
+  "is_fitted": true,
+  "is_calibrated": true,
+  "coverage_drift_log": []
+}

@@ -118,6 +118,63 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "name": "evaluate_plan",
+        "description": "Scores a manager proposed plan (transfers, chip, captain) against the frontier and best alternatives.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "proposed_transfers": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "List of transfers e.g. [{'out': 12, 'in': 34}]",
+                },
+                "proposed_chip": {"type": "string", "description": "Optional chip to play"},
+                "proposed_captain": {"type": "integer", "description": "Optional captain player ID"},
+            },
+        },
+    },
+    {
+        "name": "compare_options",
+        "description": "Compares named alternative plans side by side showing net xP, hits, and risk.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "options": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "List of option dicts with name, description, transfers, chip, captain",
+                }
+            },
+            "required": ["options"],
+        },
+    },
+    {
+        "name": "explain_why_not",
+        "description": "Explains why not to make an aggressive move (e.g. why not Wildcard now, why not take a hit) with opportunity costs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action_type": {
+                    "type": "string",
+                    "description": "Action type to explain e.g. 'wildcard', 'hit', 'chip'",
+                }
+            },
+            "required": ["action_type"],
+        },
+    },
+    {
+        "name": "affordability_path",
+        "description": "Finds the cheapest legal paths to own a target player, including direct swaps and two-step moves.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target_element": {"type": "integer", "description": "Target player ID"},
+                "top_k": {"type": "integer", "description": "Number of alternative paths (default 3)"},
+            },
+            "required": ["target_element"],
+        },
+    },
 ]
 
 
@@ -166,6 +223,14 @@ class ToolExecutor:
                 return await self._tool_get_news(arguments)
             elif tool_name == "get_fixtures":
                 return await self._tool_get_fixtures(arguments)
+            elif tool_name == "evaluate_plan":
+                return await self._tool_evaluate_plan(arguments)
+            elif tool_name == "compare_options":
+                return await self._tool_compare_options(arguments)
+            elif tool_name == "explain_why_not":
+                return await self._tool_explain_why_not(arguments)
+            elif tool_name == "affordability_path":
+                return await self._tool_affordability_path(arguments)
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
@@ -523,6 +588,113 @@ class ToolExecutor:
                 }
             )
         return {"fixtures": res[:10]}
+
+    async def _tool_evaluate_plan(self, args: dict[str, Any]) -> dict[str, Any]:
+        from fpl_oracle.advisor.critique import plan_critique_service
+        from fpl_oracle.domain.manager_state import manager_state_service
+
+        state = await manager_state_service.get_current_state()
+        boot, _ = await fpl_client.get_bootstrap_static()
+        fixtures, _ = await fpl_client.get_fixtures()
+        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+        projs = await analysis_service.projections(target_gw, 5, boot, fixtures)
+        pool_df = projs.get(target_gw, pd.DataFrame())
+        squad_rows = [p.model_dump(mode="json") for p in state.squad]
+        squad_df = pd.DataFrame(squad_rows)
+        res = plan_critique_service.evaluate_plan(
+            proposed_transfers=args.get("proposed_transfers", []),
+            proposed_chip=args.get("proposed_chip"),
+            proposed_captain=args.get("proposed_captain"),
+            current_squad_df=squad_df,
+            player_pool_df=pool_df,
+            bank=state.bank_millions,
+            free_transfers=state.free_transfers,
+            horizon_projections=projs,
+            current_gw=curr_gw or 5,
+            target_gw=target_gw,
+            chips_available=[str(c.get("name", c) if isinstance(c, dict) else getattr(c, "name", str(c))) for c in state.chips_used],
+        )
+        return res.model_dump()
+
+    async def _tool_compare_options(self, args: dict[str, Any]) -> dict[str, Any]:
+        from fpl_oracle.advisor.critique import plan_critique_service
+        from fpl_oracle.domain.manager_state import manager_state_service
+
+        state = await manager_state_service.get_current_state()
+        boot, _ = await fpl_client.get_bootstrap_static()
+        fixtures, _ = await fpl_client.get_fixtures()
+        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+        projs = await analysis_service.projections(target_gw, 5, boot, fixtures)
+        pool_df = projs.get(target_gw, pd.DataFrame())
+        squad_rows = [p.model_dump(mode="json") for p in state.squad]
+        squad_df = pd.DataFrame(squad_rows)
+        res = plan_critique_service.compare_options(
+            options=args.get("options", []),
+            current_squad_df=squad_df,
+            player_pool_df=pool_df,
+            bank=state.bank_millions,
+            free_transfers=state.free_transfers,
+            horizon_projections=projs,
+            current_gw=curr_gw or 5,
+            target_gw=target_gw,
+        )
+        return res.model_dump()
+
+    async def _tool_explain_why_not(self, args: dict[str, Any]) -> dict[str, Any]:
+        from fpl_oracle.advisor.critique import plan_critique_service
+        from fpl_oracle.domain.manager_state import manager_state_service
+
+        state = await manager_state_service.get_current_state()
+        squad_rows = [p.model_dump(mode="json") for p in state.squad]
+        squad_df = pd.DataFrame(squad_rows)
+        res = plan_critique_service.explain_why_not(
+            action_type=args.get("action_type", "wildcard"),
+            squad_df=squad_df,
+        )
+        return res.model_dump()
+
+    async def _tool_affordability_path(self, args: dict[str, Any]) -> dict[str, Any]:
+        from fpl_oracle.advisor.funding import AffordabilityPathFinder
+        from fpl_oracle.domain.manager_state import manager_state_service
+
+        state = await manager_state_service.get_current_state()
+        boot, _ = await fpl_client.get_bootstrap_static()
+        fixtures, _ = await fpl_client.get_fixtures()
+        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+        projs = await analysis_service.projections(target_gw, 1, boot, fixtures)
+        pool_df = projs.get(target_gw, pd.DataFrame())
+        squad_rows = [p.model_dump(mode="json") for p in state.squad]
+        squad_df = pd.DataFrame(squad_rows)
+        finder = AffordabilityPathFinder()
+        bank_tenths = int(round(state.bank_millions * 10))
+        paths = finder.find_cheapest_paths(
+            current_squad_df=squad_df,
+            player_pool_df=pool_df,
+            bank_tenths=bank_tenths,
+            target_element=int(args["target_element"]),
+            free_transfers=state.free_transfers,
+            top_k=int(args.get("top_k", 3)),
+        )
+        return {
+            "target_element": args["target_element"],
+            "paths": [
+                {
+                    "target_element": p.target_element,
+                    "path_type": p.path_type,
+                    "transfers_count": p.transfers_count,
+                    "hits": p.hits,
+                    "hit_cost": p.hit_cost,
+                    "initial_bank_tenths": p.initial_bank_tenths,
+                    "final_bank_tenths": p.final_bank_tenths,
+                    "is_legal": p.is_legal,
+                    "arithmetic_explanation": p.arithmetic_explanation,
+                }
+                for p in paths
+            ],
+        }
 
 
 tool_executor = ToolExecutor()

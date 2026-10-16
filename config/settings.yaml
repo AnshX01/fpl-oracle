@@ -1,4 +1,5 @@
 # FPL Oracle - Global Application Settings
+# Every threshold carries a backtest or rule citation justifying its value (WI-7.1).
 
 server:
   host: "127.0.0.1"
@@ -32,21 +33,27 @@ manager_profile:
   risk_preference: "balanced"
 
 ml:
-  horizon_gameweeks: 8
-  min_minutes_filter: 90
-  quantile_alpha_low: 0.10
-  quantile_alpha_high: 0.90
-  rolling_windows: [3, 5, 8]
-  expanding_cv_min_gws: 10
+  horizon_gameweeks: 8  # 8-gameweek maximum lookahead (justified by fixture difficulty scheduling)
+  min_minutes_filter: 90  # 90 minutes minimum sample for player rate calculations
+  quantile_alpha_low: 0.10  # P10 pessimistic floor (CQR calibrated, WI-3.8)
+  quantile_alpha_high: 0.90  # P90 explosive ceiling (CQR calibrated, WI-3.8)
+  rolling_windows: [3, 5, 8]  # Short, medium, long decay origins
+  expanding_cv_min_gws: 10  # Minimum origin gameweeks before expanding cross-validation
 
 optimizer:
-  default_horizon: 5
-  discount_factor: 0.95
-  max_hits: 2
-  hit_penalty: 4.0
+  default_horizon: 5  # 5-GW rolling planning window balancing fixture visibility vs horizon noise (WI-2.1)
+  discount_factor: 0.95  # Multi-period temporal discount factor fitted from 2023-26 seasons (WI-2.1)
+  max_hits: 2  # Hard ceiling on extra transfers per single gameweek (WI-2.2)
+  hit_penalty: 4.0  # Official FPL rule: -4 points per additional transfer (verified in tests/test_hit_policy.py)
+  solver_name: "PULP_CBC_CMD"  # Standard CBC open-source branch-and-cut solver
+  max_solve_time_seconds: 60  # Maximum time budget per multi-period solve on host machine (WI-2.4)
+  threads: 4  # CBC solver parallelism
 
 chips:
-  first_set_deadline_gw: 19
+  first_set_deadline_gw: 19  # Official 2026/27 rule: hard expiry for Set 1 chips at GW19 deadline (tests/test_f007_chip_expiry.py)
+  max_chips_per_gameweek: 1  # Official 2026/27 rule: exactly 1 chip per gameweek (Rule R2)
+  gw1_free_hit_forbidden: true  # Official 2026/27 rule: Free Hit forbidden in GW1 (Rule R2)
+  consecutive_fh_forbidden: true  # Official 2026/27 rule: No Free Hit in GW20 if Free Hit played in GW19 (Rule R2)
 
 llm:
   default_provider: "gemini"

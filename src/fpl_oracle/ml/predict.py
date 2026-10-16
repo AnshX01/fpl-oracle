@@ -178,10 +178,16 @@ class ProjectionEngine:
 
         # Component predictions
         mins_pred = self.minutes_model.predict(X)
-        att_pred = self.attacking_model.predict(X)
+        team_vals = features_df["team"].values if "team" in features_df.columns else None
+        fix_vals = features_df["fixture_id"].values if "fixture_id" in features_df.columns else None
+        X_att = X.copy()
+        for col in ("penalties_order", "direct_freekicks_order", "corners_and_indirect_freekicks_order"):
+            if col in features_df.columns:
+                X_att[col] = features_df[col].values
+        att_pred = self.attacking_model.predict(X_att, team_ids=team_vals, fixture_ids=fix_vals)
         def_pred = self.defending_model.predict(X)
         defcon_pred = self.defcon_model.predict(X)
-        bonus_pred = self.bonus_model.predict(X)
+        bonus_pred = self.bonus_model.predict(X, fixture_ids=fix_vals)
         cards_pred = self.cards_saves_model.predict(X)
 
         components = {**mins_pred, **att_pred, **def_pred, **defcon_pred, **bonus_pred, **cards_pred}

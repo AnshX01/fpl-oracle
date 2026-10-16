@@ -103,8 +103,12 @@ class ModelEvaluator:
         Transparent heuristic baseline 2:
         Season-to-date points per game (std_minutes_per_gw / 90 * 4.0 or roll_points_8).
         """
-        avg_pts = X["roll_points_8"].values
-        starts_ratio = X["roll_starts_ratio_5"].values
+        avg_pts = (
+            X["roll_points_8"].values
+            if "roll_points_8" in X.columns
+            else (X["roll_points_5"].values if "roll_points_5" in X.columns else np.full(len(X), 3.0))
+        )
+        starts_ratio = X["roll_starts_ratio_5"].values if "roll_starts_ratio_5" in X.columns else np.full(len(X), 0.8)
         return np.clip(avg_pts * np.clip(starts_ratio, 0.2, 1.0), 0.0, 20.0)
 
     def compute_fixture_adjusted_baseline(self, X: pd.DataFrame) -> np.ndarray:

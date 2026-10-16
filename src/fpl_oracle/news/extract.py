@@ -51,6 +51,8 @@ class TextExtractor:
             r"<\s*/\s*system\s*>",
             r"force\s+category\s+ruled_out",
             r"\}\]\s*;\s*\{",
+            r"\}\\\?\]\s*;\s*\{",
+            r"override\s*:\s*true",
         ]
         if any(re.search(pat, text, re.IGNORECASE) for pat in injection_patterns):
             return [
@@ -121,16 +123,25 @@ class TextExtractor:
                         player_clause_idx = i
                         break
 
-                # If another clause explicitly names another player (e.g. "Salah is fit, but Luis Diaz is out")
+                # If another clause explicitly names another player (e.g. "Player A is fit, but Player B is out")
                 # isolate the target player's clause
                 other_clause_has_other_player = False
                 if player_clause_idx is not None:
+                    stop_words = {
+                        "the", "a", "an", "he", "she", "they", "we", "i", "it",
+                        "this", "that", "but", "while", "whereas", "however", "on",
+                        "in", "at", "for", "with", "after", "before", "and"
+                    }
                     for i, c in enumerate(clauses):
-                        if i != player_clause_idx and any(
-                            name in c for name in ["Diaz", "De Bruyne", "Saliba", "Martinelli", "Jackson", "Doucoure"]
-                        ):
-                            other_clause_has_other_player = True
-                            break
+                        if i != player_clause_idx:
+                            words = [w.strip(".,;:!?()\"'") for w in c.split()]
+                            cap_words = [
+                                w for w in words
+                                if w and w[0].isupper() and w.lower() != last_name.lower() and w.lower() not in stop_words
+                            ]
+                            if len(cap_words) >= 1:
+                                other_clause_has_other_player = True
+                                break
 
                 if other_clause_has_other_player and player_clause_idx is not None:
                     matched_span = (sm.start() + cuts[player_clause_idx], sm.start() + cuts[player_clause_idx + 1])

@@ -1,0 +1,13 @@
+{
+  "scenario_id": "S4",
+  "name": "Set 1 Deadline Close With Unused Chips",
+  "gameweek": 19,
+  "bank_tenths": 5,
+  "free_transfers": 1,
+  "chips_available": ["wildcard"],
+  "expected_behavior": {
+    "use_it_or_lose_it": true,
+    "expiry_loss_quantified": true,
+    "must_play_chip_now": true
+  }
+}

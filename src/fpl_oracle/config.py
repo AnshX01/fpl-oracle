@@ -240,3 +240,85 @@ for d in [DATA_DIR, CACHE_DIR, SNAPSHOTS_DIR, MODELS_DIR, HISTORICAL_DIR, REPORT
     d.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = DATA_DIR / "fpl_oracle.db"
+
+
+# ==============================================================================
+# Configuration Schema Validation (WI-7.1)
+# ==============================================================================
+class ServerConfigSchema(BaseModel):
+    host: str = "127.0.0.1"
+    port: int = 8000
+    reload: bool = False
+
+
+class OptimizerConfigSchema(BaseModel):
+    default_horizon: int = 5
+    discount_factor: float = 0.95
+    max_hits: int = 2
+    hit_penalty: float = 4.0
+    solver_name: str = "PULP_CBC_CMD"
+    max_solve_time_seconds: int = 60
+    threads: int = 4
+
+
+class ChipsConfigSchema(BaseModel):
+    first_set_deadline_gw: int = 19
+    max_chips_per_gameweek: int = 1
+    gw1_free_hit_forbidden: bool = True
+    consecutive_fh_forbidden: bool = True
+
+
+class SettingsConfigSchema(BaseModel):
+    server: ServerConfigSchema = Field(default_factory=ServerConfigSchema)
+    storage: dict[str, Any] = Field(default_factory=dict)
+    cache: dict[str, Any] = Field(default_factory=dict)
+    fpl: dict[str, Any] = Field(default_factory=dict)
+    manager_profile: dict[str, Any] = Field(default_factory=dict)
+    ml: dict[str, Any] = Field(default_factory=dict)
+    optimizer: OptimizerConfigSchema = Field(default_factory=OptimizerConfigSchema)
+    chips: ChipsConfigSchema = Field(default_factory=ChipsConfigSchema)
+    llm: dict[str, Any] = Field(default_factory=dict)
+
+
+class FlagsConfigSchema(BaseModel):
+    flags: dict[str, bool] = Field(default_factory=dict)
+    assistant: dict[str, Any] = Field(default_factory=dict)
+
+
+def validate_configuration_schemas() -> dict[str, bool]:
+    """
+    Validates all committed YAML configuration files against strict Pydantic schemas (WI-7.1).
+    Raises ValidationError if any configuration is structurally invalid.
+    """
+    results = {}
+
+    # 1. Validate settings.yaml
+    settings_data = _load_yaml(CONFIG_DIR / "settings.yaml")
+    SettingsConfigSchema.model_validate(settings_data)
+    results["settings.yaml"] = True
+
+    # 2. Validate flags.yaml
+    flags_data = _load_yaml(CONFIG_DIR / "flags.yaml")
+    FlagsConfigSchema.model_validate(flags_data)
+    results["flags.yaml"] = True
+
+    # 3. Validate rules.yaml
+    rules_data = _load_yaml(CONFIG_DIR / "rules.yaml")
+    assert isinstance(rules_data, dict) and len(rules_data) > 0, "rules.yaml is empty"
+    results["rules.yaml"] = True
+
+    # 4. Validate news_sources.yaml
+    news_data = _load_yaml(CONFIG_DIR / "news_sources.yaml")
+    assert isinstance(news_data, dict) and "trusted_publishers" in news_data, "news_sources.yaml invalid"
+    results["news_sources.yaml"] = True
+
+    # 5. Validate manager_profile.yaml
+    profile_path = CONFIG_DIR / "manager_profile.yaml"
+    if profile_path.exists():
+        from fpl_oracle.advisor.profile import ManagerProfile
+        prof_data = _load_yaml(profile_path)
+        ManagerProfile.model_validate(prof_data)
+        results["manager_profile.yaml"] = True
+
+    return results
+

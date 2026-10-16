@@ -36,7 +36,9 @@ class ScoringEnsemble:
         self.calibrated_z90 = 1.009 if z90 is None else z90
         # Learned validation stacking weights: (w_ml, w_recent_form, w_season_avg)
         self.blend_weights: tuple[float, float, float] | None = blend_weights or (0.72, 0.04, 0.24)
+        self.positional_blend_weights: dict[str, tuple[float, float, float]] | None = None
         self.bucket_quantiles: dict[str, dict[str, float]] = {}
+        self.cqr: Any | None = None
         if z10 is None and z90 is None and blend_weights is None:
             self._load_default_calibration()
 
@@ -44,6 +46,17 @@ class ScoringEnsemble:
         cal_path = MODELS_DIR / "calibration.json"
         if cal_path.exists():
             self.load_calibration(cal_path)
+        cqr_path = MODELS_DIR / "cqr"
+        if cqr_path.exists():
+            from fpl_oracle.ml.quantiles import ConformalQuantileRegressor
+
+            cqr = ConformalQuantileRegressor()
+            if cqr.load(cqr_path):
+                self.cqr = cqr
+
+    def set_cqr(self, cqr: Any) -> None:
+        """Set active ConformalQuantileRegressor instance."""
+        self.cqr = cqr
 
     def load_calibration(self, path: Path) -> bool:
         """Load persisted calibration parameters from JSON artifact."""
@@ -55,6 +68,11 @@ class ScoringEnsemble:
             if "blend_weights" in data:
                 bw = data["blend_weights"]
                 self.blend_weights = (float(bw[0]), float(bw[1]), float(bw[2]))
+            if "positional_blend_weights" in data:
+                self.positional_blend_weights = {
+                    pos: (float(w[0]), float(w[1]), float(w[2]))
+                    for pos, w in data["positional_blend_weights"].items()
+                }
             if "bucket_quantiles" in data:
                 self.bucket_quantiles = data["bucket_quantiles"]
             return True
@@ -63,7 +81,7 @@ class ScoringEnsemble:
 
     def get_calibration_dict(self) -> dict[str, Any]:
         """Get current calibration quantiles and blend weights as dictionary."""
-        return {
+        res: dict[str, Any] = {
             "z10": round(self.calibrated_z10, 4),
             "z90": round(self.calibrated_z90, 4),
             "blend_weights": (
@@ -71,6 +89,12 @@ class ScoringEnsemble:
             ),
             "bucket_quantiles": self.bucket_quantiles,
         }
+        if self.positional_blend_weights is not None:
+            res["positional_blend_weights"] = {
+                pos: [round(w, 4) for w in weights]
+                for pos, weights in self.positional_blend_weights.items()
+            }
+        return res
 
     def save_calibration(self, path: Path | None = None) -> Path:
         """Persist calibration quantiles and blend weights to disk. Does NOT default to production path."""
@@ -205,7 +229,10 @@ class ScoringEnsemble:
 
         # Probability of playing (at least 1 minute)
         # Bounded coherently: p_play >= p_min60
-        p_play = np.clip(np.maximum(p_min60, np.minimum(1.0, exp_mins / 60.0)), 0.0, 1.0)
+        if "p_play" in components:
+            p_play = np.clip(components["p_play"] * cop_scale, 0.0, 1.0)
+        else:
+            p_play = np.clip(np.maximum(p_min60, np.minimum(1.0, exp_mins / 60.0)), 0.0, 1.0)
         p_sub = np.clip(p_play - p_min60, 0.0, 1.0)
 
         # 1. Appearance points
@@ -324,22 +351,42 @@ class ScoringEnsemble:
         xP = raw_xP
 
         exp_blend_adj = np.zeros(n)
-        # Apply learned validation blend with heuristic baselines if configured and baseline features present
-        if self.blend_weights is not None and any(w > 1e-4 for w in self.blend_weights[1:]):
-            if (
-                "roll_points_5" in X.columns
-                and "roll_starts_ratio_5" in X.columns
-                and "opponent_difficulty" in X.columns
-            ):
-                from fpl_oracle.ml.eval import model_evaluator
+        # Apply learned validation blend with heuristic baselines (WI-3.10)
+        has_baseline_features = (
+            "roll_points_5" in X.columns
+            and "roll_starts_ratio_5" in X.columns
+            and "opponent_difficulty" in X.columns
+        )
+        if has_baseline_features and (
+            (self.positional_blend_weights is not None)
+            or (self.blend_weights is not None and any(w > 1e-4 for w in self.blend_weights[1:]))
+        ):
+            from fpl_oracle.ml.eval import model_evaluator
 
-                base_recent = model_evaluator.compute_baseline_projections(X)
-                base_season = model_evaluator.compute_season_avg_baseline(X)
+            base_recent = np.asarray(model_evaluator.compute_baseline_projections(X))
+            base_season = np.asarray(model_evaluator.compute_season_avg_baseline(X))
+
+            if self.positional_blend_weights is not None:
+                blended_xP = np.copy(raw_xP)
+                for pos, (w_ml, w_rec, w_sea) in self.positional_blend_weights.items():
+                    pos_mask = (
+                        (pos_gkp if pos == "GKP" else (pos_def if pos == "DEF" else (pos_mid if pos == "MID" else pos_fwd)))
+                        > 0.5
+                    )
+                    if np.any(pos_mask):
+                        blended_xP[pos_mask] = (
+                            w_ml * raw_xP[pos_mask]
+                            + w_rec * base_recent[pos_mask]
+                            + w_sea * base_season[pos_mask]
+                        )
+            else:
+                assert self.blend_weights is not None
                 w_ml, w_rec, w_sea = self.blend_weights
                 blended_xP = w_ml * raw_xP + w_rec * base_recent + w_sea * base_season
-                blended_xP = np.where(zero_mask, 0.0, blended_xP)
-                exp_blend_adj = blended_xP - raw_xP
-                xP = blended_xP
+
+            blended_xP = np.where(zero_mask, 0.0, blended_xP)
+            exp_blend_adj = blended_xP - raw_xP
+            xP = blended_xP
 
         # Calibrated Distribution (P10, P50, P90, Variance)
         # In FPL scoring, distribution is positively skewed (hauls are in the upper tail, floor is bounded by appearance)
@@ -350,7 +397,7 @@ class ScoringEnsemble:
         skew_adj = np.where(xP > 3.0, np.minimum(0.6, (exp_goal_pts + exp_assist_pts + exp_bonus_pts) * 0.25), 0.0)
         p50 = np.where(zero_mask, 0.0, np.maximum(0.0, xP - skew_adj))
 
-        # Check if bucketed quantile parameters exist
+        # Check if caller explicitly injected custom bucketed quantiles (e.g. in synthetic tests)
         if self.bucket_quantiles:
             p10_vals = np.zeros(n)
             p90_vals = np.zeros(n)
@@ -373,6 +420,17 @@ class ScoringEnsemble:
                     p90_vals[i] = max(p50[i] + 1.0, xP[i] + self.calibrated_z90 * max(0.5, sigma[i]))
             p10 = p10_vals
             p90 = p90_vals
+        # Otherwise use calibrated CQR model
+        elif self.cqr is not None and getattr(self.cqr, "is_calibrated", False):
+            pos_labels = np.where(
+                pos_gkp > 0, "GKP", np.where(pos_def > 0, "DEF", np.where(pos_mid > 0, "MID", "FWD"))
+            )
+            p10, p90, _ = self.cqr.predict_quantiles(
+                X=X,
+                pos_labels=pos_labels,
+                xp=xP,
+                p_play=p_play,
+            )
         else:
             # Fallback to standard calibrated empirical residual factors
             p10 = np.where(
@@ -471,6 +529,39 @@ class ScoringEnsemble:
             - df.get("exp_pen_miss_deduction", 0.0),
             2,
         )
+
+    def fit_positional_stacking_weights(
+        self,
+        raw_xp: np.ndarray,
+        base_recent: np.ndarray,
+        base_season: np.ndarray,
+        targets: np.ndarray,
+        positions: np.ndarray,
+    ) -> dict[str, tuple[float, float, float]]:
+        """
+        Fits non-negative least squares stacking weights per position (WI-3.10)
+        constrained to sum to 1 on out-of-fold predictions.
+        """
+        from scipy.optimize import nnls
+
+        weights: dict[str, tuple[float, float, float]] = {}
+        for pos in ("GKP", "DEF", "MID", "FWD"):
+            mask = positions == pos
+            if not np.any(mask) or len(targets[mask]) < 10:
+                weights[pos] = (0.72, 0.04, 0.24)
+                continue
+            A = np.column_stack([raw_xp[mask], base_recent[mask], base_season[mask]])
+            b = targets[mask]
+            w, _ = nnls(A, b)
+            s = float(np.sum(w))
+            if s > 0.0:
+                w_norm = w / s
+                weights[pos] = (float(round(w_norm[0], 4)), float(round(w_norm[1], 4)), float(round(w_norm[2], 4)))
+            else:
+                weights[pos] = (0.72, 0.04, 0.24)
+
+        self.positional_blend_weights = weights
+        return weights
 
 
 scoring_ensemble = ScoringEnsemble()

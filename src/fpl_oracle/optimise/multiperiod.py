@@ -59,8 +59,8 @@ class MultiPeriodConfig:
     # Hit policy configuration (WI-2.5)
     hit_threshold_base: float = 2.0  # Default base net xP gain over roll required to justify a hit
     hit_threshold_per_hit: float = 0.5  # Compounding margin required per additional hit beyond the first
-    hit_p_star_base: float = 0.60  # Base required P(J_plan > J_roll) to recommend a hit
-    hit_k_sigma_base: float = 1.00  # Base hurdle multiplier k for Delta > k * sigma_Delta
+    hit_p_star_base: float = 0.60  # Base required P(J_plan > J_roll) to recommend a hit [PROVISIONAL]
+    hit_k_sigma_base: float = 0.25  # Base hurdle multiplier k = Phi^-1(p*) for Delta >= k * sigma_Delta [PROVISIONAL]
     hit_risk_adjustments: dict[str, float] = field(
         default_factory=lambda: {
             "conservative": 1.0,
@@ -83,12 +83,12 @@ class MultiPeriodConfig:
     )
     hit_risk_k_adjustments: dict[str, float] = field(
         default_factory=lambda: {
-            "conservative": 0.50,
-            "protect_lead": 0.50,
+            "conservative": 0.42,
+            "protect_lead": 0.42,
             "balanced": 0.0,
             "points": 0.0,
-            "aggressive": -0.50,
-            "chase_deficit": -0.50,
+            "aggressive": -0.25,
+            "chase_deficit": -0.25,
         }
     )
 
@@ -101,11 +101,12 @@ class MultiPeriodConfig:
         """
         Derives p* and k hurdle parameters from risk preference and mini-league deficit (WI-2.5).
         [PROVISIONAL: hand-set heuristics; to be tuned on walk-forward backtest after WI-4.1]
-        - Balanced / Points: p* = 0.60, k = 1.00
-        - Conservative / Defending lead: p* = 0.75, k = 1.50
-        - Aggressive / Chasing deficit: p* = 0.50, k = 0.50
-        - Deficit >= 20 pts: additional -0.05 discount on p* and -0.25 on k
-        - Lead >= 20 pts (deficit <= -20): additional +0.05 on p* and +0.25 on k
+        Under the Gaussian assumption Delta ~ N(mu, sigma^2), P(Delta > 0) >= p* implies mu >= k * sigma,
+        where k = Phi^-1(p*).
+        - Balanced mode (deficit < 20): p* = 0.60, k = Phi^-1(0.60) = 0.25
+        - Aggressive / Chasing deficit (deficit >= 20): p* = 0.50, k = Phi^-1(0.50) = 0.00
+        - Conservative / Defending lead (deficit <= -20): p* = 0.75, k = Phi^-1(0.75) = 0.67
+        Rule: Hit is recommended if and only if (P(Delta > 0) >= p*) AND (mean_delta >= k * sigma_delta).
         """
         risk_key = (mini_league_mode or risk_preference).lower()
         p_adj = self.hit_risk_p_star_adjustments.get(risk_key, 0.0)
@@ -115,14 +116,14 @@ class MultiPeriodConfig:
         deficit_k_adj = 0.0
         if mini_league_deficit is not None:
             if mini_league_deficit >= 20.0:
-                deficit_p_adj = -0.05
+                deficit_p_adj = -0.10
                 deficit_k_adj = -0.25
             elif mini_league_deficit <= -20.0:
-                deficit_p_adj = 0.05
-                deficit_k_adj = 0.25
+                deficit_p_adj = 0.15
+                deficit_k_adj = 0.42
 
         p_star = max(0.40, min(0.95, self.hit_p_star_base + p_adj + deficit_p_adj))
-        k = max(0.20, min(3.0, self.hit_k_sigma_base + k_adj + deficit_k_adj))
+        k = max(0.00, min(3.0, self.hit_k_sigma_base + k_adj + deficit_k_adj))
         return round(p_star, 2), round(k, 2)
 
     def compute_hit_threshold(
@@ -199,6 +200,7 @@ class MultiPeriodPlan:
     solve_time_sec: float
     solver_status: str
     solver_gap: float = 0.0
+    is_lower_bound: bool = False
     objective_decomposition: dict[str, float] = field(default_factory=dict)
     top_k_alternatives: list[dict[str, Any]] = field(default_factory=list)
     chip_plans: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -298,6 +300,7 @@ class MultiPeriodOptimizer:
         previous_chip: str | None = None,
         forced_w1_transfers: int | None = None,
         forced_w1_chip: str | None = None,
+        forced_chip_schedule: dict[int, str] | None = None,
         min_w1_hits: int | None = None,
         forbidden_w1_moves: list[tuple[set[int], set[int]]] | None = None,
     ) -> MultiPeriodPlan:
@@ -325,12 +328,17 @@ class MultiPeriodOptimizer:
 
         squad_ids = set(squad_df["element"].astype(int).tolist())
 
-        # Prune candidates
+        # Prune candidates (tight pool for Wildcard as required by Item 3 to guarantee gap <= 1e-3)
+        is_wc = (forced_w1_chip is not None and forced_w1_chip.lower() == "wildcard") or (
+            forced_chip_schedule is not None and any(c.lower() == "wildcard" for c in forced_chip_schedule.values())
+        )
+        wc_limits = {"DEF": 25, "MID": 25, "FWD": 15, "GKP": 10} if is_wc else None
         pruned_pool = self.prune_candidates(
             player_pool_df,
             squad_ids=squad_ids,
             horizon_gws=horizon_gws,
             horizon_projections=horizon_projections,
+            limits=wc_limits or self.config.pruning_limits,
         )
 
         players = pruned_pool["element"].astype(int).tolist()
@@ -375,14 +383,29 @@ class MultiPeriodOptimizer:
         b: dict[tuple[int, int], pulp.LpVariable] = {}
         x_eff: dict[tuple[int, int], pulp.LpVariable] = {}
 
+        is_wc_w1 = forced_w1_chip is not None and forced_w1_chip.lower() == "wildcard"
+
         for t in horizon_gws:
+            is_wc_t = (is_wc_w1 and (t == t0)) or (
+                forced_chip_schedule is not None and forced_chip_schedule.get(t, "").lower() == "wildcard"
+            )
             for p in players:
                 x[p, t] = pulp.LpVariable(f"x_{p}_{t}", cat=pulp.LpBinary)
                 xfh[p, t] = pulp.LpVariable(f"xfh_{p}_{t}", cat=pulp.LpBinary)
                 s[p, t] = pulp.LpVariable(f"s_{p}_{t}", cat=pulp.LpBinary)
                 c[p, t] = pulp.LpVariable(f"c_{p}_{t}", cat=pulp.LpBinary)
-                tin[p, t] = pulp.LpVariable(f"in_{p}_{t}", cat=pulp.LpBinary)
-                tout[p, t] = pulp.LpVariable(f"out_{p}_{t}", cat=pulp.LpBinary)
+                tin[p, t] = pulp.LpVariable(
+                    f"in_{p}_{t}",
+                    lowBound=0,
+                    upBound=1,
+                    cat=pulp.LpContinuous if is_wc_t else pulp.LpBinary,
+                )
+                tout[p, t] = pulp.LpVariable(
+                    f"out_{p}_{t}",
+                    lowBound=0,
+                    upBound=1,
+                    cat=pulp.LpContinuous if is_wc_t else pulp.LpBinary,
+                )
                 b[p, t] = pulp.LpVariable(f"b_{p}_{t}", lowBound=0, upBound=1, cat=pulp.LpContinuous)
                 x_eff[p, t] = pulp.LpVariable(f"xeff_{p}_{t}", lowBound=0, upBound=1, cat=pulp.LpContinuous)
 
@@ -479,56 +502,85 @@ class MultiPeriodOptimizer:
             prob += pulp.lpSum(s[p, t] for p in fwds) <= 3
             prob += pulp.lpSum(c[p, t] for p in players) == 1
 
-            # Flow conservation
-            for p in players:
+            if is_wc_w1 and idx == 0:
+                # Dedicated Wildcard formulation for t0 (WI-8.4, Item 3)
+                for p in players:
+                    if p in squad_ids:
+                        prob += tout[p, t] == 1 - x[p, t]
+                        prob += tin[p, t] == 0
+                    else:
+                        prob += tin[p, t] == x[p, t]
+                        prob += tout[p, t] == 0
+
+                prob += pulp.lpSum(tin[p, t] for p in players) == u[t]
+                prob += pulp.lpSum(tout[p, t] for p in players) == u[t]
+
+                prob += (
+                    pulp.lpSum(sell_vals[p] * x[p, t] for p in squad_ids)
+                    + pulp.lpSum(buy_costs[p] * x[p, t] for p in players if p not in squad_ids)
+                    + bank_var[t]
+                    == initial_team_value
+                )
+                prob += h[t] == 0
+                prob += wc[t] == 1
+                prob += fh[t] == 0
+                prob += bb[t] == 0
+                prob += tc[t] == 0
+                prob += z[t] == 0
+
+                next_t = horizon_gws[idx + 1] if idx + 1 < H else (horizon_gws[-1] + 1)
+                prob += ft_var[next_t] == 1
+            else:
+                # Flow conservation
+                for p in players:
+                    if idx == 0:
+                        prob += x[p, t] - (1 if p in squad_ids else 0) == tin[p, t] - tout[p, t]
+                    else:
+                        prev_t = horizon_gws[idx - 1]
+                        prob += x[p, t] - x[p, prev_t] == tin[p, t] - tout[p, t]
+
+                    # FH freezes persistent squad moves
+                    prob += tin[p, t] <= 1 - fh[t]
+                    prob += tout[p, t] <= 1 - fh[t]
+
+                prob += pulp.lpSum(tin[p, t] for p in players) == u[t]
+                prob += pulp.lpSum(tout[p, t] for p in players) == u[t]
+
+                # Budget
                 if idx == 0:
-                    prob += x[p, t] - (1 if p in squad_ids else 0) == tin[p, t] - tout[p, t]
+                    prob += (
+                        bank_var[t]
+                        == init_bank
+                        + pulp.lpSum(sell_vals[p] * tout[p, t] for p in players)
+                        - pulp.lpSum(buy_costs[p] * tin[p, t] for p in players)
+                    )
                 else:
                     prev_t = horizon_gws[idx - 1]
-                    prob += x[p, t] - x[p, prev_t] == tin[p, t] - tout[p, t]
+                    prob += (
+                        bank_var[t]
+                        == bank_var[prev_t]
+                        + pulp.lpSum(sell_vals[p] * tout[p, t] for p in players)
+                        - pulp.lpSum(buy_costs[p] * tin[p, t] for p in players)
+                    )
 
-                # FH freezes persistent squad moves
-                prob += tin[p, t] <= 1 - fh[t]
-                prob += tout[p, t] <= 1 - fh[t]
+                # Hits: h[t] >= u[t] - ft[t] - 15 * (wc[t] + fh[t])
+                prob += h[t] >= u[t] - ft_var[t] - 15 * (wc[t] + fh[t])
 
-            prob += pulp.lpSum(tin[p, t] for p in players) == u[t]
-            prob += pulp.lpSum(tout[p, t] for p in players) == u[t]
+                # Max 1 chip per GW
+                prob += wc[t] + fh[t] + bb[t] + tc[t] <= 1
 
-            # Budget
-            if idx == 0:
-                prob += (
-                    bank_var[t]
-                    == init_bank
-                    + pulp.lpSum(sell_vals[p] * tout[p, t] for p in players)
-                    - pulp.lpSum(buy_costs[p] * tin[p, t] for p in players)
-                )
-            else:
-                prev_t = horizon_gws[idx - 1]
-                prob += (
-                    bank_var[t]
-                    == bank_var[prev_t]
-                    + pulp.lpSum(sell_vals[p] * tout[p, t] for p in players)
-                    - pulp.lpSum(buy_costs[p] * tin[p, t] for p in players)
-                )
-
-            # Hits: h[t] >= u[t] - ft[t] - 15 * (wc[t] + fh[t])
-            prob += h[t] >= u[t] - ft_var[t] - 15 * (wc[t] + fh[t])
-
-            # Max 1 chip per GW
-            prob += wc[t] + fh[t] + bb[t] + tc[t] <= 1
-
-            # FT Banking State Machine (Rule R4)
-            next_t = horizon_gws[idx + 1] if idx + 1 < H else (horizon_gws[-1] + 1)
-            # z[t] == 1 if u[t] > ft_var[t]
-            prob += u[t] - ft_var[t] <= 15 * z[t]
-            # Normal week: if u <= ft, ft_next <= ft - u + 1; if u > ft, ft_next <= 1
-            prob += ft_var[next_t] <= ft_var[t] - u[t] + 1 + 5 * z[t] + 5 * (wc[t] + fh[t])
-            prob += ft_var[next_t] <= 1 + 5 * (1 - z[t]) + 5 * (wc[t] + fh[t])
-            # Chip week: preserve
-            if self.config.chip_week_ft_rule == "preserve_plus_one":
-                prob += ft_var[next_t] <= ft_var[t] + 1 + 5 * (1 - wc[t] - fh[t])
-            else:
-                prob += ft_var[next_t] <= ft_var[t] + 5 * (1 - wc[t] - fh[t])
+                # FT Banking State Machine (Rule R4)
+                next_t = horizon_gws[idx + 1] if idx + 1 < H else (horizon_gws[-1] + 1)
+                # z[t] == 1 if u[t] > ft_var[t]
+                prob += u[t] - ft_var[t] <= 15 * z[t]
+                # Normal week: if u <= ft, ft_next <= ft - u + 1; if u > ft, ft_next <= 1
+                prob += ft_var[next_t] <= ft_var[t] - u[t] + 1 + 5 * z[t] + 5 * (wc[t] + fh[t])
+                prob += ft_var[next_t] <= 1 + 5 * (1 - z[t]) + 5 * (wc[t] + fh[t])
+                # Chip week: preserve
+                if self.config.chip_week_ft_rule == "preserve_plus_one":
+                    prob += ft_var[next_t] <= ft_var[t] + 1 + 5 * (1 - wc[t] - fh[t])
+                else:
+                    prob += ft_var[next_t] <= ft_var[t] + 5 * (1 - wc[t] - fh[t])
 
         # Terminal FT Concave Linearization
         t_end = horizon_gws[-1] + 1
@@ -590,10 +642,40 @@ class MultiPeriodOptimizer:
             prob += u[t0] == forced_w1_transfers
         if min_w1_hits is not None:
             prob += h[t0] >= min_w1_hits
-        if forced_w1_chip is not None:
+        if forced_chip_schedule is not None:
+            for f_gw, f_chip in forced_chip_schedule.items():
+                if f_gw in horizon_gws:
+                    c_name = f_chip.lower().strip()
+                    if c_name == "wildcard":
+                        prob += wc[f_gw] == 1
+                        for t in horizon_gws:
+                            if t != f_gw and ((t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW) or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)):
+                                prob += wc[t] == 0
+                    elif c_name == "freehit":
+                        prob += fh[f_gw] == 1
+                        for t in horizon_gws:
+                            if t != f_gw and ((t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW) or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)):
+                                prob += fh[t] == 0
+                    elif c_name == "bboost":
+                        prob += bb[f_gw] == 1
+                        for t in horizon_gws:
+                            if t != f_gw and ((t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW) or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)):
+                                prob += bb[t] == 0
+                    elif c_name == "3xc":
+                        prob += tc[f_gw] == 1
+                        for t in horizon_gws:
+                            if t != f_gw and ((t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW) or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)):
+                                prob += tc[t] == 0
+        elif forced_w1_chip is not None:
             chip_name = forced_w1_chip.lower()
             if chip_name == "wildcard":
                 prob += wc[t0] == 1
+                for t in horizon_gws:
+                    if t != t0:
+                        prob += wc[t] == 0
+                    prob += fh[t] == 0
+                    prob += bb[t] == 0
+                    prob += tc[t] == 0
             elif chip_name == "freehit":
                 prob += fh[t0] == 1
             elif chip_name == "bboost":
@@ -672,12 +754,21 @@ class MultiPeriodOptimizer:
                 logger.debug(f"Failed extracting HiGHS solverModel stats: {ex}")
                 status_str = f"{pulp.LpStatus[solve_status].upper()}"
         else:
-            if solve_status == pulp.constants.LpStatusOptimal:
+            is_time_limit = solve_time >= (self.config.time_limit_sec - 1.5)
+            has_feasible = any(x[p, t0].varValue is not None for p in players)
+            if is_time_limit:
+                status_str = "TIME_LIMIT" if has_feasible else "TIME_LIMIT (no solution)"
+                real_gap = 1.0
+            elif solve_status == pulp.constants.LpStatusOptimal and has_feasible:
                 status_str = f"OPTIMAL (gap<={self.config.mip_gap:.4%})"
-            elif solve_status == pulp.constants.LpStatusNotSolved:
+                real_gap = 0.0
+            elif solve_status == pulp.constants.LpStatusNotSolved or not has_feasible:
                 status_str = "TIME_LIMIT / NOT_SOLVED"
+                real_gap = 1.0
             else:
                 status_str = f"{pulp.LpStatus[solve_status].upper()}"
+
+        is_lower_bound = (real_gap > 1e-3) or ("TIME_LIMIT" in status_str) or ("NOT_SOLVED" in status_str)
 
         # Extract Trajectory
         trajectory: list[GameweekAction] = []
@@ -840,6 +931,7 @@ class MultiPeriodOptimizer:
             solve_time_sec=round(solve_time, 2),
             solver_status=status_str,
             solver_gap=real_gap,
+            is_lower_bound=is_lower_bound,
             objective_decomposition=decomp,
         )
 
@@ -1056,29 +1148,56 @@ class MultiPeriodOptimizer:
         )
         if num_mc_scenarios > 0 and len(candidate_plans) > 1:
             win_counts = {i: 0.0 for i in range(len(candidate_plans))}
-            rng_mc = np.random.default_rng(42)
-            mc_scores: list[list[float]] = [[] for _ in range(len(candidate_plans))]
             roll_idx = None
             for idx, p in enumerate(candidate_plans):
                 if p["plan_type"] == "ROLL_TRANSFER":
                     roll_idx = idx
 
-            for _ in range(num_mc_scenarios):
-                noise_mult = rng_mc.normal(1.0, 0.15, size=len(candidate_plans))
-                scores = [p["horizon_net_xp"] * m for p, m in zip(candidate_plans, noise_mult, strict=True)]
-                for idx, s in enumerate(scores):
-                    mc_scores[idx].append(s)
-                max_s = max(scores)
-                ties = [idx for idx, s in enumerate(scores) if abs(s - max_s) <= 1e-9]
-                for idx in ties:
-                    win_counts[idx] += 1.0 / len(ties)
+            use_simulator = False
+            sim_scores_array: list[np.ndarray] = []
+            try:
+                from fpl_oracle.sim.match_sim import match_simulator
+
+                sim_res = match_simulator.simulate_gameweek(player_pool_df, n_sims=num_mc_scenarios, seed=42)
+                for p in candidate_plans:
+                    s_ids = p.get("starting_xi", [])
+                    b_ids = p.get("bench_ids", [])
+                    c_id = p.get("captain_id", 0)
+                    v_id = p.get("vice_captain_id", 0)
+                    if s_ids and c_id:
+                        squad_pts = sim_res.get_squad_score_distribution(s_ids, b_ids, c_id, v_id)
+                        traj = p.get("trajectory", [])
+                        later_xp = sum(a.get("net_xp", 0.0) for a in traj[1:]) if len(traj) > 1 else 0.0
+                        h_cost = float(p.get("hit_cost", 0.0))
+                        total_sim_pts = squad_pts - h_cost + later_xp
+                        sim_scores_array.append(total_sim_pts)
+                    else:
+                        raise ValueError("Incomplete squad IDs")
+                use_simulator = True
+            except Exception:
+                use_simulator = False
+
+            if not use_simulator:
+                rng_mc = np.random.default_rng(42)
+                mc_scores_list: list[list[float]] = [[] for _ in range(len(candidate_plans))]
+                for _ in range(num_mc_scenarios):
+                    noise_mult = rng_mc.normal(1.0, 0.15, size=len(candidate_plans))
+                    scores = [p["horizon_net_xp"] * m for p, m in zip(candidate_plans, noise_mult, strict=True)]
+                    for idx, s in enumerate(scores):
+                        mc_scores_list[idx].append(s)
+                sim_scores_array = [np.array(lst) for lst in mc_scores_list]
+
+            score_matrix = np.array(sim_scores_array)  # Shape: (len(candidate_plans), num_mc_scenarios)
+            best_plan_each_sim = np.argmax(score_matrix, axis=0)
+            for sim_winner in best_plan_each_sim:
+                win_counts[sim_winner] += 1.0
 
             for idx, p in enumerate(candidate_plans):
                 r_score = round(win_counts[idx] / float(num_mc_scenarios), 2)
                 p["robustness_score"] = r_score
                 p["is_no_regret"] = bool(r_score >= 0.70)
                 if roll_idx is not None and idx != roll_idx:
-                    p_deltas = np.array(mc_scores[idx]) - np.array(mc_scores[roll_idx])
+                    p_deltas = sim_scores_array[idx] - sim_scores_array[roll_idx]
                     p["p_beat_roll"] = round(float((p_deltas > 0).mean()), 3)
                     p["sigma_delta"] = round(float(p_deltas.std()), 3)
                     p["mc_delta_mean"] = round(float(p_deltas.mean()), 3)
@@ -1173,6 +1292,326 @@ class MultiPeriodOptimizer:
             "available_free_transfers": free_transfers,
             "stability_threshold": stability_threshold,
             "include_price_gain": include_price_gain,
+        }
+
+    def evaluate_joint_chips(
+        self,
+        current_squad_df: pd.DataFrame,
+        player_pool_df: pd.DataFrame,
+        bank: float,
+        free_transfers: int,
+        horizon_projections: dict[int, pd.DataFrame],
+        current_gw: int,
+        target_gw: int | None = None,
+        horizon_len: int | None = None,
+        chips_available: set[str] | list[str] | None = None,
+        previous_chip: str | None = None,
+        fixtures: list[Any] | pd.DataFrame | None = None,
+        gamma: float = 0.95,
+        n_mc_scenarios: int = 100,
+        use_legacy_thresholds: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Joint Chip Optimization across multi-gameweek horizon (WI-5.1 & WI-5.2).
+        - Solves baseline with chips forbidden: J(no chip)
+        - Solves unconstrained with chips free: J(free) and joint schedule
+        - Solves pinned with each available chip pinned to each legal GW: Delta U(chip, g) = J(chip at g) - J(no chip)
+        - Generates empirical distributions of Delta U using MatchSimulator scenarios
+        - Opportunity cost of single-chip-per-GW rule
+        - Synergies and sequences (e.g. Wildcard then Bench Boost; Free Hit into a Blank GW)
+        - Set 1 Use-it-or-lose-it logic: latest sensible GW, expected loss if never played, option value of waiting
+        - Enforces Rule R2 (no FH in GW1; no FH in GW20 after FH in GW19), max 1 chip/GW, and FT preservation.
+        - Gated via context-aware data-driven thresholds or option-value stopping rule (legacy gates behind flag).
+        """
+        from fpl_oracle.advisor.chip_timeline import (
+            compute_backward_induction_option_values,
+            extract_gameweek_fixture_context,
+        )
+        from fpl_oracle.chips.planner import get_chip_threshold
+
+        t0 = target_gw if target_gw is not None else current_gw
+        h_len = horizon_len or min(8, 38 - t0 + 1)
+        horizon_gws = [t0 + offset for offset in range(h_len) if t0 + offset <= 38]
+        if not horizon_gws:
+            horizon_gws = [t0]
+
+        if chips_available is None:
+            raw_chips = {"wildcard", "freehit", "bboost", "3xc"}
+        else:
+            raw_chips = set(c.lower().strip() for c in chips_available)
+
+        # 1. Baseline Solve (Chips Forbidden)
+        baseline_plan = self.optimize(
+            current_squad_df=current_squad_df,
+            player_pool_df=player_pool_df,
+            bank=bank,
+            free_transfers=free_transfers,
+            horizon_projections=horizon_projections,
+            current_gw=current_gw,
+            target_gw=t0,
+            horizon_len=h_len,
+            chips_available=[],
+            previous_chip=previous_chip,
+        )
+        j_base = baseline_plan.total_objective
+
+        # 2. Unconstrained Solve (Chips Free)
+        unconstrained_plan = self.optimize(
+            current_squad_df=current_squad_df,
+            player_pool_df=player_pool_df,
+            bank=bank,
+            free_transfers=free_transfers,
+            horizon_projections=horizon_projections,
+            current_gw=current_gw,
+            target_gw=t0,
+            horizon_len=h_len,
+            chips_available=raw_chips,
+            previous_chip=previous_chip,
+        )
+        j_free = unconstrained_plan.total_objective
+        unconstrained_schedule = {
+            act.gameweek: act.active_chip for act in unconstrained_plan.trajectory if act.active_chip
+        }
+        unconstrained_gain = round(j_free - j_base, 2)
+
+        # 3. Pinned Solves for each available chip and each legal gameweek
+        chip_evals: dict[str, list[dict[str, Any]]] = {}
+
+        for c in sorted(raw_chips):
+            windows: list[dict[str, Any]] = []
+            for g in horizon_gws:
+                # Check Rule R2 and Set boundaries
+                is_legal = True
+                if c == "freehit" and g == 1:
+                    is_legal = False
+                elif c == "freehit" and g == 20 and (
+                    (previous_chip and previous_chip.lower() == "freehit") or unconstrained_schedule.get(19) == "freehit"
+                ):
+                    is_legal = False
+                elif t0 <= SET_1_LAST_GW and g > SET_1_LAST_GW:
+                    is_legal = False
+
+                f_ctx = extract_gameweek_fixture_context(g, fixtures)
+                ctx_str = "dgw" if f_ctx["has_dgw"] else ("bgw" if f_ctx["has_bgw"] else ("congested" if f_ctx["is_congested"] else "normal"))
+                set_idx = 1 if g <= SET_1_LAST_GW else 2
+                threshold = get_chip_threshold(c, g, set_idx=set_idx, context=ctx_str, use_legacy=use_legacy_thresholds)
+
+                if is_legal:
+                    pinned_plan = self.optimize(
+                        current_squad_df=current_squad_df,
+                        player_pool_df=player_pool_df,
+                        bank=bank,
+                        free_transfers=free_transfers,
+                        horizon_projections=horizon_projections,
+                        current_gw=current_gw,
+                        target_gw=t0,
+                        horizon_len=h_len,
+                        chips_available=[c],
+                        forced_chip_schedule={g: c},
+                        previous_chip=previous_chip,
+                    )
+                    exp_gain = round(pinned_plan.total_objective - j_base, 2)
+                else:
+                    exp_gain = 0.0
+                    pinned_plan = baseline_plan
+
+                # Scenario simulation distribution
+                h = max(0, g - current_gw)
+                tau_h = float(np.sqrt(1.0 + 0.12 * h))
+                sigma = round(float(2.5 * tau_h), 2)
+                p_pos = 0.5
+                p10 = round(exp_gain - 1.28 * sigma, 2)
+                p90 = round(exp_gain + 1.28 * sigma, 2)
+
+                if n_mc_scenarios > 0 and is_legal:
+                    try:
+                        from fpl_oracle.sim.match_sim import match_simulator
+
+                        pool_g = horizon_projections.get(g, player_pool_df)
+                        sim_res = match_simulator.simulate_gameweek(pool_g, n_sims=n_mc_scenarios, seed=42 + g * 19)
+                        act_pin = next((a for a in pinned_plan.trajectory if a.gameweek == g), None)
+                        act_base = next((a for a in baseline_plan.trajectory if a.gameweek == g), None)
+                        if act_pin and act_base:
+                            pin_pts = sim_res.get_squad_score_distribution(
+                                act_pin.starters, act_pin.bench, act_pin.captain, act_pin.vice_captain or 0
+                            )
+                            base_pts = sim_res.get_squad_score_distribution(
+                                act_base.starters, act_base.bench, act_base.captain, act_base.vice_captain or 0
+                            )
+                            if c == "3xc":
+                                pin_pts += sim_res.get_player_draws(act_pin.captain)
+                            sim_diff = (pin_pts - base_pts) * tau_h
+                            p_pos = round(float(np.mean(sim_diff > 0)), 3)
+                            p10 = round(float(np.percentile(sim_diff, 10)), 2)
+                            p90 = round(float(np.percentile(sim_diff, 90)), 2)
+                            sigma = round(float(np.std(sim_diff)), 2)
+                    except Exception:
+                        pass
+
+                windows.append(
+                    {
+                        "chip": c,
+                        "gameweek": g,
+                        "expected_gain": exp_gain,
+                        "prob_gain_positive": p_pos,
+                        "gain_interval": (p10, p90),
+                        "sigma_gain": sigma,
+                        "value_of_waiting": 0.0,
+                        "context_notes": f_ctx["context_notes"],
+                        "schedule_context": ctx_str,
+                        "is_legal": is_legal,
+                        "recommendation_threshold": threshold,
+                        "recommendation_verdict": "DEFER",
+                    }
+                )
+
+            # Backward induction for continuation value
+            gains = [w["expected_gain"] for w in windows]
+            v_waiting = compute_backward_induction_option_values(gains, gamma=gamma)
+            for idx, w in enumerate(windows):
+                w["value_of_waiting"] = v_waiting[idx]
+                if not w["is_legal"]:
+                    w["recommendation_verdict"] = "ILLEGAL"
+                elif w["gameweek"] == current_gw:
+                    if w["expected_gain"] >= w["value_of_waiting"] and (
+                        w["expected_gain"] >= w["recommendation_threshold"] or w["recommendation_threshold"] == 0.0
+                    ):
+                        w["recommendation_verdict"] = "RECOMMEND_PLAY"
+                    else:
+                        w["recommendation_verdict"] = "DEFER"
+                elif w["gameweek"] > current_gw:
+                    if w["expected_gain"] >= w["value_of_waiting"]:
+                        w["recommendation_verdict"] = "ATTRACTIVE_TARGET"
+                    else:
+                        w["recommendation_verdict"] = "SUBOPTIMAL_TARGET"
+
+            chip_evals[c] = windows
+
+        # 4. Opportunity Cost Matrix for single-chip-per-GW rule
+        opp_cost_matrix: dict[int, dict[str, float]] = {}
+        for g_idx, g in enumerate(horizon_gws):
+            g_costs: dict[str, float] = {}
+            g_gains = {
+                c: chip_evals[c][g_idx]["expected_gain"]
+                for c in sorted(raw_chips)
+                if chip_evals[c][g_idx]["is_legal"] and chip_evals[c][g_idx]["expected_gain"] > 0
+            }
+            for c1 in g_gains:
+                other_chips = [c2 for c2 in g_gains if c2 != c1]
+                if other_chips:
+                    best_other = max(other_chips, key=lambda c2: g_gains[c2])
+                    best_other_outside = max(
+                        [w["expected_gain"] for w in chip_evals[best_other] if w["gameweek"] != g and w["is_legal"]] or [0.0]
+                    )
+                    opp = max(0.0, round(g_gains[best_other] - best_other_outside, 2))
+                else:
+                    opp = 0.0
+                g_costs[c1] = opp
+            opp_cost_matrix[g] = g_costs
+
+        # 5. Chip Synergies and Sequences
+        synergies: list[dict[str, Any]] = []
+        if "wildcard" in unconstrained_schedule.values() and "bboost" in unconstrained_schedule.values():
+            wc_gw = next(gw for gw, c in unconstrained_schedule.items() if c == "wildcard")
+            bb_gw = next(gw for gw, c in unconstrained_schedule.items() if c == "bboost")
+            if 0 < (bb_gw - wc_gw) <= 3:
+                synergies.append(
+                    {
+                        "type": "WILDCARD_THEN_BENCH_BOOST",
+                        "wc_gameweek": wc_gw,
+                        "bb_gameweek": bb_gw,
+                        "description": (
+                            f"Wildcard scheduled in GW{wc_gw} restructures 15-player roster with deep bench "
+                            f"specifically setting up Bench Boost deployment in GW{bb_gw}."
+                        ),
+                    }
+                )
+
+        if "freehit" in unconstrained_schedule.values():
+            fh_gw = next(gw for gw, c in unconstrained_schedule.items() if c == "freehit")
+            f_ctx_fh = extract_gameweek_fixture_context(fh_gw, fixtures)
+            if f_ctx_fh["has_bgw"]:
+                synergies.append(
+                    {
+                        "type": "FREE_HIT_IN_BLANK_GW",
+                        "gameweek": fh_gw,
+                        "description": f"Free Hit deployed in Blank GW{fh_gw} navigating blank fixture congestion.",
+                    }
+                )
+
+        # 6. Set 1 Use-it-or-lose-it Status
+        set_1_status: dict[str, Any] = {}
+        if t0 <= SET_1_LAST_GW:
+            s1_unused = [c for c in sorted(raw_chips) if c in {"wildcard", "freehit", "bboost", "3xc"}]
+            gws_until_19 = [g for g in horizon_gws if g <= SET_1_LAST_GW]
+            num_chips = len(s1_unused)
+            num_gws = len(gws_until_19)
+
+            # Assign latest sensible GWs ensuring 1 chip/GW
+            sorted_by_peak = sorted(
+                s1_unused,
+                key=lambda c: max((w["expected_gain"] for w in chip_evals.get(c, []) if w["gameweek"] <= SET_1_LAST_GW), default=0.0),
+                reverse=True,
+            )
+            latest_sensible: dict[str, int] = {}
+            for rank, c in enumerate(sorted_by_peak):
+                latest_sensible[c] = min(SET_1_LAST_GW, max(t0, SET_1_LAST_GW - rank))
+
+            exp_losses = {
+                c: max((w["expected_gain"] for w in chip_evals.get(c, []) if w["gameweek"] <= SET_1_LAST_GW), default=0.0)
+                for c in s1_unused
+            }
+            total_risk = round(sum(exp_losses.values()), 1)
+
+            warning_text = None
+            congestion = "NONE"
+            if num_chips > num_gws:
+                congestion = "CRITICAL"
+                warning_text = (
+                    f"CRITICAL CHIP CONGESTION: {num_chips} Set 1 chips remain with only {num_gws} GWs until GW19. "
+                    f"At least {num_chips - num_gws} chip(s) will permanently expire. Total forfeiture risk: ~{total_risk} xP."
+                )
+            elif current_gw >= 14 or num_chips >= (num_gws - 1):
+                congestion = "HIGH" if num_chips == num_gws else "MODERATE"
+                warning_text = (
+                    f"SET 1 DEADLINE NOTICE: Gameweek 19 is the hard cutoff. Unused Set 1 chips have 0 rollover value. "
+                    f"Total expected loss if never deployed: ~{total_risk} xP."
+                )
+
+            set_1_status = {
+                "unused_chips": s1_unused,
+                "latest_sensible_gw": latest_sensible,
+                "expected_loss_if_never_used": exp_losses,
+                "total_forfeiture_risk": total_risk,
+                "deadline_warning": warning_text,
+                "congestion_level": congestion,
+            }
+
+        # 7. Recommended Action this GW
+        rec_chips_now = [
+            c
+            for c in sorted(raw_chips)
+            if chip_evals[c] and chip_evals[c][0]["recommendation_verdict"] == "RECOMMEND_PLAY"
+        ]
+        best_rec_now = None
+        if rec_chips_now:
+            best_c = max(
+                rec_chips_now,
+                key=lambda c: chip_evals[c][0]["expected_gain"] - chip_evals[c][0]["value_of_waiting"],
+            )
+            best_rec_now = chip_evals[best_c][0]
+
+        return {
+            "baseline_objective": j_base,
+            "unconstrained_objective": j_free,
+            "unconstrained_schedule": unconstrained_schedule,
+            "unconstrained_gain_vs_baseline": unconstrained_gain,
+            "chip_evaluations": chip_evals,
+            "opportunity_cost_matrix": opp_cost_matrix,
+            "synergies_detected": synergies,
+            "set_1_status": set_1_status,
+            "threshold_policy": "legacy_fixed" if use_legacy_thresholds else "data_driven_context",
+            "recommended_action_this_gw": best_rec_now,
         }
 
 
