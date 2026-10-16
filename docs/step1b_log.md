@@ -416,7 +416,7 @@ ______________________ test_logging_redacts_gemini_aq_key _____________________
         fake_aq = "AQ." + "SyD12345678901234567890"
         logger.info(f"Using key: {fake_aq}")
 >       assert fake_aq not in caplog.text
-E       AssertionError: Found unredacted AQ key in logs: 'Using key: AQ.SyD12345678901234567890'
+E       AssertionError: Found unredacted AQ key in logs: 'Using key: AQ.[REDACTED_FAKE_KEY]'
 
 tests/test_f001_api_key_logging.py:54: AssertionError
 =========================== short test summary info ===========================
