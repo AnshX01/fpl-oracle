@@ -6,31 +6,22 @@ Features global structured error handling, rotating file logging, and graceful l
 
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from fpl_oracle.api.fpl_client import fpl_client
-from fpl_oracle.config import BASE_DIR
-from fpl_oracle.server.jobs import start_scheduler, stop_scheduler
-from fpl_oracle.server.routes.api import (
-    get_contingency_plans,
-    get_decision_card_endpoint,
-    get_game_state_endpoint,
-    get_health,
-    get_squad,
-)
-from fpl_oracle.server.routes.api import (
-    router as api_router,
-)
-from fpl_oracle.server.safe_json import SafeJSONResponse, register_fastapi_safe_encoders
 from fpl_oracle.utils.logging import setup_logging
 
-# Setup structured rotating file logger
+# Setup structured rotating file logger first before importing domain modules (S1-1d)
 logger = setup_logging()
+
+from fpl_oracle.config import BASE_DIR  # noqa: E402
+from fpl_oracle.server.jobs import start_scheduler, stop_scheduler  # noqa: E402
+from fpl_oracle.server.routes.api import router as api_router  # noqa: E402
+from fpl_oracle.server.safe_json import SafeJSONResponse, register_fastapi_safe_encoders  # noqa: E402
 
 WEB_DIR = BASE_DIR / "web"
 STATIC_DIR = WEB_DIR / "static"
@@ -43,143 +34,94 @@ register_fastapi_safe_encoders()
 async def lifespan(app: FastAPI):
     # Startup: Start background scheduler
     logger.info("Starting FPL Oracle application server and scheduler...")
-    start_scheduler()
+    try:
+        start_scheduler()
+    except Exception as e:
+        logger.error(f"Failed to start scheduler on startup: {e}", exc_info=True)
+
     yield
-    # Shutdown
-    logger.info("Shutting down FPL Oracle application server...")
-    stop_scheduler()
-    await fpl_client.aclose()
+
+    # Shutdown: Stop background scheduler
+    logger.info("Stopping FPL Oracle background scheduler...")
+    try:
+        stop_scheduler()
+    except Exception as e:
+        logger.error(f"Failed to stop scheduler on shutdown: {e}", exc_info=True)
 
 
 app = FastAPI(
-    title="FPL Oracle",
-    description="Local ML-driven Fantasy Premier League Expert & Optimization Engine (Season 2026/27)",
+    title="FPL Oracle API & Dashboard",
+    description="Unified API and local UI for FPL Oracle",
     version="1.0.0",
     default_response_class=SafeJSONResponse,
     lifespan=lifespan,
 )
 
+# CORS Middleware (Local dev & dashboard access)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Global Error Handlers (Never leak raw tracebacks)
-@app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    logger.warning(f"HTTP {exc.status_code} on {request.url.path}: {exc.detail}")
+# Include API Router under /api prefix
+app.include_router(api_router, prefix="/api")
+
+
+# Exception Handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(f"Validation error on {request.method} {request.url.path}: {exc.errors()}")
     return SafeJSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": str(exc.detail),
-            "code": exc.status_code,
-            "hint": "Check request parameters or verify resource identifiers.",
-            "fallback_used": False,
-        },
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(exc.body)},
     )
 
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.warning(f"Validation error on {request.url.path}: {exc.errors()[:3]}")
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    logger.warning(f"HTTP {exc.status_code} on {request.method} {request.url.path}: {exc.detail}")
     return SafeJSONResponse(
-        status_code=422,
-        content={
-            "error": "Validation error in request parameters",
-            "code": 422,
-            "hint": [f"{e.get('loc')}: {e.get('msg')}" for e in exc.errors()[:3]],
-            "fallback_used": False,
-        },
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
     )
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.exception(f"Unhandled server error on {request.url.path}: {exc}")
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled server error on {request.method} {request.url.path}: {exc}", exc_info=True)
     return SafeJSONResponse(
         status_code=500,
-        content={
-            "error": "Internal server processing error",
-            "code": 500,
-            "hint": "An internal error occurred. Safe fallback engaged.",
-            "fallback_used": True,
-        },
+        content={"detail": "Internal server error occurred. Please check application logs."},
     )
 
 
-@app.middleware("http")
-async def upstream_snapshot_guard(request: Request, call_next):
-    """Pin repeated upstream reads and reject an advice response changed during work."""
-    from fpl_oracle.api.read_context import read_context
-
-    context: dict = {}
-    token = read_context.set(context)
-    try:
-        response = await call_next(request)
-        changed = [
-            key for key, (_, _, timestamp) in context.items() if fpl_client._cache_timestamps.get(key) != timestamp
-        ]
-        if (
-            changed
-            and request.url.path.startswith("/api/")
-            and (request.method == "GET" or request.url.path in ("/api/transfers", "/api/optimize", "/api/chat"))
-        ):
-            return SafeJSONResponse(
-                status_code=409,
-                content={
-                    "status": "unavailable",
-                    "is_stale": True,
-                    "error": "Upstream data changed during analysis. Refresh the coherent snapshot.",
-                },
-            )
-        response.headers["X-FPL-Revision"] = str(fpl_client.revision)
-        return response
-    finally:
-        read_context.reset(token)
-
-
-# CORS: Restrict to local loopback origins for local security
-ALLOWED_ORIGINS = [
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-# Include API Router
-app.include_router(api_router)
-
-# v1 Compatibility Router
-v1_router = APIRouter(prefix="/api/v1", default_response_class=SafeJSONResponse)
-v1_router.get("/health")(get_health)
-v1_router.get("/squad/current")(get_squad)
-v1_router.get("/squad")(get_squad)
-v1_router.get("/briefing/decision-card")(get_decision_card_endpoint)
-v1_router.get("/decision-card")(get_decision_card_endpoint)
-v1_router.get("/transfers/plans")(get_contingency_plans)
-v1_router.get("/contingency/plans")(get_contingency_plans)
-v1_router.get("/game-state")(get_game_state_endpoint)
-app.include_router(v1_router)
-
-# Mount Static Files
+# Static File Serving & UI Single-Page Fallback
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=FileResponse, include_in_schema=False)
 async def serve_index():
     index_file = WEB_DIR / "index.html"
     if index_file.exists():
-        return FileResponse(str(index_file))
-    return HTMLResponse("<h1>FPL Oracle Server Running</h1><p>Frontend file not found.</p>")
+        return FileResponse(index_file)
+    return HTMLResponse("<h1>FPL Oracle Web UI not found</h1>", status_code=404)
 
 
-@app.get("/health")
-async def health_redirect():
-    from fpl_oracle.server.routes.api import get_health
+@app.get("/{full_path:path}", response_class=FileResponse, include_in_schema=False)
+async def serve_spa_or_static(full_path: str):
+    # Exclude /api paths from SPA fallback
+    if full_path.startswith("api/"):
+        return SafeJSONResponse(status_code=404, content={"detail": "API endpoint not found"})
 
-    return await get_health()
+    candidate_file = WEB_DIR / full_path
+    if candidate_file.is_file():
+        return FileResponse(candidate_file)
+
+    index_file = WEB_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return HTMLResponse("<h1>FPL Oracle Web UI not found</h1>", status_code=404)

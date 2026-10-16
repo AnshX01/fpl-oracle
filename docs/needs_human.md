@@ -31,14 +31,22 @@ Inspection of diffs via `git grep -n "AIza" b8b880d fd00d00 c54deb1`:
 - The `logs/` directory has never been tracked in git (`git ls-files logs` returned 0 files; `git log --all -- logs/` is empty).
 - Git history rewriting (via `git filter-repo` or BFG) is **not necessary** because no real keys exist in git history.
 
+### Status of Human Actions
+> [!IMPORTANT]
+> **STATE: NOT DONE.** The following manual steps require the human account owner and CANNOT be performed autonomously by the agent:
+
 ### Required Human Actions:
-1. **Rotate Key in Google AI Studio**:
+1. **Rotate Key in Google AI Studio (NOT DONE)**:
    - Navigate to [Google AI Studio (API Keys)](https://aistudio.google.com/app/apikey).
    - Revoke/delete the existing Gemini API key that was in use prior to this remediation.
    - Generate a new API key and update your local `.env` file (`GEMINI_API_KEY=<new_key>`).
-2. **Delete Original Unredacted Local Log File**:
+2. **Delete Original Unredacted Local Log File (NOT DONE)**:
    - Once rotated, permanently delete `logs/fpl_oracle.log` from your local machine.
    - The safe redacted version `logs/fpl_oracle.redacted.log` can be retained if historical debugging is needed.
+3. **Git History Rewrite Decision (DECISION: NOT NEEDED)**:
+   - Executed full scan: `git log --all -p -G'AIza[0-9A-Za-z_-]{35}'` -> 0 commits found.
+   - Executed full scan: `git log --all -p -G'AQ\.[A-Za-z0-9_-]{20,}'` -> 0 commits found.
+   - Result: 0 live secrets in git history; no history rewrite or force push required.
 
 ---
 
