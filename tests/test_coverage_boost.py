@@ -2,16 +2,18 @@
 Real unit tests targeting new and core modules to push test coverage above the >= 75.8% gate.
 Modules tested:
 - fpl_oracle.utils.season (derive_season, _format_season with env, config, fixtures, naive dates)
-- fpl_oracle.utils.logging (RedactingFormatter formatException, dict args filtering, empty text)
+- fpl_oracle.utils.logging (RedactingFormatter formatException, dict args filtering, empty text, startup secrets)
 - fpl_oracle.ml.model_registry (single-GW bootstrap, secondary metric failure, version history)
-- fpl_oracle.data.historical (ensure_dataset_ready, last finished gameweek lookup)
+- fpl_oracle.data.historical (clean_and_standardize, vaastav fetch, live season fetch, refresh, dataset ready)
 """
 
 import logging
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from fpl_oracle.data.historical import HistoricalDataManager
@@ -238,17 +240,29 @@ def test_check_promotion_gate_error_and_degradation_branches():
     assert "mean gain vs baseline" in reason
 
 
-def test_init_startup_secrets_exception(monkeypatch):
-    """Verify _init_startup_secrets catches and ignores file read errors."""
+def test_init_startup_secrets_exception_and_redaction(monkeypatch):
+    """Verify _init_startup_secrets populates secrets and safely catches file errors."""
     import pathlib
 
     import fpl_oracle.utils.logging as log_mod
 
+    # Case 1: unreadable file raises OSError, function must catch without raising and retain set
     def mock_raise(*args, **kwargs):
         raise OSError("Simulated unreadable file")
 
     monkeypatch.setattr(pathlib.Path, "read_text", mock_raise)
     log_mod._init_startup_secrets()
+    assert isinstance(log_mod._STARTUP_SECRETS, set)
+
+    # Case 2: secret in environment is registered and redacted
+    test_secret = "SecretKeyTestingValue12345"
+    monkeypatch.setenv("FPL_API_SECRET_TOKEN", test_secret)
+    log_mod._init_startup_secrets()
+    assert test_secret in log_mod._STARTUP_SECRETS
+
+    scrubbed = log_mod.redact_text(f"Authorization: Bearer {test_secret}")
+    assert test_secret not in scrubbed
+    assert "[REDACTED]" in scrubbed
 
 
 @pytest.mark.anyio
@@ -284,3 +298,503 @@ async def test_refresh_gameweek_live_error_branches(monkeypatch):
     monkeypatch.setattr(fpl_client, "get_live_gameweek", AsyncMock(return_value=({"elements": []}, False)))
     with pytest.raises(RuntimeError, match="No element data returned"):
         await mgr.refresh_gameweek_live(7, force=False)
+
+
+# ==============================================================================
+# Comprehensive HistoricalDataManager Unit Tests
+# ==============================================================================
+
+
+def test_historical_clean_and_standardize():
+    """Verify _clean_and_standardize maps positions, adds missing columns, coerces numerics, and sorts."""
+    mgr = HistoricalDataManager()
+
+    raw_data = pd.DataFrame(
+        [
+            {
+                "season": "2025-26",
+                "round": 2,
+                "element": 102,
+                "position": 1,  # Numeric GKP
+                "was_home": 1,
+                "goals_scored": "3",  # string number
+                "threat": None,  # null
+            },
+            {
+                "season": "2024-25",
+                "round": 1,
+                "element": 50,
+                "position": "GK",  # string GK -> GKP
+                "was_home": False,
+                "goals_scored": 0,
+            },
+            {
+                "season": "2025-26",
+                "round": 1,
+                "element": 101,
+                "position": "UNKNOWN",  # unknown -> MID
+                "was_home": True,
+                "goals_scored": 1,
+            },
+        ]
+    )
+
+    clean_df = mgr._clean_and_standardize(raw_data)
+
+    # All standard columns present
+    for col in [
+        "season",
+        "name",
+        "element",
+        "position",
+        "team",
+        "round",
+        "fixture",
+        "was_home",
+        "minutes",
+        "goals_scored",
+        "threat",
+        "total_points",
+    ]:
+        assert col in clean_df.columns
+
+    # Positions standardized
+    assert clean_df.loc[clean_df["element"] == 50, "position"].iloc[0] == "GKP"
+    assert clean_df.loc[clean_df["element"] == 102, "position"].iloc[0] == "GKP"
+    assert clean_df.loc[clean_df["element"] == 101, "position"].iloc[0] == "MID"
+
+    # Numeric coercion and fillna
+    assert clean_df.loc[clean_df["element"] == 102, "goals_scored"].iloc[0] == 3.0
+    assert clean_df.loc[clean_df["element"] == 102, "threat"].iloc[0] == 0.0
+
+    # was_home boolean conversion
+    assert isinstance(clean_df.loc[clean_df["element"] == 102, "was_home"].iloc[0], (bool, np.bool_))
+
+    # Chronologically sorted by season, round, element
+    assert clean_df["season"].tolist() == ["2024-25", "2025-26", "2025-26"]
+    assert clean_df["round"].tolist() == [1, 1, 2]
+    assert clean_df["element"].tolist() == [50, 101, 102]
+
+
+def test_build_match_row():
+    """Verify _build_match_row builds a valid dictionary with all standard fields."""
+    row = HistoricalDataManager._build_match_row(
+        curr_season="2026-27",
+        full_name="Bukayo Saka",
+        eid=15,
+        pos="MID",
+        team_name="Arsenal",
+        gw=5,
+        f_id=42,
+        opp=10,
+        home=True,
+        ko_time="2026-09-20T14:00:00Z",
+        stats={
+            "minutes": 90,
+            "goals_scored": 1,
+            "assists": 2,
+            "clean_sheets": 0,
+            "goals_conceded": 1,
+            "bonus": 3,
+            "bps": 45,
+            "influence": "55.4",
+            "creativity": 32.1,
+            "threat": 40.0,
+            "ict_index": "12.8",
+            "expected_goals": "0.65",
+            "expected_assists": "0.45",
+            "expected_goal_involvements": "1.10",
+            "expected_goals_conceded": "0.85",
+            "defensive_contribution": 2,
+            "total_points": 12,
+        },
+        val=10.0,
+    )
+
+    assert row["season"] == "2026-27"
+    assert row["name"] == "Bukayo Saka"
+    assert row["element"] == 15
+    assert row["position"] == "MID"
+    assert row["fixture"] == 42.0
+    assert row["influence"] == 55.4
+    assert row["ict_index"] == 12.8
+    assert row["expected_goals"] == 0.65
+    assert row["defensive_contribution"] == 2.0
+    assert row["total_points"] == 12
+
+
+def test_get_last_finished_gameweek(tmp_path, monkeypatch):
+    """Verify get_last_finished_gameweek returns maximum GW correctly across edge cases."""
+    mgr = HistoricalDataManager()
+
+    # Case 1: output file does not exist
+    mgr.output_file = tmp_path / "nonexistent.csv"
+    assert mgr.get_last_finished_gameweek() == 0
+
+    # Case 2: output file exists with current season (e.g. 2026-27 up to GW 6)
+    test_csv = tmp_path / "master.csv"
+    df = pd.DataFrame(
+        {
+            "season": ["2025-26", "2025-26", "2026-27", "2026-27"],
+            "round": [37, 38, 5, 6],
+            "element": [1, 2, 1, 2],
+        }
+    )
+    df.to_csv(test_csv, index=False)
+    mgr.output_file = test_csv
+
+    import fpl_oracle.utils.season as season_mod
+
+    monkeypatch.setattr(season_mod, "derive_season", lambda format="hyphen": "2026-27")
+    assert mgr.get_last_finished_gameweek() == 6
+
+    # Case 3: current season has no rows in file, falls back to overall max
+    monkeypatch.setattr(season_mod, "derive_season", lambda format="hyphen": "2027-28")
+    assert mgr.get_last_finished_gameweek() == 38
+
+    # Case 4: read_csv raises exception -> returns 0
+    def mock_bad_read(*args, **kwargs):
+        raise ValueError("Corrupted CSV")
+
+    monkeypatch.setattr(pd, "read_csv", mock_bad_read)
+    assert mgr.get_last_finished_gameweek() == 0
+
+
+def test_fetch_vaastav_season(tmp_path, monkeypatch):
+    """Verify _fetch_vaastav_season handles cached files, network downloads, and failures."""
+    import urllib.request
+
+    from fpl_oracle.data import historical as hist_mod
+
+    mgr = HistoricalDataManager()
+    monkeypatch.setattr(hist_mod, "HISTORICAL_DIR", tmp_path)
+
+    # 1. Local cache hit
+    cached_file = tmp_path / "2023-24_merged_gw.csv"
+    cached_df = pd.DataFrame({"element": [1, 2], "round": [1, 1], "total_points": [5, 2]})
+    cached_df.to_csv(cached_file, index=False)
+
+    df_cached = mgr._fetch_vaastav_season("2023-24")
+    assert df_cached is not None
+    assert len(df_cached) == 2
+    assert "season" in df_cached.columns
+    assert df_cached["season"].iloc[0] == "2023-24"
+
+    # 2. Corrupted cache falls back to download
+    corrupt_file = tmp_path / "2024-25_merged_gw.csv"
+    corrupt_file.write_text("bad,data\n1,2,3,4,5\nextra\n")  # will trigger warning
+
+    # Mock successful network download
+    mock_csv_bytes = b"element,round,total_points\n10,1,6\n11,1,8\n"
+
+    class MockResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            return mock_csv_bytes
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=30: MockResponse())
+    df_downloaded = mgr._fetch_vaastav_season("2024-25")
+    assert df_downloaded is not None
+    assert len(df_downloaded) == 2
+    assert df_downloaded["season"].iloc[0] == "2024-25"
+
+    # 3. Network failure returns None
+    def mock_fail_urlopen(*args, **kwargs):
+        raise urllib.error.URLError("Network unreachable")
+
+    monkeypatch.setattr(urllib.request, "urlopen", mock_fail_urlopen)
+    df_fail = mgr._fetch_vaastav_season("2025-26")
+    assert df_fail is None
+
+
+@pytest.mark.anyio
+async def test_fetch_live_season_async_and_sync(monkeypatch):
+    """Verify _fetch_live_season_async ingests elements and tracks failures, and sync wrapper."""
+    from fpl_oracle.api.fpl_client import fpl_client
+    from fpl_oracle.api.models import BootstrapStatic, Element, ElementSummary, ElementType, PlayerMatchHistory, Team
+
+    mgr = HistoricalDataManager()
+
+    # Mock bootstrap
+    t1 = Team(id=1, name="Arsenal", short_name="ARS")
+    et1 = ElementType(
+        id=3, singular_name="Midfielder", singular_name_short="MID", plural_name="Midfielders", plural_name_short="MID"
+    )
+    p1 = Element(
+        id=10, first_name="Martin", second_name="Odegaard", web_name="Odegaard", team=1, element_type=3, now_cost=85
+    )
+    p2 = Element(id=20, first_name="Declan", second_name="Rice", web_name="Rice", team=1, element_type=3, now_cost=65)
+    boot = BootstrapStatic(events=[], elements=[p1, p2], teams=[t1], element_types=[et1])
+
+    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(boot, False)))
+
+    # Mock element summary: p1 succeeds, p2 raises error
+    hist1 = PlayerMatchHistory(
+        element=10,
+        fixture=1,
+        opponent_team=2,
+        total_points=8,
+        was_home=True,
+        kickoff_time="2026-08-15T14:00:00Z",
+        round=1,
+        minutes=90,
+        goals_scored=1,
+        assists=0,
+        clean_sheets=1,
+        goals_conceded=0,
+        own_goals=0,
+        penalties_saved=0,
+        penalties_missed=0,
+        yellow_cards=0,
+        red_cards=0,
+        saves=0,
+        bonus=2,
+        bps=30,
+        influence="35.0",
+        creativity="40.0",
+        threat="20.0",
+        ict_index="9.5",
+        starts=1,
+        expected_goals="0.45",
+        expected_assists="0.30",
+        expected_goal_involvements="0.75",
+        expected_goals_conceded="0.20",
+        value=85,
+    )
+    summary1 = ElementSummary(history=[hist1])
+
+    async def mock_get_summary(eid, force_refresh=True):
+        if eid == 10:
+            return summary1, False
+        raise RuntimeError("API timeout on player 20")
+
+    monkeypatch.setattr(fpl_client, "get_element_summary", mock_get_summary)
+
+    live_df = await mgr._fetch_live_season_async()
+    assert len(live_df) == 1
+    assert live_df["name"].iloc[0] == "Martin Odegaard"
+    assert live_df["total_points"].iloc[0] == 8
+    assert 20 in mgr._last_failed_player_ids
+
+
+def test_fetch_live_season_sync_wrapper(monkeypatch):
+    """Verify _fetch_live_season_sync calls asyncio.run and handles exceptions."""
+    mgr = HistoricalDataManager()
+    dummy_df = pd.DataFrame([{"element": 1, "round": 1}])
+
+    async def mock_async():
+        return dummy_df
+
+    monkeypatch.setattr(mgr, "_fetch_live_season_async", mock_async)
+    sync_res = mgr._fetch_live_season_sync()
+    assert sync_res is not None
+    assert len(sync_res) == 1
+
+    async def mock_fail():
+        raise RuntimeError("Network boom")
+
+    monkeypatch.setattr(mgr, "_fetch_live_season_async", mock_fail)
+    assert mgr._fetch_live_season_sync() is None
+
+
+@pytest.mark.anyio
+async def test_refresh_current_season_lifecycle(tmp_path, monkeypatch):
+    """Verify refresh_current_season handles stale checks, awaiting finalization, and atomic merge."""
+    from fpl_oracle.api.fpl_client import fpl_client
+    from fpl_oracle.api.models import BootstrapStatic, Fixture, GameweekEvent
+
+    mgr = HistoricalDataManager()
+    test_master = tmp_path / "master_history.csv"
+    mgr.output_file = test_master
+
+    # Pre-populate master with old seasons and old GW1 rows
+    old_df = pd.DataFrame(
+        [
+            {"season": "2025-26", "round": 38, "element": 1, "fixture": 380, "name": "Player 1", "total_points": 5},
+            {"season": "2026-27", "round": 1, "element": 1, "fixture": 1, "name": "Player 1", "total_points": 2},
+        ]
+    )
+    old_df.to_csv(test_master, index=False)
+
+    ev1 = GameweekEvent(id=1, name="GW1", deadline_time="2026-08-15T11:00:00Z", finished=True, data_checked=True)
+    ev2 = GameweekEvent(id=2, name="GW2", deadline_time="2026-08-22T11:00:00Z", finished=True, data_checked=True)
+    boot = BootstrapStatic(events=[ev1, ev2], elements=[], teams=[], element_types=[])
+    f1 = Fixture(id=1, code=101, team_h=1, team_a=2, event=1, finished=True)
+    f2 = Fixture(id=2, code=102, team_h=2, team_a=1, event=2, finished=True)
+
+    # 1. Stale bootstrap raises RuntimeError
+    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(boot, True)))
+    monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=([f1, f2], False)))
+    with pytest.raises(RuntimeError, match="needs fresh official context"):
+        await mgr.refresh_current_season()
+
+    # 2. Fresh bootstrap and fixtures
+    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(boot, False)))
+    monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=([f1, f2], False)))
+
+    # Empty fresh live returns error
+    monkeypatch.setattr(mgr, "_fetch_live_season_async", AsyncMock(return_value=pd.DataFrame()))
+    with pytest.raises(RuntimeError, match="No fresh current-season rows"):
+        await mgr.refresh_current_season()
+
+    # Awaiting finalization (no rows match finalized events)
+    unfinalized_fresh = pd.DataFrame([{"round": 99, "fixture": 999, "element": 1, "total_points": 0}])
+    monkeypatch.setattr(mgr, "_fetch_live_season_async", AsyncMock(return_value=unfinalized_fresh))
+    res_awaiting = await mgr.refresh_current_season()
+    assert res_awaiting["status"] == "awaiting_finalization"
+
+    # Successful fresh rows for GW1 and GW2
+    fresh_rows = pd.DataFrame(
+        [
+            {"season": "2026-27", "round": 1, "element": 1, "fixture": 1, "name": "Player 1", "total_points": 8},
+            {"season": "2026-27", "round": 2, "element": 1, "fixture": 2, "name": "Player 1", "total_points": 6},
+        ]
+    )
+    monkeypatch.setattr(mgr, "_fetch_live_season_async", AsyncMock(return_value=fresh_rows))
+
+    meta = await mgr.refresh_current_season()
+    assert meta["status"] == "refreshed"
+    assert meta["complete"] is True
+    assert meta["rows"] == 2
+
+    # Verify updated CSV on disk
+    saved_df = pd.read_csv(test_master)
+    # Replaced GW1 row now has updated points 8 (not 2)
+    p1_gw1 = saved_df[(saved_df["season"] == "2026-27") & (saved_df["round"] == 1)]
+    assert p1_gw1["total_points"].iloc[0] == 8.0
+    # GW2 row was appended
+    p1_gw2 = saved_df[(saved_df["season"] == "2026-27") & (saved_df["round"] == 2)]
+    assert len(p1_gw2) == 1
+    assert p1_gw2["total_points"].iloc[0] == 6.0
+
+
+def test_ensure_dataset_ready_force_refresh(tmp_path, monkeypatch):
+    """Verify ensure_dataset_ready(force_refresh=True) merges past seasons and live season."""
+    mgr = HistoricalDataManager()
+    test_master = tmp_path / "master.csv"
+    mgr.output_file = test_master
+
+    # Case 1: no season data available raises RuntimeError
+    monkeypatch.setattr(mgr, "_fetch_vaastav_season", lambda s: None)
+    monkeypatch.setattr(mgr, "_fetch_live_season_sync", lambda: None)
+    with pytest.raises(RuntimeError, match="Failed to build historical dataset"):
+        mgr.ensure_dataset_ready(force_refresh=True)
+
+    # Case 2: successfully builds and standardizes dataset
+    s1 = pd.DataFrame([{"season": "2023-24", "round": 1, "element": 1, "total_points": 5}])
+    live = pd.DataFrame([{"season": "2026-27", "round": 1, "element": 1, "total_points": 10}])
+
+    monkeypatch.setattr(mgr, "_fetch_vaastav_season", lambda s: s1 if s == "2023-24" else None)
+    monkeypatch.setattr(mgr, "_fetch_live_season_sync", lambda: live)
+
+    df_built = mgr.ensure_dataset_ready(force_refresh=True)
+    assert len(df_built) == 2
+    assert test_master.exists()
+    assert set(df_built["season"]) == {"2023-24", "2026-27"}
+
+
+@pytest.mark.anyio
+async def test_refresh_gameweek_live_success_and_idempotency(tmp_path, monkeypatch):
+    """Fast, mock-backed test for refresh_gameweek_live covering full execution path and idempotency."""
+    from fpl_oracle.api.fpl_client import fpl_client
+    from fpl_oracle.api.models import BootstrapStatic, Element, ElementType, Fixture, GameweekEvent, Team
+
+    mgr = HistoricalDataManager()
+    test_master = tmp_path / "master_history.csv"
+    mgr.output_file = test_master
+
+    # Pre-populate with old 2025-26 row and existing 2026-27 GW6 row
+    pre_df = pd.DataFrame(
+        [
+            {"season": "2025-26", "round": 38, "element": 1, "fixture": 380, "name": "Past Player", "total_points": 4},
+            {"season": "2026-27", "round": 6, "element": 1, "fixture": 60, "name": "Old GW6 Player", "total_points": 1},
+        ]
+    )
+    pre_df.to_csv(test_master, index=False)
+
+    ev = GameweekEvent(id=6, name="GW6", deadline_time="2026-09-27T10:00:00Z", finished=True, data_checked=True)
+    teams = [Team(id=i, name=f"Team_{i}", short_name=f"T{i}") for i in range(1, 21)]
+    etypes = [
+        ElementType(
+            id=1,
+            singular_name="Goalkeeper",
+            singular_name_short="GKP",
+            plural_name="Goalkeepers",
+            plural_name_short="GKP",
+        ),
+        ElementType(
+            id=2, singular_name="Defender", singular_name_short="DEF", plural_name="Defenders", plural_name_short="DEF"
+        ),
+        ElementType(
+            id=3,
+            singular_name="Midfielder",
+            singular_name_short="MID",
+            plural_name="Midfielders",
+            plural_name_short="MID",
+        ),
+        ElementType(
+            id=4, singular_name="Forward", singular_name_short="FWD", plural_name="Forwards", plural_name_short="FWD"
+        ),
+    ]
+    elements = [
+        Element(
+            id=i,
+            first_name=f"First{i}",
+            second_name=f"Last{i}",
+            web_name=f"P{i}",
+            team=(i % 20) + 1,
+            element_type=(i % 4) + 1,
+            now_cost=50,
+        )
+        for i in range(1, 551)
+    ]
+    boot = BootstrapStatic(events=[ev], elements=elements, teams=teams, element_types=etypes)
+    fixtures = [
+        Fixture(
+            id=k,
+            code=100 + k,
+            event=6,
+            finished=True,
+            team_h=(k * 2) - 1,
+            team_a=k * 2,
+            kickoff_time="2026-09-27T14:00:00Z",
+        )
+        for k in range(1, 11)
+    ]
+    live_elements = [
+        {
+            "id": i,
+            "stats": {
+                "minutes": 90,
+                "total_points": 5,
+                "goals_scored": 1,
+                "assists": 0,
+                "influence": 25.0,
+                "threat": 20.0,
+                "ict_index": 5.0,
+            },
+            "explain": [{"fixture": (i % 10) + 1}],
+        }
+        for i in range(1, 551)
+    ]
+
+    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(boot, False)))
+    monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=(fixtures, False)))
+    monkeypatch.setattr(fpl_client, "get_live_gameweek", AsyncMock(return_value=({"elements": live_elements}, False)))
+
+    # First run: replaces old GW6 row and appends fresh 550 rows
+    meta1 = await mgr.refresh_gameweek_live(6, force=False)
+    assert meta1["status"] == "refreshed"
+    assert meta1["rows_appended"] == 550
+    assert meta1["total_rows"] == 551  # 1 past row + 550 fresh rows
+    assert test_master.with_suffix(".meta.json").exists()
+
+    # Second run: idempotent (replaces same GW6 rows, total_rows unchanged)
+    meta2 = await mgr.refresh_gameweek_live(6, force=False)
+    assert meta2["status"] == "refreshed"
+    assert meta2["total_rows"] == 551

@@ -461,7 +461,9 @@ def main() -> int:
         if args.rerun:
             print("ALL AUDIT CHECKS PASSED: 100% EVIDENCE-GATED VERIFICATION ACHIEVED (ALL COMMANDS RERUN AND PASSED)")
         else:
-            print("AUDIT CHECKS PASSED: Static evidence verified (commands NOT rerun). Run with --rerun for earned 100% verification.")
+            print(
+                "AUDIT CHECKS PASSED: Static evidence verified (commands NOT rerun). Run with --rerun for earned 100% verification."
+            )
         print("=" * 70)
         return 0
     else:
