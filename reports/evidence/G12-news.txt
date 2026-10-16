@@ -1,48 +1,25 @@
-Command: .venv\Scripts\python.exe scripts/run_news_benchmark.py
-Exit Code: 0
-
-Output:
-
-INFO: Starting Production News Extraction Benchmark across 70 held-out cases...
-INFO: News Benchmark: 70/70 PASSED (100.0%) | Precision: 100.0% | Recall: 100.0% | False Ruled Out: 0 (0.0%) | Gate Status: OPEN
-
-
-Command: .venv\Scripts\python.exe -m pytest tests/test_gemini_mock.py tests/test_news_availability.py -v
-Exit Code: 0
-
-Output:
-============================= test session starts =============================
-platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
-cachedir: .pytest_cache
-hypothesis profile 'default'
-rootdir: C:\Users\anshw\Documents\fpl-expert
-configfile: pyproject.toml
-plugins: anyio-4.15.1, hypothesis-6.168.3
-collecting ... collected 22 items
-
-tests/test_gemini_mock.py::test_gemini_configuration_detection PASSED    [  4%]
-tests/test_gemini_mock.py::test_gemini_unconfigured_without_key PASSED   [  9%]
-tests/test_gemini_mock.py::test_gemini_valid_schema_parsing PASSED       [ 13%]
-tests/test_gemini_mock.py::test_gemini_hallucinated_quote_penalized PASSED [ 18%]
-tests/test_gemini_mock.py::test_gemini_http_429_graceful_fallback PASSED [ 22%]
-tests/test_gemini_mock.py::test_gemini_http_500_graceful_fallback PASSED [ 27%]
-tests/test_gemini_mock.py::test_gemini_timeout_fallback PASSED           [ 31%]
-tests/test_gemini_mock.py::test_gemini_empty_response_fallback PASSED    [ 36%]
-tests/test_gemini_mock.py::test_ssrf_guard_blocks_untrusted_urls PASSED  [ 40%]
-tests/test_news_availability.py::test_is_safe_external_url PASSED        [ 45%]
-tests/test_news_availability.py::test_gemini_is_configured_safeguards PASSED [ 50%]
-tests/test_news_availability.py::test_gemini_budget_manager PASSED       [ 54%]
-tests/test_news_availability.py::test_gemini_extractor_fallback_when_unconfigured[asyncio] PASSED [ 59%]
-tests/test_news_availability.py::test_availability_reconciler_no_double_discounting PASSED [ 63%]
-tests/test_news_availability.py::test_availability_reconciler_negation_handling PASSED [ 68%]
-tests/test_news_availability.py::test_availability_reconciler_cup_competition_isolation PASSED [ 72%]
-tests/test_news_availability.py::test_availability_reconciler_scout_loan_ineligibility PASSED [ 77%]
-tests/test_news_availability.py::test_availability_reconciler_shadow_mode_isolation PASSED [ 81%]
-tests/test_news_availability.py::test_news_analyse_no_crude_heuristics PASSED [ 86%]
-tests/test_news_availability.py::test_web_index_no_secret_input_forms PASSED [ 90%]
-tests/test_news_availability.py::test_controlled_mock_xp_shadow_vs_gated_active PASSED [ 95%]
-tests/test_news_availability.py::test_reconcile_named_probability_settings PASSED [100%]
-
-============================= 22 passed in 1.47s ==============================
-
-
+{
+  "schema_version": 1,
+  "command": [
+    "C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe",
+    "scripts/run_news_benchmark.py"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "INFO: Starting Production News Extraction Benchmark across 70 held-out cases...\nINFO: [AvailabilityDisagreement] Martinelli (ID 2): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Diaz (ID 20): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] De Bruyne (ID 21): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Jackson (ID 22): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Saliba (ID 24): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Eze (ID 27): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Doucoure (ID 28): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Trippier (ID 30): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Solanke (ID 31): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Mateta (ID 32): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Cunha (ID 33): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] James (ID 34): API=100.0% vs News=100.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Shaw (ID 35): API=100.0% vs News=100.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Mbeumo (ID 36): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Porro (ID 37): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Richarlison (ID 39): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Rodri (ID 44): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Wissa (ID 45): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Botman (ID 46): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Sterling (ID 50): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Tavares (ID 51): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Sancho (ID 53): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: News Benchmark: 70/70 PASSED (100.0%) | Precision: 100.0% | Recall: 100.0% | False Ruled Out: 0 (0.0%) | Gate Status: OPEN\n",
+  "output": "INFO: Starting Production News Extraction Benchmark across 70 held-out cases...\nINFO: [AvailabilityDisagreement] Martinelli (ID 2): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Diaz (ID 20): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] De Bruyne (ID 21): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Jackson (ID 22): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Saliba (ID 24): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Eze (ID 27): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Doucoure (ID 28): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Trippier (ID 30): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Solanke (ID 31): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Mateta (ID 32): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Cunha (ID 33): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] James (ID 34): API=100.0% vs News=100.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Shaw (ID 35): API=100.0% vs News=100.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Mbeumo (ID 36): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Porro (ID 37): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Richarlison (ID 39): API=100.0% vs News=50.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Rodri (ID 44): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Wissa (ID 45): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Botman (ID 46): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Sterling (ID 50): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Tavares (ID 51): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: [AvailabilityDisagreement] Sancho (ID 53): API=100.0% vs News=0.0% (mode=shadow, applied=False)\nINFO: News Benchmark: 70/70 PASSED (100.0%) | Precision: 100.0% | Recall: 100.0% | False Ruled Out: 0 (0.0%) | Gate Status: OPEN",
+  "timestamp": "2026-10-16T08:57:53.404994+00:00",
+  "git_commit": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "code_head": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "path": "reports/news_benchmark.json",
+      "sha256": "da45e8bd72c26588612e5193751a20ecdfbce3ec25504aa2d32a25cb69cac50d"
+    }
+  ],
+  "file_hashes": {
+    "reports/news_benchmark.json": "da45e8bd72c26588612e5193751a20ecdfbce3ec25504aa2d32a25cb69cac50d"
+  },
+  "gates": []
+}

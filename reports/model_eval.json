@@ -1,170 +1,170 @@
 {
-  "evaluated_at": "2026-10-06T19:07:44.829775+00:00",
-  "sample_count": 2054,
-  "ml_mae": 1.883,
-  "ml_rmse": 2.828,
-  "ml_spearman": 0.429,
-  "ml_pearson": 0.354,
-  "base_mae": 1.963,
-  "base_rmse": 3.09,
-  "base_spearman": 0.374,
+  "evaluated_at": "2026-10-16T08:55:00.647785+00:00",
+  "sample_count": 3883,
+  "ml_mae": 1.213,
+  "ml_rmse": 2.247,
+  "ml_spearman": 0.635,
+  "ml_pearson": 0.5,
+  "base_mae": 1.276,
+  "base_rmse": 2.457,
+  "base_spearman": 0.594,
   "baselines": {
     "weighted_recent_form": {
-      "mae": 1.963,
-      "rmse": 3.09,
-      "spearman": 0.374
+      "mae": 1.281,
+      "rmse": 2.457,
+      "spearman": 0.594
     },
     "season_average": {
-      "mae": 1.952,
-      "rmse": 3.06,
-      "spearman": 0.365
+      "mae": 1.276,
+      "rmse": 2.432,
+      "spearman": 0.58
     },
     "fixture_adjusted": {
-      "mae": 2.227,
-      "rmse": 3.498,
-      "spearman": 0.399
+      "mae": 1.31,
+      "rmse": 2.511,
+      "spearman": 0.621
     }
   },
-  "mae_improvement_pct": 4.08,
-  "rmse_improvement_pct": 8.48,
-  "verdict": "The ML Projection Engine achieves an MAE of 1.883 and RMSE of 2.828 with a Spearman rank correlation of 0.429 (vs 0.374 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
+  "mae_improvement_pct": 5.31,
+  "rmse_improvement_pct": 8.55,
+  "verdict": "The ML Projection Engine achieves an MAE of 1.213 and RMSE of 2.247 with a Spearman rank correlation of 0.635 (vs 0.594 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
   "positions": {
     "GKP": {
-      "count": 120,
-      "ml_mae": 2.082,
-      "ml_rmse": 2.96,
-      "base_mae": 2.256,
-      "base_rmse": 3.25,
-      "improvement_mae_pct": 7.71
+      "count": 425,
+      "ml_mae": 0.774,
+      "ml_rmse": 1.689,
+      "base_mae": 0.806,
+      "base_rmse": 1.864,
+      "improvement_mae_pct": 3.97
     },
     "DEF": {
-      "count": 721,
-      "ml_mae": 2.095,
-      "ml_rmse": 3.074,
-      "base_mae": 2.192,
-      "base_rmse": 3.349,
-      "improvement_mae_pct": 4.43
+      "count": 1272,
+      "ml_mae": 1.387,
+      "ml_rmse": 2.476,
+      "base_mae": 1.49,
+      "base_rmse": 2.692,
+      "improvement_mae_pct": 6.91
     },
     "MID": {
-      "count": 969,
-      "ml_mae": 1.701,
-      "ml_rmse": 2.631,
-      "base_mae": 1.776,
-      "base_rmse": 2.884,
-      "improvement_mae_pct": 4.22
+      "count": 1726,
+      "ml_mae": 1.184,
+      "ml_rmse": 2.188,
+      "base_mae": 1.248,
+      "base_rmse": 2.399,
+      "improvement_mae_pct": 5.13
     },
     "FWD": {
-      "count": 244,
-      "ml_mae": 1.879,
-      "ml_rmse": 2.757,
-      "base_mae": 1.883,
-      "base_rmse": 3.007,
-      "improvement_mae_pct": 0.21
+      "count": 460,
+      "ml_mae": 1.242,
+      "ml_rmse": 2.251,
+      "base_mae": 1.271,
+      "base_rmse": 2.47,
+      "improvement_mae_pct": 2.28
     }
   },
   "calibration": {
-    "interval_80_coverage_pct": 71.47,
-    "below_p10_pct": 14.9,
-    "above_p90_pct": 13.63,
-    "pinball_loss_p10": 0.284,
-    "pinball_loss_p50": 0.9298,
-    "pinball_loss_p90": 0.6456,
-    "avg_interval_width": 4.45,
-    "calibration_verdict": "NARROW INTERVAL (71.47% vs 80% nominal)"
+    "interval_80_coverage_pct": 77.08,
+    "below_p10_pct": 15.37,
+    "above_p90_pct": 7.55,
+    "pinball_loss_p10": 0.1891,
+    "pinball_loss_p50": 0.602,
+    "pinball_loss_p90": 0.4495,
+    "avg_interval_width": 3.54,
+    "calibration_verdict": "WELL-CALIBRATED (\u00b13.0%)"
   },
   "rolling_origins": [
     {
       "season": "Holdout 2024-25 (trained on 2023-24)",
-      "train_size": 29725,
+      "train_size": 21427,
       "test_size": 27605,
-      "mae": 1.013,
-      "rmse": 2.103,
-      "spearman": 0.681,
+      "mae": 1.005,
+      "rmse": 2.092,
+      "spearman": 0.685,
       "base_recent_mae": 1.046,
       "base_season_mae": 1.041,
-      "base_fixture_mae": 1.228,
+      "base_fixture_mae": 1.132,
       "best_baseline_mae": 1.041,
-      "gain_vs_baseline": 0.028,
-      "interval_80_coverage_pct": 77.36,
+      "gain_vs_baseline": 0.036,
+      "interval_80_coverage_pct": 81.12,
       "position_coverage": {
-        "GKP": 72.39,
-        "DEF": 78.97,
-        "MID": 77.59,
-        "FWD": 76.24
+        "GKP": 80.41,
+        "DEF": 84.12,
+        "MID": 79.59,
+        "FWD": 79.03
       },
       "minutes_bucket_coverage": {
-        "low": 80.53,
-        "mid": 77.23,
-        "high": 66.76
+        "low": 82.01,
+        "mid": 81.77,
+        "high": 77.19
       }
     },
     {
       "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
-      "train_size": 57330,
+      "train_size": 29725,
       "test_size": 29757,
-      "mae": 0.948,
-      "rmse": 1.978,
-      "spearman": 0.707,
+      "mae": 0.94,
+      "rmse": 1.992,
+      "spearman": 0.704,
       "base_recent_mae": 0.995,
       "base_season_mae": 0.99,
-      "base_fixture_mae": 1.094,
+      "base_fixture_mae": 1.046,
       "best_baseline_mae": 0.99,
-      "gain_vs_baseline": 0.042,
-      "interval_80_coverage_pct": 81.71,
+      "gain_vs_baseline": 0.05,
+      "interval_80_coverage_pct": 84.19,
       "position_coverage": {
-        "GKP": 84.86,
-        "DEF": 78.93,
-        "MID": 82.31,
-        "FWD": 84.27
+        "GKP": 88.88,
+        "DEF": 81.89,
+        "MID": 84.27,
+        "FWD": 85.82
       },
       "minutes_bucket_coverage": {
-        "low": 86.34,
-        "mid": 76.23,
-        "high": 70.71
+        "low": 87.6,
+        "mid": 78.27,
+        "high": 78.35
       }
     },
     {
       "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
-      "train_size": 87087,
-      "test_size": 2054,
-      "mae": 1.883,
-      "rmse": 2.828,
-      "spearman": 0.429,
-      "base_recent_mae": 1.963,
-      "base_season_mae": 1.952,
-      "base_fixture_mae": 2.227,
-      "best_baseline_mae": 1.952,
-      "gain_vs_baseline": 0.069,
-      "interval_80_coverage_pct": 71.47,
+      "train_size": 57330,
+      "test_size": 3883,
+      "mae": 1.213,
+      "rmse": 2.247,
+      "spearman": 0.635,
+      "base_recent_mae": 1.281,
+      "base_season_mae": 1.276,
+      "base_fixture_mae": 1.31,
+      "best_baseline_mae": 1.276,
+      "gain_vs_baseline": 0.063,
+      "interval_80_coverage_pct": 77.08,
       "position_coverage": {
-        "GKP": 62.5,
-        "DEF": 71.43,
-        "MID": 72.24,
-        "FWD": 72.95
+        "GKP": 75.53,
+        "DEF": 79.87,
+        "MID": 75.9,
+        "FWD": 75.22
       },
       "minutes_bucket_coverage": {
-        "low": 60.45,
-        "mid": 79.1,
-        "high": 73.62
+        "low": 75.9,
+        "mid": 78.73,
+        "high": 78.2
       }
     }
   ],
   "ablation": {},
   "partial_dependence": {
-    "star_player_vs_tough_defence": 4.69,
-    "star_player_vs_avg_defence": 4.9,
-    "star_player_vs_weak_defence": 5.45,
-    "mid_player_vs_tough_defence": 3.06,
-    "mid_player_vs_avg_defence": 3.68,
-    "mid_player_vs_weak_defence": 3.63,
-    "low_player_vs_tough_defence": 1.5,
-    "low_player_vs_avg_defence": 1.75,
-    "low_player_vs_weak_defence": 1.85,
-    "home_advantage_premium_pts": 0.08
+    "star_player_vs_tough_defence": 4.22,
+    "star_player_vs_avg_defence": 4.27,
+    "star_player_vs_weak_defence": 4.53,
+    "mid_player_vs_tough_defence": 2.74,
+    "mid_player_vs_avg_defence": 3.24,
+    "mid_player_vs_weak_defence": 3.17,
+    "low_player_vs_tough_defence": 0.89,
+    "low_player_vs_avg_defence": 1.03,
+    "low_player_vs_weak_defence": 1.04,
+    "home_advantage_premium_pts": 0.04
   },
   "upcoming_projections": [],
   "gate_verdict": {
-    "passed": false,
-    "reason": "Candidate failed rolling origin gate: origin 'Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)' 80% interval coverage (71.47%) is outside target band [75.0%, 85.0%]."
+    "passed": true,
+    "reason": "Candidate passed all promotion gate criteria."
   }
 }

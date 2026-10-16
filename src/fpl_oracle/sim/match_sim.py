@@ -170,7 +170,13 @@ class MatchSimulator:
         player_ids = df["element"].to_numpy(dtype=int) if "element" in df else np.arange(n_players)
         player_names = df["web_name"].tolist() if "web_name" in df else [f"P_{i}" for i in range(n_players)]
         positions = df["position"].to_numpy(dtype=str) if "position" in df else np.full(n_players, "MID")
-        teams = df["team"].to_numpy(dtype=int) if "team" in df else np.zeros(n_players, dtype=int)
+        if "team" in df:
+            try:
+                teams = pd.to_numeric(df["team"]).to_numpy(dtype=int)
+            except Exception:
+                teams = df["team"].to_numpy()
+        else:
+            teams = np.zeros(n_players, dtype=int)
         analytic_xp = df["expected_points"].to_numpy(dtype=float) if "expected_points" in df else np.zeros(n_players)
 
         if "element" not in df.columns:

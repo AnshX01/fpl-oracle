@@ -131,28 +131,40 @@ class FPLClient:
 
             projection_engine.invalidate_cache()
 
+        orig_cache_key = cache_key
         cache_key = self._namespaced_cache_key(cache_key)
+
+        def _remember_entry(d: Any, st: bool, ts: Any) -> None:
+            remember(cache_key, d, st, ts)
+            if orig_cache_key != cache_key:
+                remember(orig_cache_key, d, st, ts)
+            self._cache_timestamps[cache_key] = ts
+            if orig_cache_key != cache_key and ts is not None:
+                self._cache_timestamps[orig_cache_key] = ts
 
         if not hasattr(self, "_source_requests"):
             self._source_requests = {}
         self._source_requests[cache_key] = (endpoint, ttl_seconds)
+        if orig_cache_key != cache_key:
+            self._source_requests[orig_cache_key] = (endpoint, ttl_seconds)
 
-        pinned = recalled(cache_key)
+        pinned = recalled(cache_key) or (recalled(orig_cache_key) if orig_cache_key != cache_key else None)
         if pinned is not None and not force_refresh:
             return pinned
         if not force_refresh:
-            cache_res = cache_manager.get_with_meta(cache_key)
+            cache_res = cache_manager.get_with_meta(cache_key) or (
+                cache_manager.get_with_meta(orig_cache_key) if orig_cache_key != cache_key else None
+            )
             if cache_res is not None:
                 data, upd = cache_res
-                self._cache_timestamps[cache_key] = upd
-                remember(cache_key, data, False, upd)
+                _remember_entry(data, False, upd)
                 return data, False
 
         # Request coalescing: if an identical request is already in flight, await it
         if cache_key in self._in_flight:
             try:
                 result = await self._in_flight[cache_key]
-                remember(cache_key, result[0], result[1], self._cache_timestamps.get(cache_key))
+                _remember_entry(result[0], result[1], self._cache_timestamps.get(cache_key))
                 return result
             except Exception:
                 pass
@@ -162,7 +174,7 @@ class FPLClient:
         self._in_flight[cache_key] = task
         try:
             res = await task
-            remember(cache_key, res[0], res[1], self._cache_timestamps.get(cache_key))
+            _remember_entry(res[0], res[1], self._cache_timestamps.get(cache_key))
             return res
         finally:
             self._in_flight.pop(cache_key, None)

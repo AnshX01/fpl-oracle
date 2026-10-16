@@ -1,27 +1,25 @@
-Command: .venv\Scripts\python.exe scripts/run_league_backtest.py
-Exit Code: 0
-
-Output:
-Starting Proxy Simulation Replay (Synthetic League States, Strict Legality & Zero-Hindsight)...
-Proxy simulation completed in 75.07s. Sample Size: 26, Model Brier: 0.2486, Naive Lead Brier: 0.3740
-
-Command: .venv\Scripts\python.exe -m pytest tests/test_backtest_no_leak.py -v
-Exit Code: 0
-
-Output:
-============================= test session starts =============================
-platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
-cachedir: .pytest_cache
-hypothesis profile 'default'
-rootdir: C:\Users\anshw\Documents\fpl-expert
-configfile: pyproject.toml
-plugins: anyio-4.15.1, hypothesis-6.168.3
-collecting ... collected 5 items
-
-tests/test_backtest_no_leak.py::test_assert_no_future_data_catches_future_round PASSED [ 20%]
-tests/test_backtest_no_leak.py::test_assert_no_future_data_passes_valid_history PASSED [ 40%]
-tests/test_backtest_no_leak.py::test_no_hindsight_leaks_in_backtest_source PASSED [ 60%]
-tests/test_backtest_no_leak.py::test_assert_legal_squad_enforces_rules PASSED [ 80%]
-tests/test_backtest_no_leak.py::test_proxy_simulation_execution_and_artifacts PASSED [100%]
-
-======================== 5 passed in 76.01s (0:01:16) =========================
+{
+  "schema_version": 1,
+  "command": [
+    "C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe",
+    "scripts/run_league_backtest.py"
+  ],
+  "exit_code": 0,
+  "stdout": "Starting Proxy Simulation Replay (Synthetic League States, Strict Legality & Zero-Hindsight)...\nProxy simulation completed in 141.67s. Sample Size: 26, Model Brier: 0.1916, Naive Lead Brier: 0.3740\n",
+  "stderr": "",
+  "output": "Starting Proxy Simulation Replay (Synthetic League States, Strict Legality & Zero-Hindsight)...\nProxy simulation completed in 141.67s. Sample Size: 26, Model Brier: 0.1916, Naive Lead Brier: 0.3740",
+  "timestamp": "2026-10-16T08:57:52.785978+00:00",
+  "git_commit": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "code_head": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "path": "reports/backtest.json",
+      "sha256": "5ba3ce9e0fbf0b77effd568c61af100c1b4d5a306b15a1ff874bffc7ca1c74d6"
+    }
+  ],
+  "file_hashes": {
+    "reports/backtest.json": "5ba3ce9e0fbf0b77effd568c61af100c1b4d5a306b15a1ff874bffc7ca1c74d6"
+  },
+  "gates": []
+}

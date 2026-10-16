@@ -1,21 +1,27 @@
-=== G4 MASTER HISTORY FRESHNESS VERIFICATION ===
-COMMAND: C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe scripts/check_freshness.py --mode freshness
-EXIT CODE: 0
-OUTPUT:
-Local master_history.csv season 2026-27 total rows: 2,054
-Local master_history.csv season 2026-27 max GW: 5
-Official FPL API current finished gameweeks count: 5
-Official FPL API max finished GW: 5
-STATUS: Fresh. Local master matches latest official finished gameweek (GW5 == GW5).
-
-Validating zero nulls across critical columns:
-  season: 0 nulls
-  name: 0 nulls
-  element: 0 nulls
-  position: 0 nulls
-  team: 0 nulls
-  round: 0 nulls
-  minutes: 0 nulls
-  total_points: 0 nulls
-
-All critical columns validated with 0 null values.
+{
+  "schema_version": 1,
+  "command": [
+    "C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe",
+    "scripts/check_freshness.py",
+    "--mode",
+    "freshness"
+  ],
+  "exit_code": 0,
+  "stdout": "=== G4 MASTER HISTORY FRESHNESS VERIFICATION ===\nCOMMAND: C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe scripts/check_freshness.py --mode freshness\nEXIT CODE: 0\nOUTPUT:\nLocal master_history.csv season 2026-27 total rows: 3,883\nLocal master_history.csv season 2026-27 max GW: 6\nOfficial FPL API current finished gameweeks count: 6\nOfficial FPL API max finished GW: 6\nSTATUS: Fresh. Local master matches latest official finished gameweek (GW6 == GW6).\n\nValidating zero nulls across critical columns:\n  season: 0 nulls\n  name: 0 nulls\n  element: 0 nulls\n  position: 0 nulls\n  team: 0 nulls\n  round: 0 nulls\n  minutes: 0 nulls\n  total_points: 0 nulls\n\nAll critical columns validated with 0 null values.\n\n",
+  "stderr": "INFO: Querying official FPL API for latest events...\nINFO: HTTP Request: GET https://fantasy.premierleague.com/api/bootstrap-static/ \"HTTP/1.1 200 OK\"\n",
+  "output": "=== G4 MASTER HISTORY FRESHNESS VERIFICATION ===\nCOMMAND: C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe scripts/check_freshness.py --mode freshness\nEXIT CODE: 0\nOUTPUT:\nLocal master_history.csv season 2026-27 total rows: 3,883\nLocal master_history.csv season 2026-27 max GW: 6\nOfficial FPL API current finished gameweeks count: 6\nOfficial FPL API max finished GW: 6\nSTATUS: Fresh. Local master matches latest official finished gameweek (GW6 == GW6).\n\nValidating zero nulls across critical columns:\n  season: 0 nulls\n  name: 0 nulls\n  element: 0 nulls\n  position: 0 nulls\n  team: 0 nulls\n  round: 0 nulls\n  minutes: 0 nulls\n  total_points: 0 nulls\n\nAll critical columns validated with 0 null values.\n\n\nINFO: Querying official FPL API for latest events...\nINFO: HTTP Request: GET https://fantasy.premierleague.com/api/bootstrap-static/ \"HTTP/1.1 200 OK\"",
+  "timestamp": "2026-10-16T08:59:23.361801+00:00",
+  "git_commit": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "code_head": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "path": "data/historical/master_history.csv",
+      "sha256": "32a646c2024982cd85862e775b9c03149d33d3d86c34809e336d2d62e2ff1ccb"
+    }
+  ],
+  "file_hashes": {
+    "data/historical/master_history.csv": "32a646c2024982cd85862e775b9c03149d33d3d86c34809e336d2d62e2ff1ccb"
+  },
+  "gates": []
+}

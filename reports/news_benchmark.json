@@ -1,5 +1,5 @@
 {
-  "benchmark_timestamp": "2026-10-07T02:43:59.020705+00:00",
+  "benchmark_timestamp": "2026-10-16T08:57:53.347698+00:00",
   "total_cases_evaluated": 70,
   "passed_cases": 70,
   "pass_rate_pct": 100.0,
@@ -279,7 +279,7 @@
       "group": "multi_player",
       "player": "De Bruyne",
       "raw_text": "Guardiola said Haaland will start while Kevin De Bruyne faces a late fitness test.",
-      "extracted_category": "available",
+      "extracted_category": "doubtful",
       "expected_category": "doubtful",
       "is_negated": false,
       "quote_verified": true,
@@ -513,9 +513,9 @@
       "group": "hedges",
       "player": "Richarlison",
       "raw_text": "Richarlison is not at 100% but will be in the squad for Sunday.",
-      "extracted_category": "available",
+      "extracted_category": "doubtful",
       "expected_category": "doubtful",
-      "is_negated": true,
+      "is_negated": false,
       "quote_verified": true,
       "effective_cop": 100.0,
       "passed": true

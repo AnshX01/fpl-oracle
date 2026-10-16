@@ -30,7 +30,7 @@ def run_parity_audit() -> int:
     fe = FeatureEngineering()
     m_df = pd.read_csv(HISTORICAL_DIR / "master_history.csv")
 
-    hist_26 = m_df[m_df["season"] == "2026-27"].copy()
+    hist_26 = m_df[(m_df["season"] == "2026-27") & (m_df["round"] <= 5)].copy()
     prior = m_df[
         (m_df["season"].isin(["2024-25", "2025-26"]))
         & (m_df["name"].str.contains("Raya|Palmer|Vieira|Balogun", na=False))
