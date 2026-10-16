@@ -181,16 +181,16 @@ class DefConModel(BaseComponent):
         # Fit final estimators on full dataset
         if np.sum(y_actions) > 0:
             self.reg_count.fit(X, y_actions, sample_weight=weights)
+            # Update empirical dispersions from full residuals
+            full_pred_mu = np.clip(self.reg_count.predict(X), 0.0, 30.0)
+            for pos_str, mask in [("DEF", pos_is_def), ("MID", pos_is_mid), ("FWD", pos_is_fwd)]:
+                if np.sum(mask) > 20:
+                    resids = y_actions[mask] - full_pred_mu[mask]
+                    disp = float(np.mean((resids**2 - full_pred_mu[mask]) / np.maximum(1e-4, full_pred_mu[mask] ** 2)))
+                    self.dispersions[pos_str] = max(0.01, min(1.5, disp))
+
         if np.sum(y_bin) > 0:
             self.clf.fit(X, y_bin, sample_weight=weights)
-
-        # Update empirical dispersions from full residuals
-        full_pred_mu = np.clip(self.reg_count.predict(X), 0.0, 30.0)
-        for pos_str, mask in [("DEF", pos_is_def), ("MID", pos_is_mid), ("FWD", pos_is_fwd)]:
-            if np.sum(mask) > 20:
-                resids = y_actions[mask] - full_pred_mu[mask]
-                disp = float(np.mean((resids**2 - full_pred_mu[mask]) / np.maximum(1e-4, full_pred_mu[mask] ** 2)))
-                self.dispersions[pos_str] = max(0.01, min(1.5, disp))
 
         self.is_fitted = True
 

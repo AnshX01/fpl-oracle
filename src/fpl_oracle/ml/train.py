@@ -418,6 +418,7 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
         rolling_origins=rolling_origins,
         training_data_df=X_fit,
         training_provenance=provenance,
+        cqr=candidate_ensemble.cqr,
     )
 
     X.attrs["training_outcome"] = {**promote_res, "training_provenance": provenance}

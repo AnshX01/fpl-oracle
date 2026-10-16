@@ -1,6 +1,6 @@
 {
-  "active_version": "v2026.10.06.1713",
-  "last_updated": "2026-10-06T17:13:06.071703+00:00",
+  "active_version": "v2026.10.16.1307",
+  "last_updated": "2026-10-16T07:36:33.329985+00:00",
   "versions": [
     {
       "version": "v1.0.0",
@@ -208,8 +208,84 @@
           "gain_vs_baseline": 0.056
         }
       ],
-      "status": "production",
+      "status": "archived",
       "notes": "Candidate model passed verification. MAE: 1.016 (improvement: +0.000). Promoted to production. | Automated retrain pipeline with true rolling origins"
+    },
+    {
+      "version": "v2026.10.16.1307",
+      "created_at": "2026-10-16T07:36:33.329970+00:00",
+      "git_commit": "64b6f81739e21791cdb1bf010ddc417fb854cd2b",
+      "recipe_id": "fpl_oracle_canonical_v1",
+      "training_data_hash": "3df4c43249c70e0d064d6ea97d95db990da6c182c9d7daf5b86d960194fe84b1",
+      "training_provenance": null,
+      "max_gw": 38,
+      "feature_list_hash": "ec91cae9cf9b75c88d81b133cb6b80907bf112a126ab3e90b9e6916792140e84",
+      "metric_applies_to": "served_weights",
+      "file_hashes": {
+        "minutes_model.pkl": "136f9d1d4085105f01061bab04b5b332d576ea29dd56f5458ed58cb296a5a79b",
+        "attacking_model.pkl": "bc7adba50e0bb401d6f5d96140ed55f31c0dde657951de9745107656ab0bc98e",
+        "defending_model.pkl": "c31b59a85d587230fab5c06eb11a8c7e4d1efa8e8c3061f02066224c3bdba4d9",
+        "defcon_model.pkl": "ae9e1abf0df089f9e2c63043c9c763d00af3e977cb1b41b6355c60f32691bf8a",
+        "bonus_model.pkl": "5a3f066d7e3e9a4531492897f9ac4811854334d2ad39cfbe3ecb1df6393b80b1",
+        "cards_saves_model.pkl": "5a970c4195d6dd5f275cb3e8e220ca050d1d79620803cbac6ddee1e671447fcc",
+        "calibration.json": "4251387c9dad9ed85b5e6ab9edd8b5306c2059bfbc4dc7e730acb3a1c9806995",
+        "cqr/cqr_DEF_q10.txt": "5131ea0e7ad7dedff0b87b6ce68b822db8a64ffa36939d3decf2e635a8995502",
+        "cqr/cqr_DEF_q90.txt": "ab05536a92d9eb36dfe2a3c4f06191003793cc8c2d6a0bc8970aaf4080b21e85",
+        "cqr/cqr_FWD_q10.txt": "ff4c7dc6a0773c3c459e55614256cb119864894f7cc7d2805470cc5d93f3c5e7",
+        "cqr/cqr_FWD_q90.txt": "f53fef6cb96b7a67010d3414bee00ca083ad476dc60626e52a82597f911690a3",
+        "cqr/cqr_GKP_q10.txt": "d16aa0c263e223b253099e4fa9609e2ff35fdf16270b6d99446cc73a5d2c3401",
+        "cqr/cqr_GKP_q90.txt": "23a08fda547a9b61f11f9e257ad943111ec3827e01d6f1bc4e46672818751aba",
+        "cqr/cqr_MID_q10.txt": "ee612b1d8d8aadf79cf53b2ac1c03a4c037c87c8582fee5dec319778718520d5",
+        "cqr/cqr_MID_q90.txt": "40d21bd7059c0b4bf3e1331f8743523cdb9752e3180a59188a7d3700d4502ca4",
+        "cqr/cqr_meta.json": "9529d90bb4179fd8a25581fb214bce8b443435b7f0a209b32bdb6ec669305254"
+      },
+      "ml_mae": 1.016,
+      "ml_spearman": 0.704,
+      "base_mae": 1.078,
+      "rolling_origins": [
+        {
+          "season": "Holdout 2024-25 (trained on 2023-24)",
+          "train_size": 29725,
+          "test_size": 27605,
+          "mae": 0.999,
+          "rmse": 2.098,
+          "spearman": 0.688,
+          "base_recent_mae": 1.045,
+          "base_season_mae": 1.041,
+          "base_fixture_mae": 1.228,
+          "best_baseline_mae": 1.041,
+          "gain_vs_baseline": 0.042
+        },
+        {
+          "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
+          "train_size": 57330,
+          "test_size": 29757,
+          "mae": 0.939,
+          "rmse": 1.988,
+          "spearman": 0.706,
+          "base_recent_mae": 0.995,
+          "base_season_mae": 0.99,
+          "base_fixture_mae": 1.093,
+          "best_baseline_mae": 0.99,
+          "gain_vs_baseline": 0.051
+        },
+        {
+          "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
+          "train_size": 87087,
+          "test_size": 2054,
+          "mae": 1.896,
+          "rmse": 2.852,
+          "spearman": 0.424,
+          "base_recent_mae": 1.963,
+          "base_season_mae": 1.952,
+          "base_fixture_mae": 2.227,
+          "best_baseline_mae": 1.952,
+          "gain_vs_baseline": 0.056
+        }
+      ],
+      "bootstrap_promotion_gate": null,
+      "status": "production",
+      "notes": "Candidate model passed verification. MAE: 1.016 (improvement: +0.000). Promoted to production. | Regenerated bundle via atomic promotion with CQR and SHA-256 self-verification"
     }
   ]
 }
