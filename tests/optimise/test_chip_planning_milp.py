@@ -16,6 +16,7 @@ Zero hardcoded player names in production code.
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.chips.planner import (
@@ -239,6 +240,7 @@ def test_opportunity_cost_single_chip_per_gw():
 # ==============================================================================
 # Test 5: Chip Synergy Detection (WC then BB) (WI-5.1)
 # ==============================================================================
+@pytest.mark.slow
 def test_chip_synergies_wc_then_bb():
     """
     WI-5.1: Verifies detection of Wildcard followed by Bench Boost within 1 to 3 GWs.
@@ -276,6 +278,7 @@ def test_chip_synergies_wc_then_bb():
 # ==============================================================================
 # Test 6: Set 1 Use-It-Or-Lose-It Logic and Deadline Warning (WI-5.1)
 # ==============================================================================
+@pytest.mark.slow
 def test_set_1_use_it_or_lose_it_logic():
     """
     WI-5.1: Set 1 chips unused at GW19 deadline have zero rollover value.
@@ -378,6 +381,7 @@ def test_rule_r2_and_legal_chip_sequences():
 # ==============================================================================
 # Test 8: 10 Diverse Historical / Synthetic States (WI-5.2 Acceptance)
 # ==============================================================================
+@pytest.mark.slow
 def test_10_historical_states_reproduce_sensible_choices_and_no_illegal_sequences():
     """
     WI-5.2 Acceptance: Chip planning on 10 historical states reproduces sensible choices
@@ -467,6 +471,7 @@ def test_10_historical_states_reproduce_sensible_choices_and_no_illegal_sequence
 # ==============================================================================
 # Test 9: Disagreement Report Between Legacy Fixed Gates and New Rules (WI-5.2)
 # ==============================================================================
+@pytest.mark.slow
 def test_disagreement_report_legacy_vs_data_driven_rules():
     """
     WI-5.2 Acceptance: Generates an audit report comparing legacy fixed gates

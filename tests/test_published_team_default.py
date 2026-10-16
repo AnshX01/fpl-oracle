@@ -37,7 +37,8 @@ def test_secret_redaction_formats_url_and_exception(monkeypatch):
         record = logging.LogRecord("app", logging.ERROR, "", 0, "failed", (), sys.exc_info())
     SecretRedactingFilter().filter(record)
     assert "other-secret" not in record.getMessage()
-    assert "ValueError" in record.getMessage()
+    assert "other-secret" not in str(record.exc_text)
+    assert "ValueError" in str(record.exc_text)
 
 
 def test_news_gemini_key_is_header_not_url(monkeypatch):

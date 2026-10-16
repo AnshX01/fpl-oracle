@@ -18,6 +18,8 @@ from fpl_oracle.utils.logging import setup_logging
 # Setup structured rotating file logger first before importing domain modules (S1-1d)
 logger = setup_logging()
 
+from fpl_oracle.api.fpl_client import fpl_client  # noqa: E402
+from fpl_oracle.api.read_context import read_context  # noqa: E402
 from fpl_oracle.config import BASE_DIR  # noqa: E402
 from fpl_oracle.server.jobs import start_scheduler, stop_scheduler  # noqa: E402
 from fpl_oracle.server.routes.api import router as api_router  # noqa: E402
@@ -66,8 +68,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API Router under /api prefix
-app.include_router(api_router, prefix="/api")
+
+@app.middleware("http")
+async def upstream_snapshot_guard(request: Request, call_next):
+    """Pin repeated upstream reads and reject an advice response changed during work."""
+    context: dict = {}
+    token = read_context.set(context)
+    try:
+        response = await call_next(request)
+        changed = [
+            key for key, (_, _, timestamp) in context.items() if fpl_client._cache_timestamps.get(key) != timestamp
+        ]
+        if (
+            changed
+            and request.url.path.startswith("/api/")
+            and (request.method == "GET" or request.url.path in ("/api/transfers", "/api/optimize", "/api/chat"))
+        ):
+            return SafeJSONResponse(
+                status_code=409,
+                content={
+                    "status": "unavailable",
+                    "is_stale": True,
+                    "error": "Upstream data changed during analysis. Refresh the coherent snapshot.",
+                },
+            )
+        response.headers["X-FPL-Revision"] = str(fpl_client.revision)
+        return response
+    finally:
+        read_context.reset(token)
+
+
+# Include API Router (already has /api prefix configured)
+app.include_router(api_router)
 
 
 # Exception Handlers
@@ -85,7 +117,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     logger.warning(f"HTTP {exc.status_code} on {request.method} {request.url.path}: {exc.detail}")
     return SafeJSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail},
+        content={
+            "error": str(exc.detail),
+            "detail": exc.detail,
+            "code": exc.status_code,
+            "hint": "Check request parameters or verify resource identifiers.",
+            "fallback_used": False,
+        },
     )
 
 

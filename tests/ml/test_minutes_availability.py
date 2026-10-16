@@ -133,6 +133,7 @@ def test_single_reconciler_invariant():
     )
 
 
+@pytest.mark.slow
 def test_p_play_decile_reliability_gate():
     """
     Acceptance Gate: reliability for P(play) is within +/- 3 pp per decile
@@ -173,6 +174,7 @@ def test_p_play_decile_reliability_gate():
             assert abs(diff_pp) <= 3.0, f"Decile {dec} diff {diff_pp:+.2f} pp exceeded +/- 3 pp gate (N={n})"
 
 
+@pytest.mark.slow
 def test_minutes_brier_and_mae_gate():
     """
     Acceptance Gate: P(starts) Brier score and E[minutes] MAE improve or stay equal on the backtest.

@@ -348,9 +348,10 @@ class TestAssistantGroundingWI63:
         assert "99.9" not in text
 
     @pytest.mark.anyio
-    async def test_offline_expert_provider_clearly_labelled(self):
+    async def test_offline_expert_provider_clearly_labelled(self, monkeypatch):
         """Offline expert provider output must always be prepended with explicit offline mode banner."""
         provider = OfflineExpertProvider()
+        monkeypatch.setattr(provider, "_generate_response", AsyncMock(return_value="Gameweek 6 advice overview"))
         ans = await provider.chat(messages=[{"role": "user", "content": "Tell me about GW6"}], system_prompt="")
         assert ans.startswith(OFFLINE_MODE_PREFIX)
         assert "OFFLINE EXPERT MODE" in ans

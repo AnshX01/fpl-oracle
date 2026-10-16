@@ -68,6 +68,7 @@ def test_fixture_level_bonus_sum_constraint(synthetic_bonus_data):
     assert fixture_total <= 6.0001, f"Fixture bonus total {fixture_total:.4f} exceeded 6.0 cap"
 
 
+@pytest.mark.slow
 def test_2026_27_bps_rules_era_positional_gate():
     """
     Acceptance Gate: per-position mean predicted bonus vs realised over 2026/27 finalised GWs

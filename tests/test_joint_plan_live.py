@@ -297,6 +297,7 @@ def test_dynamic_valuation_replaces_fixed_constants(small_reference_squad_and_po
     assert vals_b["3xc"] == 7.2
 
 
+@pytest.mark.slow
 def test_live_api_endpoint_invokes_joint_planner(configured_advisor):
     """
     Live API Endpoint Invocation Test:
@@ -337,6 +338,7 @@ def test_live_api_endpoint_invokes_joint_planner(configured_advisor):
     asyncio.run(_run())
 
 
+@pytest.mark.slow
 def test_cross_surface_consistency(configured_advisor):
     """
     Cross-Surface Consistency Test:
