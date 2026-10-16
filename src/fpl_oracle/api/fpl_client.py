@@ -103,9 +103,18 @@ class FPLClient:
             await self._client.aclose()
             self._client = None
 
+    def _namespaced_cache_key(self, cache_key: str) -> str:
+        from fpl_oracle.utils.season import derive_season
+
+        season = derive_season(format="hyphen")
+        if not cache_key.startswith(f"{season}:"):
+            return f"{season}:{cache_key}"
+        return cache_key
+
     def get_data_as_of(self, cache_key: str) -> str | None:
         """Return ISO timestamp of when data for key was fetched or last updated."""
-        dt = self._cache_timestamps.get(cache_key)
+        ns_key = self._namespaced_cache_key(cache_key)
+        dt = self._cache_timestamps.get(ns_key) or self._cache_timestamps.get(cache_key)
         return dt.isoformat() if dt else None
 
     async def _fetch_json(
@@ -116,6 +125,13 @@ class FPLClient:
         Returns (data, is_stale).
         """
         from fpl_oracle.api.read_context import recalled, remember
+
+        if force_refresh:
+            from fpl_oracle.ml.predict import projection_engine
+
+            projection_engine.invalidate_cache()
+
+        cache_key = self._namespaced_cache_key(cache_key)
 
         if not hasattr(self, "_source_requests"):
             self._source_requests = {}

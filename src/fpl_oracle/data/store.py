@@ -170,8 +170,8 @@ class DataStore:
     def get_session(self) -> Session:
         return self.session_factory()
 
-    def get_cache_entry(self, key: str) -> tuple[dict[str, Any], datetime] | None:
-        """Return (data, updated_at) if valid cache entry exists."""
+    def get_cache_entry(self, key: str) -> tuple[dict[str, Any], datetime, datetime] | None:
+        """Return (data, updated_at, expires_at) if valid cache entry exists."""
         with self.get_session() as session:
             entry = session.query(APICacheEntry).filter(APICacheEntry.key == key).first()
             if entry:
@@ -185,7 +185,8 @@ class DataStore:
                         if upd and upd.tzinfo is None:
                             upd = upd.replace(tzinfo=UTC)
                         upd_dt: datetime = upd if isinstance(upd, datetime) else now
-                        return json.loads(str(entry.data_json)), upd_dt
+                        exp_dt: datetime = exp if isinstance(exp, datetime) else now
+                        return json.loads(str(entry.data_json)), upd_dt, exp_dt
                     except Exception:
                         return None
         return None
