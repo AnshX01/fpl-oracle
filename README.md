@@ -49,13 +49,10 @@ Forward model scoring needs future pre-deadline freezes and checked results. Syn
 ## Development checks
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check src tests scripts
-.\.venv\Scripts\python.exe scripts\check_secrets.py
-node tests\js\test_atomic_publish.cjs
-node tests\js\test_ui_polish.cjs
-node tests\js\test_autosubs.cjs
-node tests\js\test_current_league_rank.cjs
+.\.venv\Scripts\python.exe -m ruff format --check src tests scripts
+.\.venv\Scripts\python.exe -m mypy src
+.\.venv\Scripts\python.exe -m pytest -m "not slow"
 ```
 
 Model training and promotion are separate explicit tasks, not routine setup steps.
