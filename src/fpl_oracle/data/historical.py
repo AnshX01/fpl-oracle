@@ -351,15 +351,16 @@ class HistoricalDataManager:
         # Atomic append and idempotency against master_history.csv
         old = pd.read_csv(self.output_file, low_memory=False) if self.output_file.exists() else pd.DataFrame()
         if not old.empty:
+            past_rows = old[old["season"] != curr_season].copy()
+            curr_rows = old[old["season"] == curr_season].copy()
             # Drop any existing rows for (curr_season, gw) to ensure idempotency (no double-append)
-            remaining_rows = old[~((old["season"] == curr_season) & (old["round"] == gw))].copy()
-            merged = pd.concat([remaining_rows, fresh_df], ignore_index=True)
+            curr_rows = curr_rows[curr_rows["round"] != gw]
+            fresh_cleaned = self._clean_and_standardize(fresh_df)
+            curr_merged = pd.concat([curr_rows, fresh_cleaned], ignore_index=True)
+            curr_merged = curr_merged.drop_duplicates(subset=["season", "element", "fixture", "round"], keep="last")
+            merged = pd.concat([past_rows, curr_merged], ignore_index=True)
         else:
-            merged = fresh_df
-
-        merged = self._clean_and_standardize(merged)
-        # Final deduplication guard
-        merged = merged.drop_duplicates(subset=["season", "element", "fixture", "round"], keep="last")
+            merged = self._clean_and_standardize(fresh_df)
 
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.output_file.with_suffix(".csv.tmp")

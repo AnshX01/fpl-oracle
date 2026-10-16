@@ -1,5 +1,26 @@
-﻿COMMAND: python -c "from fpl_oracle.ml.predict import projection_engine; projection_engine.load_or_train(); print('SUCCESS: Model weights loaded with verified integrity lock; is_loaded =', projection_engine.is_loaded)"
-exit code: 0
-OUTPUT:
-SUCCESS: Model weights loaded with verified integrity lock; is_loaded = True
-
+{
+  "schema_version": 1,
+  "command": [
+    "C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe",
+    "-c",
+    "from fpl_oracle.ml.predict import projection_engine; projection_engine.load_or_train(); print('SUCCESS: Model weights loaded with verified integrity lock; is_loaded =', projection_engine.is_loaded)"
+  ],
+  "exit_code": 0,
+  "stdout": "SUCCESS: Model weights loaded with verified integrity lock; is_loaded = True\n",
+  "stderr": "",
+  "output": "SUCCESS: Model weights loaded with verified integrity lock; is_loaded = True",
+  "timestamp": "2026-10-16T08:48:57.223403+00:00",
+  "git_commit": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "code_head": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "path": "data/models/manifest.json",
+      "sha256": "19b65088932646498eb7d9461ee96458edfbc9d1d361a388868ad34ea02ec445"
+    }
+  ],
+  "file_hashes": {
+    "data/models/manifest.json": "19b65088932646498eb7d9461ee96458edfbc9d1d361a388868ad34ea02ec445"
+  },
+  "gates": []
+}
