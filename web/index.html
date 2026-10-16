@@ -41,7 +41,7 @@
       <ui-button class="mobile-menu-trigger" variant="ghost" icon="menu" icon-only aria-label="Open navigation" @click="showNavigation = true"></ui-button>
       <div class="brand"><div><div class="brand-name">{{ mainTabs.find(t => t.key === activeTab)?.label || 'Overview' }}</div><div class="brand-sub num">{{ deadlineDisplay }}</div></div></div>
       <div class="top-actions">
-        <ui-button variant="primary" icon="refresh-cw" :loading="pipelineRunning" aria-label="Update data" @click="triggerSyncPipeline">{{ pipelineRunning ? pipelineProgress + '%' : 'Update' }}</ui-button>
+        <ui-button variant="primary" icon="refresh-cw" :loading="pipelineRunning" aria-label="Update data" @click="triggerSyncPipeline">{{ pipelineRunning ? (pipelineProgress != null ? pipelineProgress + '%' : '—') : 'Update' }}</ui-button>
         <ui-button variant="ghost" icon="message-circle" icon-only aria-label="Ask about my team" @click="showChatDrawer = true">Ask</ui-button>
         <ui-button class="mobile-theme" variant="ghost" :icon="isDark ? 'sun' : 'moon'" icon-only aria-label="Toggle theme" @click="toggleTheme"></ui-button>
       </div>
@@ -61,7 +61,7 @@
 </div></ui-modal>
   <main class="container main">
 
-    <div v-if="pipelineRunning" class="callout tone-info" role="status"><ui-icon name="loader-circle" class="spin"></ui-icon><span>{{ pipelineCurrentStage }} ({{ pipelineProgress }}%)</span></div>
+    <div v-if="pipelineRunning" class="callout tone-info" role="status"><ui-icon name="loader-circle" class="spin"></ui-icon><span>{{ pipelineCurrentStage }} ({{ pipelineProgress != null ? pipelineProgress + '%' : '—' }})</span></div>
     <div v-if="usingPublishedTeam && !followedLocked" class="published-team-note" data-testid="published-team-note">
       <span>{{ publishedTeamNote }} Team changed since then?</span>
       <ui-button size="sm" variant="ghost" @click="openConfirmTeam().then(()=>confirmMode='different')">Update team</ui-button>
@@ -171,7 +171,7 @@
         <glass-card title="Rivals" lift>
           <span class="stat-label">Current league rank</span>
           <ui-button v-if="aux.league.error" size="sm" @click="retryAux('league')">Try again</ui-button>
-          <div class="stat"><span class="stat-value stat-big">{{ currentLeagueRankLabel }}</span><span class="stat-label">{{ leagueData.league_name || 'Mini-league standings' }}{{ squadData.overall_points != null ? ' · ' + squadData.overall_points + ' points' : '' }}</span></div>
+          <div class="stat"><span class="stat-value stat-big">{{ currentLeagueRankLabel }}</span><span class="stat-label">{{ (leagueData && leagueData.league_name) ? leagueData.league_name : 'Mini-league standings' }}{{ (squadData && squadData.overall_points != null) ? ' · ' + squadData.overall_points + ' points' : '' }}</span></div>
           <p class="muted">Simulated first-place rate: <strong class="num">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</strong></p>
           <p class="subtle">Tactical mode: {{ leagueData.strategy?.mode_title || '—' }}</p>
 
@@ -194,7 +194,7 @@
           <div v-if="flaggedSquadPlayers.length" class="grid cols-2">
             <div v-for="player in flaggedSquadPlayers" :key="player.element" class="item-row" style="display:grid;gap:8px">
               <div class="row between">
-                <div class="row"><strong>{{ player.web_name }}</strong><ui-badge tone="warn">{{ player.chance_of_playing ?? 75 }}% chance</ui-badge></div>
+                <div class="row"><strong>{{ player.web_name || '—' }}</strong><ui-badge :tone="formatChanceOfPlaying(player).tone" :title="formatChanceOfPlaying(player).tooltip">{{ formatChanceOfPlaying(player).text }}</ui-badge></div>
                 <ui-badge v-if="player.news_mode === 'gated_active'" tone="ok">Active</ui-badge>
                 <ui-badge v-else-if="player.news_mode === 'shadow'" tone="info">Preview</ui-badge>
               </div>
@@ -300,7 +300,7 @@
                 <tr v-for="row in contingencyMatrix" :key="row.element">
                   <td><strong>{{ row.web_name }}</strong></td>
                   <td class="muted">{{ row.position }}</td>
-                  <td><ui-badge :tone="row.chance_of_playing >= 75 ? 'ok' : 'warn'">{{ row.chance_of_playing }}%</ui-badge></td>
+                  <td><ui-badge :tone="formatChanceOfPlaying(row).tone" :title="formatChanceOfPlaying(row).tooltip">{{ formatChanceOfPlaying(row).text }}</ui-badge></td>
                   <td>{{ row.autosub_player }} <span class="num muted">({{ row.autosub_expected_points }} pts)</span><div class="subtle num">{{ row.autosub_points_delta >= 0 ? '+' : '' }}{{ row.autosub_points_delta }} points compared with the starter</div></td>
                   <td>{{ row.emergency_replacement }} <span class="num muted">({{ row.emergency_expected_points }} pts)</span><div class="subtle num">Net {{ row.emergency_net_expected_points }} pts after hit</div></td>
                   <td><ui-badge :tone="row.action_verdict === 'EXECUTE_TRANSFER' ? 'ok' : 'info'">{{ row.action_verdict === 'EXECUTE_TRANSFER' ? 'Transfer' : row.action_verdict === 'TRUST_BENCH' ? 'Trust bench' : 'Monitor' }}</ui-badge></td>
@@ -374,7 +374,7 @@
       <glass-card title="Overall rank">
         <div class="stat"><span class="stat-value stat-big num">{{ overallRankLabel }}</span></div>
       </glass-card>
-      <glass-card title="Rivals" :subtitle="'League: ' + (leagueData.league_name || 'My League')">
+      <glass-card title="Rivals" :subtitle="'League: ' + ((leagueData && leagueData.league_name) ? leagueData.league_name : 'My League')">
         <div class="stats">
           <div class="stat"><span class="stat-label">Simulated first-place rate</span><span class="stat-value stat-big">{{ leagueData.simulation?.user_win_probability_pct != null ? Math.round(leagueData.simulation.user_win_probability_pct) + '%' : '—' }}</span><span class="subtle">5 weeks</span></div>
           <div class="stat"><span class="stat-label">Average simulated rank</span><span class="stat-value stat-big">{{ leagueData.simulation?.expected_final_rank != null ? '#' + leagueData.simulation.expected_final_rank.toFixed(1) : '—' }}</span><span class="subtle"></span></div>
