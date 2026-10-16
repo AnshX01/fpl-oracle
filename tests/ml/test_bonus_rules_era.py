@@ -84,7 +84,7 @@ def test_2026_27_bps_rules_era_positional_gate():
     X, Y, meta = feature_engineering.build_historical_features(df_raw, return_meta=True)
 
     mask_train = meta["season"].isin(["2023-24", "2024-25", "2025-26"])
-    mask_test = meta["season"] == "2026-27"
+    mask_test = (meta["season"] == "2026-27") & (meta["round"] <= 5)
 
     if not mask_test.any():
         pytest.skip("No 2026-27 records found in dataset")

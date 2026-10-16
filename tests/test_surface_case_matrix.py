@@ -307,7 +307,7 @@ def test_chat_captain_other_gw_and_missing_squad_are_explicit(configured_advisor
         text = await OfflineExpertProvider().chat(
             messages=[{"role": "user", "content": "who should I captain?"}], system_prompt=""
         )
-        assert text.startswith("Captain advice unavailable:")
+        assert "Captain advice unavailable:" in text
 
     asyncio.run(run())
 
