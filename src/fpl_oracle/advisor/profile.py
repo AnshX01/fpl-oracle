@@ -88,7 +88,9 @@ class ManagerProfileService:
                     if isinstance(legacy_data, dict):
                         data = {
                             "entry_id": legacy_data.get("manager_id", 1085141),
-                            "risk_appetite": "template-safe" if legacy_data.get("risk_preference") == "conservative" else "balanced",
+                            "risk_appetite": "template-safe"
+                            if legacy_data.get("risk_preference") == "conservative"
+                            else "balanced",
                             "mini_leagues": [
                                 {
                                     "league_id": legacy_data.get("target_league_id", 435956),
@@ -207,17 +209,19 @@ class ManagerProfileService:
                 score += 1.0
                 rationale += " [Preferred Captain Pool]"
 
-            ranked_candidates.append({
-                "element": eid,
-                "web_name": str(row.get("web_name", f"ID_{eid}")),
-                "position": str(row.get("position", "MID")),
-                "expected_points": xp,
-                "p10_floor": p10,
-                "p90_ceiling": p90,
-                "effective_ownership": eo,
-                "selection_score": round(score, 3),
-                "rationale": rationale,
-            })
+            ranked_candidates.append(
+                {
+                    "element": eid,
+                    "web_name": str(row.get("web_name", f"ID_{eid}")),
+                    "position": str(row.get("position", "MID")),
+                    "expected_points": xp,
+                    "p10_floor": p10,
+                    "p90_ceiling": p90,
+                    "effective_ownership": eo,
+                    "selection_score": round(score, 3),
+                    "rationale": rationale,
+                }
+            )
 
         ranked_candidates.sort(key=lambda c: c["selection_score"], reverse=True)
         return ranked_candidates

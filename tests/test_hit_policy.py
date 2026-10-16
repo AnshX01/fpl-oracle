@@ -171,4 +171,3 @@ def test_multiperiod_mc_hit_policy_hurdle_and_parameters():
     )
     assert p_star_lead2 == 0.90
     assert k_lead2 == 1.09
-

@@ -190,7 +190,9 @@ def sync_architecture_doc(check_only: bool = False) -> bool:
     new_text = new_text.replace("57-column feature schema", "62-column feature schema")
 
     new_table = generate_markdown_table()
-    table_pattern = re.compile(r"The \d+ model features are grouped into \d+ functional clusters:.*?(?=\n---|\n## )", re.DOTALL)
+    table_pattern = re.compile(
+        r"The \d+ model features are grouped into \d+ functional clusters:.*?(?=\n---|\n## )", re.DOTALL
+    )
     new_text = table_pattern.sub(new_table + "\n", new_text)
 
     DOC_PATH.write_text(new_text, encoding="utf-8")

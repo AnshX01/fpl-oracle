@@ -70,8 +70,7 @@ class ScoringEnsemble:
                 self.blend_weights = (float(bw[0]), float(bw[1]), float(bw[2]))
             if "positional_blend_weights" in data:
                 self.positional_blend_weights = {
-                    pos: (float(w[0]), float(w[1]), float(w[2]))
-                    for pos, w in data["positional_blend_weights"].items()
+                    pos: (float(w[0]), float(w[1]), float(w[2])) for pos, w in data["positional_blend_weights"].items()
                 }
             if "bucket_quantiles" in data:
                 self.bucket_quantiles = data["bucket_quantiles"]
@@ -91,8 +90,7 @@ class ScoringEnsemble:
         }
         if self.positional_blend_weights is not None:
             res["positional_blend_weights"] = {
-                pos: [round(w, 4) for w in weights]
-                for pos, weights in self.positional_blend_weights.items()
+                pos: [round(w, 4) for w in weights] for pos, weights in self.positional_blend_weights.items()
             }
         return res
 
@@ -353,9 +351,7 @@ class ScoringEnsemble:
         exp_blend_adj = np.zeros(n)
         # Apply learned validation blend with heuristic baselines (WI-3.10)
         has_baseline_features = (
-            "roll_points_5" in X.columns
-            and "roll_starts_ratio_5" in X.columns
-            and "opponent_difficulty" in X.columns
+            "roll_points_5" in X.columns and "roll_starts_ratio_5" in X.columns and "opponent_difficulty" in X.columns
         )
         if has_baseline_features and (
             (self.positional_blend_weights is not None)
@@ -370,14 +366,13 @@ class ScoringEnsemble:
                 blended_xP = np.copy(raw_xP)
                 for pos, (w_ml, w_rec, w_sea) in self.positional_blend_weights.items():
                     pos_mask = (
-                        (pos_gkp if pos == "GKP" else (pos_def if pos == "DEF" else (pos_mid if pos == "MID" else pos_fwd)))
-                        > 0.5
-                    )
+                        pos_gkp
+                        if pos == "GKP"
+                        else (pos_def if pos == "DEF" else (pos_mid if pos == "MID" else pos_fwd))
+                    ) > 0.5
                     if np.any(pos_mask):
                         blended_xP[pos_mask] = (
-                            w_ml * raw_xP[pos_mask]
-                            + w_rec * base_recent[pos_mask]
-                            + w_sea * base_season[pos_mask]
+                            w_ml * raw_xP[pos_mask] + w_rec * base_recent[pos_mask] + w_sea * base_season[pos_mask]
                         )
             else:
                 assert self.blend_weights is not None
@@ -422,9 +417,7 @@ class ScoringEnsemble:
             p90 = p90_vals
         # Otherwise use calibrated CQR model
         elif self.cqr is not None and getattr(self.cqr, "is_calibrated", False):
-            pos_labels = np.where(
-                pos_gkp > 0, "GKP", np.where(pos_def > 0, "DEF", np.where(pos_mid > 0, "MID", "FWD"))
-            )
+            pos_labels = np.where(pos_gkp > 0, "GKP", np.where(pos_def > 0, "DEF", np.where(pos_mid > 0, "MID", "FWD")))
             p10, p90, _ = self.cqr.predict_quantiles(
                 X=X,
                 pos_labels=pos_labels,

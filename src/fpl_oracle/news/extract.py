@@ -128,16 +128,40 @@ class TextExtractor:
                 other_clause_has_other_player = False
                 if player_clause_idx is not None:
                     stop_words = {
-                        "the", "a", "an", "he", "she", "they", "we", "i", "it",
-                        "this", "that", "but", "while", "whereas", "however", "on",
-                        "in", "at", "for", "with", "after", "before", "and"
+                        "the",
+                        "a",
+                        "an",
+                        "he",
+                        "she",
+                        "they",
+                        "we",
+                        "i",
+                        "it",
+                        "this",
+                        "that",
+                        "but",
+                        "while",
+                        "whereas",
+                        "however",
+                        "on",
+                        "in",
+                        "at",
+                        "for",
+                        "with",
+                        "after",
+                        "before",
+                        "and",
                     }
                     for i, c in enumerate(clauses):
                         if i != player_clause_idx:
                             words = [w.strip(".,;:!?()\"'") for w in c.split()]
                             cap_words = [
-                                w for w in words
-                                if w and w[0].isupper() and w.lower() != last_name.lower() and w.lower() not in stop_words
+                                w
+                                for w in words
+                                if w
+                                and w[0].isupper()
+                                and w.lower() != last_name.lower()
+                                and w.lower() not in stop_words
                             ]
                             if len(cap_words) >= 1:
                                 other_clause_has_other_player = True

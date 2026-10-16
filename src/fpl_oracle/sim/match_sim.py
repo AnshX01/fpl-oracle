@@ -244,8 +244,16 @@ class MatchSimulator:
                 t_home = row.get("team") if row.get("is_home", 1.0) == 1.0 else row.get("opponent_team", 0)
                 t_away = row.get("opponent_team", 0) if row.get("is_home", 1.0) == 1.0 else row.get("team")
 
-                h_xg = float(row.get("implied_team_xG", 1.35)) if row.get("is_home", 1.0) == 1.0 else float(row.get("implied_opp_xG", 1.35))
-                a_xg = float(row.get("implied_opp_xG", 1.20)) if row.get("is_home", 1.0) == 1.0 else float(row.get("implied_team_xG", 1.20))
+                h_xg = (
+                    float(row.get("implied_team_xG", 1.35))
+                    if row.get("is_home", 1.0) == 1.0
+                    else float(row.get("implied_opp_xG", 1.35))
+                )
+                a_xg = (
+                    float(row.get("implied_opp_xG", 1.20))
+                    if row.get("is_home", 1.0) == 1.0
+                    else float(row.get("implied_team_xG", 1.20))
+                )
 
                 # If fixture_cs_prob_map or p_clean_sheet is provided, match implied opponent xG
                 if fixture_cs_prob_map:
@@ -365,9 +373,21 @@ class MatchSimulator:
         penalties_missed = np.zeros((n_players, sims), dtype=np.int32)
         penalties_saved = np.zeros((n_players, sims), dtype=np.int32)
 
-        exp_g = np.asarray(df["expected_goals"], dtype=float) if "expected_goals" in df.columns else np.full(n_players, 0.05)
-        exp_a = np.asarray(df["expected_assists"], dtype=float) if "expected_assists" in df.columns else np.full(n_players, 0.05)
-        pen_order = np.asarray(df["penalties_order"], dtype=float) if "penalties_order" in df.columns else np.full(n_players, 5.0)
+        exp_g = (
+            np.asarray(df["expected_goals"], dtype=float)
+            if "expected_goals" in df.columns
+            else np.full(n_players, 0.05)
+        )
+        exp_a = (
+            np.asarray(df["expected_assists"], dtype=float)
+            if "expected_assists" in df.columns
+            else np.full(n_players, 0.05)
+        )
+        pen_order = (
+            np.asarray(df["penalties_order"], dtype=float)
+            if "penalties_order" in df.columns
+            else np.full(n_players, 5.0)
+        )
 
         # Group players by team to allocate team goals
         team_player_indices = df.groupby("team").groups
@@ -427,9 +447,7 @@ class MatchSimulator:
                         # Own goal check (small 2.5% chance)
                         if rng.uniform(0, 1) < 0.025 and len(opp_indices) > 0:
                             opp_def = [
-                                idx
-                                for idx in opp_indices
-                                if positions[idx] in ("DEF", "GKP") and on_pitch[idx, sim]
+                                idx for idx in opp_indices if positions[idx] in ("DEF", "GKP") and on_pitch[idx, sim]
                             ]
                             if opp_def:
                                 og_player = rng.choice(opp_def)
@@ -454,7 +472,9 @@ class MatchSimulator:
 
         # 5. Goalkeeper Saves
         saves = np.zeros((n_players, sims), dtype=np.int32)
-        exp_saves_in = np.asarray(df["expected_saves"], dtype=float) if "expected_saves" in df.columns else np.full(n_players, 0.0)
+        exp_saves_in = (
+            np.asarray(df["expected_saves"], dtype=float) if "expected_saves" in df.columns else np.full(n_players, 0.0)
+        )
 
         is_gkp = positions == "GKP"
         for i in np.where(is_gkp)[0]:

@@ -95,9 +95,7 @@ class AttackingModel(BaseComponent):
             teams = X.attrs["meta"]["team"].values
         else:
             surrogate_cols = [
-                c
-                for c in ["implied_team_xG", "was_home", "days_rest", "team_strength_attack"]
-                if c in X.columns
+                c for c in ["implied_team_xG", "was_home", "days_rest", "team_strength_attack"] if c in X.columns
             ]
             if surrogate_cols:
                 teams = pd.factorize(X[surrogate_cols].apply(tuple, axis=1))[0]
@@ -135,9 +133,7 @@ class AttackingModel(BaseComponent):
             # Guard against single-player or tiny evaluation queries (<3 players)
             if len(idx) < 3:
                 lam_fallback = (
-                    float(np.mean(X["implied_team_xG"].iloc[idx]))
-                    if "implied_team_xG" in X.columns
-                    else 1.35
+                    float(np.mean(X["implied_team_xG"].iloc[idx])) if "implied_team_xG" in X.columns else 1.35
                 )
                 if lam_fallback > 0:
                     goal_shares[idx] = reconciled_goals[idx] / lam_fallback
@@ -258,11 +254,7 @@ class AttackingModel(BaseComponent):
 
         # Corner / indirect free-kick boost: ~0.08 assists/match for primary
         if "corners_and_indirect_freekicks_order" in X.columns:
-            cn_ord = (
-                pd.to_numeric(X["corners_and_indirect_freekicks_order"], errors="coerce")
-                .fillna(99)
-                .values
-            )
+            cn_ord = pd.to_numeric(X["corners_and_indirect_freekicks_order"], errors="coerce").fillna(99).values
             cn_boost = np.where(cn_ord == 1, 0.08, np.where(cn_ord == 2, 0.03, 0.0)) * m_weight
             exp_assists = exp_assists + cn_boost
 

@@ -91,7 +91,9 @@ def test_exc_info_preserved_and_traceback_scrubbed(caplog):
     test_logger.addFilter(CaptureFilter())
 
     try:
-        req = httpx.Request("POST", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro?key={fake_key}")
+        req = httpx.Request(
+            "POST", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro?key={fake_key}"
+        )
         resp = httpx.Response(500, request=req)
         resp.raise_for_status()
     except httpx.HTTPStatusError:

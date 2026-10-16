@@ -111,7 +111,12 @@ class SquadHealthDiagnosis:
             status: Literal["KEEP", "WATCH", "REPLACE"] = "KEEP"
 
             # Reason 1: Availability / Injury flag
-            if chance_val == 0.0 or "loan" in news.lower() or "suspended" in news.lower() or "ruled out" in news.lower():
+            if (
+                chance_val == 0.0
+                or "loan" in news.lower()
+                or "suspended" in news.lower()
+                or "ruled out" in news.lower()
+            ):
                 status = "REPLACE"
                 reasons.append(f"UNAVAILABLE: {news if news else '0% chance of playing'}")
             elif chance_val <= 25.0:
@@ -119,7 +124,9 @@ class SquadHealthDiagnosis:
                 reasons.append(f"MAJOR_INJURY_RISK: {chance_val:.0f}% chance ({news if news else 'doubtful'})")
             elif chance_val < 100.0 or (news and "doubt" in news.lower()):
                 status = "WATCH"
-                reasons.append(f"AVAILABILITY_DOUBT: {chance_val:.0f}% chance of playing ({news if news else 'flagged'})")
+                reasons.append(
+                    f"AVAILABILITY_DOUBT: {chance_val:.0f}% chance of playing ({news if news else 'flagged'})"
+                )
 
             # Reason 2: Minutes risk / Low projection
             pos_floor = self.position_floors.get(pos, 3.0)
@@ -136,13 +143,15 @@ class SquadHealthDiagnosis:
             buy_p = float(row.get("purchase_price", row.get("value", 0.0)))
             curr_p = float(row.get("now_cost", row.get("value", 0.0)))
             if curr_p < buy_p:
-                reasons.append(f"PRICE_FALL: value dropped by £{(buy_p - curr_p)/10:.1f}m since purchase")
+                reasons.append(f"PRICE_FALL: value dropped by £{(buy_p - curr_p) / 10:.1f}m since purchase")
 
             # Reason 4: Form / Fixture deficit
             pos_bench = benchmarks.get(pos, 5.0)
             deficiency = max(0.0, pos_bench - xp)
             if deficiency > 2.5:
-                reasons.append(f"FIXTURE_DEFICIT: {deficiency:.2f} xP gap to position elite benchmark ({pos_bench:.2f})")
+                reasons.append(
+                    f"FIXTURE_DEFICIT: {deficiency:.2f} xP gap to position elite benchmark ({pos_bench:.2f})"
+                )
 
             # Functional starter definition: P(play) >= min_prob and xP >= position_floor
             is_functional = (chance_val >= (self.min_play_prob * 100.0)) and (xp >= pos_floor)
@@ -187,11 +196,15 @@ class SquadHealthDiagnosis:
         functional_count = sum(1 for s in starters if s.functional_starter)
 
         # 4. Structural deficiency score: points lost on deficient starter slots vs benchmark
-        structural_deficiency = sum(s.deficiency_loss for s in starters if not s.functional_starter or s.status == "REPLACE")
+        structural_deficiency = sum(
+            s.deficiency_loss for s in starters if not s.functional_starter or s.status == "REPLACE"
+        )
 
         # 5. Overall squad classification
         if functional_count >= self.min_functional_starters and structural_deficiency <= self.deficiency_threshold:
-            classification: Literal["HEALTHY_CORE_TARGETED_FIXES", "STRUCTURAL_OVERHAUL_REQUIRED"] = "HEALTHY_CORE_TARGETED_FIXES"
+            classification: Literal["HEALTHY_CORE_TARGETED_FIXES", "STRUCTURAL_OVERHAUL_REQUIRED"] = (
+                "HEALTHY_CORE_TARGETED_FIXES"
+            )
         else:
             classification = "STRUCTURAL_OVERHAUL_REQUIRED"
 

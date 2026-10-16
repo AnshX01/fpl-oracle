@@ -72,7 +72,7 @@ class SquadOptimizer:
             for idx in df.index:
                 prob += s[idx] <= x[idx]
                 prob += c[idx] <= s[idx]
-                if (unavailable_of[idx] if unavailable_of is not None else False):
+                if unavailable_of[idx] if unavailable_of is not None else False:
                     if repair_elements is not None and int(elem_of[idx]) in repair_elements:
                         prob += s[idx] == 0
                     else:
@@ -155,12 +155,7 @@ class SquadOptimizer:
             costs = repair_sell_prices or {}
             prob += (
                 pulp.lpSum(
-                    (
-                        costs[int(elem_of[i])]
-                        if int(elem_of[i]) in repair_elements
-                        else value_of[i]
-                    )
-                    * x[i]
+                    (costs[int(elem_of[i])] if int(elem_of[i]) in repair_elements else value_of[i]) * x[i]
                     for i in df.index
                 )
                 <= budget

@@ -39,72 +39,80 @@ def build_synthetic_player_pool() -> pd.DataFrame:
     rows = []
     # 4 GKP: IDs 1..4
     for i in range(1, 5):
-        rows.append({
-            "element": i,
-            "web_name": f"GKP_{i}",
-            "position": "GKP",
-            "team": (i % 20) + 1,
-            "value": 50,
-            "purchase_price": 50,
-            "selling_price": 50,
-            "expected_points": 4.5 - (i * 0.2),
-            "p10": 2.0,
-            "p90": 6.5,
-            "chance_of_playing": 100.0,
-            "selected_by_percent": 15.0,
-            "news": "",
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"GKP_{i}",
+                "position": "GKP",
+                "team": (i % 20) + 1,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": 4.5 - (i * 0.2),
+                "p10": 2.0,
+                "p90": 6.5,
+                "chance_of_playing": 100.0,
+                "selected_by_percent": 15.0,
+                "news": "",
+            }
+        )
     # 10 DEF: IDs 5..14
     for i in range(5, 15):
-        rows.append({
-            "element": i,
-            "web_name": f"DEF_{i}",
-            "position": "DEF",
-            "team": (i % 20) + 1,
-            "value": 50,
-            "purchase_price": 50,
-            "selling_price": 50,
-            "expected_points": 5.2 - ((i - 5) * 0.15),
-            "p10": 1.5,
-            "p90": 8.0,
-            "chance_of_playing": 100.0,
-            "selected_by_percent": 20.0,
-            "news": "",
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"DEF_{i}",
+                "position": "DEF",
+                "team": (i % 20) + 1,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": 5.2 - ((i - 5) * 0.15),
+                "p10": 1.5,
+                "p90": 8.0,
+                "chance_of_playing": 100.0,
+                "selected_by_percent": 20.0,
+                "news": "",
+            }
+        )
     # 10 MID: IDs 15..24
     for i in range(15, 25):
-        rows.append({
-            "element": i,
-            "web_name": f"MID_{i}",
-            "position": "MID",
-            "team": (i % 20) + 1,
-            "value": 65,
-            "purchase_price": 65,
-            "selling_price": 65,
-            "expected_points": 6.8 - ((i - 15) * 0.2),
-            "p10": 2.5,
-            "p90": 11.0,
-            "chance_of_playing": 100.0,
-            "selected_by_percent": 25.0,
-            "news": "",
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"MID_{i}",
+                "position": "MID",
+                "team": (i % 20) + 1,
+                "value": 65,
+                "purchase_price": 65,
+                "selling_price": 65,
+                "expected_points": 6.8 - ((i - 15) * 0.2),
+                "p10": 2.5,
+                "p90": 11.0,
+                "chance_of_playing": 100.0,
+                "selected_by_percent": 25.0,
+                "news": "",
+            }
+        )
     # 6 FWD: IDs 25..30
     for i in range(25, 31):
-        rows.append({
-            "element": i,
-            "web_name": f"FWD_{i}",
-            "position": "FWD",
-            "team": (i % 20) + 1,
-            "value": 75,
-            "purchase_price": 75,
-            "selling_price": 75,
-            "expected_points": 7.5 - ((i - 25) * 0.25),
-            "p10": 3.0,
-            "p90": 13.0,
-            "chance_of_playing": 100.0,
-            "selected_by_percent": 35.0,
-            "news": "",
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"FWD_{i}",
+                "position": "FWD",
+                "team": (i % 20) + 1,
+                "value": 75,
+                "purchase_price": 75,
+                "selling_price": 75,
+                "expected_points": 7.5 - ((i - 25) * 0.25),
+                "p10": 3.0,
+                "p90": 13.0,
+                "chance_of_playing": 100.0,
+                "selected_by_percent": 35.0,
+                "news": "",
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -269,11 +277,15 @@ def test_scenario_s6_mini_league_lead_profiles():
 
     prof_safe = ManagerProfile(
         risk_appetite="template-safe",
-        mini_leagues=[MiniLeagueContext(league_id=1, name="ML", rank=1, total_points=350, leader_points=350, gap_to_leader=0)],
+        mini_leagues=[
+            MiniLeagueContext(league_id=1, name="ML", rank=1, total_points=350, leader_points=350, gap_to_leader=0)
+        ],
     )
     prof_diff = ManagerProfile(
         risk_appetite="differential-hungry",
-        mini_leagues=[MiniLeagueContext(league_id=1, name="ML", rank=3, total_points=330, leader_points=350, gap_to_leader=20)],
+        mini_leagues=[
+            MiniLeagueContext(league_id=1, name="ML", rank=3, total_points=330, leader_points=350, gap_to_leader=20)
+        ],
     )
 
     svc = ManagerProfileService()
@@ -308,7 +320,9 @@ def test_scenario_s7_imminent_price_rise():
     )
 
     # If target 14 is in recommended moves, warning is attached
-    assert any("price rise" in trig.lower() for trig in rec.what_would_change_this) or len(rec.what_would_change_this) >= 1
+    assert (
+        any("price rise" in trig.lower() for trig in rec.what_would_change_this) or len(rec.what_would_change_this) >= 1
+    )
 
 
 def test_scenario_s8_key_player_doubt():
@@ -354,7 +368,14 @@ def test_advisor_recommendation_schema_validation():
         confidence="HIGH",
         what_would_change_this=["Press conference injury confirmation to key starter"],
         deadline_and_next_checkpoint="Deadline: Saturday 11:00 UK. Next checkpoint: 3-hour pre-deadline check.",
-        captain_advice=CaptainAdvice(captain_id=25, captain_name="FWD_25", expected_points=7.5, p10_floor=3.0, p90_ceiling=13.0, rationale="Top projection"),
+        captain_advice=CaptainAdvice(
+            captain_id=25,
+            captain_name="FWD_25",
+            expected_points=7.5,
+            p10_floor=3.0,
+            p90_ceiling=13.0,
+            rationale="Top projection",
+        ),
         chip_outlook="Hold chips; Set 1 chips remain available until GW19 deadline.",
         one_line_summary="Roll free transfer. Captain FWD_25.",
     )
@@ -392,7 +413,9 @@ def test_advice_ledger_immutability_and_finalised_scoring(tmp_path: Path):
         confidence="HIGH",
         what_would_change_this=["Injury update"],
         deadline_and_next_checkpoint="Deadline: Sat 11:00",
-        captain_advice=CaptainAdvice(captain_id=25, captain_name="FWD_25", expected_points=7.5, p10_floor=3.0, p90_ceiling=13.0),
+        captain_advice=CaptainAdvice(
+            captain_id=25, captain_name="FWD_25", expected_points=7.5, p10_floor=3.0, p90_ceiling=13.0
+        ),
         chip_outlook="Hold chips",
         one_line_summary="Roll transfer.",
     )

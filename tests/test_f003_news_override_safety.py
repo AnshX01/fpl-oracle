@@ -28,7 +28,9 @@ def test_untrusted_rss_source_cannot_override_in_gated_active(sample_haaland, mo
     Official availability must remain intact.
     """
     reconciler = AvailabilityReconciler(mode=RecommendationMode.GATED_ACTIVE)
-    monkeypatch.setattr("fpl_oracle.news.reconcile.check_news_benchmark_gate", lambda *args, **kwargs: (True, "Gate OPEN", {}))
+    monkeypatch.setattr(
+        "fpl_oracle.news.reconcile.check_news_benchmark_gate", lambda *args, **kwargs: (True, "Gate OPEN", {})
+    )
 
     fake_ev = PlayerEvidence(
         player_id=350,
@@ -58,7 +60,9 @@ def test_single_allowlisted_source_capped_not_zeroed(sample_haaland, monkeypatch
     it must be capped at reduced probability (e.g. 25%) and flagged.
     """
     reconciler = AvailabilityReconciler(mode=RecommendationMode.GATED_ACTIVE)
-    monkeypatch.setattr("fpl_oracle.news.reconcile.check_news_benchmark_gate", lambda *args, **kwargs: (True, "Gate OPEN", {}))
+    monkeypatch.setattr(
+        "fpl_oracle.news.reconcile.check_news_benchmark_gate", lambda *args, **kwargs: (True, "Gate OPEN", {})
+    )
 
     single_ev = PlayerEvidence(
         player_id=350,
@@ -87,7 +91,9 @@ def test_two_independent_allowlisted_sources_permit_zero_cop(sample_haaland, mon
     F-003: Two independent allowlisted sources (BBC and Guardian) permit full override to 0.0.
     """
     reconciler = AvailabilityReconciler(mode=RecommendationMode.GATED_ACTIVE)
-    monkeypatch.setattr("fpl_oracle.news.reconcile.check_news_benchmark_gate", lambda *args, **kwargs: (True, "Gate OPEN", {}))
+    monkeypatch.setattr(
+        "fpl_oracle.news.reconcile.check_news_benchmark_gate", lambda *args, **kwargs: (True, "Gate OPEN", {})
+    )
 
     ev1 = PlayerEvidence(
         player_id=350,
@@ -116,7 +122,9 @@ def test_two_independent_allowlisted_sources_permit_zero_cop(sample_haaland, mon
         candidate_evidence=[ev1, ev2],
     )
 
-    assert rec.effective_chance_of_playing == 0.0, f"Expected 0.0 COP for two independent sources, got {rec.effective_chance_of_playing}"
+    assert rec.effective_chance_of_playing == 0.0, (
+        f"Expected 0.0 COP for two independent sources, got {rec.effective_chance_of_playing}"
+    )
     assert rec.applied_to_production is True
 
 
@@ -126,7 +134,9 @@ def test_duplicate_syndicated_copies_count_as_single_source(sample_haaland, monk
     count as a single source and do not satisfy the 2-independent-sources rule.
     """
     reconciler = AvailabilityReconciler(mode=RecommendationMode.GATED_ACTIVE)
-    monkeypatch.setattr("fpl_oracle.news.reconcile.check_news_benchmark_gate", lambda *args, **kwargs: (True, "Gate OPEN", {}))
+    monkeypatch.setattr(
+        "fpl_oracle.news.reconcile.check_news_benchmark_gate", lambda *args, **kwargs: (True, "Gate OPEN", {})
+    )
 
     ev1 = PlayerEvidence(
         player_id=350,
@@ -156,7 +166,9 @@ def test_duplicate_syndicated_copies_count_as_single_source(sample_haaland, monk
         candidate_evidence=[ev1, ev2],
     )
 
-    assert rec.effective_chance_of_playing > 0.0, "Duplicate syndicated copy erroneously counted as 2 independent sources!"
+    assert rec.effective_chance_of_playing > 0.0, (
+        "Duplicate syndicated copy erroneously counted as 2 independent sources!"
+    )
 
 
 def test_hidden_text_and_prompt_injection_variants_rejected(sample_haaland):
@@ -228,7 +240,9 @@ def test_two_independent_outlets_with_identical_quote_counts_as_two(sample_haala
         candidate_evidence=[ev1, ev2],
     )
 
-    assert rec.effective_chance_of_playing == 0.0, "Identical quote from two distinct publishers should count as 2 independent sources!"
+    assert rec.effective_chance_of_playing == 0.0, (
+        "Identical quote from two distinct publishers should count as 2 independent sources!"
+    )
     assert rec.applied_to_production is True
 
 
@@ -276,7 +290,9 @@ def test_syndicated_wire_copies_count_as_single_source(sample_haaland, monkeypat
         candidate_evidence=[ev1, ev2],
     )
 
-    assert rec.effective_chance_of_playing > 0.0, "Syndicated wire copies from different domains must NOT count as 2 independent sources!"
+    assert rec.effective_chance_of_playing > 0.0, (
+        "Syndicated wire copies from different domains must NOT count as 2 independent sources!"
+    )
     assert rec.effective_chance_of_playing <= 25.0
     assert "single uncorroborated" in rec.reconciliation_reason.lower()
 

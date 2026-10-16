@@ -24,27 +24,144 @@ def risk_test_squad():
     """
     rows = [
         # GKPs (2)
-        {"element": 1, "web_name": "GKP_1", "position": "GKP", "expected_points": 5.0, "p10": 3.0, "p90": 7.0, "chance_of_playing": 100.0},
-        {"element": 2, "web_name": "GKP_2", "position": "GKP", "expected_points": 1.0, "p10": 0.0, "p90": 2.0, "chance_of_playing": 100.0},
-
+        {
+            "element": 1,
+            "web_name": "GKP_1",
+            "position": "GKP",
+            "expected_points": 5.0,
+            "p10": 3.0,
+            "p90": 7.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 2,
+            "web_name": "GKP_2",
+            "position": "GKP",
+            "expected_points": 1.0,
+            "p10": 0.0,
+            "p90": 2.0,
+            "chance_of_playing": 100.0,
+        },
         # DEFs (5)
-        {"element": 3, "web_name": "DEF_1", "position": "DEF", "expected_points": 6.0, "p10": 4.0, "p90": 8.0, "chance_of_playing": 100.0},
-        {"element": 4, "web_name": "DEF_2", "position": "DEF", "expected_points": 6.0, "p10": 4.0, "p90": 8.0, "chance_of_playing": 100.0},
-        {"element": 5, "web_name": "DEF_3", "position": "DEF", "expected_points": 6.0, "p10": 4.0, "p90": 8.0, "chance_of_playing": 100.0},
-        {"element": 6, "web_name": "DEF_SECURE", "position": "DEF", "expected_points": 4.8, "p10": 3.8, "p90": 5.8, "chance_of_playing": 100.0},
-        {"element": 7, "web_name": "DEF_BENCH", "position": "DEF", "expected_points": 1.0, "p10": 0.0, "p90": 2.0, "chance_of_playing": 100.0},
-
+        {
+            "element": 3,
+            "web_name": "DEF_1",
+            "position": "DEF",
+            "expected_points": 6.0,
+            "p10": 4.0,
+            "p90": 8.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 4,
+            "web_name": "DEF_2",
+            "position": "DEF",
+            "expected_points": 6.0,
+            "p10": 4.0,
+            "p90": 8.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 5,
+            "web_name": "DEF_3",
+            "position": "DEF",
+            "expected_points": 6.0,
+            "p10": 4.0,
+            "p90": 8.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 6,
+            "web_name": "DEF_SECURE",
+            "position": "DEF",
+            "expected_points": 4.8,
+            "p10": 3.8,
+            "p90": 5.8,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 7,
+            "web_name": "DEF_BENCH",
+            "position": "DEF",
+            "expected_points": 1.0,
+            "p10": 0.0,
+            "p90": 2.0,
+            "chance_of_playing": 100.0,
+        },
         # MIDs (5)
-        {"element": 8, "web_name": "MID_1", "position": "MID", "expected_points": 7.0, "p10": 5.0, "p90": 9.0, "chance_of_playing": 100.0},
-        {"element": 9, "web_name": "MID_2", "position": "MID", "expected_points": 7.0, "p10": 5.0, "p90": 9.0, "chance_of_playing": 100.0},
-        {"element": 10, "web_name": "MID_3", "position": "MID", "expected_points": 7.0, "p10": 5.0, "p90": 9.0, "chance_of_playing": 100.0},
-        {"element": 11, "web_name": "MID_DOUBTFUL", "position": "MID", "expected_points": 5.0, "p10": 2.0, "p90": 10.0, "chance_of_playing": 75.0},
-        {"element": 12, "web_name": "MID_BENCH", "position": "MID", "expected_points": 1.0, "p10": 0.0, "p90": 2.0, "chance_of_playing": 100.0},
-
+        {
+            "element": 8,
+            "web_name": "MID_1",
+            "position": "MID",
+            "expected_points": 7.0,
+            "p10": 5.0,
+            "p90": 9.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 9,
+            "web_name": "MID_2",
+            "position": "MID",
+            "expected_points": 7.0,
+            "p10": 5.0,
+            "p90": 9.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 10,
+            "web_name": "MID_3",
+            "position": "MID",
+            "expected_points": 7.0,
+            "p10": 5.0,
+            "p90": 9.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 11,
+            "web_name": "MID_DOUBTFUL",
+            "position": "MID",
+            "expected_points": 5.0,
+            "p10": 2.0,
+            "p90": 10.0,
+            "chance_of_playing": 75.0,
+        },
+        {
+            "element": 12,
+            "web_name": "MID_BENCH",
+            "position": "MID",
+            "expected_points": 1.0,
+            "p10": 0.0,
+            "p90": 2.0,
+            "chance_of_playing": 100.0,
+        },
         # FWDs (3)
-        {"element": 13, "web_name": "FWD_1", "position": "FWD", "expected_points": 7.0, "p10": 5.0, "p90": 9.0, "chance_of_playing": 100.0},
-        {"element": 14, "web_name": "FWD_2", "position": "FWD", "expected_points": 7.0, "p10": 5.0, "p90": 9.0, "chance_of_playing": 100.0},
-        {"element": 15, "web_name": "FWD_3", "position": "FWD", "expected_points": 7.0, "p10": 5.0, "p90": 9.0, "chance_of_playing": 100.0},
+        {
+            "element": 13,
+            "web_name": "FWD_1",
+            "position": "FWD",
+            "expected_points": 7.0,
+            "p10": 5.0,
+            "p90": 9.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 14,
+            "web_name": "FWD_2",
+            "position": "FWD",
+            "expected_points": 7.0,
+            "p10": 5.0,
+            "p90": 9.0,
+            "chance_of_playing": 100.0,
+        },
+        {
+            "element": 15,
+            "web_name": "FWD_3",
+            "position": "FWD",
+            "expected_points": 7.0,
+            "p10": 5.0,
+            "p90": 9.0,
+            "chance_of_playing": 100.0,
+        },
     ]
     return pd.DataFrame(rows)
 
@@ -59,7 +176,9 @@ def test_flag_off_preserves_pure_expected_points(risk_test_squad):
     for mode in ["balanced", "conservative", "aggressive"]:
         res = optimizer.select_lineup_and_captain(risk_test_squad, risk_preference=mode, risk_aware_lineup=False)
         starters = set(res["starters"]["element"])
-        assert 11 in starters, f"With flag OFF, MID_DOUBTFUL (5.0 xP) must start over DEF_SECURE (4.8 xP) in {mode} mode"
+        assert 11 in starters, (
+            f"With flag OFF, MID_DOUBTFUL (5.0 xP) must start over DEF_SECURE (4.8 xP) in {mode} mode"
+        )
         assert 6 not in starters, f"With flag OFF, DEF_SECURE must be benched in {mode} mode"
 
 

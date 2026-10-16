@@ -23,12 +23,38 @@ async def run_gw6_replay():
 
     # Historical purchase prices & GW5 market values entering GW6
     purchase_prices = {
-        496: 45, 109: 45, 8: 55, 418: 50, 87: 45, 10: 55, 259: 40,
-        427: 80, 154: 97, 368: 70, 286: 51, 124: 55, 411: 155, 346: 60, 165: 77,
+        496: 45,
+        109: 45,
+        8: 55,
+        418: 50,
+        87: 45,
+        10: 55,
+        259: 40,
+        427: 80,
+        154: 97,
+        368: 70,
+        286: 51,
+        124: 55,
+        411: 155,
+        346: 60,
+        165: 77,
     }
     gw5_market_costs = {
-        496: 45, 109: 45, 8: 58, 418: 49, 87: 45, 10: 55, 259: 40,
-        427: 79, 154: 97, 368: 70, 286: 51, 124: 57, 411: 156, 346: 60, 165: 78,
+        496: 45,
+        109: 45,
+        8: 58,
+        418: 49,
+        87: 45,
+        10: 55,
+        259: 40,
+        427: 79,
+        154: 97,
+        368: 70,
+        286: 51,
+        124: 57,
+        411: 156,
+        346: 60,
+        165: 78,
     }
     squad_eids = [496, 8, 418, 87, 427, 154, 368, 286, 124, 411, 346, 109, 165, 10, 259]
 
@@ -51,19 +77,23 @@ async def run_gw6_replay():
         p_row = gw6_pool[gw6_pool["element"] == eid]
         xp = float(p_row["expected_points"].iloc[0]) if not p_row.empty else 0.0
 
-        squad_rows.append({
-            "element": eid,
-            "web_name": elem.web_name,
-            "position": pos_str,
-            "team": elem.team,
-            "value": now_c,
-            "purchase_price": buy_p,
-            "selling_price": sell_p,
-            "expected_points": xp,
-            "chance_of_playing": 1.0,
-            "chance_of_playing_next_round": 100,
-        })
-        print(f"{elem.web_name:<28} | {pos_str:<4} | {team_str:<14} | {buy_p/10:>5.1f}m | {now_c/10:>5.1f}m | {sell_p/10:>5.1f}m | {xp:>6.2f}")
+        squad_rows.append(
+            {
+                "element": eid,
+                "web_name": elem.web_name,
+                "position": pos_str,
+                "team": elem.team,
+                "value": now_c,
+                "purchase_price": buy_p,
+                "selling_price": sell_p,
+                "expected_points": xp,
+                "chance_of_playing": 1.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
+        print(
+            f"{elem.web_name:<28} | {pos_str:<4} | {team_str:<14} | {buy_p / 10:>5.1f}m | {now_c / 10:>5.1f}m | {sell_p / 10:>5.1f}m | {xp:>6.2f}"
+        )
 
     squad_df = pd.DataFrame(squad_rows)
     bank_tenths = 18.0  # £1.8m
@@ -72,7 +102,9 @@ async def run_gw6_replay():
 
     tot_sell = squad_df["selling_price"].sum() / 10.0
     print("-" * 84)
-    print(f"Total Squad Selling Value: £{tot_sell:.1f}m | Bank: £{bank_tenths/10:.1f}m | Team Value: £{(tot_sell + bank_tenths/10):.1f}m")
+    print(
+        f"Total Squad Selling Value: £{tot_sell:.1f}m | Bank: £{bank_tenths / 10:.1f}m | Team Value: £{(tot_sell + bank_tenths / 10):.1f}m"
+    )
     print(f"Free Transfers Available: {free_transfers} | Chips Available: {sorted(chips_available)}")
 
     # Pruned limits for fast, lossless solve
@@ -201,19 +233,26 @@ async def run_gw6_replay():
         print(f"  GW6 Net xP:      {act.net_xp:.2f} (Lineup: {act.lineup_xp:.2f}, Cap: {act.captain_xp:.2f})")
         print(f"  Horizon Net xP:  {p.horizon_net_xp:.2f}")
         print(f"  J(plan):         {j_val:.3f} (Delta J vs Roll: {delta_j:+.3f})")
-        print(f"  J Decomposition: Lineup={decomp.get('discounted_lineup_xp', 0):.2f}, Cap={decomp.get('discounted_captain_xp', 0):.2f}, Bench={decomp.get('discounted_bench_xp', 0):.2f}, Hits={decomp.get('discounted_hits_cost', 0):.2f}, TermFT={decomp.get('terminal_ft_value', 0):.2f}, TermBank={decomp.get('terminal_bank_value', 0):.2f}, FTIncentive={decomp.get('ft_banking_incentive', 0):.4f}")
-        print(f"  Bank End:        £{act.bank_end/10:.1f}m | FT Next: {act.free_transfers_next}")
+        print(
+            f"  J Decomposition: Lineup={decomp.get('discounted_lineup_xp', 0):.2f}, Cap={decomp.get('discounted_captain_xp', 0):.2f}, Bench={decomp.get('discounted_bench_xp', 0):.2f}, Hits={decomp.get('discounted_hits_cost', 0):.2f}, TermFT={decomp.get('terminal_ft_value', 0):.2f}, TermBank={decomp.get('terminal_bank_value', 0):.2f}, FTIncentive={decomp.get('ft_banking_incentive', 0):.4f}"
+        )
+        print(f"  Bank End:        £{act.bank_end / 10:.1f}m | FT Next: {act.free_transfers_next}")
         print(f"  Solver Status:   {p.solver_status} | Gap: {p.solver_gap:.6f} | Time: {elap:.2f}s")
 
     # Monte Carlo hit policy evaluation
     import numpy as np
+
     rng = np.random.default_rng(42)
     n_sims = 2000
     noise_hit = rng.normal(0, 3.5, size=(n_sims, H))
     noise_roll = rng.normal(0, 3.5, size=(n_sims, H))
-    disc_weights = np.array([cfg.gamma ** t for t in range(H)])
-    sim_hit = np.sum((np.array([a.net_xp for a in plan_hit.trajectory]) + noise_hit) * disc_weights, axis=1) + plan_hit.objective_decomposition.get("terminal_ft_value", 0.0)
-    sim_roll = np.sum((np.array([a.net_xp for a in roll_plan.trajectory]) + noise_roll) * disc_weights, axis=1) + roll_plan.objective_decomposition.get("terminal_ft_value", 0.0)
+    disc_weights = np.array([cfg.gamma**t for t in range(H)])
+    sim_hit = np.sum(
+        (np.array([a.net_xp for a in plan_hit.trajectory]) + noise_hit) * disc_weights, axis=1
+    ) + plan_hit.objective_decomposition.get("terminal_ft_value", 0.0)
+    sim_roll = np.sum(
+        (np.array([a.net_xp for a in roll_plan.trajectory]) + noise_roll) * disc_weights, axis=1
+    ) + roll_plan.objective_decomposition.get("terminal_ft_value", 0.0)
     deltas = sim_hit - sim_roll
 
     p_gain = float(np.mean(deltas > 0))
@@ -232,13 +271,17 @@ async def run_gw6_replay():
     print(f"Sigma Delta:        {sigma_delta:.2f} xP")
     print(f"p* [PROVISIONAL]:   {p_star:.2f} (derived from balanced mode & deficit=26.0)")
     print(f"k  [PROVISIONAL]:   {k:.2f} (derived from balanced mode & deficit=26.0)")
-    print(f"Hit Verdict:        {hit_verdict} (p_gain={p_gain:.2f} vs p*={p_star:.2f}, Mean Delta={mean_delta:+.2f} vs k*sigma={k*sigma_delta:.2f})")
+    print(
+        f"Hit Verdict:        {hit_verdict} (p_gain={p_gain:.2f} vs p*={p_star:.2f}, Mean Delta={mean_delta:+.2f} vs k*sigma={k * sigma_delta:.2f})"
+    )
 
     best_non_chip = max([roll_plan, plan_1, plan_hit], key=lambda x: x.total_objective)
     wc_delta = wc_plan.total_objective - best_non_chip.total_objective
     option_value_waiting = 18.0
     if wc_delta > option_value_waiting:
-        wc_decision = f"WILDCARD NOW (Edge {wc_delta:+.2f} xP exceeds option value of waiting {option_value_waiting:.1f} xP)"
+        wc_decision = (
+            f"WILDCARD NOW (Edge {wc_delta:+.2f} xP exceeds option value of waiting {option_value_waiting:.1f} xP)"
+        )
     else:
         wc_decision = f"DEFER WILDCARD (Edge {wc_delta:+.2f} xP is below option value of waiting {option_value_waiting:.1f} xP; staged transfer plan captures {best_non_chip.total_objective - roll_plan.total_objective:+.2f} xP)"
     print(f"Wildcard Decision:  {wc_decision}")
@@ -247,17 +290,28 @@ async def run_gw6_replay():
     print("LEGACY SYSTEM VS NEW MULTI-PERIOD OPTIMIZER COMPARISON")
     print("=" * 80)
     print("Legacy Tool Recommendation (from consistency_coverage.md & rolling_decision_audit.md):")
-    print('  "PlanA/card/briefing agreed on 13 transfer-ins and 0 hits... recommended Wildcard when the user had 1 FT and £1.8m in bank."')
-    print('  "Its +24.86 discounted five-week edge was inflated by asymmetric future-chip pruning (the baseline rolled without future chip actions) and an uncalibrated 2.5x single-GW gain multiplier in simulate.py."')
+    print(
+        '  "PlanA/card/briefing agreed on 13 transfer-ins and 0 hits... recommended Wildcard when the user had 1 FT and £1.8m in bank."'
+    )
+    print(
+        '  "Its +24.86 discounted five-week edge was inflated by asymmetric future-chip pruning (the baseline rolled without future chip actions) and an uncalibrated 2.5x single-GW gain multiplier in simulate.py."'
+    )
     print("\nDefects in Legacy Tool that Produced False Wildcard:")
-    print("  1. Asymmetric future-chip evaluation: compared Wildcard with a rolling baseline forbidden from playing future chips.")
-    print("  2. Arbitrary 2.5x immediate-week gain multiplier in simulate.py that distorted long-term horizon tradeoffs.")
-    print("  3. Ignored destruction of £1.5m+ in accumulated player price equity and premature consumption of Set 1 Wildcard.")
+    print(
+        "  1. Asymmetric future-chip evaluation: compared Wildcard with a rolling baseline forbidden from playing future chips."
+    )
+    print(
+        "  2. Arbitrary 2.5x immediate-week gain multiplier in simulate.py that distorted long-term horizon tradeoffs."
+    )
+    print(
+        "  3. Ignored destruction of £1.5m+ in accumulated player price equity and premature consumption of Set 1 Wildcard."
+    )
     print("  4. New Optimizer Result: Recommends 1 Free Transfer (or Roll Transfer) with 0 Hits, preserving Wildcard.")
 
     print("\n" + "=" * 80)
     print("ACTUAL USER MOVE MADE AT GW6 DEADLINE:")
     print("  OUT: Bryan Mbeumo (£7.9m) -> IN: Bukayo Saka (£9.6m) [Cost: £9.6m, Bank left: £0.1m, Hits: 0]")
     print("=" * 80)
+
 
 asyncio.run(run_gw6_replay())

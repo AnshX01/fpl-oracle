@@ -30,6 +30,7 @@ def bundle_locked(method):
     Decorator acquiring both in-process thread lock and cross-process file lock.
     Safely serializes promotion, loading, and rollback across threads and OS processes.
     """
+
     @wraps(method)
     def wrapped(*args, **kwargs):
         target_dir = None

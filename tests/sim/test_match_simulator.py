@@ -52,7 +52,11 @@ def create_synthetic_gameweek_projections(n_teams: int = 20, players_per_team: i
                     p_play = 0.98 if is_st else 0.10
 
                     exp_g = (
-                        (0.30 * scale if pos == "FWD" else (0.14 * scale if pos == "MID" else (0.025 * scale if pos == "DEF" else 0.0)))
+                        (
+                            0.30 * scale
+                            if pos == "FWD"
+                            else (0.14 * scale if pos == "MID" else (0.025 * scale if pos == "DEF" else 0.0))
+                        )
                         if is_st
                         else 0.001
                     )
@@ -86,27 +90,29 @@ def create_synthetic_gameweek_projections(n_teams: int = 20, players_per_team: i
 
                     xP = app_pts + g_pts + a_pts + cs_pts - gc_ded + sv_pts + pen_sv_pts + dc_pts - cd_ded + exp_bn
 
-                    rows.append({
-                        "element": elem_id,
-                        "web_name": f"Player_{elem_id}",
-                        "team": t_id,
-                        "position": pos,
-                        "fixture_id": fix_id,
-                        "is_home": is_home,
-                        "opponent_team": opp,
-                        "p_starts": p_starts,
-                        "p_min60": p_min60,
-                        "p_play": p_play,
-                        "expected_goals": exp_g,
-                        "expected_assists": exp_a,
-                        "expected_saves": exp_s,
-                        "p_clean_sheet": p_cs,
-                        "p_defcon": p_dc,
-                        "penalties_order": pen_ord,
-                        "implied_team_xG": lam_t,
-                        "implied_opp_xG": opp_xg,
-                        "expected_points": round(xP, 3),
-                    })
+                    rows.append(
+                        {
+                            "element": elem_id,
+                            "web_name": f"Player_{elem_id}",
+                            "team": t_id,
+                            "position": pos,
+                            "fixture_id": fix_id,
+                            "is_home": is_home,
+                            "opponent_team": opp,
+                            "p_starts": p_starts,
+                            "p_min60": p_min60,
+                            "p_play": p_play,
+                            "expected_goals": exp_g,
+                            "expected_assists": exp_a,
+                            "expected_saves": exp_s,
+                            "p_clean_sheet": p_cs,
+                            "p_defcon": p_dc,
+                            "penalties_order": pen_ord,
+                            "implied_team_xG": lam_t,
+                            "implied_opp_xG": opp_xg,
+                            "expected_points": round(xP, 3),
+                        }
+                    )
                     elem_id += 1
 
     return pd.DataFrame(rows)
@@ -188,16 +194,22 @@ def test_mean_check_within_one_percent():
         agg_ana = float(np.mean(analytic_xP[mask]))
         pct_diff = abs(agg_sim - agg_ana) / agg_ana
 
-        print(f"[WI-4.2 Mean Check] {pos}: Sim Mean = {agg_sim:.3f} | Analytic Mean = {agg_ana:.3f} | Diff = {pct_diff:.2%}")
+        print(
+            f"[WI-4.2 Mean Check] {pos}: Sim Mean = {agg_sim:.3f} | Analytic Mean = {agg_ana:.3f} | Diff = {pct_diff:.2%}"
+        )
         # Positional mean within 5% across full stochastic process
-        assert pct_diff < 0.05, f"{pos} simulated mean {agg_sim:.3f} diverged from analytic {agg_ana:.3f} by {pct_diff:.2%}"
+        assert pct_diff < 0.05, (
+            f"{pos} simulated mean {agg_sim:.3f} diverged from analytic {agg_ana:.3f} by {pct_diff:.2%}"
+        )
 
     # Overall aggregate across all starters within 1% (WI-4.2 requirement)
     starter_mask = df["p_starts"] > 0.8
     overall_sim = float(np.mean(sim_means[starter_mask]))
     overall_ana = float(np.mean(analytic_xP[starter_mask]))
     overall_diff = abs(overall_sim - overall_ana) / overall_ana
-    print(f"[WI-4.2 Aggregate Mean Check] Overall: Sim = {overall_sim:.3f} | Ana = {overall_ana:.3f} | Diff = {overall_diff:.2%}")
+    print(
+        f"[WI-4.2 Aggregate Mean Check] Overall: Sim = {overall_sim:.3f} | Ana = {overall_ana:.3f} | Diff = {overall_diff:.2%}"
+    )
     assert overall_diff < 0.01, f"Overall simulated mean diverged from analytic by {overall_diff:.2%} (Target < 1%)"
 
 

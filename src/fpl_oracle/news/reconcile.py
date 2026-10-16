@@ -506,7 +506,11 @@ class AvailabilityReconciler:
                     num_independent_sources = len(source_clusters)
                     has_external_urls = any(bool(e.source_url) for e in valid_ruled_out)
 
-                    if self.mode == RecommendationMode.GATED_ACTIVE and has_external_urls and num_independent_sources < 2:
+                    if (
+                        self.mode == RecommendationMode.GATED_ACTIVE
+                        and has_external_urls
+                        and num_independent_sources < 2
+                    ):
                         # Single uncorroborated allowlisted source: cap at configurable single_source_cop_cap and flag it!
                         is_shadow_override = True
                         cap_val = self.prob_settings.single_source_cop_cap
@@ -591,7 +595,12 @@ class AvailabilityReconciler:
             self._logged_disagreements.append(disagreement_entry)
             logger.info(
                 "[AvailabilityDisagreement] %s (ID %s): API=%s%% vs News=%s%% (mode=%s, applied=%s)",
-                web_name, elem_id, baseline_cop, effective_cop, self.mode, applied_to_production
+                web_name,
+                elem_id,
+                baseline_cop,
+                effective_cop,
+                self.mode,
+                applied_to_production,
             )
 
         return ReconciledAvailability(

@@ -63,7 +63,12 @@ def test_wi74_data_quality_detects_anomalies_and_drift():
             {"element": 1, "web_name": "P1", "value": 50, "expected_points": 4.0},
             {"element": 1, "web_name": "P1_Dupe", "value": 50, "expected_points": 4.0},  # Duplicated ID!
             {"element": 2, "web_name": "CheapAnomaly", "value": 20, "expected_points": 2.0},  # £2.0m < £3.5m minimum!
-            {"element": 3, "web_name": "ExpensiveAnomaly", "value": 180, "expected_points": 10.0},  # £18.0m > £16.0m max!
+            {
+                "element": 3,
+                "web_name": "ExpensiveAnomaly",
+                "value": 180,
+                "expected_points": 10.0,
+            },  # £18.0m > £16.0m max!
             {"element": 4, "web_name": "MissingXp", "value": 60, "expected_points": None},  # 1/5 missing = 20% > 10%
             {"element": 5, "web_name": "NormalP", "value": 65, "expected_points": 5.0},
         ]

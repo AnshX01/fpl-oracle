@@ -72,7 +72,9 @@ class ProjectionEngine:
             self.is_loaded = True
             return
         except Exception as e:
-            logger.critical(f"[ModelIntegrity] Unreadable bundle weights during load: {e}. Initiating quarantine and rollback...")
+            logger.critical(
+                f"[ModelIntegrity] Unreadable bundle weights during load: {e}. Initiating quarantine and rollback..."
+            )
             model_registry.quarantine_and_recover(self.models_dir, reason=f"Unreadable weights: {e}")
             for model, path in weights:
                 loaded = model.load(path)
@@ -296,8 +298,11 @@ class ProjectionEngine:
         # Summed quantiles are not joint DGW quantiles. Preserve historical
         # model fields for compatibility, but carry their actual provenance.
         dgw_grouped["uncertainty_status"] = dgw_grouped["element"].map(
-            lambda eid: "dgw_marginal_sum_unvalidated" if len(fixture_records[int(eid)]) > 1
-            else "single_fixture_model_interval"
+            lambda eid: (
+                "dgw_marginal_sum_unvalidated"
+                if len(fixture_records[int(eid)]) > 1
+                else "single_fixture_model_interval"
+            )
         )
         dgw_grouped["dgw_covariance_calibrated"] = False
         self._cache[cache_key] = dgw_grouped.copy()

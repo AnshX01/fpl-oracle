@@ -66,10 +66,15 @@ def test_benchmark_category_errors_are_false_negatives_too(monkeypatch):
         )
     ]
     monkeypatch.setattr(script, "HELD_OUT_BENCHMARK_CASES", cases)
+
     class Reconciler:
-        def __init__(self,**kwargs):pass
-        def reconcile_player_fixture(self,*args,**kwargs):return SimpleNamespace(effective_chance_of_playing=100)
-    monkeypatch.setattr(script,"AvailabilityReconciler",Reconciler)
+        def __init__(self, **kwargs):
+            pass
+
+        def reconcile_player_fixture(self, *args, **kwargs):
+            return SimpleNamespace(effective_chance_of_playing=100)
+
+    monkeypatch.setattr(script, "AvailabilityReconciler", Reconciler)
     report = run_benchmark(
         {"x": [PlayerEvidence(player_id=1, player_name="A", category=EvidenceCategory.AVAILABLE, quote="A trained")]},
         write_reports=False,

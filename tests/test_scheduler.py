@@ -27,6 +27,7 @@ def clean_scheduler(monkeypatch):
 
     from fpl_oracle.api.cache import cache_manager
     from fpl_oracle.news.ingest import news_ingestion
+
     root = Path(__file__).parent / "fixtures"
     cache_manager.set("bootstrap-static", json.loads((root / "bootstrap_static.json").read_text()), 300)
     cache_manager.set("fixtures:all", json.loads((root / "fixtures.json").read_text()), 300)

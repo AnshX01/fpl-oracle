@@ -4,7 +4,6 @@ Monte Carlo simulation, strategy modes (Defending vs Chasing), and BGW/DGW calen
 Covers R1-R4 and W1-W3 requirements.
 """
 
-
 import pandas as pd
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture, Team

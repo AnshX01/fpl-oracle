@@ -131,7 +131,9 @@ class PlanCritiqueService:
         # 3. Calculate proposed plan's projected net xP
         # Build modified squad after week 1 proposed transfers
         k_transfers = len(proposed_transfers)
-        hits = max(0, k_transfers - free_transfers) if (proposed_chip or "").lower() not in {"wildcard", "freehit"} else 0
+        hits = (
+            max(0, k_transfers - free_transfers) if (proposed_chip or "").lower() not in {"wildcard", "freehit"} else 0
+        )
         hit_penalty = hits * 4.0
 
         pool_map = {int(r["element"]): r for _, r in player_pool_df.iterrows()}
@@ -162,15 +164,19 @@ class PlanCritiqueService:
                 gw_dict = {int(r["element"]): float(r.get("expected_points", 0.0)) for _, r in gw_df.iterrows()}
                 in_xp = gw_dict.get(int(in_id), 0.0) if in_id else 0.0
                 out_xp = gw_dict.get(int(out_id), 0.0) if out_id else 0.0
-                transfer_delta_xp += (in_xp - out_xp)
+                transfer_delta_xp += in_xp - out_xp
 
         # Captain adjustment
         captain_delta = 0.0
         if proposed_captain:
             opt_c = roll_plan.recommended_action.captain
-            c_now_xp = float(pool_map.get(proposed_captain, {}).get("expected_points", 0.0)) if proposed_captain in pool_map else 0.0
+            c_now_xp = (
+                float(pool_map.get(proposed_captain, {}).get("expected_points", 0.0))
+                if proposed_captain in pool_map
+                else 0.0
+            )
             opt_c_xp = float(pool_map.get(opt_c, {}).get("expected_points", 0.0)) if opt_c in pool_map else 0.0
-            captain_delta = (c_now_xp - opt_c_xp)
+            captain_delta = c_now_xp - opt_c_xp
 
         proposed_net_xp = round(roll_xp + transfer_delta_xp + captain_delta - hit_penalty, 2)
 
@@ -217,7 +223,7 @@ class PlanCritiqueService:
             verdict = "GOOD"
             numeric_reason = (
                 f"Captures {proposed_net_xp:.2f} horizon xP (regret only {regret:.2f} xP vs optimal {best_alt_xp:.2f} xP). "
-                f"P(beat roll) = {p_beat_roll*100:.1f}%."
+                f"P(beat roll) = {p_beat_roll * 100:.1f}%."
             )
         elif regret <= 2.0 and (gain_vs_roll >= -1.0 or hits == 0):
             verdict = "ACCEPTABLE"
@@ -229,7 +235,7 @@ class PlanCritiqueService:
             verdict = "WORSE THAN ALTERNATIVE"
             numeric_reason = (
                 f"Underperforms optimal alternative ({best_alt_xp:.2f} xP) by {regret:.2f} xP "
-                f"(Hits: -{hit_penalty:.0f} pts, P(beat roll) = {p_beat_roll*100:.1f}%)."
+                f"(Hits: -{hit_penalty:.0f} pts, P(beat roll) = {p_beat_roll * 100:.1f}%)."
             )
 
         return PlanEvaluationResult(
@@ -292,7 +298,11 @@ class PlanCritiqueService:
 
             pros = []
             cons = []
-            if eval_res.gain_vs_roll() if hasattr(eval_res, "gain_vs_roll") else (eval_res.proposed_net_xp - eval_res.roll_net_xp) > 0:
+            if (
+                eval_res.gain_vs_roll()
+                if hasattr(eval_res, "gain_vs_roll")
+                else (eval_res.proposed_net_xp - eval_res.roll_net_xp) > 0
+            ):
                 pros.append(f"+{eval_res.proposed_net_xp - eval_res.roll_net_xp:.2f} xP expected gain over rolling")
             else:
                 cons.append("Zero or negative gain over roll plan")
@@ -307,7 +317,7 @@ class PlanCritiqueService:
             elif eval_res.verdict == "WORSE THAN ALTERNATIVE":
                 cons.append(f"Leaves {eval_res.regret_xp:.2f} xP on the table vs best alternative")
 
-            risk_desc = f"P(beat roll) = {eval_res.prob_beat_roll*100:.1f}%"
+            risk_desc = f"P(beat roll) = {eval_res.prob_beat_roll * 100:.1f}%"
 
             item = OptionComparisonItem(
                 name=name,

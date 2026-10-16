@@ -22,7 +22,9 @@ def run_pruning_test():
     gws = [1, 2, 3, 4, 5]
     horizons = [5, 8]
 
-    print("| GW Instance | Horizon | Pruned Pool | Unpruned Pool | Pruned Obj | Unpruned Obj | Diff | Pruned Status | Unpruned Status | Pruned Time | Unpruned Time | Lossless? |")
+    print(
+        "| GW Instance | Horizon | Pruned Pool | Unpruned Pool | Pruned Obj | Unpruned Obj | Diff | Pruned Status | Unpruned Status | Pruned Time | Unpruned Time | Lossless? |"
+    )
     print("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
 
     for gw in gws:
@@ -102,9 +104,17 @@ def run_pruning_test():
             p_solved = "OPTIMAL" in plan_p.solver_status
             u_solved = "OPTIMAL" in plan_u.solver_status
             is_lossless = diff < 0.05 and p_solved and u_solved
-            lossless_str = "**YES**" if is_lossless else ("**NO**" if not u_solved or plan_u.total_objective == 0 else f"DIFF={diff:.2f}")
+            lossless_str = (
+                "**YES**"
+                if is_lossless
+                else ("**NO**" if not u_solved or plan_u.total_objective == 0 else f"DIFF={diff:.2f}")
+            )
 
-            p_size = len(opt_pruned.prune_candidates(pool_df, set(squad_df["element"]), list(range(gw, gw + H)), horizon_projections))
+            p_size = len(
+                opt_pruned.prune_candidates(
+                    pool_df, set(squad_df["element"]), list(range(gw, gw + H)), horizon_projections
+                )
+            )
             u_size = len(pool_df["element"].unique())
 
             print(

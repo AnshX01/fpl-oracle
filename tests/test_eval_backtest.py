@@ -106,13 +106,15 @@ def test_bootstrap_gameweeks():
     records = []
     for gw in range(1, 11):
         for _p in range(20):
-            records.append({
-                "season": "2025-26",
-                "round": gw,
-                "actual_points": 5.0,
-                "model_xp": 4.5,      # error = 0.5
-                "b2_roll_5": 3.0,     # error = 2.0 -> model gain = 1.5
-            })
+            records.append(
+                {
+                    "season": "2025-26",
+                    "round": gw,
+                    "actual_points": 5.0,
+                    "model_xp": 4.5,  # error = 0.5
+                    "b2_roll_5": 3.0,  # error = 2.0 -> model gain = 1.5
+                }
+            )
     df_syn = pd.DataFrame(records)
     res = bootstrap_gameweeks(df_syn, n_boot=500, seed=42)
     assert res["n_gameweeks"] == 10
@@ -180,11 +182,7 @@ def test_row_alignment_and_shuffled_predictions_regression():
         p_id = meta_gw.loc[idx, "element"]
         gw_num = int(meta_gw.loc[idx, "round"])
         s_val = str(meta_gw.loc[idx, "season"])
-        raw_match = df_raw[
-            (df_raw["element"] == p_id)
-            & (df_raw["round"] == gw_num)
-            & (df_raw["season"] == s_val)
-        ]
+        raw_match = df_raw[(df_raw["element"] == p_id) & (df_raw["round"] == gw_num) & (df_raw["season"] == s_val)]
         assert len(raw_match) == 1, f"Expected 1 raw row for element {p_id} GW{gw_num}, found {len(raw_match)}"
         assert float(Y_gw.loc[idx, "target_points"]) == float(raw_match["total_points"].values[0])
 
@@ -216,26 +214,28 @@ def test_backtest_compute_view_metrics_and_markdown(tmp_path: Path):
     records = []
     for gw in [1, 2]:
         for i in range(15):
-            records.append({
-                "season": "2025-26",
-                "round": gw,
-                "element": 100 + i,
-                "web_name": f"P_{i}",
-                "position": "MID",
-                "team": 1,
-                "actual_points": float(i % 6),
-                "actual_minutes": 90.0,
-                "model_xp": float(i % 5 + 0.5),
-                "p10": 1.0,
-                "p50": 3.0,
-                "p90": 6.0,
-                "b1_season_mean": 2.5,
-                "b2_roll_5": 2.8,
-                "b3_pos_prior": 2.0,
-                "b4_ep_next": 2.7,
-                "b5_prev_pts": 3.0,
-                "price": 55.0,
-            })
+            records.append(
+                {
+                    "season": "2025-26",
+                    "round": gw,
+                    "element": 100 + i,
+                    "web_name": f"P_{i}",
+                    "position": "MID",
+                    "team": 1,
+                    "actual_points": float(i % 6),
+                    "actual_minutes": 90.0,
+                    "model_xp": float(i % 5 + 0.5),
+                    "p10": 1.0,
+                    "p50": 3.0,
+                    "p90": 6.0,
+                    "b1_season_mean": 2.5,
+                    "b2_roll_5": 2.8,
+                    "b3_pos_prior": 2.0,
+                    "b4_ep_next": 2.7,
+                    "b5_prev_pts": 3.0,
+                    "price": 55.0,
+                }
+            )
     df = pd.DataFrame(records)
     tester = WalkForwardBacktester(output_base_dir=tmp_path)
     view_metrics = tester._compute_view_metrics(df)
@@ -348,13 +348,15 @@ def test_fast_synthetic_row_alignment_and_shuffled_predictions():
     base_xp = np.array([true_talent[pid - 1] for pid in player_ids])
     actual_pts = np.maximum(0, rng.poisson(base_xp))
 
-    df_synth = pd.DataFrame({
-        "element": player_ids,
-        "round": rounds,
-        "model_xp": base_xp,
-        "actual_points": actual_pts,
-        "actual_minutes": np.where(actual_pts > 0, 90, 0),
-    })
+    df_synth = pd.DataFrame(
+        {
+            "element": player_ids,
+            "round": rounds,
+            "model_xp": base_xp,
+            "actual_points": actual_pts,
+            "actual_minutes": np.where(actual_pts > 0, 90, 0),
+        }
+    )
 
     # 1. Assert row alignment
     assert (df_synth["element"] == player_ids).all()
@@ -372,7 +374,3 @@ def test_fast_synthetic_row_alignment_and_shuffled_predictions():
     shuf_rhos = [spearmanr(rng.permutation(y_pred), y_true)[0] for _ in range(50)]
     mean_shuf_rho = float(np.mean(shuf_rhos))
     assert abs(mean_shuf_rho) < 0.02, f"Expected |mean(rho)| < 0.02, got {mean_shuf_rho}"
-
-
-
-

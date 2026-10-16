@@ -274,7 +274,9 @@ class FrontierPlanner:
                         break
 
         # Final safety check: never recommend hit if marginal net gain <= 0
-        if recommended_pt.hits > 0 and (not recommended_pt.is_hit_justified or recommended_pt.net_gain_over_roll <= 0.0):
+        if recommended_pt.hits > 0 and (
+            not recommended_pt.is_hit_justified or recommended_pt.net_gain_over_roll <= 0.0
+        ):
             recommended_pt = next(
                 (p for p in frontier_points if p.hits == 0 and p.transfers_count <= free_transfers),
                 roll_point,
@@ -284,8 +286,8 @@ class FrontierPlanner:
 
         reason = (
             f"Selected k={recommended_pt.transfers_count} (Gain: +{recommended_pt.net_gain_over_roll:.2f} xP, "
-            f"Hits: {recommended_pt.hits}, P(impr): {recommended_pt.prob_improvement*100:.1f}%) "
-            f"capturing >= {self.rho*100:.0f}% of peak frontier gain (+{max_gain:.2f} xP at k={max_k}) "
+            f"Hits: {recommended_pt.hits}, P(impr): {recommended_pt.prob_improvement * 100:.1f}%) "
+            f"capturing >= {self.rho * 100:.0f}% of peak frontier gain (+{max_gain:.2f} xP at k={max_k}) "
             f"under Minimal Sufficient Intervention."
         )
 

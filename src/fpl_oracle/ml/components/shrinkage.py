@@ -549,9 +549,7 @@ def shrink_feature_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     val_m = np.where(val_col > 20.0, val_col / 10.0, val_col)
 
     team_str = (
-        df_out["team_strength_attack"].values
-        if "team_strength_attack" in df_out.columns
-        else np.full(len(df_out), 1.0)
+        df_out["team_strength_attack"].values if "team_strength_attack" in df_out.columns else np.full(len(df_out), 1.0)
     )
 
     n_5 = df_out["roll_minutes_5"].values * 5.0 if "roll_minutes_5" in df_out.columns else np.full(len(df_out), 0.0)
@@ -630,4 +628,3 @@ def shrink_feature_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             df_out.loc[mask, col] = shrunk_val
 
     return df_out
-

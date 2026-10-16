@@ -10,8 +10,19 @@ from pathlib import Path
 def test_zero_hardcoded_player_names_in_production_code():
     src_dir = Path("src/fpl_oracle")
     forbidden_names = [
-        "haaland", "salah", "saka", "palmer", "calafiori", "tarkowski",
-        "mbeumo", "szoboszlai", "belloumi", "verbruggen", "kinsky", "calvert-lewin", "gabriel"
+        "haaland",
+        "salah",
+        "saka",
+        "palmer",
+        "calafiori",
+        "tarkowski",
+        "mbeumo",
+        "szoboszlai",
+        "belloumi",
+        "verbruggen",
+        "kinsky",
+        "calvert-lewin",
+        "gabriel",
     ]
     # Allowlist: NLP benchmark cases dataset which contains raw real press conference quotes
     excluded_files = {"held_out_benchmark_cases.py"}

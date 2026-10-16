@@ -24,10 +24,7 @@ from fpl_oracle.ml.components.attacking import AttackingModel
 def fitted_attacking_model():
     np.random.seed(42)
     n = 200
-    X = pd.DataFrame({
-        col: np.random.uniform(0.1, 1.0, size=n)
-        for col in FEATURE_COLUMNS
-    })
+    X = pd.DataFrame({col: np.random.uniform(0.1, 1.0, size=n) for col in FEATURE_COLUMNS})
     X["pos_GKP"] = np.random.choice([0.0, 1.0], size=n, p=[0.85, 0.15])
     X["pos_DEF"] = np.random.choice([0.0, 1.0], size=n, p=[0.7, 0.3])
     X["pos_MID"] = np.random.choice([0.0, 1.0], size=n, p=[0.6, 0.4])
@@ -35,10 +32,12 @@ def fitted_attacking_model():
     X["implied_team_xG"] = np.random.uniform(0.8, 2.5, size=n)
     X["chance_of_playing"] = np.full(n, 100.0)
 
-    Y = pd.DataFrame({
-        "target_goals": np.random.poisson(0.25, size=n).astype(float),
-        "target_assists": np.random.poisson(0.20, size=n).astype(float),
-    })
+    Y = pd.DataFrame(
+        {
+            "target_goals": np.random.poisson(0.25, size=n).astype(float),
+            "target_assists": np.random.poisson(0.20, size=n).astype(float),
+        }
+    )
 
     model = AttackingModel()
     model.fit(X, Y)
@@ -107,8 +106,24 @@ def test_property_reconciliation_on_live_upcoming_pipeline(fitted_attacking_mode
     Verifies that extract_live_features_for_upcoming generates coherent expectations.
     """
     teams = [
-        Team(id=1, name="Arsenal", short_name="ARS", strength_attack_home=1200, strength_defence_home=1250, strength_attack_away=1180, strength_defence_away=1220),
-        Team(id=2, name="Chelsea", short_name="CHE", strength_attack_home=1150, strength_defence_home=1100, strength_attack_away=1120, strength_defence_away=1080),
+        Team(
+            id=1,
+            name="Arsenal",
+            short_name="ARS",
+            strength_attack_home=1200,
+            strength_defence_home=1250,
+            strength_attack_away=1180,
+            strength_defence_away=1220,
+        ),
+        Team(
+            id=2,
+            name="Chelsea",
+            short_name="CHE",
+            strength_attack_home=1150,
+            strength_defence_home=1100,
+            strength_attack_away=1120,
+            strength_defence_away=1080,
+        ),
     ]
     elements = []
     # Build 15 players per team
@@ -134,10 +149,34 @@ def test_property_reconciliation_on_live_upcoming_pipeline(fitted_attacking_mode
         teams=teams,
         elements=elements,
         element_types=[
-            ElementType(id=1, plural_name="Goalkeepers", plural_name_short="GKP", singular_name="Goalkeeper", singular_name_short="GKP"),
-            ElementType(id=2, plural_name="Defenders", plural_name_short="DEF", singular_name="Defender", singular_name_short="DEF"),
-            ElementType(id=3, plural_name="Midfielders", plural_name_short="MID", singular_name="Midfielder", singular_name_short="MID"),
-            ElementType(id=4, plural_name="Forwards", plural_name_short="FWD", singular_name="Forward", singular_name_short="FWD"),
+            ElementType(
+                id=1,
+                plural_name="Goalkeepers",
+                plural_name_short="GKP",
+                singular_name="Goalkeeper",
+                singular_name_short="GKP",
+            ),
+            ElementType(
+                id=2,
+                plural_name="Defenders",
+                plural_name_short="DEF",
+                singular_name="Defender",
+                singular_name_short="DEF",
+            ),
+            ElementType(
+                id=3,
+                plural_name="Midfielders",
+                plural_name_short="MID",
+                singular_name="Midfielder",
+                singular_name_short="MID",
+            ),
+            ElementType(
+                id=4,
+                plural_name="Forwards",
+                plural_name_short="FWD",
+                singular_name="Forward",
+                singular_name_short="FWD",
+            ),
         ],
     )
     fixtures = [
@@ -279,19 +318,13 @@ def test_rmse_mid_fwd_not_worse_on_historical(fitted_attacking_model):
     y_true_g = np.array(y_true_goals)
 
     # Predictions without reconciliation
-    preds_raw = fitted_attacking_model.predict(
-        df_val, team_ids=team_ids, fixture_ids=fixture_ids, reconcile=False
-    )
+    preds_raw = fitted_attacking_model.predict(df_val, team_ids=team_ids, fixture_ids=fixture_ids, reconcile=False)
     # Predictions with reconciliation
-    preds_rec = fitted_attacking_model.predict(
-        df_val, team_ids=team_ids, fixture_ids=fixture_ids, reconcile=True
-    )
+    preds_rec = fitted_attacking_model.predict(df_val, team_ids=team_ids, fixture_ids=fixture_ids, reconcile=True)
 
     mid_fwd_mask = (df_val["pos_MID"] == 1.0) | (df_val["pos_FWD"] == 1.0)
     rmse_raw = float(np.sqrt(np.mean((preds_raw["expected_goals"][mid_fwd_mask] - y_true_g[mid_fwd_mask]) ** 2)))
     rmse_rec = float(np.sqrt(np.mean((preds_rec["expected_goals"][mid_fwd_mask] - y_true_g[mid_fwd_mask]) ** 2)))
 
     # Gate: RMSE not worse than before
-    assert rmse_rec <= rmse_raw + 0.02, (
-        f"Reconciled RMSE {rmse_rec:.4f} regressed compared to raw RMSE {rmse_raw:.4f}"
-    )
+    assert rmse_rec <= rmse_raw + 0.02, f"Reconciled RMSE {rmse_rec:.4f} regressed compared to raw RMSE {rmse_raw:.4f}"

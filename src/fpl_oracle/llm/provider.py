@@ -242,7 +242,6 @@ class OfflineExpertProvider:
                     f"### Player Profile & Projections: **{p['web_name']}**\n"
                     f"- **Position:** {p['position']} | **Cost:** £{p.get('cost', 5.0)}m\n"
                     f"- **Gameweek {proj_res.get('gameweek')} Projected Points:** **{p['expected_points_gw']} xP**\n"
-
                     f"- **Defensive Contribution:** +{p.get('exp_defcon_points', 0.0)} pts"
                 )
             else:

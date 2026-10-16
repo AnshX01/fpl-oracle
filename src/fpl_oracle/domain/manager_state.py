@@ -153,6 +153,7 @@ class ManagerStateService:
     @staticmethod
     def calculate_selling_price(purchase_price: int, now_cost: int) -> int:
         from fpl_oracle.rules.transfers import sell_price
+
         return sell_price(purchase_price, now_cost)
 
     @staticmethod

@@ -65,8 +65,7 @@ class DixonColesModel:
         opp_map, _ = feature_engineering.build_team_id_maps(df)
         df_copy = df.copy()
         df_copy["opp_name"] = [
-            opp_map.get((s, int(o)), str(o))
-            for s, o in zip(df_copy["season"], df_copy["opponent_team"], strict=False)
+            opp_map.get((s, int(o)), str(o)) for s, o in zip(df_copy["season"], df_copy["opponent_team"], strict=False)
         ]
 
         home_records = (
@@ -91,9 +90,7 @@ class DixonColesModel:
             inplace=True,
         )
 
-        matches = home_records.merge(
-            away_records, on=["season", "round", "home_team", "away_team", "kickoff_time"]
-        )
+        matches = home_records.merge(away_records, on=["season", "round", "home_team", "away_team", "kickoff_time"])
         matches["kickoff_dt"] = pd.to_datetime(matches["kickoff_time"])
         matches = matches.sort_values(by="kickoff_dt").reset_index(drop=True)
         return matches
@@ -235,9 +232,7 @@ class DixonColesModel:
         delta = self.deltas.get(team, self.promoted_delta)
         return alpha, delta
 
-    def predict_scoreline_matrix(
-        self, home_team: str, away_team: str, max_goals: int = 10
-    ) -> dict[str, Any]:
+    def predict_scoreline_matrix(self, home_team: str, away_team: str, max_goals: int = 10) -> dict[str, Any]:
         """
         Compute bivariate scoreline joint probability matrix and derived match statistics.
         """

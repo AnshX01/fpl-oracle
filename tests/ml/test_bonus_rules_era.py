@@ -21,19 +21,14 @@ from fpl_oracle.ml.components.bonus import BonusModel
 def synthetic_bonus_data():
     np.random.seed(42)
     n = 100
-    X = pd.DataFrame({
-        col: np.random.uniform(0.1, 1.0, size=n)
-        for col in FEATURE_COLUMNS
-    })
+    X = pd.DataFrame({col: np.random.uniform(0.1, 1.0, size=n) for col in FEATURE_COLUMNS})
     X["pos_GKP"] = np.random.choice([0.0, 1.0], size=n, p=[0.85, 0.15])
     X["pos_DEF"] = np.random.choice([0.0, 1.0], size=n, p=[0.7, 0.3])
     X["pos_MID"] = np.random.choice([0.0, 1.0], size=n, p=[0.6, 0.4])
     X["pos_FWD"] = np.random.choice([0.0, 1.0], size=n, p=[0.8, 0.2])
     X["is_2026_27"] = np.zeros(n)
 
-    Y = pd.DataFrame({
-        "target_bonus": np.random.choice([0.0, 1.0, 2.0, 3.0], size=n, p=[0.7, 0.15, 0.1, 0.05])
-    })
+    Y = pd.DataFrame({"target_bonus": np.random.choice([0.0, 1.0, 2.0, 3.0], size=n, p=[0.7, 0.15, 0.1, 0.05])})
     model = BonusModel()
     model.fit(X, Y)
     return model, X
@@ -101,11 +96,13 @@ def test_2026_27_bps_rules_era_positional_gate():
         "expected_bonus"
     ]
 
-    df_eval = pd.DataFrame({
-        "position": meta[mask_test]["position"].values,
-        "pred": preds,
-        "true": Y[mask_test]["target_bonus"].values,
-    })
+    df_eval = pd.DataFrame(
+        {
+            "position": meta[mask_test]["position"].values,
+            "pred": preds,
+            "true": Y[mask_test]["target_bonus"].values,
+        }
+    )
 
     print("\n--- 2026/27 Positional Bonus Calibration (N=3,216) ---")
     for pos in ["GKP", "DEF", "MID", "FWD"]:

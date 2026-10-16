@@ -11,7 +11,9 @@ from typing import Any
 @dataclass(frozen=True)
 class RuleEntry:
     value: Any
-    source_url: str = "https://www.premierleague.com/en/news/4679873/all-you-need-to-know-about-changes-to-fpl-for-202627"
+    source_url: str = (
+        "https://www.premierleague.com/en/news/4679873/all-you-need-to-know-about-changes-to-fpl-for-202627"
+    )
     verified_on: str = "2026-10-10"
 
 
@@ -64,10 +66,10 @@ BONUS_POINTS: tuple[int, int, int] = (3, 2, 1)
 DEFCON_POINTS: int = 2
 DEFCON_CAP: int = 2
 DEFCON_THRESHOLDS: dict[str, int | None] = {
-    "DEF": 10,   # >=10 CBIT (clearances, blocks, interceptions, tackles)
-    "MID": 12,   # >=12 CBIRT (+ recoveries)
-    "FWD": 12,   # >=12 CBIRT (+ recoveries)
-    "GKP": None, # Ineligible
+    "DEF": 10,  # >=10 CBIT (clearances, blocks, interceptions, tackles)
+    "MID": 12,  # >=12 CBIRT (+ recoveries)
+    "FWD": 12,  # >=12 CBIRT (+ recoveries)
+    "GKP": None,  # Ineligible
 }
 
 # Transfer & Chip Constants
@@ -141,11 +143,7 @@ def calculate_match_points(
 
     # 9. Defensive Contribution (2025/26 and 2026/27 rules)
     # Triggered when actions reach pos threshold: DEF >= 10, MID/FWD >= 12
-    has_defcon = (
-        (rules_version == "2025-defcon")
-        if rules_version is not None
-        else (season in ("2025-26", "2026-27"))
-    )
+    has_defcon = (rules_version == "2025-defcon") if rules_version is not None else (season in ("2025-26", "2026-27"))
     if has_defcon and pos != "GKP":
         thresh = DEFCON_THRESHOLDS.get(pos)
         if thresh is not None and defensive_contribution_actions >= thresh:

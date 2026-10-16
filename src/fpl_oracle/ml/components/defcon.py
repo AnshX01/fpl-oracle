@@ -175,9 +175,7 @@ class DefConModel(BaseComponent):
                 self.selected_model_per_pos[pos_str] = "count" if brier_count <= brier_bin else "binary"
 
         # Fit calibrator on out-of-fold predictions
-        selected_oof_probs = np.where(
-            oof_raw_count_probs > 0, oof_raw_count_probs, oof_raw_bin_probs
-        )
+        selected_oof_probs = np.where(oof_raw_count_probs > 0, oof_raw_count_probs, oof_raw_bin_probs)
         self.calibrator.fit(selected_oof_probs[valid], y_bin[valid])
 
         # Fit final estimators on full dataset
@@ -191,9 +189,7 @@ class DefConModel(BaseComponent):
         for pos_str, mask in [("DEF", pos_is_def), ("MID", pos_is_mid), ("FWD", pos_is_fwd)]:
             if np.sum(mask) > 20:
                 resids = y_actions[mask] - full_pred_mu[mask]
-                disp = float(
-                    np.mean((resids**2 - full_pred_mu[mask]) / np.maximum(1e-4, full_pred_mu[mask] ** 2))
-                )
+                disp = float(np.mean((resids**2 - full_pred_mu[mask]) / np.maximum(1e-4, full_pred_mu[mask] ** 2)))
                 self.dispersions[pos_str] = max(0.01, min(1.5, disp))
 
         self.is_fitted = True

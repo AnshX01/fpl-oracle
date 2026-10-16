@@ -83,7 +83,6 @@ async def test_gemini_empty_answer_fails_instead_of_invented_success(monkeypatch
         await GeminiProvider("test").chat([{"role": "user", "content": "captain?"}], "data")
 
 
-
 def test_chat_model_uses_env_preserves_default_and_explicit_override(monkeypatch):
     monkeypatch.setenv("GEMINI_MODEL", " gemini-test-env ")
     provider = GeminiProvider("fake-test-key")

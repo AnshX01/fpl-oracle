@@ -225,14 +225,14 @@ def generate_templated_narration(rec: StructuredRecommendation) -> str:
         cap_xp = rec.captain_pick.get("expected_points", 0.0)
         p10 = rec.captain_pick.get("p10_floor", rec.captain_pick.get("p10", 0.0))
         p90 = rec.captain_pick.get("p90_ceiling", rec.captain_pick.get("p90", 0.0))
-        lines.append(
-            f"**Captaincy:** {cap_name} ({cap_xp:.1f} xP | P10 Floor: {p10:.1f} | P90 Ceiling: {p90:.1f})\n"
-        )
+        lines.append(f"**Captaincy:** {cap_name} ({cap_xp:.1f} xP | P10 Floor: {p10:.1f} | P90 Ceiling: {p90:.1f})\n")
 
     if rec.alternatives:
         lines.append("**Evaluated Alternatives:**")
         for alt in rec.alternatives:
-            lines.append(f"- {alt.get('summary', alt.get('name', 'Plan'))}: {alt.get('net_xp', alt.get('gain', ''))} xP")
+            lines.append(
+                f"- {alt.get('summary', alt.get('name', 'Plan'))}: {alt.get('net_xp', alt.get('gain', ''))} xP"
+            )
         lines.append("")
 
     if rec.decision_triggers:

@@ -27,63 +27,71 @@ def _generate_valid_random_squad(rng: np.random.Generator, squad_id_offset: int 
     # 2 GKP
     for i in range(2):
         eid = squad_id_offset + i + 1
-        rows.append({
-            "element": eid,
-            "web_name": f"GKP_{eid}",
-            "position": "GKP",
-            "team": i + 1,
-            "value": 50,
-            "purchase_price": 50,
-            "selling_price": 50,
-            "expected_points": round(rng.uniform(2.0, 6.0), 2),
-            "chance_of_playing": 1.0,
-            "chance_of_playing_next_round": 100,
-        })
+        rows.append(
+            {
+                "element": eid,
+                "web_name": f"GKP_{eid}",
+                "position": "GKP",
+                "team": i + 1,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": round(rng.uniform(2.0, 6.0), 2),
+                "chance_of_playing": 1.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 5 DEF
     for i in range(5):
         eid = squad_id_offset + i + 3
-        rows.append({
-            "element": eid,
-            "web_name": f"DEF_{eid}",
-            "position": "DEF",
-            "team": (i % 5) + 3,
-            "value": 50,
-            "purchase_price": 50,
-            "selling_price": 50,
-            "expected_points": round(rng.uniform(2.0, 7.0), 2),
-            "chance_of_playing": 1.0,
-            "chance_of_playing_next_round": 100,
-        })
+        rows.append(
+            {
+                "element": eid,
+                "web_name": f"DEF_{eid}",
+                "position": "DEF",
+                "team": (i % 5) + 3,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": round(rng.uniform(2.0, 7.0), 2),
+                "chance_of_playing": 1.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 5 MID
     for i in range(5):
         eid = squad_id_offset + i + 8
-        rows.append({
-            "element": eid,
-            "web_name": f"MID_{eid}",
-            "position": "MID",
-            "team": (i % 5) + 8,
-            "value": 65,
-            "purchase_price": 65,
-            "selling_price": 65,
-            "expected_points": round(rng.uniform(2.5, 9.0), 2),
-            "chance_of_playing": 1.0,
-            "chance_of_playing_next_round": 100,
-        })
+        rows.append(
+            {
+                "element": eid,
+                "web_name": f"MID_{eid}",
+                "position": "MID",
+                "team": (i % 5) + 8,
+                "value": 65,
+                "purchase_price": 65,
+                "selling_price": 65,
+                "expected_points": round(rng.uniform(2.5, 9.0), 2),
+                "chance_of_playing": 1.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 3 FWD
     for i in range(3):
         eid = squad_id_offset + i + 13
-        rows.append({
-            "element": eid,
-            "web_name": f"FWD_{eid}",
-            "position": "FWD",
-            "team": (i % 3) + 13,
-            "value": 75,
-            "purchase_price": 75,
-            "selling_price": 75,
-            "expected_points": round(rng.uniform(3.0, 9.5), 2),
-            "chance_of_playing": 1.0,
-            "chance_of_playing_next_round": 100,
-        })
+        rows.append(
+            {
+                "element": eid,
+                "web_name": f"FWD_{eid}",
+                "position": "FWD",
+                "team": (i % 3) + 13,
+                "value": 75,
+                "purchase_price": 75,
+                "selling_price": 75,
+                "expected_points": round(rng.uniform(3.0, 9.5), 2),
+                "chance_of_playing": 1.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -97,18 +105,20 @@ def _generate_candidate_pool(squad_df: pd.DataFrame, rng: np.random.Generator, e
         team = (i % 20) + 1
         val = int(rng.integers(45, 120))
         xp = round(rng.uniform(1.5, 9.0), 2)
-        pool_rows.append({
-            "element": eid,
-            "web_name": f"Pool_{eid}",
-            "position": pos,
-            "team": team,
-            "value": val,
-            "purchase_price": val,
-            "selling_price": val,
-            "expected_points": xp,
-            "chance_of_playing": 1.0,
-            "chance_of_playing_next_round": 100,
-        })
+        pool_rows.append(
+            {
+                "element": eid,
+                "web_name": f"Pool_{eid}",
+                "position": pos,
+                "team": team,
+                "value": val,
+                "purchase_price": val,
+                "selling_price": val,
+                "expected_points": xp,
+                "chance_of_playing": 1.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     return pd.DataFrame(pool_rows)
 
 
@@ -429,15 +439,50 @@ def test_property_6_brute_force_toy_optimum():
 
     # Small candidate pool: squad + 3 high-value transfer targets
     targets = [
-        {"element": 101, "web_name": "Star_MID", "position": "MID", "team": 18, "value": 65, "purchase_price": 65, "selling_price": 65, "expected_points": 12.0, "chance_of_playing": 1.0, "chance_of_playing_next_round": 100},
-        {"element": 102, "web_name": "Star_FWD", "position": "FWD", "team": 19, "value": 75, "purchase_price": 75, "selling_price": 75, "expected_points": 14.0, "chance_of_playing": 1.0, "chance_of_playing_next_round": 100},
-        {"element": 103, "web_name": "Star_DEF", "position": "DEF", "team": 20, "value": 50, "purchase_price": 50, "selling_price": 50, "expected_points": 10.0, "chance_of_playing": 1.0, "chance_of_playing_next_round": 100},
+        {
+            "element": 101,
+            "web_name": "Star_MID",
+            "position": "MID",
+            "team": 18,
+            "value": 65,
+            "purchase_price": 65,
+            "selling_price": 65,
+            "expected_points": 12.0,
+            "chance_of_playing": 1.0,
+            "chance_of_playing_next_round": 100,
+        },
+        {
+            "element": 102,
+            "web_name": "Star_FWD",
+            "position": "FWD",
+            "team": 19,
+            "value": 75,
+            "purchase_price": 75,
+            "selling_price": 75,
+            "expected_points": 14.0,
+            "chance_of_playing": 1.0,
+            "chance_of_playing_next_round": 100,
+        },
+        {
+            "element": 103,
+            "web_name": "Star_DEF",
+            "position": "DEF",
+            "team": 20,
+            "value": 50,
+            "purchase_price": 50,
+            "selling_price": 50,
+            "expected_points": 10.0,
+            "chance_of_playing": 1.0,
+            "chance_of_playing_next_round": 100,
+        },
     ]
     pool_df = pd.concat([squad_df, pd.DataFrame(targets)], ignore_index=True)
     horizon = {10: pool_df.copy(), 11: pool_df.copy()}
 
     # Multi-Period MILP solve (H=2)
-    opt = MultiPeriodOptimizer(MultiPeriodConfig(horizon_len=2, w_bench_mean=0.0, lambda_bank=0.0, ft_terminal_increments=(0.0, 0.0, 0.0, 0.0)))
+    opt = MultiPeriodOptimizer(
+        MultiPeriodConfig(horizon_len=2, w_bench_mean=0.0, lambda_bank=0.0, ft_terminal_increments=(0.0, 0.0, 0.0, 0.0))
+    )
     milp_plan = opt.optimize(
         current_squad_df=squad_df,
         player_pool_df=pool_df,
@@ -540,6 +585,3 @@ def test_hit_threshold_derivation_and_configuration():
     assert cfg.compute_hit_threshold(hits=2, risk_preference="balanced") == 2.5
     # 0 hits: 0.0
     assert cfg.compute_hit_threshold(hits=0) == 0.0
-
-
-

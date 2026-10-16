@@ -43,12 +43,14 @@ def test_check_file_contents_detects_aiza_and_aq_keys(tmp_path):
 
 def test_check_git_tracked_files_detects_forbidden_patterns():
     """S1-1e: Detects tracked .env, database, and log files."""
-    mock_files = "\n".join([
-        "src/fpl_oracle/main.py",
-        ".env",
-        "logs/app.log",
-        "data/app.sqlite",
-    ])
+    mock_files = "\n".join(
+        [
+            "src/fpl_oracle/main.py",
+            ".env",
+            "logs/app.log",
+            "data/app.sqlite",
+        ]
+    )
     with patch("subprocess.run") as mock_run:
         mock_run.return_value.stdout = mock_files
         violations = check_git_tracked_files()

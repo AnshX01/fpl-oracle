@@ -12,4 +12,5 @@ async def test_proj():
     for gw in list(projs.keys())[:3]:
         print(f"GW{gw}: {len(projs[gw])} players, mean xP: {projs[gw]['expected_points'].mean():.2f}")
 
+
 asyncio.run(test_proj())

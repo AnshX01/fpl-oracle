@@ -51,7 +51,9 @@ def run_benchmarks():
 
     results = []
 
-    print("| Instance | Horizon | Chips Available | Solver | Build Time (s) | Solve Time (s) | Total Time (s) | Objective | Chips Played | Status |")
+    print(
+        "| Instance | Horizon | Chips Available | Solver | Build Time (s) | Solve Time (s) | Total Time (s) | Objective | Chips Played | Status |"
+    )
     print("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
 
     for name, H, chips in instances:
@@ -81,17 +83,22 @@ def run_benchmarks():
             chips_played = [f"GW{a.gameweek}:{a.active_chip}" for a in plan.trajectory if a.active_chip]
             chips_str = ", ".join(chips_played) if chips_played else "None"
 
-            print(f"| {name} | {H} | {chips} | **{solver_name.upper()}** | {t_build:.3f} | {t_solve:.3f} | {t_total:.3f} | {plan.total_objective:.2f} | {chips_str} | {plan.solver_status} |")
-            results.append({
-                "name": name,
-                "H": H,
-                "chips": chips,
-                "solver": solver_name,
-                "build_time": t_build,
-                "solve_time": t_solve,
-                "total_time": round(t_total, 3),
-                "objective": plan.total_objective,
-            })
+            print(
+                f"| {name} | {H} | {chips} | **{solver_name.upper()}** | {t_build:.3f} | {t_solve:.3f} | {t_total:.3f} | {plan.total_objective:.2f} | {chips_str} | {plan.solver_status} |"
+            )
+            results.append(
+                {
+                    "name": name,
+                    "H": H,
+                    "chips": chips,
+                    "solver": solver_name,
+                    "build_time": t_build,
+                    "solve_time": t_solve,
+                    "total_time": round(t_total, 3),
+                    "objective": plan.total_objective,
+                }
+            )
+
 
 if __name__ == "__main__":
     run_benchmarks()

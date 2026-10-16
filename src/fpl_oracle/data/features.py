@@ -952,7 +952,14 @@ class FeatureEngineering:
                 "target_goals_conceded": df_sorted["goals_conceded"].astype(float),
                 "target_saves": df_sorted["saves"].astype(float),
                 "target_defcon": (
-                    (df_sorted["defensive_contribution"] >= np.where(df_sorted["position"] == "DEF", 10.0, np.where(df_sorted["position"].isin(["MID", "FWD"]), 12.0, 9999.0)))
+                    (
+                        df_sorted["defensive_contribution"]
+                        >= np.where(
+                            df_sorted["position"] == "DEF",
+                            10.0,
+                            np.where(df_sorted["position"].isin(["MID", "FWD"]), 12.0, 9999.0),
+                        )
+                    )
                     & (df_sorted["position"] != "GKP")
                 ).astype(float),
                 "target_defcon_actions": df_sorted["defensive_contribution"].fillna(0).astype(float),

@@ -35,13 +35,15 @@ def test_wildcard_evaluates_three_families_and_does_not_degenerate(s1_fixture):
     squad_df = pd.DataFrame(s1_fixture["squad"])
     pool_rows = []
     for r in s1_fixture["squad"]:
-        pool_rows.append({
-            "element": r["element"],
-            "position": r["position"],
-            "team": r["team"],
-            "value": r["now_cost"],
-            "expected_points": r["expected_points"],
-        })
+        pool_rows.append(
+            {
+                "element": r["element"],
+                "position": r["position"],
+                "team": r["team"],
+                "value": r["now_cost"],
+                "expected_points": r["expected_points"],
+            }
+        )
     pool_df = pd.DataFrame(pool_rows)
 
     comparator = ChipTimelineComparator()
@@ -227,7 +229,18 @@ def test_no_hardcoded_player_names_in_chip_timeline():
     """Principle: zero hardcoded player names allowed in production code."""
     path = Path(__file__).parents[2] / "src" / "fpl_oracle" / "advisor" / "chip_timeline.py"
     content = path.read_text(encoding="utf-8").lower()
-    for forbidden in ["haaland", "saka", "palmer", "mbeumo", "tarkowski", "saliba", "foden", "gabriel", "calafiori", "kinsky"]:
+    for forbidden in [
+        "haaland",
+        "saka",
+        "palmer",
+        "mbeumo",
+        "tarkowski",
+        "saliba",
+        "foden",
+        "gabriel",
+        "calafiori",
+        "kinsky",
+    ]:
         assert forbidden not in content, f"Found hardcoded player name '{forbidden}' in chip_timeline.py"
 
 
@@ -264,4 +277,3 @@ def test_timeline_interval_half_widths_not_identical(s1_fixture):
 
     assert len(unique_half_widths) > 1, f"Expected non-identical half-widths across rows, got: {half_widths}"
     assert all(hw > 0 for hw in half_widths), "All half-widths must be positive"
-

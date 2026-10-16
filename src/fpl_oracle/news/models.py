@@ -48,9 +48,13 @@ class PlayerEvidence(BaseModel):
     ambiguity_notes: str | None = Field(default=None, description="Reason for ambiguity or conflicting signals")
     source_url: str = Field(default="", description="Canonical URL of source article")
     canonical_url: str | None = Field(default=None, description="Canonical link rel URL if declared by publisher")
-    wire_agency: str | None = Field(default=None, description="Wire service or syndicate agency (e.g. PA Media, Reuters, AP)")
+    wire_agency: str | None = Field(
+        default=None, description="Wire service or syndicate agency (e.g. PA Media, Reuters, AP)"
+    )
     article_id: str | None = Field(default=None, description="Wire story ID or syndicate article ID")
-    surrounding_text: str | None = Field(default=None, description="Article body text outside quoted span for syndication detection")
+    surrounding_text: str | None = Field(
+        default=None, description="Article body text outside quoted span for syndication detection"
+    )
     published_at: datetime | None = Field(default=None, description="Publication timestamp of article")
     extracted_at: datetime | None = Field(default=None, description="Extraction execution timestamp")
 

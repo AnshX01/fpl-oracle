@@ -454,7 +454,9 @@ class MonteCarloSimulator:
 
             user_ranks = (strictly_ahead + (tied_with_user + 1) / 2.0).tolist()
             user_wins = float(np.sum(np.where(strictly_ahead == 0, 1.0 / tied_with_user, 0.0)))
-            user_top3 = float(np.sum(np.where(strictly_ahead < 3, np.minimum(1.0, (3.0 - strictly_ahead) / tied_with_user), 0.0)))
+            user_top3 = float(
+                np.sum(np.where(strictly_ahead < 3, np.minimum(1.0, (3.0 - strictly_ahead) / tied_with_user), 0.0))
+            )
 
             rival_wins = [0.0] * len(rival_entries)
             rival_top3 = [0.0] * len(rival_entries)
@@ -467,7 +469,9 @@ class MonteCarloSimulator:
                 r_rank = r_strictly_ahead + (r_tied + 1) / 2.0
                 rival_ranks[i] = r_rank.tolist()
                 rival_wins[i] = float(np.sum(np.where(r_strictly_ahead == 0, 1.0 / r_tied, 0.0)))
-                rival_top3[i] = float(np.sum(np.where(r_strictly_ahead < 3, np.minimum(1.0, (3.0 - r_strictly_ahead) / r_tied), 0.0)))
+                rival_top3[i] = float(
+                    np.sum(np.where(r_strictly_ahead < 3, np.minimum(1.0, (3.0 - r_strictly_ahead) / r_tied), 0.0))
+                )
         else:
             user_ranks = [1.0] * sim_count
             user_wins = float(sim_count)

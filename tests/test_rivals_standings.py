@@ -256,7 +256,7 @@ async def test_decision_card_missing_manager_shows_unavailable(configured_adviso
         manager_id=99999,
         target_league_id=555,
     )
-    mock_state = configured_advisor[0].model_copy(update={"manager_id":99999,"overall_points":500})
+    mock_state = configured_advisor[0].model_copy(update={"manager_id": 99999, "overall_points": 500})
 
     standings_payload = {
         "league_id": 555,
@@ -299,7 +299,7 @@ async def test_decision_card_leader_no_close_chasers(configured_advisor):
         manager_id=101,
         target_league_id=555,
     )
-    mock_state = configured_advisor[0].model_copy(update={"manager_id":101,"overall_points":600})
+    mock_state = configured_advisor[0].model_copy(update={"manager_id": 101, "overall_points": 600})
 
     standings_payload = {
         "league_id": 555,

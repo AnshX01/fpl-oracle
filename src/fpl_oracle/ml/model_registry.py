@@ -564,7 +564,10 @@ class ModelRegistry:
                 f"[ModelIntegrity] Integrity check failed ({mismatch_reason}). Triggering automatic quarantine and rollback..."
             )
             event = self.quarantine_and_recover(target_dir=target_dir, reason=mismatch_reason)
-            return True, f"Automatic recovery succeeded: restored {event.get('restored_version')} following {mismatch_reason}"
+            return (
+                True,
+                f"Automatic recovery succeeded: restored {event.get('restored_version')} following {mismatch_reason}",
+            )
 
         logger.info("[ModelIntegrity] All active component model weights successfully verified.")
         return True, "All component model weights successfully verified."

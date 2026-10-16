@@ -5,7 +5,6 @@ Script to evaluate Optimiser's Curse on Wildcard Overhaul (Item 4).
 3. 2025-26 walk-forward replay of Wildcard decisions to compute empirical calibration slope.
 """
 
-
 import numpy as np
 import pandas as pd
 
@@ -32,8 +31,8 @@ def run_wildcard_curse_calibration():
 
     print("\n[PART A: BENCH TERM DECOMPOSITION]")
     print(f"Total Nominal Wildcard Edge:  +{total_wc_edge:.2f} xP")
-    print(f"Starting XI + Captain Edge:   +{lineup_edge:.2f} xP ({lineup_edge/total_wc_edge:.1%})")
-    print(f"Bench Term Edge:              +{bench_edge:.2f} xP ({bench_edge/total_wc_edge:.1%})")
+    print(f"Starting XI + Captain Edge:   +{lineup_edge:.2f} xP ({lineup_edge / total_wc_edge:.1%})")
+    print(f"Bench Term Edge:              +{bench_edge:.2f} xP ({bench_edge / total_wc_edge:.1%})")
     print("\nBench Weight Justification:")
     print("  - Starters play >60 mins ~85-90% of the time in a healthy squad.")
     print("  - Empirical auto-sub probabilities: Sub 1 = 12.4%, Sub 2 = 2.8%, Sub 3 = 0.6%.")
@@ -41,7 +40,7 @@ def run_wildcard_curse_calibration():
     print("  - When bench weight beta=0.05 to 0.10 is applied indiscriminately over a 5-week horizon,")
     print("    an overhaul filling all 4 bench slots with ~4.5 xP players manufactures ~14.9 xP")
     print("    of synthetic edge that almost never converts to realized points.")
-    print(f"  - True Starting XI edge is only +{lineup_edge:.2f} xP over 5 weeks (+{lineup_edge/5:.2f} xP/week).")
+    print(f"  - True Starting XI edge is only +{lineup_edge:.2f} xP over 5 weeks (+{lineup_edge / 5:.2f} xP/week).")
 
     # 2. 2025-26 Walk-Forward Replay of Wildcard Overhauls
     print("\n[PART B & C: 2025-26 WALK-FORWARD WILDCARD CALIBRATION SLOPE]")
@@ -90,17 +89,21 @@ def run_wildcard_curse_calibration():
         actual_gain = round(actual_wc_pts - actual_roll_pts, 2)
         # 5-week predicted gain: 5 * (mean top 11 wc - mean top 11 roll)
         pred_wc_5w = float(wc_top.head(11)["proj_xp"].sum() * len(horizon_gws))
-        pred_roll_5w = float(prev_top.head(11)["element"].map(lambda e, m=pts_map: m.get(e, 2.0)).sum() * len(horizon_gws))
+        pred_roll_5w = float(
+            prev_top.head(11)["element"].map(lambda e, m=pts_map: m.get(e, 2.0)).sum() * len(horizon_gws)
+        )
         pred_gain = round(pred_wc_5w - pred_roll_5w, 2)
 
         ratio = actual_gain / pred_gain if abs(pred_gain) > 1.0 else 0.50
-        results.append({
-            "GW": gw,
-            "Horizon": f"GW{gw}-GW{min(38, gw+4)}",
-            "Predicted Gain (xP)": pred_gain,
-            "Realized Gain (pts)": actual_gain,
-            "Realized / Predicted": round(ratio, 3),
-        })
+        results.append(
+            {
+                "GW": gw,
+                "Horizon": f"GW{gw}-GW{min(38, gw + 4)}",
+                "Predicted Gain (xP)": pred_gain,
+                "Realized Gain (pts)": actual_gain,
+                "Realized / Predicted": round(ratio, 3),
+            }
+        )
 
     res_df = pd.DataFrame(results)
     print(res_df.to_string(index=False))
@@ -123,11 +126,14 @@ def run_wildcard_curse_calibration():
     print(f"95% Confidence Interval:       [{ci_lower:.4f}, {ci_upper:.4f}]")
     print(f"t-statistic:                   {reg.slope / reg.stderr:.3f}")
     print(f"p-value:                       {reg.pvalue:.4e}")
-    print(f"R-squared:                     {reg.rvalue ** 2:.4f}")
+    print(f"R-squared:                     {reg.rvalue**2:.4f}")
     print(f"Median Realized/Predicted:     {np.median([r['Realized / Predicted'] for r in results]):.4f}")
 
     print("\nConclusion: The empirical calibration slope confirms that out-of-sample realized Wildcard edge")
-    print(f"regresses heavily toward the mean, with empirical slope lambda = {reg.slope:.2f} (95% CI: [{ci_lower:.2f}, {ci_upper:.2f}]).")
+    print(
+        f"regresses heavily toward the mean, with empirical slope lambda = {reg.slope:.2f} (95% CI: [{ci_lower:.2f}, {ci_upper:.2f}])."
+    )
+
 
 if __name__ == "__main__":
     run_wildcard_curse_calibration()

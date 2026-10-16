@@ -29,9 +29,7 @@ def test_dixon_coles_rho_zero_equals_independent_poisson():
 
     # 1. Low-score adjustment check
     for score in [(0, 0), (0, 1), (1, 0), (1, 1), (2, 2)]:
-        prob_dc, prob_indep = model.evaluate_scoreline_adjustment(
-            home_team="TeamA", away_team="TeamB", score=score
-        )
+        prob_dc, prob_indep = model.evaluate_scoreline_adjustment(home_team="TeamA", away_team="TeamB", score=score)
         assert np.isclose(prob_dc, prob_indep, atol=1e-7), (
             f"When rho=0, Dixon-Coles score {score} must equal independent Poisson: {prob_dc} vs {prob_indep}"
         )
@@ -102,15 +100,17 @@ def test_dixon_coles_parameter_recovery_simulated():
         hg = flat_idx // 7
         ag = flat_idx % 7
 
-        sim_rows.append({
-            "season": "2025-26",
-            "round": (m_idx % 38) + 1,
-            "home_team": h_team,
-            "away_team": a_team,
-            "home_goals": hg,
-            "away_goals": ag,
-            "kickoff_time": (base_date + pd.Timedelta(days=m_idx % 250)).isoformat(),
-        })
+        sim_rows.append(
+            {
+                "season": "2025-26",
+                "round": (m_idx % 38) + 1,
+                "home_team": h_team,
+                "away_team": a_team,
+                "home_goals": hg,
+                "away_goals": ag,
+                "kickoff_time": (base_date + pd.Timedelta(days=m_idx % 250)).isoformat(),
+            }
+        )
 
     sim_df = pd.DataFrame(sim_rows)
     model = DixonColesModel(xi=0.0001, ridge_lambda=0.01)
@@ -122,9 +122,7 @@ def test_dixon_coles_parameter_recovery_simulated():
     )
 
     # Assert low-score correlation rho recovery within sampling tolerance
-    assert abs(model.rho - true_rho) < 0.15, (
-        f"Recovered rho {model.rho:.4f} should be close to true rho {true_rho:.4f}"
-    )
+    assert abs(model.rho - true_rho) < 0.15, f"Recovered rho {model.rho:.4f} should be close to true rho {true_rho:.4f}"
 
     # Assert relative attack strength ordering is preserved: Team1 > Team2 > Team3 > Team4
     assert model.alphas["Team1"] > model.alphas["Team2"], "Team1 alpha must exceed Team2"

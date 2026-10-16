@@ -163,7 +163,9 @@ class TestWilsonPromotionGateWI62:
     def test_gate_refuses_promotion_when_sample_size_below_minimum(self):
         """Gate must refuse promotion if negatives N < 189, explaining sample size insufficiency."""
         # Using the real committed news_benchmark.json (which has N=8 true negatives)
-        passed, reason, metrics = check_news_benchmark_gate(extractor_name="deterministic_fallback", use_wilson_bounds=True)
+        passed, reason, metrics = check_news_benchmark_gate(
+            extractor_name="deterministic_fallback", use_wilson_bounds=True
+        )
         assert passed is False
         assert "below minimum required N=189" in reason
         assert "Wilson" in reason
