@@ -16,6 +16,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from fpl_oracle.utils.season import derive_season
+
 
 class GameweekPhase(StrEnum):
     PRE_DEADLINE = "PRE_DEADLINE"
@@ -26,7 +28,7 @@ class GameweekPhase(StrEnum):
 
 
 class GameState(BaseModel):
-    season: str = "2026/27"
+    season: str = Field(default_factory=lambda: derive_season(format="slash"))
     current_gw: int | None = None
     next_gw: int | None = None
     phase: GameweekPhase = GameweekPhase.PRE_DEADLINE
@@ -164,7 +166,7 @@ class GameStateManager:
                 double_gws.append(gw)
 
         state = GameState(
-            season="2026/27",
+            season=derive_season(fixtures=fixtures, dt=now_utc, format="slash"),
             current_gw=curr_gw,
             next_gw=next_gw,
             phase=phase,
