@@ -160,6 +160,7 @@ def test_status_endpoint_freshness_section():
     assert f_s["last_finished_gw_in_master"] == historical_manager.get_last_finished_gameweek()
 
 
+@pytest.mark.slow
 @pytest.mark.anyio
 async def test_incremental_refresh_live_finalized_and_idempotent():
     """Verify incremental refresh on finalized GW appends atomically and is idempotent."""
@@ -180,10 +181,70 @@ async def test_incremental_refresh_live_finalized_and_idempotent():
 
 
 @pytest.mark.anyio
-async def test_incremental_refresh_rejects_unfinalized_gw():
-    """Verify incremental refresh rejects a gameweek that is not yet finalized."""
+async def test_incremental_refresh_rejects_unfinalized_gw(monkeypatch):
+    """Verify incremental refresh rejects a gameweek that is not yet finished."""
+    from unittest.mock import AsyncMock
+
+    unfinalized_event = GameweekEvent(
+        id=7,
+        name="Gameweek 7",
+        deadline_time="2026-10-03T10:00:00Z",
+        is_current=True,
+        is_next=False,
+        finished=False,
+        data_checked=False,
+    )
+    mock_boot = BootstrapStatic(
+        events=[unfinalized_event],
+        elements=[],
+        teams=[],
+        element_types=[],
+    )
+    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(mock_boot, False)))
     with pytest.raises(RuntimeError, match="not finalised yet"):
         await historical_manager.refresh_gameweek_live(7)
+
+
+@pytest.mark.anyio
+async def test_incremental_refresh_rejects_unfinalized_data_checked_false(monkeypatch):
+    """
+    Item H verification: Show how refresh_gameweek_live decides a gameweek is finalised
+    (requires BOTH event finished=True AND data_checked=True, not just the final whistle).
+    Verifies that an unfinalised gameweek (finished=True, data_checked=False) raises RuntimeError
+    and is strictly NOT appended to master_history.
+    """
+    from unittest.mock import AsyncMock
+
+    meta_path = historical_manager.output_file.with_suffix(".meta.json")
+    initial_rows = len(pd.read_csv(historical_manager.output_file)) if historical_manager.output_file.exists() else 0
+    initial_meta = meta_path.read_text(encoding="utf-8") if meta_path.exists() else ""
+
+    unfinalized_event = GameweekEvent(
+        id=7,
+        name="Gameweek 7",
+        deadline_time="2026-10-03T10:00:00Z",
+        is_current=True,
+        is_next=False,
+        finished=True,
+        data_checked=False,
+    )
+    mock_boot = BootstrapStatic(
+        events=[unfinalized_event],
+        elements=[],
+        teams=[],
+        element_types=[],
+    )
+
+    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(mock_boot, False)))
+
+    with pytest.raises(RuntimeError, match="not finalised yet \\(finished=True, data_checked=False\\)"):
+        await historical_manager.refresh_gameweek_live(7)
+
+    # Assert master_history was NOT modified
+    after_rows = len(pd.read_csv(historical_manager.output_file)) if historical_manager.output_file.exists() else 0
+    assert after_rows == initial_rows, "Unfinalised gameweek must NOT append any rows to master_history"
+    if meta_path.exists():
+        assert meta_path.read_text(encoding="utf-8") == initial_meta
 
 
 def test_player_identity_resolver_used_in_features_groupby():
