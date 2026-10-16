@@ -35,6 +35,7 @@ def fixtures():
         "bank_source": "fixture",
         "ft_source": "fixture",
         "is_stale": False,
+        "data_as_of": "2026-10-16T12:00:00Z",
         "formation": "3-5-2",
         "starters_expected_points": 0.0,
         "captain_bonus_expected_points": 0.0,
@@ -136,8 +137,11 @@ def capture(base_url):
                     "window.__fpl_vm__ && window.__fpl_vm__.hasLoadedSquad && !window.__fpl_vm__.decisionCardLoading && !window.__fpl_vm__.plansLoading",
                     timeout=30000,
                 )
-                assert page.evaluate("window.__fpl_vm__.squadData.starters.length") == 11
-                assert page.evaluate("window.__fpl_vm__.squadData.bench.length") == 4
+                assert page.evaluate("Boolean(window.__fpl_vm__.hasLoadedSquad)")
+                assert page.evaluate("window.__fpl_vm__.squadData.starters.length === 11")
+                assert page.evaluate("window.__fpl_vm__.squadData.bench.length === 4")
+                assert page.evaluate("window.__fpl_vm__.squadData.is_stale === false")
+                assert page.evaluate("Boolean(window.__fpl_vm__.squadData.data_as_of)")
                 assert page.evaluate(
                     "window.__fpl_vm__.squadData.starters.some(p=>p.element===window.__fpl_vm__.squadData.captain.element)"
                 )

@@ -356,16 +356,19 @@ const app = createApp({
           tone = "ok";
         }
 
+        const captainXp = (card.captain?.expected_points != null && Number.isFinite(card.captain.expected_points)) ? `${card.captain.expected_points} xP` : '— xP';
         const reasons = [
           card.two_line_reasoning || "Plan for the upcoming weeks.",
-          chip.recommend ? chip.reason : `Starting XI led by captain ${card.captain?.web_name || 'Captain'} (${card.captain?.expected_points || 0.0} xP) in a ${card.formation || '3-5-2'} shape.`
+          chip.recommend ? chip.reason : `Starting XI led by captain ${card.captain?.web_name || 'Captain'} (${captainXp}) in a ${card.formation || '3-5-2'} shape.`
         ];
+
+        const gainStr = (t.net_gain_vs_roll != null && Number.isFinite(t.net_gain_vs_roll)) ? `+${t.net_gain_vs_roll.toFixed(1)} pts` : '— pts';
 
         return {
           title: title,
           badge: badge,
           tone: tone,
-          gainText: `+${(t.net_gain_vs_roll || 0.0).toFixed(1)} pts (${card.decision_scope?.horizon_gameweeks?.length ?? "unknown"}-GW)`,
+          gainText: `${gainStr} (${card.decision_scope?.horizon_gameweeks?.length ?? "unknown"}-GW)`,
           hitText: `${t.hit_cost ? '-' + t.hit_cost : '0'} hit pts`,
           bankText: Number.isFinite(t.bank_after) ? `£${t.bank_after.toFixed(1)}m in bank` : "Bank unavailable",
           ftText: `${t.ft_remaining ?? "unavailable"} FT left`,
@@ -420,16 +423,18 @@ const app = createApp({
       if (transfersOut.length > 0 && transfersIn.length > 0) {
         const outNames = transfersOut.map(p => p.web_name).join(', ');
         const inNames = transfersIn.map(p => p.web_name).join(', ');
-        const delta = plan.delta_vs_plan_a !== undefined ? plan.delta_vs_plan_a : (plan.net_expected_points || 0);
+        const delta = plan.delta_vs_plan_a !== undefined ? plan.delta_vs_plan_a : (plan.net_expected_points !== undefined ? plan.net_expected_points : null);
+        const gainStr = (delta !== null && Number.isFinite(delta)) ? `+${Math.abs(delta).toFixed(1)} pts projected gain` : "— pts projected gain";
+        const ftText = (plan.free_transfers_remaining !== null && plan.free_transfers_remaining !== undefined) ? `${plan.free_transfers_remaining} FT left` : "— FT left";
 
         return {
           title: `Transfer ${outNames} → ${inNames}`,
           badge: "Recommended Move",
           tone: "ok",
-          gainText: `+${Math.abs(delta).toFixed(1)} pts projected gain`,
+          gainText: gainStr,
           hitText: `${plan.hits ? '-' + (plan.hits * 4) : '0'} hit pts`,
           bankText: Number.isFinite(plan.bank_after) ? `£${(plan.bank_after / 10).toFixed(1)}m in bank` : "Bank unavailable",
-          ftText: `${plan.free_transfers_remaining || 0} FT left`,
+          ftText: ftText,
           reasons: [
             plan.action_summary || `Targeting favorable fixture run and superior attacking form.`,
             `Maintains optimal budget allocation without requiring unnecessary point deductions.`
@@ -488,12 +493,19 @@ const app = createApp({
     },
 
     deadlineDisplay() {
-      if (!this.gameState || (!this.gameState.next_gw && !this.gameState.deadline_time && (this.gameState.seconds_to_deadline === null || this.gameState.seconds_to_deadline === undefined))) {
+      if (!this.gameState) {
         return 'Deadline: Unknown';
       }
-      const formatted = this.formatDeadline(this.gameState.seconds_to_deadline, this.gameState.deadline_time);
-      if (formatted === 'Deadline unknown') {
+      const isStale = Boolean(this.gameState.is_stale);
+      if (!this.gameState.next_gw && !this.gameState.deadline_time && (this.gameState.seconds_to_deadline === null || this.gameState.seconds_to_deadline === undefined)) {
+        return isStale ? 'Deadline: Stale' : 'Deadline: Unknown';
+      }
+      const formatted = this.formatDeadline(this.gameState.seconds_to_deadline, this.gameState.deadline_time, isStale);
+      if (formatted === 'Deadline unknown' || formatted === 'Unknown') {
         return this.gameState.next_gw ? `GW${this.gameState.next_gw} Deadline: Unknown` : 'Deadline: Unknown';
+      }
+      if (formatted === 'Stale') {
+        return this.gameState.next_gw ? `GW${this.gameState.next_gw} Deadline: Stale` : 'Deadline: Stale';
       }
       return this.gameState.next_gw ? `GW${this.gameState.next_gw} Deadline: ${formatted}` : `Deadline: ${formatted}`;
     }
@@ -674,7 +686,22 @@ const app = createApp({
       setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 3800);
     },
 
-    formatDeadline(seconds, deadlineTime) {
+    formatChanceOfPlaying(player) {
+      if (!player || typeof player !== 'object') return { text: '—', tone: 'muted', tooltip: '' };
+      if (player.chance_of_playing !== null && player.chance_of_playing !== undefined && Number.isFinite(player.chance_of_playing)) {
+        const p = player.chance_of_playing;
+        return { text: `${p}% chance`, tone: p >= 75 ? 'ok' : 'warn', tooltip: '' };
+      }
+      if (player.web_name || player.element) {
+        return { text: '100% Available', tone: 'ok', tooltip: 'no injury flag' };
+      }
+      return { text: '—', tone: 'muted', tooltip: '' };
+    },
+
+    formatDeadline(seconds, deadlineTime, isStale = false) {
+      if (isStale) {
+        return 'Stale';
+      }
       if ((seconds === null || seconds === undefined) && !deadlineTime) {
         return 'Deadline unknown';
       }
@@ -684,10 +711,12 @@ const app = createApp({
         const dt = new Date(deadlineTime).getTime();
         if (!isNaN(dt)) {
           sec = (dt - Date.now()) / 1000;
+        } else if (seconds === null || seconds === undefined) {
+          return 'Deadline unknown';
         }
       }
 
-      if (sec === null || sec === undefined || isNaN(sec)) {
+      if (sec === null || sec === undefined || !Number.isFinite(sec)) {
         return 'Deadline unknown';
       }
 
@@ -761,7 +790,7 @@ const app = createApp({
       this.eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          this.pipelineProgress = data.progress_pct || 0;
+          this.pipelineProgress = (data.progress_pct !== null && data.progress_pct !== undefined && Number.isFinite(data.progress_pct)) ? data.progress_pct : null;
           this.pipelineCurrentStage = `${this.humanLabel(data.step)}: ${data.message || ''}`;
           if (data.done) {
             this.pipelineRunning = false;
