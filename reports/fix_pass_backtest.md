@@ -1,6 +1,6 @@
 # Proxy Simulation: Mini-League Monte Carlo Replay (Synthetic League States)
 
-**Generated:** 2026-10-16T14:27:52.473440  
+**Generated:** 2026-10-16T16:08:26.144310  
 **Methodology:** Proxy simulation across historical gameweeks with strict `assert_no_future_data` barriers.  
 **Sample Size:** 26 overlapping scenarios across 3 seasons (2023-24, 2024-25, 2025-26).  
 **Model Brier Score:** 0.1916  
