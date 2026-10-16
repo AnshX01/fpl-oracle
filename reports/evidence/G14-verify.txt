@@ -1,42 +1,21 @@
-COMMAND: python scripts/verify_ledger.py
-EXIT CODE: 0
-OUTPUT:
-======================================================================
-FPL Oracle - Evidence Ledger, Integrity & Metric Validator (G14)
-======================================================================
-
---- 1. Verifying Manifest SHA256 Locks (Including Calibration) ---
-  [MATCH]   minutes_model.pkl        SHA256 verified (6fcb69189755b730...)
-  [MATCH]   attacking_model.pkl      SHA256 verified (611091e62a65c6b5...)
-  [MATCH]   defending_model.pkl      SHA256 verified (7a07a777d0cc8c8b...)
-  [MATCH]   defcon_model.pkl         SHA256 verified (c0298907536f73e5...)
-  [MATCH]   bonus_model.pkl          SHA256 verified (abcb23681970ae37...)
-  [MATCH]   cards_saves_model.pkl    SHA256 verified (d96518e17d973417...)
-  [MATCH]   calibration.json         SHA256 verified (4251387c9dad9ed8...)
-
---- 2. Verifying Milestone Accounting & Evidence in reports/final_fix_ledger.md ---
-  [CLOSED  ] G1  : Verified with 3 evidence file(s)
-  [CLOSED  ] G2  : Verified with 1 evidence file(s)
-  [CLOSED  ] G3  : Verified with 1 evidence file(s)
-  [CLOSED  ] G4  : Verified with 3 evidence file(s)
-  [CLOSED  ] G5  : Verified with 2 evidence file(s)
-  [CLOSED  ] G6  : Verified with 1 evidence file(s)
-  [CLOSED  ] G7  : Verified with 1 evidence file(s)
-  [CLOSED  ] G8  : Verified with 1 evidence file(s)
-  [CLOSED  ] G9  : Verified with 1 evidence file(s)
-  [CLOSED  ] G10 : Verified with 1 evidence file(s)
-  [CLOSED  ] G11 : Verified with 1 evidence file(s)
-  [CLOSED  ] G12 : Verified with 1 evidence file(s)
-  [CLOSED  ] G13 : Verified with 1 evidence file(s)
-  [CLOSED  ] G14 : Verified with 1 evidence file(s)
-
---- 3. Verifying Metric Consistency with Authoritative JSON Artifacts ---
-  [CONSISTENT] 2026-27 Holdout MAE: 1.883 pts verified in README.md
-  [CONSISTENT] Backtest: 26 scenarios, Brier 0.2486 verified in README.md
-  [CONSISTENT] Ablation gain 1.17% verified in README.md
-  [CONSISTENT] News Benchmark: 70 cases, 100.0% precision verified in README.md
-  [CONSISTENT] reports/final_status.md references G1-G14 pass and 70-case benchmark
-
-======================================================================
-ALL AUDIT CHECKS PASSED: 100% EVIDENCE-GATED VERIFICATION ACHIEVED (0 LITERALS)
-======================================================================
+{
+  "schema_version": 1,
+  "command": [
+    "C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "tests/test_evidence_validator.py",
+    "-v"
+  ],
+  "exit_code": 0,
+  "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.14.2, pytest-9.1.1, pluggy-1.6.0 -- C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe\ncachedir: .pytest_cache\nhypothesis profile 'default'\nrootdir: C:\\Users\\anshw\\Documents\\fpl-oracle\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, cov-7.1.0\ncollecting ... collected 10 items\n\ntests/test_evidence_validator.py::test_passing_fixture_accepted PASSED   [ 10%]\ntests/test_evidence_validator.py::test_explicit_exit_9_not_passed_rejected PASSED [ 20%]\ntests/test_evidence_validator.py::test_exit_0_with_not_passed_content_rejected PASSED [ 30%]\ntests/test_evidence_validator.py::test_malformed_exit_code_rejected PASSED [ 40%]\ntests/test_evidence_validator.py::test_missing_command_rejected PASSED   [ 50%]\ntests/test_evidence_validator.py::test_empty_output_rejected PASSED      [ 60%]\ntests/test_evidence_validator.py::test_pytest_failure_summary_rejected PASSED [ 70%]\ntests/test_evidence_validator.py::test_negative_test_case_accepted PASSED [ 80%]\ntests/test_evidence_validator.py::test_traceback_output_rejected PASSED  [ 90%]\ntests/test_evidence_validator.py::test_metric_contradiction_rejected PASSED [100%]\n\n============================= 10 passed in 0.64s ==============================\n",
+  "stderr": "",
+  "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.2, pytest-9.1.1, pluggy-1.6.0 -- C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe\ncachedir: .pytest_cache\nhypothesis profile 'default'\nrootdir: C:\\Users\\anshw\\Documents\\fpl-oracle\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, cov-7.1.0\ncollecting ... collected 10 items\n\ntests/test_evidence_validator.py::test_passing_fixture_accepted PASSED   [ 10%]\ntests/test_evidence_validator.py::test_explicit_exit_9_not_passed_rejected PASSED [ 20%]\ntests/test_evidence_validator.py::test_exit_0_with_not_passed_content_rejected PASSED [ 30%]\ntests/test_evidence_validator.py::test_malformed_exit_code_rejected PASSED [ 40%]\ntests/test_evidence_validator.py::test_missing_command_rejected PASSED   [ 50%]\ntests/test_evidence_validator.py::test_empty_output_rejected PASSED      [ 60%]\ntests/test_evidence_validator.py::test_pytest_failure_summary_rejected PASSED [ 70%]\ntests/test_evidence_validator.py::test_negative_test_case_accepted PASSED [ 80%]\ntests/test_evidence_validator.py::test_traceback_output_rejected PASSED  [ 90%]\ntests/test_evidence_validator.py::test_metric_contradiction_rejected PASSED [100%]\n\n============================= 10 passed in 0.64s ==============================",
+  "timestamp": "2026-10-16T08:58:18.159282+00:00",
+  "git_commit": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "code_head": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "result": "PASS",
+  "artifacts": [],
+  "file_hashes": {},
+  "gates": []
+}

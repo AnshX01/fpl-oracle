@@ -81,8 +81,8 @@ def test_haaland_multi_season_identity(master_df):
 
     seasons = set(haaland_hist["season"].unique())
     assert {"2023-24", "2024-25", "2025-26", "2026-27"}.issubset(seasons)
-    # 38 + 38 + 38 + 5 = 119 matches
-    assert len(haaland_hist) == 119
+    # 38 + 38 + 38 + 5 (or 6 after GW6 refresh) matches
+    assert len(haaland_hist) in (119, 120)
 
 
 def test_zero_nulls_in_critical_columns(master_df):

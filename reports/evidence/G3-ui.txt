@@ -1,63 +1,21 @@
-=== G3 UI HONESTY, DEADLINE & ATLAS/COUNCIL LOOK VERIFICATION ===
-
-COMMAND: C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe -m pytest tests/test_ui_honesty.py -v
-EXIT CODE: 0
-OUTPUT:
-============================= test session starts =============================
-platform win32 -- Python 3.11.1, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe
-cachedir: .pytest_cache
-hypothesis profile 'default'
-rootdir: C:\Users\anshw\Documents\fpl-expert
-configfile: pyproject.toml
-plugins: anyio-4.15.1, hypothesis-6.168.3
-collecting ... collected 4 items
-
-tests/test_ui_honesty.py::test_forbidden_literals_purged_from_index_html PASSED [ 25%]
-tests/test_ui_honesty.py::test_forbidden_literals_purged_from_app_js PASSED [ 50%]
-tests/test_ui_honesty.py::test_required_section_headings_present PASSED  [ 75%]
-tests/test_ui_honesty.py::test_deadline_formatting_rules PASSED          [100%]
-
-============================== 4 passed in 0.14s ==============================
-
-COMMAND: C:\Users\anshw\Documents\fpl-expert\.venv\Scripts\python.exe scripts/capture_screenshots.py
-EXIT CODE: 0
-OUTPUT:
-============================================================
-FPL ORACLE -- RESPONSIVE UI VERIFICATION & SCREENSHOTS (G3)
-============================================================
-Starting uvicorn server on http://127.0.0.1:8000...
-Waiting for server startup...
-Server is up and responsive!
-
-Verifying backend API endpoints:
-  [OK 200] / (68,124 bytes)
-  [OK 200] /api/v1/health (1,779 bytes)
-  [OK 200] /api/v1/squad/current (12,361 bytes)
-  [OK 200] /api/v1/briefing/decision-card (5,691 bytes)
-  [OK 200] /api/v1/transfers/plans (2,341 bytes)
-
-Launching headless Chromium...
-
-[Desktop Viewport: 1920x1080]
-  Decision card rendered with 730 characters of text content.
-  Captured: dashboard_desktop.png (170,811 bytes)
-  Captured: decision_card_desktop.png (56,255 bytes)
-
-[Mobile Viewport: 390x844]
-  Captured: dashboard_mobile.png (163,967 bytes)
-  Captured: decision_card_mobile.png (58,624 bytes)
-
-Browser execution closed successfully.
-Terminating server process...
-Server shutdown complete.
-============================================================
-SUCCESS: All visual screenshots and endpoint assertions passed!
-============================================================
-
-SCREENSHOT ARTIFACTS IN reports/screenshots/:
-  dashboard.png: 170,811 bytes
-  dashboard_desktop.png: 170,811 bytes
-  dashboard_mobile.png: 163,967 bytes
-  decision_card.png: 56,255 bytes
-  decision_card_desktop.png: 56,255 bytes
-  decision_card_mobile.png: 58,624 bytes
+{
+  "schema_version": 1,
+  "command": [
+    "C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "tests/test_ui_honesty.py",
+    "-v"
+  ],
+  "exit_code": 0,
+  "stdout": "============================= test session starts =============================\nplatform win32 -- Python 3.14.2, pytest-9.1.1, pluggy-1.6.0 -- C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe\ncachedir: .pytest_cache\nhypothesis profile 'default'\nrootdir: C:\\Users\\anshw\\Documents\\fpl-oracle\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, cov-7.1.0\ncollecting ... collected 6 items\n\ntests/test_ui_honesty.py::test_no_default_75_in_source PASSED            [ 16%]\ntests/test_ui_honesty.py::test_chance_of_playing_null_with_valid_player PASSED [ 33%]\ntests/test_ui_honesty.py::test_chance_of_playing_finite_numbers PASSED   [ 50%]\ntests/test_ui_honesty.py::test_chance_of_playing_missing_player_or_field PASSED [ 66%]\ntests/test_ui_honesty.py::test_deadline_distinct_states PASSED           [ 83%]\ntests/test_ui_honesty.py::test_league_name_is_guarded PASSED             [100%]\n\n============================== 6 passed in 0.62s ==============================\n",
+  "stderr": "",
+  "output": "============================= test session starts =============================\nplatform win32 -- Python 3.14.2, pytest-9.1.1, pluggy-1.6.0 -- C:\\Users\\anshw\\Documents\\fpl-oracle\\.venv\\Scripts\\python.exe\ncachedir: .pytest_cache\nhypothesis profile 'default'\nrootdir: C:\\Users\\anshw\\Documents\\fpl-oracle\nconfigfile: pyproject.toml\nplugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, cov-7.1.0\ncollecting ... collected 6 items\n\ntests/test_ui_honesty.py::test_no_default_75_in_source PASSED            [ 16%]\ntests/test_ui_honesty.py::test_chance_of_playing_null_with_valid_player PASSED [ 33%]\ntests/test_ui_honesty.py::test_chance_of_playing_finite_numbers PASSED   [ 50%]\ntests/test_ui_honesty.py::test_chance_of_playing_missing_player_or_field PASSED [ 66%]\ntests/test_ui_honesty.py::test_deadline_distinct_states PASSED           [ 83%]\ntests/test_ui_honesty.py::test_league_name_is_guarded PASSED             [100%]\n\n============================== 6 passed in 0.62s ==============================",
+  "timestamp": "2026-10-16T08:52:14.328141+00:00",
+  "git_commit": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "code_head": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "result": "PASS",
+  "artifacts": [],
+  "file_hashes": {},
+  "gates": []
+}

@@ -145,7 +145,6 @@ def check_identity() -> str:
     lines.append(f"  Total historical appearances retrieved: {len(haaland_hist)}\n")
     seasons_haaland = haaland_hist["season"].value_counts().sort_index().to_dict()
     lines.append(f"  Seasons breakdown: {seasons_haaland}\n")
-    elem_ids_haaland = haaland_hist.groupby("season")["element"].unique().apply(list).to_dict()
     assert len(haaland_hist) >= 115, f"Expected at least 115 Haaland games, got {len(haaland_hist)}"
     lines.append("  [PASS] Full 4-season authentic historical trajectory mapped without error.\n")
 
@@ -262,20 +261,37 @@ def check_cache() -> str:
 async def main():
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
+    mode = None
+    for i, arg in enumerate(sys.argv[1:], start=1):
+        if arg.startswith("--mode="):
+            mode = arg.split("=", 1)[1]
+        elif arg == "--mode" and i < len(sys.argv) - 1:
+            mode = sys.argv[i + 1]
+
+    if mode == "freshness":
+        freshness_text = await check_freshness()
+        print(freshness_text)
+        await fpl_client.aclose()
+        return
+
+    if mode == "identity":
+        identity_text = check_identity()
+        print(identity_text)
+        await fpl_client.aclose()
+        return
+
+    if mode == "cache":
+        cache_text = check_cache()
+        print(cache_text)
+        await fpl_client.aclose()
+        return
+
     print("Running G4 Freshness Check...")
     freshness_text = await check_freshness()
-    (EVIDENCE_DIR / "G4-freshness.txt").write_text(freshness_text, encoding="utf-8")
-    print("Wrote reports/evidence/G4-freshness.txt")
-
-    print("\nRunning G4 Identity Verification...")
+    print("Running G4 Identity Verification...")
     identity_text = check_identity()
-    (EVIDENCE_DIR / "G4-identity.txt").write_text(identity_text, encoding="utf-8")
-    print("Wrote reports/evidence/G4-identity.txt")
-
-    print("\nRunning G4 Cache Verification...")
+    print("Running G4 Cache Verification...")
     cache_text = check_cache()
-    (EVIDENCE_DIR / "G4-cache.txt").write_text(cache_text, encoding="utf-8")
-    print("Wrote reports/evidence/G4-cache.txt")
 
     await fpl_client.aclose()
     print("\nAll G4 verifications passed successfully!")
