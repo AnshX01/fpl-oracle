@@ -268,3 +268,63 @@ def test_production_quarantine_and_recover_has_valid_restore_point_and_does_not_
         event = temp_reg.quarantine_and_recover(reason="Simulated test corruption")
         assert event["restored_version"] is not None
         assert Path(event["quarantine_dir"]).exists()
+
+
+def test_rollback_to_previous_bundle_replaces_active_weights():
+    """
+    Item I verification:
+    1. List data/models/versions/: both active (v2026.10.16.1307) and previous (v2026.10.06.1713) exist.
+    2. Confirm previous known-good bundle is retained and has distinct weight hashes from active.
+    3. Test rolling back to v2026.10.06.1713 actually replaces active weights with the previous version.
+    """
+    from fpl_oracle.config import MODELS_DIR
+
+    reg = ModelRegistry()
+    active_info = reg.get_active_version()
+    assert active_info is not None
+    active_ver = active_info["version"]
+    assert active_ver == "v2026.10.16.1307"
+
+    prev_ver = "v2026.10.06.1713"
+    prev_dir = reg.versions_dir / prev_ver
+    active_dir = reg.versions_dir / active_ver
+
+    assert prev_dir.exists() and prev_dir.is_dir(), f"Previous version {prev_ver} must be retained in versions/"
+    assert active_dir.exists() and active_dir.is_dir(), f"Active version {active_ver} must exist in versions/"
+
+    # Hashes of previous vs active bundle must be distinct
+    prev_minutes_hash = hashlib.sha256((prev_dir / "minutes_model.pkl").read_bytes()).hexdigest()
+    active_minutes_hash = hashlib.sha256((active_dir / "minutes_model.pkl").read_bytes()).hexdigest()
+    assert prev_minutes_hash != active_minutes_hash, "Previous bundle must have distinct weight hashes from active"
+
+    # Simulate rollback in temporary models directory
+    with tempfile.TemporaryDirectory() as td:
+        tmp_models = Path(td) / "models"
+        import shutil
+
+        shutil.copytree(MODELS_DIR, tmp_models)
+
+        temp_reg = ModelRegistry()
+        temp_reg.models_dir = tmp_models
+        temp_reg.manifest_path = tmp_models / "manifest.json"
+        temp_reg.versions_dir = tmp_models / "versions"
+
+        # Verify initial active version in temp directory
+        temp_active = temp_reg.get_active_version()
+        assert temp_active is not None and temp_active["version"] == active_ver
+        curr_active_hash = hashlib.sha256((tmp_models / "minutes_model.pkl").read_bytes()).hexdigest()
+        assert curr_active_hash == active_minutes_hash
+
+        # Execute rollback to previous bundle
+        res = temp_reg.rollback_to_version(prev_ver)
+        assert res["success"] is True
+        assert res["active_version"] == prev_ver
+
+        # Verify active version in manifest changed to previous
+        temp_active_after = temp_reg.get_active_version()
+        assert temp_active_after is not None and temp_active_after["version"] == prev_ver
+
+        # Verify weights in models root now match previous bundle, NOT active bundle
+        rolled_back_hash = hashlib.sha256((tmp_models / "minutes_model.pkl").read_bytes()).hexdigest()
+        assert rolled_back_hash == prev_minutes_hash
+        assert rolled_back_hash != active_minutes_hash
