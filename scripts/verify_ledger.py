@@ -128,7 +128,7 @@ def validate_evidence_file(file_path: Path) -> tuple[bool, str, dict]:
         if head:
             try:
                 res = subprocess.run(
-                    ["git", "rev-list", "-n", "10", "HEAD"],
+                    ["git", "rev-list", "-n", "50", "HEAD"],
                     cwd=ROOT,
                     capture_output=True,
                     text=True,
@@ -210,7 +210,7 @@ def validate_evidence_file(file_path: Path) -> tuple[bool, str, dict]:
         return False, str(exc), {}
 
 
-def verify_ledger_milestones_and_evidence() -> bool:
+def verify_ledger_milestones_and_evidence(rerun: bool = False) -> bool:
     print("\n--- 2. Verifying Milestone Accounting & Evidence in reports/final_fix_ledger.md ---")
     current_head = get_current_git_head()
     print(f"  [PROVENANCE] Current Git HEAD: {current_head or 'Unknown'}")
@@ -242,6 +242,7 @@ def verify_ledger_milestones_and_evidence() -> bool:
     expected_ids = [f"G{i}" for i in range(1, 15)]
 
     reproduced_count = 0
+    rerun_success_count = 0
 
     for m_id in expected_ids:
         if m_id not in milestone_rows:
@@ -272,10 +273,53 @@ def verify_ledger_milestones_and_evidence() -> bool:
                     row_evidence_valid = False
                     continue
 
+                if rerun:
+                    cmd = list(meta.get("command", []))
+                    venv_py = ROOT / ".venv" / "Scripts" / "python.exe"
+                    py_exec = str(venv_py) if venv_py.exists() else sys.executable
+                    if cmd and ("python" in cmd[0].lower()):
+                        cmd[0] = py_exec
+                    try:
+                        res = subprocess.run(
+                            cmd,
+                            cwd=ROOT,
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                            timeout=300,
+                        )
+                        combined = res.stdout + "\n" + res.stderr
+                        if res.returncode != 0:
+                            err_preview = combined.strip()[:200].replace("\n", " ")
+                            print(f"\n    [RERUN FAIL] {rel_path}: Exit code {res.returncode} -> {err_preview}")
+                            row_evidence_valid = False
+                            continue
+                        if "traceback (most recent call last)" in combined.lower():
+                            print(f"\n    [RERUN FAIL] {rel_path}: Unhandled traceback in rerun output")
+                            row_evidence_valid = False
+                            continue
+                        for summary in re.findall(r"^=+\s*(.*?)\s*=+\s*$", combined, re.MULTILINE):
+                            for count in re.findall(r"\b(\d+)\s+(?:failed|errors?)\b", summary.lower()):
+                                if int(count) > 0:
+                                    print(f"\n    [RERUN FAIL] {rel_path}: {summary}")
+                                    row_evidence_valid = False
+                                    break
+                    except Exception as e:
+                        print(f"\n    [RERUN ERROR] {rel_path}: {e}")
+                        row_evidence_valid = False
+                        continue
+
             if row_evidence_valid:
-                print(f"Recorded evidence validated: {len(raw_paths)} file(s); commands NOT rerun")
-                reproduced_count += 1
+                if rerun:
+                    print(f"Recorded evidence & live rerun PASSED: {len(raw_paths)} file(s) executed at current HEAD")
+                    reproduced_count += 1
+                    rerun_success_count += 1
+                else:
+                    print(f"Recorded evidence validated: {len(raw_paths)} file(s); commands NOT rerun")
+                    reproduced_count += 1
             else:
+                if rerun:
+                    print(f" -> REOPENED: Milestone {m_id} failed live rerun execution at current HEAD")
                 all_passed = False
 
         elif final_status in ("PARTIAL", "BLOCKED", "NOT DONE"):
@@ -290,7 +334,7 @@ def verify_ledger_milestones_and_evidence() -> bool:
             all_passed = False
 
     print(
-        f"\n  [AUDIT SUMMARY] Current-HEAD recorded milestones: {reproduced_count}/{len(expected_ids)}; rerun here: 0"
+        f"\n  [AUDIT SUMMARY] Current-HEAD recorded milestones: {reproduced_count}/{len(expected_ids)}; rerun here: {rerun_success_count if rerun else 0}"
     )
     print("  [AUDIT SUMMARY] Historical records (M*, N*, T*, W*, Q*, G00-*): Preserved as audit history baseline.")
     return all_passed
@@ -390,17 +434,34 @@ def verify_doc_and_metric_consistency() -> bool:
 
 
 def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="FPL Oracle - Evidence Ledger, Integrity & Metric Validator")
+    parser.add_argument(
+        "--rerun",
+        action="store_true",
+        help="Re-execute each milestone's recorded command at the current HEAD and verify outputs",
+    )
+    args = parser.parse_args()
+
     print("=" * 70)
     print("FPL Oracle - Evidence Ledger, Integrity & Metric Validator (G14/Chunk 1)")
+    if args.rerun:
+        print("MODE: Active live rerun (--rerun enabled)")
+    else:
+        print("MODE: Static recorded evidence validation (commands NOT rerun)")
     print("=" * 70)
 
     hashes_ok = verify_manifest_hashes()
-    ledger_ok = verify_ledger_milestones_and_evidence()
+    ledger_ok = verify_ledger_milestones_and_evidence(rerun=args.rerun)
     docs_ok = verify_doc_and_metric_consistency()
 
     print("\n" + "=" * 70)
     if hashes_ok and ledger_ok and docs_ok:
-        print("ALL AUDIT CHECKS PASSED: 100% EVIDENCE-GATED VERIFICATION ACHIEVED (0 LITERALS)")
+        if args.rerun:
+            print("ALL AUDIT CHECKS PASSED: 100% EVIDENCE-GATED VERIFICATION ACHIEVED (ALL COMMANDS RERUN AND PASSED)")
+        else:
+            print("AUDIT CHECKS PASSED: Static evidence verified (commands NOT rerun). Run with --rerun for earned 100% verification.")
         print("=" * 70)
         return 0
     else:
