@@ -67,25 +67,27 @@ class BonusModel(BaseComponent):
 
         constrained = exp_bonus.copy()
 
+        meta_df = X.attrs.get("meta") if hasattr(X, "attrs") else None
+        if isinstance(meta_df, pd.DataFrame):
+            if (
+                len(meta_df) != n
+                and X.index.is_unique
+                and meta_df.index.is_unique
+                and set(X.index).issubset(meta_df.index)
+            ):
+                meta_df = meta_df.loc[X.index]
+            elif len(meta_df) != n:
+                meta_df = None
+
         # Resolve fixture identifiers
         if fixture_ids is not None:
             fixtures = np.asarray(fixture_ids)
         elif "fixture_id" in X.columns:
             fixtures = X["fixture_id"].values
-        elif (
-            hasattr(X, "attrs")
-            and "meta" in X.attrs
-            and isinstance(X.attrs["meta"], pd.DataFrame)
-            and "fixture_id" in X.attrs["meta"].columns
-        ):
-            fixtures = X.attrs["meta"]["fixture_id"].values
-        elif (
-            hasattr(X, "attrs")
-            and "meta" in X.attrs
-            and isinstance(X.attrs["meta"], pd.DataFrame)
-            and "round" in X.attrs["meta"].columns
-        ):
-            fixtures = X.attrs["meta"]["round"].values
+        elif meta_df is not None and "fixture_id" in meta_df.columns:
+            fixtures = meta_df["fixture_id"].values
+        elif meta_df is not None and "round" in meta_df.columns:
+            fixtures = meta_df["round"].values
         else:
             surrogate_cols = [c for c in ["implied_team_xG", "implied_opp_xG", "days_rest"] if c in X.columns]
             if surrogate_cols and len(X) >= 20:

@@ -64,7 +64,9 @@ def test_weight_tampering_fails_verification(tmp_path: Path):
     for filename in file_hashes:
         src = MODELS_DIR / filename
         if src.exists():
-            (tmp_path / filename).write_bytes(src.read_bytes())
+            dest = tmp_path / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(src.read_bytes())
 
     # Tamper with one file
     tampered_file = tmp_path / "minutes_model.pkl"
@@ -106,7 +108,9 @@ def test_calibration_tampering_fails_verification(tmp_path: Path):
     for filename in file_hashes:
         src = MODELS_DIR / filename
         if src.exists():
-            (tmp_path / filename).write_bytes(src.read_bytes())
+            dest = tmp_path / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(src.read_bytes())
 
     # Tamper with calibration.json
     cal_file = tmp_path / "calibration.json"
@@ -117,6 +121,30 @@ def test_calibration_tampering_fails_verification(tmp_path: Path):
 
     reg = ModelRegistry()
     with pytest.raises(ValueError, match="SHA256 mismatch for calibration.json"):
+        reg.verify_weight_integrity(tmp_path)
+
+
+def test_cqr_tampering_fails_verification(tmp_path: Path):
+    """Verify that tampering with any CQR file causes verify_weight_integrity to raise ValueError (G1)."""
+    active = model_registry.get_active_version()
+    file_hashes = active.get("file_hashes", {})
+
+    for filename in file_hashes:
+        src = MODELS_DIR / filename
+        if src.exists():
+            dest = tmp_path / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(src.read_bytes())
+
+    # Tamper with a CQR file
+    cqr_file = tmp_path / "cqr" / "cqr_DEF_q10.txt"
+    assert cqr_file.exists(), "CQR file must be present in active version"
+    content = bytearray(cqr_file.read_bytes())
+    content[0] = (content[0] + 1) % 256
+    cqr_file.write_bytes(bytes(content))
+
+    reg = ModelRegistry()
+    with pytest.raises(ValueError, match="SHA256 mismatch for cqr/cqr_DEF_q10.txt"):
         reg.verify_weight_integrity(tmp_path)
 
 

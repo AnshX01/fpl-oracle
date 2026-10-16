@@ -407,9 +407,11 @@ class ModelRegistry:
                 source = previous / filename
                 if not source.exists():
                     raise ValueError("Interrupted promotion cannot recover previous bundle")
-                temporary = self.models_dir / (filename + ".recover")
+                dest_file = self.models_dir / filename
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                temporary = dest_file.parent / (dest_file.name + ".recover")
                 shutil.copy2(source, temporary)
-                os.replace(temporary, self.models_dir / filename)
+                os.replace(temporary, dest_file)
         # Validate the selected manifest before declaring recovery complete.
         manifest = self.load_manifest()
         version = next(v for v in manifest["versions"] if v["version"] == manifest["active_version"])
@@ -440,6 +442,10 @@ class ModelRegistry:
         if cal_p.exists() and cal_p.is_file():
             shutil.move(str(cal_p), str(quarantine_dir / "calibration.json"))
             quarantined_files.append("calibration.json")
+        cqr_p = models_path / "cqr"
+        if cqr_p.exists() and cqr_p.is_dir():
+            shutil.move(str(cqr_p), str(quarantine_dir / "cqr"))
+            quarantined_files.append("cqr")
 
         logger.critical(
             f"[ModelIntegrity] Corrupt model bundle files quarantined to {quarantine_dir}: {quarantined_files} (Reason: {reason})"
@@ -498,9 +504,11 @@ class ModelRegistry:
             raise ModelBundleCorruptError(err_msg)
 
         # Restore files to active models directory
-        for f in restored_dir.glob("*"):
+        for f in restored_dir.iterdir():
             if f.is_file():
                 shutil.copy2(f, models_path / f.name)
+            elif f.is_dir():
+                shutil.copytree(f, models_path / f.name, dirs_exist_ok=True)
 
         manifest["active_version"] = restored_ver_name
         self.save_manifest(manifest)
@@ -709,10 +717,11 @@ class ModelRegistry:
         recipe_id: str = "fpl_oracle_canonical_v1",
         new_version_tag: str | None = None,
         notes: str = "",
+        cqr: Any | Path | None = None,
     ) -> dict[str, Any]:
         """
         Builds a candidate staging directory with all 6 component models, calibration.json,
-        and manifest.json, computes all hashes, verifies integrity, and atomically swaps
+        cqr/* files, and manifest.json, computes all hashes, verifies integrity, and atomically swaps
         into production data/models/ using .tmp + os.replace (Requirement G1).
         """
         cand_mae = float(candidate_metrics.get("ml_mae", candidate_metrics.get("mae", 1.0)))
@@ -745,11 +754,18 @@ class ModelRegistry:
             else:
                 raise ValueError("calibration_data must be a dict or a Path to calibration.json")
 
-            # 3. Calculate SHA256 hashes of all 7 files in staging
-            file_hashes: dict[str, str] = {}
-            for _, filename, _ in COMPONENT_WEIGHTS:
-                file_hashes[filename] = self.calculate_file_hash(staging_dir / filename)
-            file_hashes["calibration.json"] = self.calculate_file_hash(staging_cal)
+            # 2b. Save CQR models and metadata into staging
+            staging_cqr = staging_dir / "cqr"
+            if cqr is not None:
+                if isinstance(cqr, Path) and cqr.exists():
+                    shutil.copytree(cqr, staging_cqr, dirs_exist_ok=True)
+                elif hasattr(cqr, "save"):
+                    cqr.save(staging_cqr)
+            elif (self.models_dir / "cqr").exists():
+                shutil.copytree(self.models_dir / "cqr", staging_cqr, dirs_exist_ok=True)
+
+            # 3. Calculate SHA256 hashes of all staged files (models, calibration, cqr/*)
+            file_hashes: dict[str, str] = self.calculate_weight_hashes(staging_dir)
 
             # 4. Read git commit at train/promotion time
             try:
@@ -840,6 +856,8 @@ class ModelRegistry:
                     shutil.copy2(src, archive_dir / fname)
             if (self.models_dir / "calibration.json").exists():
                 shutil.copy2(self.models_dir / "calibration.json", archive_dir / "calibration.json")
+            if (self.models_dir / "cqr").exists():
+                shutil.copytree(self.models_dir / "cqr", archive_dir / "cqr", dirs_exist_ok=True)
 
             # 9. Also save copy in versions_dir / ver_tag
             new_ver_dir = self.versions_dir / ver_tag
@@ -847,9 +865,11 @@ class ModelRegistry:
             for item in staging_dir.iterdir():
                 if item.is_file():
                     shutil.copy2(item, new_ver_dir / item.name)
+                elif item.is_dir():
+                    shutil.copytree(item, new_ver_dir / item.name, dirs_exist_ok=True)
 
             # 10. Atomic swap into production self.models_dir using .tmp + os.replace
-            files_to_swap = [fname for _, fname, _ in COMPONENT_WEIGHTS] + ["calibration.json"]
+            files_to_swap = list(file_hashes.keys())
             journal_path = self.models_dir / "promotion_journal.json"
             journal_tmp = journal_path.with_suffix(".json.tmp")
             journal_tmp.write_text(
@@ -859,10 +879,11 @@ class ModelRegistry:
             os.replace(journal_tmp, journal_path)
             for fname in files_to_swap:
                 src_file = staging_dir / fname
-                tmp_target = self.models_dir / f"{fname}.tmp"
-                final_target = self.models_dir / fname
+                dest_file = self.models_dir / fname
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                tmp_target = dest_file.parent / f"{dest_file.name}.tmp"
                 shutil.copy2(src_file, tmp_target)
-                os.replace(tmp_target, final_target)
+                os.replace(tmp_target, dest_file)
 
             # Finally atomically replace manifest.json
             man_tmp = self.models_dir / "manifest.json.tmp"
@@ -925,6 +946,7 @@ class ModelRegistry:
         training_data_df: pd.DataFrame | None = None,
         training_provenance: dict[str, Any] | None = None,
         recipe_id: str = "fpl_oracle_canonical_v1",
+        cqr: Any | Path | None = None,
     ) -> dict[str, Any]:
         """
         Verify candidate models against active production metrics.
@@ -1011,6 +1033,7 @@ class ModelRegistry:
             training_provenance=training_provenance,
             new_version_tag=new_version_tag,
             notes=notes,
+            cqr=cqr,
         )
 
     @bundle_locked
@@ -1021,10 +1044,11 @@ class ModelRegistry:
             return {"success": False, "error": f"Version checkpoint '{target_version}' not found."}
 
         # Copy files back to production root
-        for _, filename, _ in COMPONENT_WEIGHTS:
-            src = target_dir / filename
-            if src.exists():
-                shutil.copy2(src, self.models_dir / filename)
+        for item in target_dir.iterdir():
+            if item.is_file() and item.name != "manifest.json":
+                shutil.copy2(item, self.models_dir / item.name)
+            elif item.is_dir():
+                shutil.copytree(item, self.models_dir / item.name, dirs_exist_ok=True)
 
         # Update DB
         data_store.save_model_version(
