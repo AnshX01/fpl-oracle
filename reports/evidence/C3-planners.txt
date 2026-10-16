@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "command": [
+    ".venv\\Scripts\\python.exe",
+    "scripts\\compare_c3_planners.py"
+  ],
+  "exit_code": 0,
+  "stdout": "================================================================================\nC3 PLANNER COMPARISON: CURRENT SQUAD (Manager 1085141, GW7)\nBank: 1.5m | Free Transfers: 2\n================================================================================\n\n--- 1. BEAM SEARCH OPTIMIZER OUTPUT ---\nPlan Type:      2_TRANSFERS\nTransfers In:   ['Cherki', 'Hall']\nTransfers Out:  ['Szoboszlai', 'White']\nCaptain:        Haaland\nHorizon Gain:   5.9\nHit Cost:       0.0\n\n--- 2. MULTI-PERIOD MILP OPTIMIZER OUTPUT ---\nPlan Type:      WILDCARD\nTransfers In:   ['Rogers', 'Kelleher', 'De Cuyper', 'McBurnie', 'Davis', 'Bogle', 'Semenyo', 'Cherki', 'Hall', 'Tzolakis']\nTransfers Out:  ['White', 'Ajer', 'Verbruggen', 'Palmer', 'Jo\u00e3o Pedro', 'Diop', 'Belloumi', 'Szoboszlai', 'Maguire', 'Kinsky']\nCaptain:        None\nHorizon Gain:   12.16\nHit Cost:       0\n\nSaved C3 comparison to reports\\c3_planner_comparison.json\n",
+  "stderr": "",
+  "output": "================================================================================\nC3 PLANNER COMPARISON: CURRENT SQUAD (Manager 1085141, GW7)\nBank: 1.5m | Free Transfers: 2\n================================================================================\n\n--- 1. BEAM SEARCH OPTIMIZER OUTPUT ---\nPlan Type:      2_TRANSFERS\nTransfers In:   ['Cherki', 'Hall']\nTransfers Out:  ['Szoboszlai', 'White']\nCaptain:        Haaland\nHorizon Gain:   5.9\nHit Cost:       0.0\n\n--- 2. MULTI-PERIOD MILP OPTIMIZER OUTPUT ---\nPlan Type:      WILDCARD\nTransfers In:   ['Rogers', 'Kelleher', 'De Cuyper', 'McBurnie', 'Davis', 'Bogle', 'Semenyo', 'Cherki', 'Hall', 'Tzolakis']\nTransfers Out:  ['White', 'Ajer', 'Verbruggen', 'Palmer', 'Jo\u00e3o Pedro', 'Diop', 'Belloumi', 'Szoboszlai', 'Maguire', 'Kinsky']\nCaptain:        None\nHorizon Gain:   12.16\nHit Cost:       0\n\nSaved C3 comparison to reports\\c3_planner_comparison.json",
+  "timestamp": "2026-10-16T17:31:25.711134+00:00",
+  "git_commit": "503882673ed9e781f20497626f9e7f71f9f7e672",
+  "code_head": "503882673ed9e781f20497626f9e7f71f9f7e672",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "path": "reports/c3_planner_comparison.json",
+      "sha256": "debe052e42549a7791b4b0a321a28ab14a8610ed12bcf6ae6c963515b19959c3"
+    }
+  ],
+  "file_hashes": {
+    "reports/c3_planner_comparison.json": "debe052e42549a7791b4b0a321a28ab14a8610ed12bcf6ae6c963515b19959c3"
+  },
+  "gates": []
+}
