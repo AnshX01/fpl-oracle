@@ -8,7 +8,6 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from fpl_oracle.config import SETTINGS
 from fpl_oracle.data.store import data_store
 
 
@@ -34,10 +33,9 @@ class CacheManager:
         # Check SQLite cache
         db_entry = data_store.get_cache_entry(key)
         if db_entry is not None:
-            data, upd = db_entry
-            # Rehydrate in memory
-            ttl = SETTINGS.get("cache", {}).get("bootstrap_ttl_seconds", 300)
-            self._mem_cache[key] = {"data": data, "expires_at": now + ttl, "updated_at": upd}
+            data, upd, exp = db_entry
+            # Rehydrate in memory preserving remaining TTL (expires_at) from SQLite
+            self._mem_cache[key] = {"data": data, "expires_at": exp.timestamp(), "updated_at": upd}
             return data, upd
         return None
 
@@ -57,32 +55,45 @@ class CacheManager:
         self._mem_cache[key] = {"data": data, "expires_at": now_ts + ttl_seconds, "updated_at": now_dt}
         data_store.set_cache(key, data, ttl_seconds)
 
+    def _candidate_keys(self, key: str) -> list[str]:
+        from fpl_oracle.utils.season import derive_season
+
+        season = derive_season(format="hyphen")
+        if key.startswith(f"{season}:"):
+            return [key]
+        return [f"{season}:{key}", key]
+
     def invalidate(self, key: str):
-        if key in self._mem_cache:
-            del self._mem_cache[key]
+        for k in self._candidate_keys(key):
+            if k in self._mem_cache:
+                del self._mem_cache[k]
 
     def force_expire(self, key: str):
         """Force cache entry to be expired so get() misses but get_stale() succeeds."""
-        if key in self._mem_cache:
-            del self._mem_cache[key]
+        keys = self._candidate_keys(key)
+        for k in keys:
+            if k in self._mem_cache:
+                del self._mem_cache[k]
         from fpl_oracle.data.store import APICacheEntry
 
         with data_store.get_session() as session:
-            entry = session.query(APICacheEntry).filter(APICacheEntry.key == key).first()
-            if entry:
-                entry.expires_at = datetime.fromtimestamp(0, tz=UTC)  # type: ignore[assignment]
-                session.commit()
+            for k in keys:
+                entry = session.query(APICacheEntry).filter(APICacheEntry.key == k).first()
+                if entry:
+                    entry.expires_at = datetime.fromtimestamp(0, tz=UTC)  # type: ignore[assignment]
+            session.commit()
 
     def get_cache_age_seconds(self, key: str) -> float | None:
         """Return age of cached entry in seconds, or None if not cached."""
         now_dt = datetime.now(UTC)
-        if key in self._mem_cache:
-            upd = self._mem_cache[key]["updated_at"]
-            return max(0.0, (now_dt - upd).total_seconds())
-        entry = data_store.get_cache_entry(key) or data_store.get_stale_cache_entry(key)
-        if entry:
-            _, upd = entry
-            return max(0.0, (now_dt - upd).total_seconds())
+        for k in self._candidate_keys(key):
+            if k in self._mem_cache:
+                upd = self._mem_cache[k]["updated_at"]
+                return max(0.0, (now_dt - upd).total_seconds())
+            entry = data_store.get_cache_entry(k) or data_store.get_stale_cache_entry(k)
+            if entry:
+                upd = entry[1]
+                return max(0.0, (now_dt - upd).total_seconds())
         return None
 
     def get_all_cache_ages(self) -> dict[str, float]:

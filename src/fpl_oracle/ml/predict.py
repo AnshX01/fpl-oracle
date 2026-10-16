@@ -6,13 +6,14 @@ to deliver single and multi-gameweek player point distributions.
 
 import hashlib
 import logging
+import time
 from datetime import UTC
 from typing import Any
 
 import pandas as pd
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
-from fpl_oracle.config import MODELS_DIR
+from fpl_oracle.config import MODELS_DIR, SETTINGS
 from fpl_oracle.data.features import FEATURE_COLUMNS, feature_engineering
 from fpl_oracle.ml.bundle_lock import bundle_locked
 from fpl_oracle.ml.components.attacking import AttackingModel
@@ -157,7 +158,10 @@ class ProjectionEngine:
             model_version = str(active_entry.get("version", "default"))
         else:
             model_version = str(active_entry or "default")
-        season = "2026-27"
+        from fpl_oracle.utils.season import derive_season
+
+        season = derive_season(format="hyphen")
+        manifest_hash = model_registry.get_manifest_hash()[:16]
         feature_hash = hashlib.sha256(
             pd.util.hash_pandas_object(
                 features_df[
@@ -170,10 +174,19 @@ class ProjectionEngine:
         if reconciled_availabilities:
             avail_str = str(sorted(reconciled_availabilities.items()))
         avail_hash = hashlib.sha256(avail_str.encode("utf-8")).hexdigest()[:8] if avail_str else "none"
-        cache_key = f"{model_version}:{season}:gw{target_gw}:{feature_hash}:{avail_hash}"
+        cache_key = f"{model_version}:{season}:gw{target_gw}:{feature_hash}:{manifest_hash}:{avail_hash}"
 
+        max_age = float(SETTINGS.get("cache", {}).get("prediction_max_age_seconds", 3600))
+        now_ts = time.time()
         if cache_key in self._cache:
-            return self._cache[cache_key].copy()
+            entry = self._cache[cache_key]
+            if isinstance(entry, tuple):
+                df_cached, cached_ts = entry
+                if now_ts - cached_ts <= max_age:
+                    return df_cached.copy()
+                del self._cache[cache_key]
+            else:
+                return entry.copy()
 
         # Isolate model features
         X = features_df[FEATURE_COLUMNS].copy()
@@ -305,9 +318,13 @@ class ProjectionEngine:
             )
         )
         dgw_grouped["dgw_covariance_calibrated"] = False
-        self._cache[cache_key] = dgw_grouped.copy()
+        self._cache[cache_key] = (dgw_grouped.copy(), now_ts)
 
         return dgw_grouped
+
+    def invalidate_cache(self) -> None:
+        """Explicitly invalidate all cached projections on upstream data or model refresh."""
+        self._cache.clear()
 
     @bundle_locked
     def predict_multi_gameweeks(

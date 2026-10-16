@@ -8,6 +8,7 @@ import asyncio
 import io
 import logging
 import urllib.request
+from typing import Any
 
 import pandas as pd
 
@@ -122,8 +123,11 @@ class HistoricalDataManager:
         fresh = fresh[fresh["round"].isin(finalized) & fresh["fixture"].isin(valid_fixtures)].copy()
         if fresh.empty:
             return {"status": "awaiting_finalization", "rows": 0}
-        past = old[old["season"] != "2026-27"] if not old.empty else pd.DataFrame()
-        current = old[old["season"] == "2026-27"] if not old.empty else pd.DataFrame()
+        from fpl_oracle.utils.season import derive_season
+
+        curr_season = derive_season(format="hyphen")
+        past = old[old["season"] != curr_season] if not old.empty else pd.DataFrame()
+        current = old[old["season"] == curr_season] if not old.empty else pd.DataFrame()
         # Preserve rows for players whose fetch failed; mark refresh incomplete below.
         if not current.empty and "fixture" not in current:
             current["fixture"] = 0
@@ -135,8 +139,8 @@ class HistoricalDataManager:
         merged = self._clean_and_standardize(pd.concat([past, current, fresh], ignore_index=True))
         # Past cached corpora may lack fixture identity and contain genuine DGW
         # rows. Never deduplicate those by a null/zero fixture key.
-        past_rows = merged[merged["season"] != "2026-27"]
-        current_rows = merged[merged["season"] == "2026-27"].drop_duplicates(
+        past_rows = merged[merged["season"] != curr_season]
+        current_rows = merged[merged["season"] == curr_season].drop_duplicates(
             ["season", "element", "fixture", "round"], keep="last"
         )
         merged = pd.concat([past_rows, current_rows], ignore_index=True)
@@ -160,8 +164,230 @@ class HistoricalDataManager:
         self.output_file.with_suffix(".meta.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         from fpl_oracle.ml.predict import projection_engine
 
-        projection_engine._cache.clear()
+        projection_engine.invalidate_cache()
         return metadata
+
+    def get_last_finished_gameweek(self) -> int:
+        """Return the maximum finished gameweek round recorded in master_history.csv for current season."""
+        if not self.output_file.exists():
+            return 0
+        try:
+            df = pd.read_csv(self.output_file, usecols=["season", "round"])
+            from fpl_oracle.utils.season import derive_season
+
+            curr_season = derive_season(format="hyphen")
+            curr_df = df[df["season"] == curr_season]
+            if curr_df.empty:
+                return int(df["round"].max()) if not df.empty else 0
+            return int(curr_df["round"].max())
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _build_match_row(
+        curr_season: str,
+        full_name: str,
+        eid: int,
+        pos: str,
+        team_name: str,
+        gw: int,
+        f_id: int,
+        opp: int,
+        home: bool,
+        ko_time: str,
+        stats: dict[str, Any],
+        val: float,
+    ) -> dict[str, Any]:
+        return {
+            "season": curr_season,
+            "name": full_name,
+            "element": eid,
+            "position": pos,
+            "team": team_name,
+            "round": gw,
+            "fixture": float(f_id),
+            "opponent_team": opp,
+            "was_home": home,
+            "kickoff_time": ko_time,
+            "minutes": stats.get("minutes", 0),
+            "goals_scored": stats.get("goals_scored", 0),
+            "assists": stats.get("assists", 0),
+            "clean_sheets": stats.get("clean_sheets", 0),
+            "goals_conceded": stats.get("goals_conceded", 0),
+            "own_goals": stats.get("own_goals", 0),
+            "penalties_saved": stats.get("penalties_saved", 0),
+            "penalties_missed": stats.get("penalties_missed", 0),
+            "yellow_cards": stats.get("yellow_cards", 0),
+            "red_cards": stats.get("red_cards", 0),
+            "saves": stats.get("saves", 0),
+            "bonus": stats.get("bonus", 0),
+            "bps": stats.get("bps", 0),
+            "influence": float(stats.get("influence", 0.0) or 0.0),
+            "creativity": float(stats.get("creativity", 0.0) or 0.0),
+            "threat": float(stats.get("threat", 0.0) or 0.0),
+            "ict_index": float(stats.get("ict_index", 0.0) or 0.0),
+            "starts": stats.get("starts", 0),
+            "expected_goals": float(stats.get("expected_goals", 0.0) or 0.0),
+            "expected_assists": float(stats.get("expected_assists", 0.0) or 0.0),
+            "expected_goal_involvements": float(stats.get("expected_goal_involvements", 0.0) or 0.0),
+            "expected_goals_conceded": float(stats.get("expected_goals_conceded", 0.0) or 0.0),
+            "defensive_contribution": float(stats.get("defensive_contribution", 0.0) or 0.0),
+            "value": val,
+            "total_points": stats.get("total_points", 0),
+        }
+
+    async def refresh_gameweek_live(self, gw: int, force: bool = False) -> dict[str, Any]:
+        """
+        Incrementally append new match rows for a finalized gameweek from event/{gw}/live atomically.
+        Validates finalization status (finished=True and data_checked=True), schema, and row count.
+        Idempotent: replaces existing rows for (season, gw) and never double-appends.
+        """
+        import hashlib
+        import json
+        import os
+        from datetime import UTC, datetime
+
+        from fpl_oracle.utils.season import derive_season
+
+        boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
+        if stale and not force:
+            raise RuntimeError("Incremental refresh requires fresh official bootstrap context")
+
+        # Verify gameweek finalization
+        ev = next((e for e in boot.events if e.id == gw), None)
+        if ev is None:
+            raise ValueError(f"Gameweek {gw} not found in official events")
+        if not (ev.finished and ev.data_checked) and not force:
+            raise RuntimeError(
+                f"Gameweek {gw} is not finalised yet (finished={ev.finished}, data_checked={ev.data_checked}). "
+                "FPL finalises matches ~09:00 UK the following morning."
+            )
+
+        fixtures, fixture_stale = await fpl_client.get_fixtures(event=gw, force_refresh=True)
+        if fixture_stale and not force:
+            raise RuntimeError("Incremental refresh requires fresh fixture data")
+
+        live_data, live_stale = await fpl_client.get_live_gameweek(gw, force_refresh=True)
+        elements = live_data.get("elements", [])
+        if not elements:
+            raise RuntimeError(f"No element data returned from event/{gw}/live/")
+
+        curr_season = derive_season(format="hyphen")
+        team_id_to_name = {t.id: t.name for t in boot.teams}
+        pos_id_to_pos = {et.id: et.singular_name_short for et in boot.element_types}
+        elem_dict = {e.id: e for e in boot.elements}
+        fix_dict = {f.id: f for f in fixtures}
+        team_fixtures: dict[int, list[tuple[Any, bool, int]]] = {}
+        for f in fixtures:
+            team_fixtures.setdefault(f.team_h, []).append((f, True, f.team_a))
+            team_fixtures.setdefault(f.team_a, []).append((f, False, f.team_h))
+
+        records: list[dict[str, Any]] = []
+        for el in elements:
+            eid = int(el.get("id", 0))
+            elem = elem_dict.get(eid)
+            if not elem:
+                continue
+            stats = el.get("stats", {})
+            explain = el.get("explain", [])
+
+            pos = pos_id_to_pos.get(elem.element_type, "MID")
+            team_name = team_id_to_name.get(elem.team, str(elem.team))
+            full_name = f"{elem.first_name} {elem.second_name}".strip() or elem.web_name
+            val = float(elem.now_cost)
+
+            if explain:
+                for exp in explain:
+                    fid = int(exp.get("fixture", 0))
+                    f_obj = fix_dict.get(fid)
+                    if f_obj:
+                        was_home = elem.team == f_obj.team_h
+                        opp = f_obj.team_a if was_home else f_obj.team_h
+                        ko_val = getattr(f_obj, "kickoff_time", None)
+                        ko = (
+                            ko_val.isoformat()
+                            if (ko_val is not None and hasattr(ko_val, "isoformat"))
+                            else str(ko_val or "")
+                        )
+                    else:
+                        was_home = False
+                        opp = 0
+                        ko = ""
+                    records.append(
+                        self._build_match_row(
+                            curr_season, full_name, eid, pos, team_name, gw, fid, opp, was_home, ko, stats, val
+                        )
+                    )
+            else:
+                tf = team_fixtures.get(elem.team, [])
+                if tf:
+                    for f_obj, was_home, opp in tf:
+                        ko_val = getattr(f_obj, "kickoff_time", None)
+                        ko = (
+                            ko_val.isoformat()
+                            if (ko_val is not None and hasattr(ko_val, "isoformat"))
+                            else str(ko_val or "")
+                        )
+                        records.append(
+                            self._build_match_row(
+                                curr_season, full_name, eid, pos, team_name, gw, f_obj.id, opp, was_home, ko, stats, val
+                            )
+                        )
+                else:
+                    records.append(
+                        self._build_match_row(
+                            curr_season, full_name, eid, pos, team_name, gw, 0, 0, False, "", stats, val
+                        )
+                    )
+
+        fresh_df = pd.DataFrame(records)
+        # Validate schema & row counts
+        for col in STANDARD_COLUMNS:
+            if col not in fresh_df.columns:
+                raise ValueError(f"Missing column in incremental refresh: {col}")
+        if len(fresh_df) < 500:
+            raise ValueError(f"Insufficient rows generated for gameweek {gw}: got {len(fresh_df)}, expected >= 500")
+
+        # Atomic append and idempotency against master_history.csv
+        old = pd.read_csv(self.output_file, low_memory=False) if self.output_file.exists() else pd.DataFrame()
+        if not old.empty:
+            # Drop any existing rows for (curr_season, gw) to ensure idempotency (no double-append)
+            remaining_rows = old[~((old["season"] == curr_season) & (old["round"] == gw))].copy()
+            merged = pd.concat([remaining_rows, fresh_df], ignore_index=True)
+        else:
+            merged = fresh_df
+
+        merged = self._clean_and_standardize(merged)
+        # Final deduplication guard
+        merged = merged.drop_duplicates(subset=["season", "element", "fixture", "round"], keep="last")
+
+        self.output_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.output_file.with_suffix(".csv.tmp")
+        merged.to_csv(tmp, index=False)
+        os.replace(tmp, self.output_file)
+
+        sha = hashlib.sha256(self.output_file.read_bytes()).hexdigest()
+        meta = {
+            "status": "refreshed",
+            "gameweek": gw,
+            "rows_appended": len(fresh_df),
+            "total_rows": len(merged),
+            "refreshed_at": datetime.now(UTC).isoformat(),
+            "sha256": sha,
+        }
+        self.output_file.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+        # Invalidate projection engine cache
+        from fpl_oracle.ml.predict import projection_engine
+
+        projection_engine.invalidate_cache()
+
+        # Reload identity resolver
+        from fpl_oracle.data.player_identity import player_identity_resolver
+
+        player_identity_resolver.load(merged)
+
+        return meta
 
     def _fetch_vaastav_season(self, season: str) -> pd.DataFrame | None:
         cache_path = HISTORICAL_DIR / f"{season}_merged_gw.csv"
@@ -209,6 +435,9 @@ class HistoricalDataManager:
         active_elements = list(bootstrap.elements)
         logger.info(f"Fetching element match histories for {len(active_elements)} active players...")
 
+        from fpl_oracle.utils.season import derive_season
+
+        curr_season = derive_season(format="hyphen")
         records = []
         self._last_failed_player_ids: list[int] = []
         sem = asyncio.Semaphore(15)
@@ -221,7 +450,7 @@ class HistoricalDataManager:
                         raise RuntimeError(f"Stale element history {elem.id}")
                     for h in summary.history:
                         rec = {
-                            "season": "2026-27",
+                            "season": curr_season,
                             "name": f"{elem.first_name} {elem.second_name}".strip() or elem.web_name,
                             "element": elem.id,
                             "position": pos_id_to_pos.get(elem.element_type, "MID"),

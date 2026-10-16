@@ -10,6 +10,8 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
+from fpl_oracle.utils.season import derive_season
+
 
 class GameweekPhase(StrEnum):
     PRE_DEADLINE = "PRE_DEADLINE"
@@ -47,7 +49,7 @@ class FrozenClock:
 
 
 class TimeContext(BaseModel):
-    season: str = "2026/27"
+    season: str = Field(default_factory=lambda: derive_season(format="slash"))
     current_gw: int | None = None
     next_actionable_gw: int | None = None
     phase: GameweekPhase = GameweekPhase.PRE_DEADLINE
@@ -105,7 +107,7 @@ class TimeService:
                 gw38_fixtures = [f for f in fixtures if getattr(f, "event", None) == 38]
                 if gw38_fixtures and all(getattr(f, "finished", False) for f in gw38_fixtures):
                     return TimeContext(
-                        season="2026/27",
+                        season=derive_season(fixtures=fixtures, dt=now, format="slash"),
                         current_gw=38,
                         next_actionable_gw=None,
                         phase=GameweekPhase.SEASON_OVER,
@@ -203,7 +205,7 @@ class TimeService:
                 double_gws.append(gw)
 
         return TimeContext(
-            season="2026/27",
+            season=derive_season(fixtures=fixtures, dt=now, format="slash"),
             current_gw=curr_gw,
             next_actionable_gw=next_gw,
             phase=phase,

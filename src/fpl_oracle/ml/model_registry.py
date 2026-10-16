@@ -365,6 +365,12 @@ class ModelRegistry:
         except Exception as e:
             logger.warning(f"Error writing manifest: {e}")
 
+    def get_manifest_hash(self) -> str:
+        """Return SHA256 hex digest of the production manifest.json."""
+        if self.manifest_path.exists():
+            return self.calculate_file_hash(self.manifest_path)
+        return "unmanifested"
+
     @staticmethod
     def calculate_file_hash(file_path: Path) -> str:
         """Calculate SHA256 hex digest for a file."""

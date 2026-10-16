@@ -22,6 +22,7 @@ from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.chips.planner import chip_planner
 from fpl_oracle.config import PLANNER_HORIZON
 from fpl_oracle.data.fuzzy_match import fuzzy_matcher
+from fpl_oracle.data.historical import historical_manager
 from fpl_oracle.data.store import data_store
 from fpl_oracle.domain.manager_state import manager_state_service
 from fpl_oracle.league.montecarlo import monte_carlo_simulator
@@ -263,6 +264,15 @@ async def get_health():
         except Exception:
             pass
 
+    boot_age = cache_manager.get_cache_age_seconds("bootstrap-static")
+    freshness = {
+        "data_as_of": game_state.data_as_of,
+        "last_finished_gw_in_master": historical_manager.get_last_finished_gameweek(),
+        "bootstrap_age": boot_age,
+        "cache_age": boot_age,
+        "model_manifest_hash": model_registry.get_manifest_hash(),
+    }
+
     return {
         "status": "healthy" if not fpl_client.is_stale_mode else "degraded",
         "api_reachability": not fpl_client.is_stale_mode,
@@ -292,6 +302,7 @@ async def get_health():
         "stale": fpl_client.is_stale_mode,
         "last_sync": fpl_client.last_sync_time.isoformat() if fpl_client.last_sync_time else None,
         "data_as_of": game_state.data_as_of,
+        "freshness": freshness,
     }
 
 
@@ -1485,5 +1496,12 @@ async def get_system_status():
             "price_snapshots_recorded": len(prices),
             "recent_job_runs": db_runs,
             "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+            "freshness": {
+                "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
+                "last_finished_gw_in_master": historical_manager.get_last_finished_gameweek(),
+                "bootstrap_age": cache_manager.get_cache_age_seconds("bootstrap-static"),
+                "cache_age": cache_manager.get_cache_age_seconds("bootstrap-static"),
+                "model_manifest_hash": model_registry.get_manifest_hash(),
+            },
         }
     )

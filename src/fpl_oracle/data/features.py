@@ -538,7 +538,9 @@ class FeatureEngineering:
         for pos in ["GKP", "DEF", "MID", "FWD"]:
             df[f"pos_{pos}"] = (df["position"] == pos).astype(float)
 
-        df["is_2026_27"] = (df["season"] == "2026-27").astype(float)
+        from fpl_oracle.utils.season import derive_season
+
+        df["is_2026_27"] = (df["season"] == derive_season(format="hyphen")).astype(float)
         df["chance_of_playing"] = 100.0
 
         # Build team history map for continuous team attack and opponent defence metrics
@@ -806,9 +808,20 @@ class FeatureEngineering:
                 else:
                     df_player[c] = def_val
 
-        if "norm_name" not in df_player.columns:
-            df_player["norm_name"] = df_player["name"].apply(normalize_player_name)
-        grouped = df_player.groupby("norm_name", group_keys=False)
+        if "canonical_id" not in df_player.columns:
+            if "element" in df_player.columns and "season" in df_player.columns:
+                from fpl_oracle.data.player_identity import player_identity_resolver
+
+                names = df_player["name"] if "name" in df_player.columns else [""] * len(df_player)
+                df_player["canonical_id"] = [
+                    player_identity_resolver.resolve_canonical_id(elem_id=e, season=s, full_name=n)
+                    for e, s, n in zip(df_player["element"], df_player["season"], names, strict=False)
+                ]
+            elif "norm_name" in df_player.columns:
+                df_player["canonical_id"] = df_player["norm_name"]
+            else:
+                df_player["canonical_id"] = df_player["name"].apply(normalize_player_name)
+        grouped = df_player.groupby("canonical_id", group_keys=False)
 
         # Shifted rolling stats (Strictly pre-match!)
         df_player["prev_points"] = grouped["total_points"].apply(lambda s: s.shift(1)).fillna(0.0)
