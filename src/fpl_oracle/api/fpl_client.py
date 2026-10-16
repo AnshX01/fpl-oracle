@@ -34,7 +34,6 @@ from fpl_oracle.config import SETTINGS
 from fpl_oracle.data.store import data_store
 
 logger = logging.getLogger("fpl_oracle.api")
-logging.basicConfig(level=logging.INFO)
 
 
 class FPLClient:

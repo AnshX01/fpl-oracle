@@ -24,7 +24,6 @@ from fpl_oracle.ml.ensemble import ScoringEnsemble
 from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.model_registry import model_registry
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("fpl_oracle.train")
 
 
