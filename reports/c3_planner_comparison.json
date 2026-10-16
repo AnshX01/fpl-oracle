@@ -1,0 +1,50 @@
+{
+  "manager_id": 1085141,
+  "target_gw": 7,
+  "bank": 15,
+  "free_transfers": 2,
+  "beam_search": {
+    "plan_type": "2_TRANSFERS",
+    "transfers_in": [
+      "Cherki",
+      "Hall"
+    ],
+    "transfers_out": [
+      "Szoboszlai",
+      "White"
+    ],
+    "captain": "Haaland",
+    "horizon_gain": 5.9,
+    "hit_cost": 0.0
+  },
+  "multiperiod_milp": {
+    "plan_type": "WILDCARD",
+    "transfers_in": [
+      "Rogers",
+      "Kelleher",
+      "De Cuyper",
+      "McBurnie",
+      "Davis",
+      "Bogle",
+      "Semenyo",
+      "Cherki",
+      "Hall",
+      "Tzolakis"
+    ],
+    "transfers_out": [
+      "White",
+      "Ajer",
+      "Verbruggen",
+      "Palmer",
+      "Jo\u00e3o Pedro",
+      "Diop",
+      "Belloumi",
+      "Szoboszlai",
+      "Maguire",
+      "Kinsky"
+    ],
+    "captain": null,
+    "horizon_gain": 12.16,
+    "hit_cost": 0
+  }
+}
