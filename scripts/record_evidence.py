@@ -110,7 +110,8 @@ def record_command(
 
 
 def get_canonical_milestones() -> dict[str, dict[str, Any]]:
-    py = sys.executable
+    venv_py = ROOT / ".venv" / "Scripts" / "python.exe"
+    py = str(venv_py) if venv_py.exists() else sys.executable
     return {
         "G1-load": {
             "path": EVIDENCE_DIR / "G1-load.txt",

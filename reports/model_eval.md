@@ -6,7 +6,7 @@ This report documents the empirical evaluation of the FPL Oracle Multi-Component
 - **Primary Model**: LightGBM Multi-Component Ensemble (Minutes, Attacking, Defending, DefCon, Bonus, Cards/Saves)
 - **Scoring Engine**: Verified 2026/27 official rules including Defensive Contribution (DefCon +2) and rebalanced BPS
 - **Evaluated Samples**: 3,883 player-match observations
-- **Evaluation Time**: 2026-10-16T08:55:00.647785+00:00
+- **Evaluation Time**: 2026-10-16T10:34:13.863621+00:00
 
 ---
 

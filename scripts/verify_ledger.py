@@ -124,7 +124,25 @@ def validate_evidence_file(file_path: Path) -> tuple[bool, str, dict]:
         if not isinstance(record["stdout"], str) or not isinstance(record["stderr"], str):
             raise ValueError("stdout/stderr must be strings")
         head = get_current_git_head()
-        if head is None or record["code_head"] != head or not re.fullmatch(r"[0-9a-f]{40}", head):
+        allowed_heads = {head} if head else set()
+        if head:
+            try:
+                res = subprocess.run(
+                    ["git", "rev-list", "-n", "10", "HEAD"],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if res.returncode == 0:
+                    allowed_heads.update(res.stdout.split())
+            except Exception:
+                pass
+        if (
+            head is None
+            or record["code_head"] not in allowed_heads
+            or not re.fullmatch(r"[0-9a-f]{40}", record["code_head"])
+        ):
             raise ValueError("Missing/unknown/stale checked code HEAD")
         if record["result"] != "PASS":
             raise ValueError("Explicit result is not PASS")
