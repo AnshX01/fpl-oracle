@@ -103,9 +103,7 @@ def run_weight_comparison() -> pd.DataFrame:
 
             defcon_brier = float(brier_score_loss(y_defcon_te, probs_defcon))
             defcon_logloss = float(log_loss(y_defcon_te, probs_defcon))
-            defcon_auc = (
-                float(roc_auc_score(y_defcon_te, probs_defcon)) if len(np.unique(y_defcon_te)) > 1 else 0.5
-            )
+            defcon_auc = float(roc_auc_score(y_defcon_te, probs_defcon)) if len(np.unique(y_defcon_te)) > 1 else 0.5
 
             # Train Bonus Model (Regressor)
             y_bonus_tr = Y_train["target_bonus"].values
@@ -182,7 +180,9 @@ def run_weight_comparison() -> pd.DataFrame:
     print("2. Bonus Component: Recommend 1.0x to 1.5x.")
     print("   Evidence: 5x weighting yields marginal, non-significant change in Bonus MAE (Δ -0.0015 to +0.002) while")
     print("   substantially increasing parameter variance and reducing Kish ESS.")
-    print("3. Production Weights Status: Unchanged at 1.0x/5.0x per remediation rules; proposal logged for backtest harness.")
+    print(
+        "3. Production Weights Status: Unchanged at 1.0x/5.0x per remediation rules; proposal logged for backtest harness."
+    )
     print("=" * 90)
 
     return results_df

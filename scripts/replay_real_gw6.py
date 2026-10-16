@@ -15,6 +15,7 @@ from fpl_oracle.optimise.multiperiod import MultiPeriodConfig, MultiPeriodOptimi
 
 logging.basicConfig(level=logging.WARNING)
 
+
 async def run_gw6_replay():
     print("=" * 80)
     print("REAL GW6 REPLAY: Manager 1085141 (IceMakers League ID: 435956)")
@@ -37,17 +38,17 @@ async def run_gw6_replay():
     purchase_prices = {
         496: 45,  # Kinsky
         109: 45,  # Verbruggen
-        8: 55,    # Calafiori
+        8: 55,  # Calafiori
         418: 50,  # Maguire
-        87: 45,   # Ajer
-        10: 55,   # White
+        87: 45,  # Ajer
+        10: 55,  # White
         259: 40,  # Diop
         427: 80,  # Mbeumo
         154: 97,  # Palmer
         368: 70,  # Szoboszlai
         286: 51,  # Belloumi
         124: 55,  # Gross
-        411: 155, # Haaland
+        411: 155,  # Haaland
         346: 60,  # Calvert-Lewin
         165: 77,  # Joao Pedro
     }
@@ -100,20 +101,24 @@ async def run_gw6_replay():
         p_row = gw6_pool[gw6_pool["element"] == eid]
         xp = float(p_row["expected_points"].iloc[0]) if not p_row.empty else 0.0
 
-        squad_rows.append({
-            "element": eid,
-            "web_name": elem.web_name,
-            "name": f"{elem.first_name} {elem.second_name}",
-            "position": pos_str,
-            "team": elem.team,
-            "value": now_c,
-            "purchase_price": buy_p,
-            "selling_price": sell_p,
-            "expected_points": xp,
-            "chance_of_playing": 1.0,
-            "chance_of_playing_next_round": 100,
-        })
-        print(f"{elem.web_name:<28} | {pos_str:<4} | {team_str:<14} | {buy_p/10:>4.1f}m | {now_c/10:>4.1f}m | {sell_p/10:>4.1f}m | {xp:>6.2f}")
+        squad_rows.append(
+            {
+                "element": eid,
+                "web_name": elem.web_name,
+                "name": f"{elem.first_name} {elem.second_name}",
+                "position": pos_str,
+                "team": elem.team,
+                "value": now_c,
+                "purchase_price": buy_p,
+                "selling_price": sell_p,
+                "expected_points": xp,
+                "chance_of_playing": 1.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
+        print(
+            f"{elem.web_name:<28} | {pos_str:<4} | {team_str:<14} | {buy_p / 10:>4.1f}m | {now_c / 10:>4.1f}m | {sell_p / 10:>4.1f}m | {xp:>6.2f}"
+        )
 
     squad_df = pd.DataFrame(squad_rows)
     bank_tenths = 18.0  # £1.8m in bank
@@ -122,7 +127,9 @@ async def run_gw6_replay():
 
     tot_sell = squad_df["selling_price"].sum() / 10.0
     print("-" * 80)
-    print(f"Total Squad Selling Value: £{tot_sell:.1f}m | Bank: £{bank_tenths/10:.1f}m | Liquid Team Value: £{(tot_sell + bank_tenths/10):.1f}m")
+    print(
+        f"Total Squad Selling Value: £{tot_sell:.1f}m | Bank: £{bank_tenths / 10:.1f}m | Liquid Team Value: £{(tot_sell + bank_tenths / 10):.1f}m"
+    )
     print(f"Available Free Transfers: {free_transfers} | Active Chips Available: {sorted(chips_available)}")
 
     # 4. Run MultiPeriodOptimizer
@@ -183,8 +190,14 @@ async def run_gw6_replay():
 
     # Helper to resolve player names
     def format_moves(act):
-        outs = [f"{elements_map[t['element']].web_name} (£{t.get('selling_price', elements_map[t['element']].now_cost)/10:.1f}m)" for t in act.transfers_out]
-        ins = [f"{elements_map[t['element']].web_name} (£{t.get('cost', elements_map[t['element']].now_cost)/10:.1f}m)" for t in act.transfers_in]
+        outs = [
+            f"{elements_map[t['element']].web_name} (£{t.get('selling_price', elements_map[t['element']].now_cost) / 10:.1f}m)"
+            for t in act.transfers_out
+        ]
+        ins = [
+            f"{elements_map[t['element']].web_name} (£{t.get('cost', elements_map[t['element']].now_cost) / 10:.1f}m)"
+            for t in act.transfers_in
+        ]
         return ", ".join(outs) + " -> " + ", ".join(ins) if outs or ins else "None (Roll)"
 
     print("\n" + "=" * 80)
@@ -215,7 +228,7 @@ async def run_gw6_replay():
         print(f"  GW6 Net xP:      {act.net_xp} (Immediate Delta vs Roll: {imm_gain:+.2f} xP)")
         print(f"  Horizon Net xP:  {h_net:.2f}")
         print(f"  J(plan):         {j_val:.2f} (Delta J vs Roll: {gain_vs_roll:+.2f})")
-        print(f"  Bank End:        £{act.bank_end/10:.1f}m | FT Next: {act.free_transfers_next}")
+        print(f"  Bank End:        £{act.bank_end / 10:.1f}m | FT Next: {act.free_transfers_next}")
         print(f"  Solve Time:      {p.solve_time_sec:.2f}s (Status: {p.solver_status})")
 
     # Evaluation using evaluate_transfer_options
@@ -250,5 +263,6 @@ async def run_gw6_replay():
     print("ACTUAL USER TRANSFER PERFORMED IN GW6:")
     print("  OUT: Bryan Mbeumo (£7.9m) -> IN: Bukayo Saka (£9.6m) [Cost: £9.6m, Bank left: £0.1m, Hits: 0]")
     print("=" * 80)
+
 
 asyncio.run(run_gw6_replay())

@@ -49,16 +49,24 @@ class LineupOptimizer:
         # Configurable risk parameters with calibrated rationales:
         risk_cfg = SETTINGS.get("risk_lineup", {}) if isinstance(SETTINGS, dict) else {}
         # 1. downside_risk_lambda: penalizes high variance (P90-P10 spread). Rationale: 0.20 ~ 0.5 sigma penalty
-        lam = downside_risk_lambda if downside_risk_lambda is not None else float(risk_cfg.get("downside_risk_lambda", 0.20))
+        lam = (
+            downside_risk_lambda
+            if downside_risk_lambda is not None
+            else float(risk_cfg.get("downside_risk_lambda", 0.20))
+        )
         # 2. cop_doubt_penalty: penalty per unit of playing probability doubt. Rationale: 2.0 accounts for cameo substitution friction
-        doubt_pen = cop_doubt_penalty if cop_doubt_penalty is not None else float(risk_cfg.get("cop_doubt_penalty", 2.0))
+        doubt_pen = (
+            cop_doubt_penalty if cop_doubt_penalty is not None else float(risk_cfg.get("cop_doubt_penalty", 2.0))
+        )
         # 3. aggressive_upside_weight: weight on P90 ceiling in aggressive mode. Rationale: 0.30 provides 30% upside tilt
-        upside_wt = aggressive_upside_weight if aggressive_upside_weight is not None else float(risk_cfg.get("aggressive_upside_weight", 0.30))
+        upside_wt = (
+            aggressive_upside_weight
+            if aggressive_upside_weight is not None
+            else float(risk_cfg.get("aggressive_upside_weight", 0.30))
+        )
 
         flag_enabled = (
-            risk_aware_lineup
-            if risk_aware_lineup is not None
-            else is_flag_enabled("risk_aware_lineup", default=False)
+            risk_aware_lineup if risk_aware_lineup is not None else is_flag_enabled("risk_aware_lineup", default=False)
         )
 
         df = squad_df.copy().reset_index(drop=True)

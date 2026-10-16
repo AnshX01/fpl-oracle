@@ -650,7 +650,9 @@ class TransferOptimizer:
             curr_purch[in_id] = initial_action["buy_costs"][in_id]
 
         transfers_count = len(t_in)
-        active_chip = "wildcard" if (is_wildcard or initial_action.get("plan_type") in ("FREE_HIT", "WILDCARD")) else None
+        active_chip = (
+            "wildcard" if (is_wildcard or initial_action.get("plan_type") in ("FREE_HIT", "WILDCARD")) else None
+        )
         next_ft0, hit_points0 = next_free_transfers(initial_ft, transfers_count, chip=active_chip)
         hits0 = hit_points0 // 4
         hit_cost0 = hits0 * self.hit_penalty

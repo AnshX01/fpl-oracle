@@ -181,14 +181,18 @@ class AdvisorBriefingService:
         squad_ids = current_squad_df["element"].astype(int).tolist()
         ranked_captains = manager_profile_service.rank_captains(player_pool_df, squad_ids, profile=prof)
 
-        top_cap = ranked_captains[0] if ranked_captains else {
-            "element": squad_ids[0] if squad_ids else 1,
-            "web_name": "Captain",
-            "expected_points": 6.0,
-            "p10_floor": 2.0,
-            "p90_ceiling": 12.0,
-            "rationale": "Default projection",
-        }
+        top_cap = (
+            ranked_captains[0]
+            if ranked_captains
+            else {
+                "element": squad_ids[0] if squad_ids else 1,
+                "web_name": "Captain",
+                "expected_points": 6.0,
+                "p10_floor": 2.0,
+                "p90_ceiling": 12.0,
+                "rationale": "Default projection",
+            }
+        )
         vice_cap = ranked_captains[1] if len(ranked_captains) > 1 else None
 
         # 4. Chip Outlook
@@ -208,7 +212,7 @@ class AdvisorBriefingService:
 
         rec_k = rec_pt.transfers_count
         if rec_k == 0:
-            decision_text = f"Roll your free transfer in Gameweek {target_gw} to enter Gameweek {target_gw+1} with 2 banked transfers."
+            decision_text = f"Roll your free transfer in Gameweek {target_gw} to enter Gameweek {target_gw + 1} with 2 banked transfers."
             why_reasons = [
                 f"Your 11 starters are projected for {roll_pt.horizon_net_xp:.2f} horizon points with healthy captaincy security.",
                 "Minimal-intervention frontier confirms marginal gain from immediate single-transfer swaps does not justify exhausting optionality.",
@@ -232,8 +236,8 @@ class AdvisorBriefingService:
             decision_text = f"Transfer {out_str} out for {in_str}{hit_phrase}."
             why_reasons = [
                 f"Captures +{rec_pt.net_gain_over_roll:.2f} net horizon points over rolling ({rec_pt.horizon_net_xp:.2f} vs {roll_pt.horizon_net_xp:.2f} xP).",
-                f"Probability of outscoring the roll plan is {rec_pt.prob_improvement*100:.1f}%.",
-                f"Knee-point selection confirms this move secures >= {frontier_rep.rho_threshold*100:.0f}% of peak available frontier upside.",
+                f"Probability of outscoring the roll plan is {rec_pt.prob_improvement * 100:.1f}%.",
+                f"Knee-point selection confirms this move secures >= {frontier_rep.rho_threshold * 100:.0f}% of peak available frontier upside.",
             ]
 
         # 6. Alternatives Considered
@@ -248,33 +252,37 @@ class AdvisorBriefingService:
             }
         ]
         if rec_k > 0:
-            alts.append({
-                "name": "Recommended Transfer Plan",
-                "transfers_count": rec_k,
-                "net_xp": round(rec_pt.horizon_net_xp, 2),
-                "gain_vs_roll": round(rec_pt.net_gain_over_roll, 2),
-                "hits": rec_pt.hits,
-                "summary": rec_pt.moves_summary,
-            })
+            alts.append(
+                {
+                    "name": "Recommended Transfer Plan",
+                    "transfers_count": rec_k,
+                    "net_xp": round(rec_pt.horizon_net_xp, 2),
+                    "gain_vs_roll": round(rec_pt.net_gain_over_roll, 2),
+                    "hits": rec_pt.hits,
+                    "summary": rec_pt.moves_summary,
+                }
+            )
         for pt in frontier_rep.frontier:
             if pt.transfers_count not in {0, rec_k} and len(alts) < 4:
-                alts.append({
-                    "name": f"{pt.transfers_count}-Transfer Move",
-                    "transfers_count": pt.transfers_count,
-                    "net_xp": round(pt.horizon_net_xp, 2),
-                    "gain_vs_roll": round(pt.net_gain_over_roll, 2),
-                    "hits": pt.hits,
-                    "summary": pt.moves_summary,
-                })
+                alts.append(
+                    {
+                        "name": f"{pt.transfers_count}-Transfer Move",
+                        "transfers_count": pt.transfers_count,
+                        "net_xp": round(pt.horizon_net_xp, 2),
+                        "gain_vs_roll": round(pt.net_gain_over_roll, 2),
+                        "hits": pt.hits,
+                        "summary": pt.moves_summary,
+                    }
+                )
 
         # 7. Confidence & Risk
         p_imp = rec_pt.prob_improvement
-        confidence_tier: Literal["LOW", "MEDIUM", "HIGH"] = "HIGH" if p_imp >= 0.70 else ("MEDIUM" if p_imp >= 0.55 else "LOW")
+        confidence_tier: Literal["LOW", "MEDIUM", "HIGH"] = (
+            "HIGH" if p_imp >= 0.70 else ("MEDIUM" if p_imp >= 0.55 else "LOW")
+        )
 
         risk_prob = round(max(0.10, 1.0 - p_imp), 2)
-        risk_text = (
-            f"Rotation or variance risk: {risk_prob*100:.0f}% chance roll plan matches or outperforms due to baseline noise."
-        )
+        risk_text = f"Rotation or variance risk: {risk_prob * 100:.0f}% chance roll plan matches or outperforms due to baseline noise."
 
         # 8. What would change this
         change_triggers = []
@@ -285,7 +293,11 @@ class AdvisorBriefingService:
             change_triggers.append("Rival manager moves forcing a defensive template pivot.")
 
         # Next checkpoint string
-        next_ckpt = "Final 1-hour deadline alert" if checkpoint == "-3h" else ("3-hour pre-deadline check" if checkpoint == "-24h" else "Gameweek locked")
+        next_ckpt = (
+            "Final 1-hour deadline alert"
+            if checkpoint == "-3h"
+            else ("3-hour pre-deadline check" if checkpoint == "-24h" else "Gameweek locked")
+        )
 
         # One line summary
         one_liner = f"{decision_text} Captain {top_cap['web_name']} (P90 ceiling {top_cap['p90_ceiling']:.1f} pts)."
@@ -354,28 +366,32 @@ class AdvisorBriefingService:
             lines.append(f"- **Vice Captain:** {rec.captain_advice.vice_captain_name}")
         lines.append(f"- **Captain Rationale:** {rec.captain_advice.rationale}")
 
-        lines.extend([
-            "",
-            "## 4. Chip Strategy Outlook",
-            f"{rec.chip_outlook}",
-            "",
-            "## 5. Alternatives Evaluated",
-        ])
+        lines.extend(
+            [
+                "",
+                "## 4. Chip Strategy Outlook",
+                f"{rec.chip_outlook}",
+                "",
+                "## 5. Alternatives Evaluated",
+            ]
+        )
         for alt in rec.alternatives_considered:
             gain = float(alt.get("gain_vs_roll", 0.0))
             gain_str = f"+{gain:.2f}" if gain >= 0 else f"{gain:.2f}"
             lines.append(f"- **{alt['name']}:** {alt['net_xp']:.2f} xP (Gain vs Roll: {gain_str}) - {alt['summary']}")
 
-        lines.extend([
-            "",
-            f"## 6. Risk & Confidence ({rec.confidence} Confidence)",
-            f"- **Downside Risk ({rec.risk.probability*100:.0f}% chance):** {rec.risk.risk_description}",
-            "",
-            "## 7. What Would Change This Advice",
-            *[f"- {trig}" for trig in rec.what_would_change_this],
-            "",
-            f"*{rec.deadline_and_next_checkpoint}*",
-        ])
+        lines.extend(
+            [
+                "",
+                f"## 6. Risk & Confidence ({rec.confidence} Confidence)",
+                f"- **Downside Risk ({rec.risk.probability * 100:.0f}% chance):** {rec.risk.risk_description}",
+                "",
+                "## 7. What Would Change This Advice",
+                *[f"- {trig}" for trig in rec.what_would_change_this],
+                "",
+                f"*{rec.deadline_and_next_checkpoint}*",
+            ]
+        )
 
         rendered = "\n".join(lines)
         return rendered

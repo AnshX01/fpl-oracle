@@ -142,7 +142,11 @@ class DataQualityAuditor:
 
         # Critical anomalies verdict
         has_critical = bool(len(dupes) > 0 or len(drift.missing_columns) > 0 or len(price_anomalies) > 5)
-        verdict = "FAIL_CRITICAL_ANOMALIES" if has_critical else ("WARN" if len(high_missing) > 0 or len(price_anomalies) > 0 else "PASS")
+        verdict = (
+            "FAIL_CRITICAL_ANOMALIES"
+            if has_critical
+            else ("WARN" if len(high_missing) > 0 or len(price_anomalies) > 0 else "PASS")
+        )
 
         report = DataQualityReport(
             dataset_name=dataset_name,

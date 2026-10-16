@@ -316,9 +316,9 @@ def validate_configuration_schemas() -> dict[str, bool]:
     profile_path = CONFIG_DIR / "manager_profile.yaml"
     if profile_path.exists():
         from fpl_oracle.advisor.profile import ManagerProfile
+
         prof_data = _load_yaml(profile_path)
         ManagerProfile.model_validate(prof_data)
         results["manager_profile.yaml"] = True
 
     return results
-

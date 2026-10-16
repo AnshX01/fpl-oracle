@@ -73,7 +73,9 @@ def test_contract_diverse_sample_from_master_history():
     disc_rows = df[(df["yellow_cards"] >= 1) | (df["red_cards"] >= 1) | (df["own_goals"] >= 1)].head(10)
     defcon_rows = df[(df["season"].isin(["2025-26", "2026-27"])) & (df["defensive_contribution"] >= 10)].head(15)
 
-    sample = pd.concat([gkp_rows, def_cs_rows, def_goal_rows, mid_goal_rows, fwd_goal_rows, disc_rows, defcon_rows]).drop_duplicates()
+    sample = pd.concat(
+        [gkp_rows, def_cs_rows, def_goal_rows, mid_goal_rows, fwd_goal_rows, disc_rows, defcon_rows]
+    ).drop_duplicates()
     assert len(sample) >= 50
 
     for _, row in sample.iterrows():
@@ -154,11 +156,26 @@ def test_contract_all_stored_seasons_with_rules_version():
 
     # Known 2024-25 FPL Challenge manager trial elements (not player elements)
     manager_names = {
-        "Andoni Iraola", "Ange Postecoglou", "Arne Slot", "David Moyes", "Eddie Howe",
-        "Enzo Maresca", "Fabian Hürzeler", "Graham Potter", "Ivan Juric", "Kieran McKenna",
-        "Marco Alexandre Saraiva da Silva", "Mikel Arteta", "Nuno Herlander Simões Espírito Santo",
-        "Oliver Glasner", "Pep Guardiola", "Ruben Filipe Marques Diogo Amorim",
-        "Ruud van Nistelrooij", "Simon Rusk", "Thomas Frank", "Unai Emery",
+        "Andoni Iraola",
+        "Ange Postecoglou",
+        "Arne Slot",
+        "David Moyes",
+        "Eddie Howe",
+        "Enzo Maresca",
+        "Fabian Hürzeler",
+        "Graham Potter",
+        "Ivan Juric",
+        "Kieran McKenna",
+        "Marco Alexandre Saraiva da Silva",
+        "Mikel Arteta",
+        "Nuno Herlander Simões Espírito Santo",
+        "Oliver Glasner",
+        "Pep Guardiola",
+        "Ruben Filipe Marques Diogo Amorim",
+        "Ruud van Nistelrooij",
+        "Simon Rusk",
+        "Thomas Frank",
+        "Unai Emery",
         "Vítor Manuel de Oliveira Lopes Pereira",
     }
 
@@ -170,7 +187,10 @@ def test_contract_all_stored_seasons_with_rules_version():
 
         for _, row in s_df.iterrows():
             # Check if manager experimental card
-            if season == "2024-25" and (row["name"] in manager_names or any(m in str(row["name"]) for m in ["Arteta", "Guardiola", "Emery", "Maresca", "Slot"])):
+            if season == "2024-25" and (
+                row["name"] in manager_names
+                or any(m in str(row["name"]) for m in ["Arteta", "Guardiola", "Emery", "Maresca", "Slot"])
+            ):
                 manager_rows += 1
                 continue
 
@@ -199,7 +219,9 @@ def test_contract_all_stored_seasons_with_rules_version():
         assert mismatches == 0, f"Found {mismatches} player mismatches in season {season}"
 
     assert len(season_results) >= 4, "Must test all 4 historical seasons"
-    assert season_results["2024-25"]["managers"] == 322, "Must account for exactly 322 FPL Challenge manager trial cards in 2024-25 (251 with points > 0, 71 with 0 points)"
+    assert season_results["2024-25"]["managers"] == 322, (
+        "Must account for exactly 322 FPL Challenge manager trial cards in 2024-25 (251 with points > 0, 71 with 0 points)"
+    )
 
 
 def test_grep_no_stray_10_multiplier_or_goal_dictionaries():
@@ -214,10 +236,12 @@ def test_grep_no_stray_10_multiplier_or_goal_dictionaries():
         lines = content.splitlines()
         for idx, line in enumerate(lines, 1):
             # Check for GKP 10.0 or 10 * goals_scored
-            if "pos_gkp * 10" in line or "pos == \"GKP\": pts += goals_scored * 10" in line:
+            if "pos_gkp * 10" in line or 'pos == "GKP": pts += goals_scored * 10' in line:
                 offenders.append(f"{py_file}:{idx}: {line}")
             # Check for hardcoded goal points dictionaries
             if '{"GKP": 10' in line or '{"GKP": 10.0' in line:
                 offenders.append(f"{py_file}:{idx}: {line}")
 
-    assert not offenders, "Found stray GKP 10 / goal dictionary definitions outside rules module:\n" + "\n".join(offenders)
+    assert not offenders, "Found stray GKP 10 / goal dictionary definitions outside rules module:\n" + "\n".join(
+        offenders
+    )

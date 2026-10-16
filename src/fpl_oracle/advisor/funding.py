@@ -103,14 +103,16 @@ class AffordabilityPathFinder:
             sell_p = sell_price(buy_p, now_p)
             pos = str(r["position"])
             p_name = str(r.get("web_name", r.get("name", f"element {eid}")))
-            squad_moves.append({
-                "element": eid,
-                "name": p_name,
-                "position": pos,
-                "team": tm,
-                "sell_price": sell_p,
-                "purchase_price": buy_p,
-            })
+            squad_moves.append(
+                {
+                    "element": eid,
+                    "name": p_name,
+                    "position": pos,
+                    "team": tm,
+                    "sell_price": sell_p,
+                    "purchase_price": buy_p,
+                }
+            )
 
         paths: list[AffordabilityPath] = []
         forbidden_outs: set[int] = set()
@@ -142,9 +144,9 @@ class AffordabilityPathFinder:
                     bank_delta_tenths=sell_p - target_cost,
                 )
                 exp = (
-                    f"Direct swap ({target_pos}): Sell {cand['name']} for £{sell_p/10:.1f}m + "
-                    f"Bank £{bank_tenths/10:.1f}m = £{(bank_tenths + sell_p)/10:.1f}m. "
-                    f"Buy target for £{target_cost/10:.1f}m. Remaining bank: £{net_bank/10:.1f}m. Hits: {hits}."
+                    f"Direct swap ({target_pos}): Sell {cand['name']} for £{sell_p / 10:.1f}m + "
+                    f"Bank £{bank_tenths / 10:.1f}m = £{(bank_tenths + sell_p) / 10:.1f}m. "
+                    f"Buy target for £{target_cost / 10:.1f}m. Remaining bank: £{net_bank / 10:.1f}m. Hits: {hits}."
                 )
                 paths.append(
                     AffordabilityPath(
@@ -214,11 +216,13 @@ class AffordabilityPathFinder:
                             bank_delta_tenths=sell_p - target_cost,
                         )
 
-                        en_name = str(cheapest_enabler.get("web_name", cheapest_enabler.get("name", f"element {enabler_eid}")))
+                        en_name = str(
+                            cheapest_enabler.get("web_name", cheapest_enabler.get("name", f"element {enabler_eid}"))
+                        )
                         exp = (
-                            f"Two-step plan: Step 1: Fund £{fund_raised/10:.1f}m by downgrading {other['name']} (£{other_sell/10:.1f}m) -> {en_name} (£{enabler_cost/10:.1f}m). "
-                            f"Step 2: Upgrade {cand['name']} (£{sell_p/10:.1f}m) -> target (£{target_cost/10:.1f}m). "
-                            f"Remaining bank: £{final_bank/10:.1f}m. Hits: {hits}."
+                            f"Two-step plan: Step 1: Fund £{fund_raised / 10:.1f}m by downgrading {other['name']} (£{other_sell / 10:.1f}m) -> {en_name} (£{enabler_cost / 10:.1f}m). "
+                            f"Step 2: Upgrade {cand['name']} (£{sell_p / 10:.1f}m) -> target (£{target_cost / 10:.1f}m). "
+                            f"Remaining bank: £{final_bank / 10:.1f}m. Hits: {hits}."
                         )
 
                         paths.append(

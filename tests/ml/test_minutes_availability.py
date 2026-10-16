@@ -26,22 +26,23 @@ from fpl_oracle.ml.ensemble import scoring_ensemble
 def synthetic_minutes_model():
     np.random.seed(42)
     n = 150
-    X = pd.DataFrame({
-        col: np.random.uniform(0.1, 1.0, size=n)
-        for col in FEATURE_COLUMNS
-    })
+    X = pd.DataFrame({col: np.random.uniform(0.1, 1.0, size=n) for col in FEATURE_COLUMNS})
     X["chance_of_playing"] = np.full(n, 100.0)
 
     y_mins = np.random.choice([0.0, 15.0, 65.0, 90.0], size=n, p=[0.3, 0.1, 0.2, 0.4])
-    Y = pd.DataFrame({
-        "target_starts": (y_mins >= 60).astype(float),
-        "target_min60": (y_mins >= 60).astype(float),
-        "target_minutes": y_mins,
-    })
-    X.attrs["meta"] = pd.DataFrame({
-        "season": ["2024-25"] * n,
-        "round": [(i % 20) + 1 for i in range(n)],
-    })
+    Y = pd.DataFrame(
+        {
+            "target_starts": (y_mins >= 60).astype(float),
+            "target_min60": (y_mins >= 60).astype(float),
+            "target_minutes": y_mins,
+        }
+    )
+    X.attrs["meta"] = pd.DataFrame(
+        {
+            "season": ["2024-25"] * n,
+            "round": [(i % 20) + 1 for i in range(n)],
+        }
+    )
 
     model = MinutesModel()
     model.fit(X, Y)
@@ -54,10 +55,7 @@ def test_probabilistic_coherence_minutes(synthetic_minutes_model):
     """
     model = synthetic_minutes_model
     n = 50
-    X = pd.DataFrame({
-        col: np.random.uniform(0.1, 1.0, size=n)
-        for col in FEATURE_COLUMNS
-    })
+    X = pd.DataFrame({col: np.random.uniform(0.1, 1.0, size=n) for col in FEATURE_COLUMNS})
 
     preds = model.predict(X)
     p_starts = preds["p_starts"]
@@ -99,18 +97,24 @@ def test_single_reconciler_invariant():
         "expected_card_deduction": np.array([0.1, 0.1]),
     }
 
-    df_full = pd.DataFrame({
-        "chance_of_playing": [100.0, 100.0],
-        "pos_MID": [1.0, 1.0],
-    })
-    df_half = pd.DataFrame({
-        "chance_of_playing": [50.0, 50.0],
-        "pos_MID": [1.0, 1.0],
-    })
-    df_zero = pd.DataFrame({
-        "chance_of_playing": [0.0, 0.0],
-        "pos_MID": [1.0, 1.0],
-    })
+    df_full = pd.DataFrame(
+        {
+            "chance_of_playing": [100.0, 100.0],
+            "pos_MID": [1.0, 1.0],
+        }
+    )
+    df_half = pd.DataFrame(
+        {
+            "chance_of_playing": [50.0, 50.0],
+            "pos_MID": [1.0, 1.0],
+        }
+    )
+    df_zero = pd.DataFrame(
+        {
+            "chance_of_playing": [0.0, 0.0],
+            "pos_MID": [1.0, 1.0],
+        }
+    )
 
     res_full = scoring_ensemble.aggregate_components(dict(components), df_full)
     res_half = scoring_ensemble.aggregate_components(dict(components), df_half)
@@ -166,9 +170,7 @@ def test_p_play_decile_reliability_gate():
 
         # Acceptance Gate: within +/- 3 pp for deciles with >= 200 samples
         if n >= 200:
-            assert abs(diff_pp) <= 3.0, (
-                f"Decile {dec} diff {diff_pp:+.2f} pp exceeded +/- 3 pp gate (N={n})"
-            )
+            assert abs(diff_pp) <= 3.0, f"Decile {dec} diff {diff_pp:+.2f} pp exceeded +/- 3 pp gate (N={n})"
 
 
 def test_minutes_brier_and_mae_gate():

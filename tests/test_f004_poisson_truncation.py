@@ -34,5 +34,5 @@ def test_expected_floor_div_monotonic_high_lambda():
     vals_div3 = [expected_floor_div(r, 3) for r in rates]
 
     for i in range(len(rates) - 1):
-        assert vals_div2[i + 1] > vals_div2[i], f"Non-monotonic at rate {rates[i]} -> {rates[i+1]} (div 2)"
-        assert vals_div3[i + 1] > vals_div3[i], f"Non-monotonic at rate {rates[i]} -> {rates[i+1]} (div 3)"
+        assert vals_div2[i + 1] > vals_div2[i], f"Non-monotonic at rate {rates[i]} -> {rates[i + 1]} (div 2)"
+        assert vals_div3[i + 1] > vals_div3[i], f"Non-monotonic at rate {rates[i]} -> {rates[i + 1]} (div 3)"

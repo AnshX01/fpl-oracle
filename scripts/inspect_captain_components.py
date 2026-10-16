@@ -68,5 +68,6 @@ async def inspect_components():
             print("  -------------------------------------------")
             print(f"  TOTAL EXPECTED POINTS:    {r.get('expected_points', r.get('raw_expected_points', 0.0)):.2f} xP")
 
+
 if __name__ == "__main__":
     asyncio.run(inspect_components())

@@ -31,13 +31,15 @@ def test_s1_single_free_transfer_swap_path_found(s1_fixture):
     # Synthetic player pool containing target premium mid
     target_eid = 999
     pool_rows = list(s1_fixture["squad"])
-    pool_rows.append({
-        "element": target_eid,
-        "position": "MID",
-        "team": 1,
-        "value": 96.0,  # £9.6m
-        "expected_points": 6.5,
-    })
+    pool_rows.append(
+        {
+            "element": target_eid,
+            "position": "MID",
+            "team": 1,
+            "value": 96.0,  # £9.6m
+            "expected_points": 6.5,
+        }
+    )
     pool_df = pd.DataFrame(pool_rows)
 
     finder = AffordabilityPathFinder()

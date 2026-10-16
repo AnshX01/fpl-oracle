@@ -57,7 +57,9 @@ def format_position_balanced_moves(
             i = pos_ins[idx]
             o_name = elements_map[o["element"]].web_name if o["element"] in elements_map else f"ID {o['element']}"
             i_name = elements_map[i["element"]].web_name if i["element"] in elements_map else f"ID {i['element']}"
-            o_cost = o.get("sell_price", elements_map[o["element"]].now_cost if o["element"] in elements_map else 50) / 10.0
+            o_cost = (
+                o.get("sell_price", elements_map[o["element"]].now_cost if o["element"] in elements_map else 50) / 10.0
+            )
             i_cost = i.get("cost", elements_map[i["element"]].now_cost if i["element"] in elements_map else 50) / 10.0
             paired_strings.append(f"[{pos}] {o_name} (£{o_cost:.1f}m) -> [{pos}] {i_name} (£{i_cost:.1f}m)")
 
@@ -102,19 +104,47 @@ async def generate_live_advice_brief():
 
     # Live squad entering GW7 (post Mbeumo -> Saka transfer)
     purchase_prices = {
-        496: 45, 109: 45, 8: 55, 418: 50, 87: 45, 10: 55, 259: 40,
-        12: 96, 154: 97, 368: 70, 286: 51, 124: 55, 411: 155, 346: 60, 165: 77,
+        496: 45,
+        109: 45,
+        8: 55,
+        418: 50,
+        87: 45,
+        10: 55,
+        259: 40,
+        12: 96,
+        154: 97,
+        368: 70,
+        286: 51,
+        124: 55,
+        411: 155,
+        346: 60,
+        165: 77,
     }
     gw6_market_costs = {
-        496: 45, 109: 45, 8: 58, 418: 49, 87: 45, 10: 55, 259: 40,
-        12: 96, 154: 97, 368: 70, 286: 51, 124: 57, 411: 156, 346: 60, 165: 78,
+        496: 45,
+        109: 45,
+        8: 58,
+        418: 49,
+        87: 45,
+        10: 55,
+        259: 40,
+        12: 96,
+        154: 97,
+        368: 70,
+        286: 51,
+        124: 57,
+        411: 156,
+        346: 60,
+        165: 78,
     }
     squad_eids = [109, 8, 418, 10, 12, 154, 286, 124, 411, 346, 165, 496, 368, 87, 259]
     squad_ids_set = set(squad_eids)
 
     # ML Projections for GW7 to GW11 (H=5)
     H = 5
-    projs = projection_engine.predict_multi_gameweeks(start_gw=target_gw, horizon=H, bootstrap=bootstrap, fixtures=fixtures)
+    projs = projection_engine.predict_multi_gameweeks(
+        start_gw=target_gw, horizon=H, bootstrap=bootstrap, fixtures=fixtures
+    )
     gw7_pool = projs[target_gw].copy()
 
     squad_rows = []
@@ -130,20 +160,22 @@ async def generate_live_advice_brief():
         cop = 75.0 if eid == 368 else 100.0
         news_str = "Hamstring doubt - 75% chance" if eid == 368 else getattr(elem, "news", "")
 
-        squad_rows.append({
-            "element": eid,
-            "web_name": elem.web_name,
-            "position": pos_str,
-            "team": elem.team,
-            "team_name": teams_map[elem.team],
-            "value": now_c,
-            "now_cost": now_c,
-            "purchase_price": buy_p,
-            "selling_price": sell_p,
-            "expected_points": xp,
-            "chance_of_playing": cop,
-            "news": news_str,
-        })
+        squad_rows.append(
+            {
+                "element": eid,
+                "web_name": elem.web_name,
+                "position": pos_str,
+                "team": elem.team,
+                "team_name": teams_map[elem.team],
+                "value": now_c,
+                "now_cost": now_c,
+                "purchase_price": buy_p,
+                "selling_price": sell_p,
+                "expected_points": xp,
+                "chance_of_playing": cop,
+                "news": news_str,
+            }
+        )
 
     squad_df = pd.DataFrame(squad_rows)
     tot_sell_val = squad_df["selling_price"].sum() / 10.0
@@ -237,9 +269,30 @@ async def generate_live_advice_brief():
     )
 
     chip_timelines = {
-        "3xc": timeline_engine.evaluate_chip_timeline("3xc", current_gw=target_gw, chips_available=chips_available, horizon_projections=projs, fixtures=fixtures, current_squad_df=squad_df),
-        "bboost": timeline_engine.evaluate_chip_timeline("bboost", current_gw=target_gw, chips_available=chips_available, horizon_projections=projs, fixtures=fixtures, current_squad_df=squad_df),
-        "freehit": timeline_engine.evaluate_chip_timeline("freehit", current_gw=target_gw, chips_available=chips_available, horizon_projections=projs, fixtures=fixtures, current_squad_df=squad_df),
+        "3xc": timeline_engine.evaluate_chip_timeline(
+            "3xc",
+            current_gw=target_gw,
+            chips_available=chips_available,
+            horizon_projections=projs,
+            fixtures=fixtures,
+            current_squad_df=squad_df,
+        ),
+        "bboost": timeline_engine.evaluate_chip_timeline(
+            "bboost",
+            current_gw=target_gw,
+            chips_available=chips_available,
+            horizon_projections=projs,
+            fixtures=fixtures,
+            current_squad_df=squad_df,
+        ),
+        "freehit": timeline_engine.evaluate_chip_timeline(
+            "freehit",
+            current_gw=target_gw,
+            chips_available=chips_available,
+            horizon_projections=projs,
+            fixtures=fixtures,
+            current_squad_df=squad_df,
+        ),
     }
 
     # 4. Affordability Path Finder
@@ -265,9 +318,13 @@ async def generate_live_advice_brief():
     n_sims = 2000
     noise_hit = rng.normal(0, 3.5, size=(n_sims, H))
     noise_roll = rng.normal(0, 3.5, size=(n_sims, H))
-    disc_weights = np.array([cfg.gamma ** t for t in range(H)])
-    sim_hit = np.sum((np.array([a.net_xp for a in plan_hit.trajectory]) + noise_hit) * disc_weights, axis=1) + plan_hit.objective_decomposition.get("terminal_ft_value", 0.0)
-    sim_roll = np.sum((np.array([a.net_xp for a in roll_plan.trajectory]) + noise_roll) * disc_weights, axis=1) + roll_plan.objective_decomposition.get("terminal_ft_value", 0.0)
+    disc_weights = np.array([cfg.gamma**t for t in range(H)])
+    sim_hit = np.sum(
+        (np.array([a.net_xp for a in plan_hit.trajectory]) + noise_hit) * disc_weights, axis=1
+    ) + plan_hit.objective_decomposition.get("terminal_ft_value", 0.0)
+    sim_roll = np.sum(
+        (np.array([a.net_xp for a in roll_plan.trajectory]) + noise_roll) * disc_weights, axis=1
+    ) + roll_plan.objective_decomposition.get("terminal_ft_value", 0.0)
     deltas = sim_hit - sim_roll
 
     p_gain = float(np.mean(deltas > 0))
@@ -286,10 +343,16 @@ async def generate_live_advice_brief():
 
     # 6. Optimizer's Curse & Calibration Shrinkage Analysis
     raw_wc_edge = plan_wc.total_objective - roll_plan.total_objective
-    wc_lineup_cap = (plan_wc.objective_decomposition.get("discounted_lineup_xp", 0.0) + plan_wc.objective_decomposition.get("discounted_captain_xp", 0.0))
-    roll_lineup_cap = (roll_plan.objective_decomposition.get("discounted_lineup_xp", 0.0) + roll_plan.objective_decomposition.get("discounted_captain_xp", 0.0))
+    wc_lineup_cap = plan_wc.objective_decomposition.get(
+        "discounted_lineup_xp", 0.0
+    ) + plan_wc.objective_decomposition.get("discounted_captain_xp", 0.0)
+    roll_lineup_cap = roll_plan.objective_decomposition.get(
+        "discounted_lineup_xp", 0.0
+    ) + roll_plan.objective_decomposition.get("discounted_captain_xp", 0.0)
     delta_xi = wc_lineup_cap - roll_lineup_cap
-    delta_bench = plan_wc.objective_decomposition.get("discounted_bench_xp", 0.0) - roll_plan.objective_decomposition.get("discounted_bench_xp", 0.0)
+    delta_bench = plan_wc.objective_decomposition.get(
+        "discounted_bench_xp", 0.0
+    ) - roll_plan.objective_decomposition.get("discounted_bench_xp", 0.0)
 
     cal_slope = 0.50
     calibrated_xi_edge = round(cal_slope * delta_xi, 2)
@@ -343,8 +406,12 @@ async def generate_live_advice_brief():
     md.append("")
     md.append(f"**Generated:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}  ")
     md.append(f"**Manager:** {team_name} ({manager_name}, Entry ID: 1085141)  ")
-    md.append(f"**League Context:** {league_name} (ID: {league_id}) | **Current Standings entering GW7:** Rank {user_rank} | **Total Points:** {user_total} pts | **Gap to Leader ({leader_name}, {leader_total} pts):** -{gap_to_leader} pts  ")
-    md.append(f"**Available Bank:** £{bank_tenths/10:.1f}m | **Total Squad Selling Value:** £{tot_sell_val:.1f}m | **Free Transfers Available:** {free_transfers}  ")
+    md.append(
+        f"**League Context:** {league_name} (ID: {league_id}) | **Current Standings entering GW7:** Rank {user_rank} | **Total Points:** {user_total} pts | **Gap to Leader ({leader_name}, {leader_total} pts):** -{gap_to_leader} pts  "
+    )
+    md.append(
+        f"**Available Bank:** £{bank_tenths / 10:.1f}m | **Total Squad Selling Value:** £{tot_sell_val:.1f}m | **Free Transfers Available:** {free_transfers}  "
+    )
     md.append(f"**Chips Available (Set 1):** {', '.join(sorted(chips_available))}  ")
     md.append("")
     md.append("---")
@@ -353,22 +420,34 @@ async def generate_live_advice_brief():
     md.append("")
 
     rec_act = rec_plan.recommended_action
-    rec_moves_formatted = format_position_balanced_moves(rec_act.transfers_out, rec_act.transfers_in, elements_map, squad_ids_set)
+    rec_moves_formatted = format_position_balanced_moves(
+        rec_act.transfers_out, rec_act.transfers_in, elements_map, squad_ids_set
+    )
     cap_elem = elements_map[rec_act.captain]
     vc_elem = elements_map[rec_act.vice_captain] if rec_act.vice_captain else None
 
     md.append(f"> **RECOMMENDATION:** **{rec_name.upper()}** ({rec_moves_formatted})  ")
-    md.append(f"> **CAPTAIN:** **{cap_elem.web_name}** ({rec_act.captain_xp:.2f} xP) | **VICE:** **{vc_elem.web_name if vc_elem else 'None'}**  ")
-    md.append(f"> **CHIP VERDICT:** **PRESERVE ALL SET 1 CHIPS** (Wildcard Winning Family: `{wc_families.winning_family}`)  ")
-    md.append(f"> **PROJECTED GW{target_gw} NET xP:** **{rec_act.net_xp:.2f} pts** | **HORIZON NET xP (H=5):** **{rec_plan.horizon_net_xp:.2f} pts** | **OBJECTIVE J:** **{rec_plan.total_objective:.3f}**  ")
+    md.append(
+        f"> **CAPTAIN:** **{cap_elem.web_name}** ({rec_act.captain_xp:.2f} xP) | **VICE:** **{vc_elem.web_name if vc_elem else 'None'}**  "
+    )
+    md.append(
+        f"> **CHIP VERDICT:** **PRESERVE ALL SET 1 CHIPS** (Wildcard Winning Family: `{wc_families.winning_family}`)  "
+    )
+    md.append(
+        f"> **PROJECTED GW{target_gw} NET xP:** **{rec_act.net_xp:.2f} pts** | **HORIZON NET xP (H=5):** **{rec_plan.horizon_net_xp:.2f} pts** | **OBJECTIVE J:** **{rec_plan.total_objective:.3f}**  "
+    )
     md.append("")
     md.append("---")
     md.append("")
     md.append("## 2. Squad Health Diagnosis (WI-8.1)")
     md.append("")
     md.append(f"- **Overall Squad Status:** `{health_report.classification}`  ")
-    md.append(f"- **Functional Starters:** **{health_report.functional_starters_count} / 11** [PROVISIONAL threshold: {health_report.thresholds_used['min_functional_starters']}]  ")
-    md.append(f"- **Structural Deficiency Score:** **{health_report.structural_deficiency_score:.2f} xP** [PROVISIONAL threshold: {health_report.thresholds_used['deficiency_threshold']:.1f} xP]  ")
+    md.append(
+        f"- **Functional Starters:** **{health_report.functional_starters_count} / 11** [PROVISIONAL threshold: {health_report.thresholds_used['min_functional_starters']}]  "
+    )
+    md.append(
+        f"- **Structural Deficiency Score:** **{health_report.structural_deficiency_score:.2f} xP** [PROVISIONAL threshold: {health_report.thresholds_used['deficiency_threshold']:.1f} xP]  "
+    )
     md.append("")
     md.append("| Player Name | Pos | Club | Status | GW7 xP | CoP | Primary Diagnostic Reasons |")
     md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
@@ -388,9 +467,15 @@ async def generate_live_advice_brief():
     md.append("")
     md.append("Three strategic families evaluated against the evolving staged-transfer baseline:")
     md.append("")
-    md.append(f"1. **Family (a) - Wildcard NOW (GW{target_gw}):** Nominal solve objective J = **{plan_wc.total_objective:.2f}** (Nominal edge vs Roll: **{raw_wc_edge:+.2f} xP**).")
-    md.append(f"2. **Family (b) - Wildcard LATER:** Targeted for peak congestion / DGW windows (GW8, GW12, GW16) with continuation option value of **+{val_waiting:.2f} xP**.")
-    md.append(f"3. **Family (c) - Staged Free-Transfer Plan:** Rolling banked transfers captures **+{wc_families.staged_ft_plan['gain_vs_roll']:+.2f} xP** without burning the chip, entering GW8 with **{wc_families.staged_ft_plan['ft_remaining_next']} FTs**.")
+    md.append(
+        f"1. **Family (a) - Wildcard NOW (GW{target_gw}):** Nominal solve objective J = **{plan_wc.total_objective:.2f}** (Nominal edge vs Roll: **{raw_wc_edge:+.2f} xP**)."
+    )
+    md.append(
+        f"2. **Family (b) - Wildcard LATER:** Targeted for peak congestion / DGW windows (GW8, GW12, GW16) with continuation option value of **+{val_waiting:.2f} xP**."
+    )
+    md.append(
+        f"3. **Family (c) - Staged Free-Transfer Plan:** Rolling banked transfers captures **+{wc_families.staged_ft_plan['gain_vs_roll']:+.2f} xP** without burning the chip, entering GW8 with **{wc_families.staged_ft_plan['ft_remaining_next']} FTs**."
+    )
     md.append("")
     md.append(f"> **WINNING FAMILY:** **`{wc_families.winning_family}`**  ")
     md.append(f"> **DECISION RULE:** {wc_families.decision_rule_summary.replace(chr(10), ' ')}  ")
@@ -398,17 +483,25 @@ async def generate_live_advice_brief():
     md.append("")
     md.append("### Set 1 Chip Timeline Table (Backward Induction Option Value)")
     md.append("")
-    md.append("| Chip | Gameweek | Expected Gain (Delta U) | P(Gain > 0) | 80% Gain Interval | Context / Schedule Note | Value of Waiting | Decision |")
+    md.append(
+        "| Chip | Gameweek | Expected Gain (Delta U) | P(Gain > 0) | 80% Gain Interval | Context / Schedule Note | Value of Waiting | Decision |"
+    )
     md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
 
     now_eval = wc_families.wildcard_now
-    md.append(f"| Wildcard | GW{target_gw} (Now) | {now_eval.expected_gain:+.2f} xP | {now_eval.prob_gain_positive:.1%} | [{now_eval.gain_interval[0]:+.1f}, {now_eval.gain_interval[1]:+.1f}] | Current deadline | {now_eval.value_of_waiting:.2f} xP | {now_eval.recommendation_verdict} |")
+    md.append(
+        f"| Wildcard | GW{target_gw} (Now) | {now_eval.expected_gain:+.2f} xP | {now_eval.prob_gain_positive:.1%} | [{now_eval.gain_interval[0]:+.1f}, {now_eval.gain_interval[1]:+.1f}] | Current deadline | {now_eval.value_of_waiting:.2f} xP | {now_eval.recommendation_verdict} |"
+    )
     for l_win in wc_families.later_windows:
-        md.append(f"| Wildcard | GW{l_win.gameweek} (Later) | {l_win.expected_gain:+.2f} xP | {l_win.prob_gain_positive:.1%} | [{l_win.gain_interval[0]:+.1f}, {l_win.gain_interval[1]:+.1f}] | {l_win.context_notes} | {l_win.value_of_waiting:.2f} xP | {l_win.recommendation_verdict} |")
+        md.append(
+            f"| Wildcard | GW{l_win.gameweek} (Later) | {l_win.expected_gain:+.2f} xP | {l_win.prob_gain_positive:.1%} | [{l_win.gain_interval[0]:+.1f}, {l_win.gain_interval[1]:+.1f}] | {l_win.context_notes} | {l_win.value_of_waiting:.2f} xP | {l_win.recommendation_verdict} |"
+        )
 
     for chip_name in ["3xc", "bboost", "freehit"]:
         for c_win in chip_timelines[chip_name][:4]:
-            md.append(f"| {chip_name.upper()} | GW{c_win.gameweek} | {c_win.expected_gain:+.2f} xP | {c_win.prob_gain_positive:.1%} | [{c_win.gain_interval[0]:+.1f}, {c_win.gain_interval[1]:+.1f}] | {c_win.context_notes} | {c_win.value_of_waiting:.2f} xP | {c_win.recommendation_verdict} |")
+            md.append(
+                f"| {chip_name.upper()} | GW{c_win.gameweek} | {c_win.expected_gain:+.2f} xP | {c_win.prob_gain_positive:.1%} | [{c_win.gain_interval[0]:+.1f}, {c_win.gain_interval[1]:+.1f}] | {c_win.context_notes} | {c_win.value_of_waiting:.2f} xP | {c_win.recommendation_verdict} |"
+            )
 
     md.append("")
     md.append("---")
@@ -416,10 +509,16 @@ async def generate_live_advice_brief():
     md.append("## 4. Optimizer's Curse Decomposition & Calibration Shrinkage (Items 3 & 4)")
     md.append("")
     md.append(f"- **Nominal Raw Wildcard Edge:** **+{raw_wc_edge:.2f} xP** vs Roll Transfer")
-    md.append(f"  - **Starting XI & Captain Component:** **+{delta_xi:.2f} xP** ({delta_xi/raw_wc_edge:.1%} of raw edge)")
-    md.append(f"  - **Synthetic Bench Component:** **+{delta_bench:.2f} xP** ({delta_bench/raw_wc_edge:.1%} of raw edge)")
+    md.append(
+        f"  - **Starting XI & Captain Component:** **+{delta_xi:.2f} xP** ({delta_xi / raw_wc_edge:.1%} of raw edge)"
+    )
+    md.append(
+        f"  - **Synthetic Bench Component:** **+{delta_bench:.2f} xP** ({delta_bench / raw_wc_edge:.1%} of raw edge)"
+    )
     md.append("- **Bench Weighting & Formulation Justification:**")
-    md.append(f"  - Dedicated Wildcard formulation properly constrains bench weights to empirical auto-sub probabilities (0.10, 0.05, 0.02, 0.0), keeping bench edge bounded at **+{delta_bench:.2f} xP**.")
+    md.append(
+        f"  - Dedicated Wildcard formulation properly constrains bench weights to empirical auto-sub probabilities (0.10, 0.05, 0.02, 0.0), keeping bench edge bounded at **+{delta_bench:.2f} xP**."
+    )
     md.append("- **Free Hit Normal Week Gain Decomposition (+17.96 xP):**")
     md.append("  - Unconstrained Dream Team XI ceiling: +17.96 xP raw difference.")
     md.append("  - Budget & 3-per-club constrained optimal XI edge: +7.70 xP.")
@@ -434,13 +533,17 @@ async def generate_live_advice_brief():
     md.append(f"  - Production shrinkage factor adopted: **lambda = {cal_slope:.2f}**")
     md.append(f"  - **Calibrated True Starting XI Edge:** lambda * {delta_xi:.2f} = **+{calibrated_xi_edge:.2f} xP**")
     md.append(f"  - **Option Value of Waiting:** **+{val_waiting:.2f} xP**")
-    md.append(f"- **Conclusion:** Calibrated edge (+{calibrated_xi_edge:.2f} xP) < Option value of waiting (+{val_waiting:.2f} xP) -> **PRESERVE ALL SET 1 CHIPS**.")
+    md.append(
+        f"- **Conclusion:** Calibrated edge (+{calibrated_xi_edge:.2f} xP) < Option value of waiting (+{val_waiting:.2f} xP) -> **PRESERVE ALL SET 1 CHIPS**."
+    )
     md.append("")
     md.append("---")
     md.append("")
     md.append("## 5. Candidate Plans Comparison & Position-Balanced Moves")
     md.append("")
-    md.append("| Plan Type | Transfers | Moves | Chip | Cap | GW7 xP | Horizon Net xP | Total Objective J | Delta J vs Roll | Solver Status |")
+    md.append(
+        "| Plan Type | Transfers | Moves | Chip | Cap | GW7 xP | Horizon Net xP | Total Objective J | Delta J vs Roll | Solver Status |"
+    )
     md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
 
     comparison_plans = [
@@ -462,7 +565,9 @@ async def generate_live_advice_brief():
     md.append("")
     md.append("### Objective Function J Decomposition")
     md.append("")
-    md.append("| Plan Type | Disc Lineup xP | Disc Cap xP | Disc Bench xP | Disc Hits | Term FT Val | Term Bank Val | FT Micro-Incentive | Total J |")
+    md.append(
+        "| Plan Type | Disc Lineup xP | Disc Cap xP | Disc Bench xP | Disc Hits | Term FT Val | Term Bank Val | FT Micro-Incentive | Total J |"
+    )
     md.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
 
     for p_name, p in comparison_plans:
@@ -488,20 +593,24 @@ async def generate_live_advice_brief():
             md.append("- *No legal path found within 2 transfers.*")
         else:
             for p_idx, path in enumerate(paths, 1):
-                md.append(f"- **Path {p_idx} ({path.path_type}, {path.transfers_count} transfer{'s' if path.transfers_count>1 else ''}, {path.hits} hits):** {path.arithmetic_explanation}")
+                md.append(
+                    f"- **Path {p_idx} ({path.path_type}, {path.transfers_count} transfer{'s' if path.transfers_count > 1 else ''}, {path.hits} hits):** {path.arithmetic_explanation}"
+                )
         md.append("")
 
     md.append("---")
     md.append("")
     md.append("## 7. Monte Carlo Hit Policy & Parameter Sensitivity (WI-2.5, Item 6)")
     md.append("")
-    md.append("- **Conjunction Rule (AND):** A hit is recommended if and only if `(P(Delta > 0) >= p*) AND (mean_delta >= k * sigma_delta)`.")
+    md.append(
+        "- **Conjunction Rule (AND):** A hit is recommended if and only if `(P(Delta > 0) >= p*) AND (mean_delta >= k * sigma_delta)`."
+    )
     md.append("- **Deficit Discount:** Entering GW7 with a 26-pt deficit (>= 20 pts) applies the chasing discount:")
     md.append(f"  - Base balanced hurdles (p*=0.60, k=0.25) adjusted by deficit: p* = {p_star:.2f}, k = {k:.2f}.")
     md.append(f"- **P(Delta > 0):** **{p_gain:.4f}** ({p_gain:.1%} probability that taking 1 hit beats rolling)")
     md.append(f"- **Mean Delta:** **{mean_delta:+.2f} xP** | **Sigma Delta:** **{sigma_delta:.2f} xP**")
     md.append(f"- **p* Hurdle [PROVISIONAL]:** **{p_star:.2f}** (Derived for 26-pt deficit)")
-    md.append(f"- **k Hurdle [PROVISIONAL]:** **{k:.2f}** (Hurdle threshold = k * sigma = {k*sigma_delta:.2f} xP)")
+    md.append(f"- **k Hurdle [PROVISIONAL]:** **{k:.2f}** (Hurdle threshold = k * sigma = {k * sigma_delta:.2f} xP)")
     md.append(f"- **Hit Decision Verdict:** **`{hit_verdict}`**")
     md.append("")
     md.append("---")
@@ -511,15 +620,31 @@ async def generate_live_advice_brief():
     md.append("| Scenario Trigger | Re-solved Plan Type | Re-solved Moves | Delta J vs Base | Verdict Shift |")
     md.append("| :--- | :--- | :--- | :--- | :--- |")
 
-    sidelined_moves = format_position_balanced_moves(sidelined_plan.recommended_action.transfers_out, sidelined_plan.recommended_action.transfers_in, elements_map, squad_ids_set)
-    md.append(f"| **1. Key Starter Sidelined:** {top_starter_name} ruled out | `{sidelined_plan.plan_type}` | {sidelined_moves} | {sidelined_delta:+.2f} xP | Sidelining {top_starter_name} triggers immediate transfer to replace lost xP |")
+    sidelined_moves = format_position_balanced_moves(
+        sidelined_plan.recommended_action.transfers_out,
+        sidelined_plan.recommended_action.transfers_in,
+        elements_map,
+        squad_ids_set,
+    )
+    md.append(
+        f"| **1. Key Starter Sidelined:** {top_starter_name} ruled out | `{sidelined_plan.plan_type}` | {sidelined_moves} | {sidelined_delta:+.2f} xP | Sidelining {top_starter_name} triggers immediate transfer to replace lost xP |"
+    )
 
     close_shift_desc = "AVOID_HIT remains optimal" if not hit_justified_close else "RECOMMEND_HIT activated"
-    md.append(f"| **2. Mini-League Deficit Narrowed:** Deficit narrows to 10 pts | `1_TRANSFER` (p*={p_star_close:.2f}, k={k_close:.2f}) | Reverts to conservative baseline | {roll_plan.total_objective - plan_hit.total_objective:+.2f} xP | {close_shift_desc} under narrower deficit |")
+    md.append(
+        f"| **2. Mini-League Deficit Narrowed:** Deficit narrows to 10 pts | `1_TRANSFER` (p*={p_star_close:.2f}, k={k_close:.2f}) | Reverts to conservative baseline | {roll_plan.total_objective - plan_hit.total_objective:+.2f} xP | {close_shift_desc} under narrower deficit |"
+    )
 
-    squeezed_moves = format_position_balanced_moves(squeezed_bank_plan.recommended_action.transfers_out, squeezed_bank_plan.recommended_action.transfers_in, elements_map, squad_ids_set)
+    squeezed_moves = format_position_balanced_moves(
+        squeezed_bank_plan.recommended_action.transfers_out,
+        squeezed_bank_plan.recommended_action.transfers_in,
+        elements_map,
+        squad_ids_set,
+    )
     squeezed_delta = squeezed_bank_plan.total_objective - rec_plan.total_objective
-    md.append(f"| **3. Budget Squeeze:** Bank reduced to £0.0m | `{squeezed_bank_plan.plan_type}` | {squeezed_moves} | {squeezed_delta:+.2f} xP | Budget tightens move flexibility (£0.0m margin) |")
+    md.append(
+        f"| **3. Budget Squeeze:** Bank reduced to £0.0m | `{squeezed_bank_plan.plan_type}` | {squeezed_moves} | {squeezed_delta:+.2f} xP | Budget tightens move flexibility (£0.0m margin) |"
+    )
 
     md.append("")
     md.append("---")
@@ -529,15 +654,29 @@ async def generate_live_advice_brief():
     md.append("Command that produced this breakdown: `.venv/Scripts/python.exe scripts/inspect_captain_components.py`")
     md.append("Decomposition relationship: `Decomposed Raw xP + Stacking Blend Adj = Total xP`.")
     md.append("")
-    md.append("| Player Name | Model Variant | GW | Fixture | Exp App | Exp Goals | Exp Assists | CS Prob | Exp CS Pts | DefCon | Bonus | Deductions | Decomp Raw | Stacking Blend Adj | Total xP |")
-    md.append("| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
-    md.append("| **Erling Haaland (FWD)** | Standard Model | **GW7** | FUL (H, Diff 2) | 1.90 | 2.69 | 0.70 | 0.2580 | 0.00 | 0.07 | 1.22 | -0.10 | 6.48 | -0.04 | **6.44 xP** |")
-    md.append("| **Bukayo Saka (MID)** | Standard Model | **GW7** | SOU (H, Diff 2) | 1.88 | 1.98 | 0.75 | 0.6120 | 0.54 | 0.07 | 1.55 | -0.09 | 6.68 | -0.22 | **6.46 xP** |")
-    md.append("| **James Tarkowski (DEF)** | Defending Model (Trained LightGBM) | **GW7** | NEW (H, Diff 3) | 1.95 | 0.23 | 0.28 | 0.2580 | 1.03 | 0.07 | 0.43 | -0.53 | 3.46 | +1.28 | **4.74 xP** |")
+    md.append(
+        "| Player Name | Model Variant | GW | Fixture | Exp App | Exp Goals | Exp Assists | CS Prob | Exp CS Pts | DefCon | Bonus | Deductions | Decomp Raw | Stacking Blend Adj | Total xP |"
+    )
+    md.append(
+        "| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |"
+    )
+    md.append(
+        "| **Erling Haaland (FWD)** | Standard Model | **GW7** | FUL (H, Diff 2) | 1.90 | 2.69 | 0.70 | 0.2580 | 0.00 | 0.07 | 1.22 | -0.10 | 6.48 | -0.04 | **6.44 xP** |"
+    )
+    md.append(
+        "| **Bukayo Saka (MID)** | Standard Model | **GW7** | SOU (H, Diff 2) | 1.88 | 1.98 | 0.75 | 0.6120 | 0.54 | 0.07 | 1.55 | -0.09 | 6.68 | -0.22 | **6.46 xP** |"
+    )
+    md.append(
+        "| **James Tarkowski (DEF)** | Defending Model (Trained LightGBM) | **GW7** | NEW (H, Diff 3) | 1.95 | 0.23 | 0.28 | 0.2580 | 1.03 | 0.07 | 0.43 | -0.53 | 3.46 | +1.28 | **4.74 xP** |"
+    )
     md.append("")
     md.append("- **Notes on Components & Clarifications:**")
-    md.append("  - **Component Summation:** Every constituent term strictly sums: for Tarkowski GW7, `1.95 + 0.23 + 0.28 + 1.03 + 0.07 + 0.43 - 0.53 = 3.46` raw xP; plus stacking blend adjustment `+1.28 = 4.74` Total xP.")
-    md.append("  - **Captain Choice in GW7:** Haaland (6.44 xP) and Saka (6.46 xP) overwhelmingly dominate Tarkowski (4.74 xP). Under no scenario is a defender selected as captain.")
+    md.append(
+        "  - **Component Summation:** Every constituent term strictly sums: for Tarkowski GW7, `1.95 + 0.23 + 0.28 + 1.03 + 0.07 + 0.43 - 0.53 = 3.46` raw xP; plus stacking blend adjustment `+1.28 = 4.74` Total xP."
+    )
+    md.append(
+        "  - **Captain Choice in GW7:** Haaland (6.44 xP) and Saka (6.46 xP) overwhelmingly dominate Tarkowski (4.74 xP). Under no scenario is a defender selected as captain."
+    )
     md.append("  - **DefCon:** Real non-constant DefCon component evaluated per player (`0.00` to `0.07` pts).")
     md.append("")
 

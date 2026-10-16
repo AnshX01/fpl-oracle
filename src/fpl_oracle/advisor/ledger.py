@@ -117,9 +117,7 @@ class AdviceLedger:
             )
             existing = cursor.fetchone()
             if existing is not None:
-                raise ValueError(
-                    f"Ledger record '{rec_id}' is immutable and cannot be overwritten."
-                )
+                raise ValueError(f"Ledger record '{rec_id}' is immutable and cannot be overwritten.")
 
             cursor = conn.execute(
                 """
@@ -161,9 +159,7 @@ class AdviceLedger:
         Strictly requires is_finalised == True (Rule R7 / WI-7.2).
         """
         if not is_finalised:
-            raise ValueError(
-                f"Gameweek {gameweek} scoring rejected: scoring jobs run ONLY on finalised gameweeks."
-            )
+            raise ValueError(f"Gameweek {gameweek} scoring rejected: scoring jobs run ONLY on finalised gameweeks.")
 
         scored_records: list[dict[str, Any]] = []
         now_ts = datetime.now(UTC).isoformat()
@@ -184,7 +180,9 @@ class AdviceLedger:
 
                 # Reconstruct baseline score
                 # Base starter points plus captain double
-                roll_score = sum(realised_points_map.values()) / max(1, len(realised_points_map)) * 11.0 + (cap_pts * 0.5)
+                roll_score = sum(realised_points_map.values()) / max(1, len(realised_points_map)) * 11.0 + (
+                    cap_pts * 0.5
+                )
                 # Recommended score adds predicted gain with noise factor
                 hit_deduction = row["hit_cost"]
                 gain = row["predicted_gain"]
@@ -225,13 +223,15 @@ class AdviceLedger:
                         miss_cause,
                     ),
                 )
-                scored_records.append({
-                    "recommendation_id": rec_id,
-                    "gameweek": gameweek,
-                    "realised_gain": round(realised_gain, 2),
-                    "beat_roll": beat_roll,
-                    "miss_cause": miss_cause,
-                })
+                scored_records.append(
+                    {
+                        "recommendation_id": rec_id,
+                        "gameweek": gameweek,
+                        "realised_gain": round(realised_gain, 2),
+                        "beat_roll": beat_roll,
+                        "miss_cause": miss_cause,
+                    }
+                )
 
             conn.commit()
 
@@ -279,7 +279,9 @@ class AdviceLedger:
         biggest_miss_str = "None — all evaluated gameweeks met or beat the roll baseline!"
         if misses:
             worst = min(misses, key=lambda m: m["realised_gain_over_roll"])
-            biggest_miss_str = f"GW{worst['gameweek']}: {worst['realised_gain_over_roll']:.1f} pts vs roll ({worst['miss_cause']})"
+            biggest_miss_str = (
+                f"GW{worst['gameweek']}: {worst['realised_gain_over_roll']:.1f} pts vs roll ({worst['miss_cause']})"
+            )
 
         return {
             "total_gameweeks_evaluated": total_evaluated,

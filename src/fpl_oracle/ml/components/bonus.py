@@ -87,11 +87,7 @@ class BonusModel(BaseComponent):
         ):
             fixtures = X.attrs["meta"]["round"].values
         else:
-            surrogate_cols = [
-                c
-                for c in ["implied_team_xG", "implied_opp_xG", "days_rest"]
-                if c in X.columns
-            ]
+            surrogate_cols = [c for c in ["implied_team_xG", "implied_opp_xG", "days_rest"] if c in X.columns]
             if surrogate_cols and len(X) >= 20:
                 fixtures = pd.factorize(X[surrogate_cols].apply(tuple, axis=1))[0]
             else:
@@ -101,11 +97,7 @@ class BonusModel(BaseComponent):
         for f_id, idx_list in s_fixtures.groupby(s_fixtures).groups.items():
             idx = idx_list.values if hasattr(idx_list, "values") else np.array(idx_list)
             # Target cap: 6.0 for single match; scale by number of matches if aggregate round
-            target_cap = (
-                max_fixture_bonus
-                if len(idx) <= 35
-                else float(max_fixture_bonus * (len(idx) / 30.0))
-            )
+            target_cap = max_fixture_bonus if len(idx) <= 35 else float(max_fixture_bonus * (len(idx) / 30.0))
             f_sum = float(np.sum(constrained[idx]))
             if f_sum > target_cap and target_cap > 0:
                 scale = target_cap / f_sum
@@ -161,7 +153,9 @@ class BonusModel(BaseComponent):
                 era_mult = np.where(is_gkp > 0, 1.25, era_mult)
                 era_mult = np.where(is_fwd > 0, 0.85, era_mult)
                 era_mult = np.where(is_def > 0, 1.05, era_mult)
-                era_mult = np.where(is_def == 0, np.where(is_gkp == 0, np.where(is_fwd == 0, 0.92, era_mult), era_mult), era_mult)
+                era_mult = np.where(
+                    is_def == 0, np.where(is_gkp == 0, np.where(is_fwd == 0, 0.92, era_mult), era_mult), era_mult
+                )
 
                 exp_bonus = np.where(is_26, exp_bonus * era_mult, exp_bonus)
 

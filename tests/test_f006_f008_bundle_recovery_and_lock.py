@@ -93,6 +93,7 @@ def test_no_valid_version_raises_clear_error_not_raw_valueerror():
         reg.versions_dir = versions_dir
 
         from fpl_oracle.ml.model_registry import ModelBundleCorruptError
+
         with pytest.raises(ModelBundleCorruptError):
             reg.verify_weight_integrity()
 
@@ -187,4 +188,6 @@ with lock:
 
         first_end_t = float(lines[1][2])
         second_start_t = float(lines[2][2])
-        assert second_start_t >= first_end_t - 0.05, f"Processes overlapped! P1 end={first_end_t}, P2 start={second_start_t}"
+        assert second_start_t >= first_end_t - 0.05, (
+            f"Processes overlapped! P1 end={first_end_t}, P2 start={second_start_t}"
+        )

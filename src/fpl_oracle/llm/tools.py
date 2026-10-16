@@ -336,12 +336,14 @@ class ToolExecutor:
                 out_id = t_outs[i] if i < len(t_outs) else None
                 p_in = elem_map.get(in_id) if in_id else None
                 p_out = elem_map.get(out_id) if out_id else None
-                moves.append({
-                    "transfer_in": p_in.web_name if p_in else (f"Player #{in_id}" if in_id else "None"),
-                    "transfer_out": p_out.web_name if p_out else (f"Player #{out_id}" if out_id else "None"),
-                    "cost_in": round(p_in.now_cost / 10.0, 1) if p_in else None,
-                    "cost_out": round(p_out.now_cost / 10.0, 1) if p_out else None,
-                })
+                moves.append(
+                    {
+                        "transfer_in": p_in.web_name if p_in else (f"Player #{in_id}" if in_id else "None"),
+                        "transfer_out": p_out.web_name if p_out else (f"Player #{out_id}" if out_id else "None"),
+                        "cost_in": round(p_in.now_cost / 10.0, 1) if p_in else None,
+                        "cost_out": round(p_out.now_cost / 10.0, 1) if p_out else None,
+                    }
+                )
             return moves
 
         first_step = plan.get("trajectory", [{}])[0] if plan.get("trajectory") else {}
@@ -350,32 +352,38 @@ class ToolExecutor:
         candidate_plans_formatted = []
         for cp in result.get("candidate_plans", []):
             cp_step = cp.get("trajectory", [{}])[0] if cp.get("trajectory") else {}
-            candidate_plans_formatted.append({
-                "plan_type": cp.get("plan_type"),
-                "type": cp.get("plan_type"),
-                "summary": cp.get("recommendation_summary"),
-                "net_xp": round(float(cp.get("net_expected_points", 0)), 2),
-                "gain": round(float(cp.get("expected_gain", 0)), 2),
-                "gain_vs_roll": round(float(cp.get("expected_gain", 0)), 2),
-                "hit_cost": round(float(cp.get("hit_cost", 0)), 1),
-                "transfers": format_moves(cp_step) if cp_step else [],
-            })
+            candidate_plans_formatted.append(
+                {
+                    "plan_type": cp.get("plan_type"),
+                    "type": cp.get("plan_type"),
+                    "summary": cp.get("recommendation_summary"),
+                    "net_xp": round(float(cp.get("net_expected_points", 0)), 2),
+                    "gain": round(float(cp.get("expected_gain", 0)), 2),
+                    "gain_vs_roll": round(float(cp.get("expected_gain", 0)), 2),
+                    "hit_cost": round(float(cp.get("hit_cost", 0)), 1),
+                    "transfers": format_moves(cp_step) if cp_step else [],
+                }
+            )
 
         captain_clean = clean_player(plan.get("captain", {}))
         vice_captain_clean = clean_player(plan.get("vice_captain", {}))
 
         roadmap_clean = []
         for step in result.get("transfer_roadmap", []):
-            roadmap_clean.append({
-                "gameweek": step.get("gameweek"),
-                "action": step.get("action"),
-                "status": step.get("status"),
-                "banked_free_transfers": step.get("banked_free_transfers_projected", step.get("banked_ft")),
-                "banked_free_transfers_projected": step.get("banked_free_transfers_projected", step.get("banked_ft")),
-                "strategic_focus": step.get("strategic_focus"),
-                "key_targets": step.get("key_targets", []),
-                "captain": step.get("captain"),
-            })
+            roadmap_clean.append(
+                {
+                    "gameweek": step.get("gameweek"),
+                    "action": step.get("action"),
+                    "status": step.get("status"),
+                    "banked_free_transfers": step.get("banked_free_transfers_projected", step.get("banked_ft")),
+                    "banked_free_transfers_projected": step.get(
+                        "banked_free_transfers_projected", step.get("banked_ft")
+                    ),
+                    "strategic_focus": step.get("strategic_focus"),
+                    "key_targets": step.get("key_targets", []),
+                    "captain": step.get("captain"),
+                }
+            )
 
         return {
             **result,
@@ -613,7 +621,9 @@ class ToolExecutor:
             horizon_projections=projs,
             current_gw=curr_gw or 5,
             target_gw=target_gw,
-            chips_available=[str(c.get("name", c) if isinstance(c, dict) else getattr(c, "name", str(c))) for c in state.chips_used],
+            chips_available=[
+                str(c.get("name", c) if isinstance(c, dict) else getattr(c, "name", str(c))) for c in state.chips_used
+            ],
         )
         return res.model_dump()
 
