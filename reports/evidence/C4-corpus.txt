@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "command": [
+    ".venv\\Scripts\\python.exe",
+    "scripts\\inspect_c4_corpus.py"
+  ],
+  "exit_code": 0,
+  "stdout": "=== COMPONENT MODELS TRAINING CORPUS ===\nSeasons: ['2023-24', '2024-25', '2025-26']\nMax Round per Season:\n  2023-24: Max Round = 38, Rows = 29,725\n  2024-25: Max Round = 38, Rows = 27,605\n  2025-26: Max Round = 38, Rows = 29,757\nTotal Training Rows: 87087\nis_2026_27 values in training corpus: {0.0: 87087}\n\n=== CQR BANDS TRAINING CORPUS ===\nSeasons: ['2023-24', '2024-25', '2025-26']\nMax Round per Season:\n  2023-24: Max Round = 38, Rows = 29,725\n  2024-25: Max Round = 38, Rows = 27,605\n  2025-26: Max Round = 10, Rows = 7,321\nTotal CQR Training Rows: 64651\n\n=== CQR CALIBRATION FOLD ===\nSeasons: ['2025-26']\nRound range: GW11 to GW18\nTotal Calibration Rows (minutes > 0): 2421\nCounts per position: {'MID': 1133, 'DEF': 829, 'FWD': 298, 'GKP': 161}\n\nSaved C4 machine artifact to: reports\\c4_training_corpus.json\n",
+  "stderr": "",
+  "output": "=== COMPONENT MODELS TRAINING CORPUS ===\nSeasons: ['2023-24', '2024-25', '2025-26']\nMax Round per Season:\n  2023-24: Max Round = 38, Rows = 29,725\n  2024-25: Max Round = 38, Rows = 27,605\n  2025-26: Max Round = 38, Rows = 29,757\nTotal Training Rows: 87087\nis_2026_27 values in training corpus: {0.0: 87087}\n\n=== CQR BANDS TRAINING CORPUS ===\nSeasons: ['2023-24', '2024-25', '2025-26']\nMax Round per Season:\n  2023-24: Max Round = 38, Rows = 29,725\n  2024-25: Max Round = 38, Rows = 27,605\n  2025-26: Max Round = 10, Rows = 7,321\nTotal CQR Training Rows: 64651\n\n=== CQR CALIBRATION FOLD ===\nSeasons: ['2025-26']\nRound range: GW11 to GW18\nTotal Calibration Rows (minutes > 0): 2421\nCounts per position: {'MID': 1133, 'DEF': 829, 'FWD': 298, 'GKP': 161}\n\nSaved C4 machine artifact to: reports\\c4_training_corpus.json",
+  "timestamp": "2026-10-16T17:33:38.893741+00:00",
+  "git_commit": "503882673ed9e781f20497626f9e7f71f9f7e672",
+  "code_head": "503882673ed9e781f20497626f9e7f71f9f7e672",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "path": "reports/c4_training_corpus.json",
+      "sha256": "2424216ea269c6b030832db05da7f25035d428562b4d9fe5c805e882283d0884"
+    }
+  ],
+  "file_hashes": {
+    "reports/c4_training_corpus.json": "2424216ea269c6b030832db05da7f25035d428562b4d9fe5c805e882283d0884"
+  },
+  "gates": []
+}

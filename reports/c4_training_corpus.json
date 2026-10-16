@@ -1,0 +1,69 @@
+{
+  "component_models_corpus": {
+    "seasons": [
+      "2023-24",
+      "2024-25",
+      "2025-26"
+    ],
+    "max_round": 38,
+    "total_rows": 87087,
+    "rows_by_season": {
+      "2023-24": {
+        "max_round": 38,
+        "rows": 29725
+      },
+      "2024-25": {
+        "max_round": 38,
+        "rows": 27605
+      },
+      "2025-26": {
+        "max_round": 38,
+        "rows": 29757
+      }
+    },
+    "is_2026_27_feature": {
+      "is_constant": true,
+      "unique_values_and_counts": {
+        "0.0": 87087
+      },
+      "defcon_era_feature_verdict": "The DefCon model era feature is_2026_27 is constant (0.0 for all 87,087 rows) in training data. 2026-27 rows were never in training."
+    }
+  },
+  "cqr_bands_corpus": {
+    "training": {
+      "seasons": [
+        "2023-24",
+        "2024-25",
+        "2025-26"
+      ],
+      "max_round": 10,
+      "total_rows": 64651,
+      "rows_by_season": {
+        "2023-24": {
+          "max_round": 38,
+          "rows": 29725
+        },
+        "2024-25": {
+          "max_round": 38,
+          "rows": 27605
+        },
+        "2025-26": {
+          "max_round": 10,
+          "rows": 7321
+        }
+      }
+    },
+    "calibration": {
+      "season": "2025-26",
+      "first_round": 11,
+      "last_round": 18,
+      "total_rows": 2421,
+      "counts_by_position": {
+        "MID": 1133,
+        "DEF": 829,
+        "FWD": 298,
+        "GKP": 161
+      }
+    }
+  }
+}

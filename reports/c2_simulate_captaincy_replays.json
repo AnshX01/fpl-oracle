@@ -1,0 +1,772 @@
+[
+  {
+    "replay_index": 1,
+    "manager_id": "1085141",
+    "target_gw": 6,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Cherki"
+        ],
+        "transfers_in_after": [
+          "Cherki"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.73,
+        "gain_after": 3.73,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Cherki"
+        ],
+        "transfers_in_after": [
+          "Cherki"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.73,
+        "gain_after": 3.73,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Cherki"
+        ],
+        "transfers_in_after": [
+          "Cherki"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.73,
+        "gain_after": 3.73,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 2,
+    "manager_id": "1085141",
+    "target_gw": 7,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Hall"
+        ],
+        "transfers_in_after": [
+          "Hall"
+        ],
+        "transfers_out_before": [
+          "White"
+        ],
+        "transfers_out_after": [
+          "White"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.94,
+        "gain_after": 3.94,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Hall"
+        ],
+        "transfers_in_after": [
+          "Hall"
+        ],
+        "transfers_out_before": [
+          "White"
+        ],
+        "transfers_out_after": [
+          "White"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.94,
+        "gain_after": 3.94,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Hall"
+        ],
+        "transfers_in_after": [
+          "Hall"
+        ],
+        "transfers_out_before": [
+          "White"
+        ],
+        "transfers_out_after": [
+          "White"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.94,
+        "gain_after": 3.94,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 3,
+    "manager_id": "2227954",
+    "target_gw": 5,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "De Cuyper"
+        ],
+        "transfers_in_after": [
+          "De Cuyper"
+        ],
+        "transfers_out_before": [
+          "Cash"
+        ],
+        "transfers_out_after": [
+          "Cash"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 1.33,
+        "gain_after": 1.33,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "De Cuyper"
+        ],
+        "transfers_in_after": [
+          "De Cuyper"
+        ],
+        "transfers_out_before": [
+          "Cash"
+        ],
+        "transfers_out_after": [
+          "Cash"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 1.33,
+        "gain_after": 1.33,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "De Cuyper"
+        ],
+        "transfers_in_after": [
+          "De Cuyper"
+        ],
+        "transfers_out_before": [
+          "Cash"
+        ],
+        "transfers_out_after": [
+          "Cash"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 1.33,
+        "gain_after": 1.33,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 4,
+    "manager_id": "2227954",
+    "target_gw": 6,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Raya"
+        ],
+        "transfers_in_after": [
+          "Raya"
+        ],
+        "transfers_out_before": [
+          "Dubravka"
+        ],
+        "transfers_out_after": [
+          "Dubravka"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.56,
+        "gain_after": 3.56,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Raya"
+        ],
+        "transfers_in_after": [
+          "Raya"
+        ],
+        "transfers_out_before": [
+          "Dubravka"
+        ],
+        "transfers_out_after": [
+          "Dubravka"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.56,
+        "gain_after": 3.56,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Raya"
+        ],
+        "transfers_in_after": [
+          "Raya"
+        ],
+        "transfers_out_before": [
+          "Dubravka"
+        ],
+        "transfers_out_after": [
+          "Dubravka"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 3.56,
+        "gain_after": 3.56,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 5,
+    "manager_id": "2227954",
+    "target_gw": 7,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Raya"
+        ],
+        "transfers_in_after": [
+          "Raya"
+        ],
+        "transfers_out_before": [
+          "Dubravka"
+        ],
+        "transfers_out_after": [
+          "Dubravka"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 1.88,
+        "gain_after": 1.88,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Raya"
+        ],
+        "transfers_in_after": [
+          "Raya"
+        ],
+        "transfers_out_before": [
+          "Dubravka"
+        ],
+        "transfers_out_after": [
+          "Dubravka"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 1.88,
+        "gain_after": 1.88,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Raya"
+        ],
+        "transfers_in_after": [
+          "Raya"
+        ],
+        "transfers_out_before": [
+          "Dubravka"
+        ],
+        "transfers_out_after": [
+          "Dubravka"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 1.88,
+        "gain_after": 1.88,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 6,
+    "manager_id": "4687536",
+    "target_gw": 5,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Gibbs-White"
+        ],
+        "transfers_in_after": [
+          "Gibbs-White"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 4.69,
+        "gain_after": 4.69,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Gibbs-White"
+        ],
+        "transfers_in_after": [
+          "Gibbs-White"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 4.69,
+        "gain_after": 4.69,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Gibbs-White"
+        ],
+        "transfers_in_after": [
+          "Gibbs-White"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 4.69,
+        "gain_after": 4.69,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 7,
+    "manager_id": "4687536",
+    "target_gw": 6,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Gro\u00df"
+        ],
+        "transfers_in_after": [
+          "Gro\u00df"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 4.03,
+        "gain_after": 4.03,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Gro\u00df"
+        ],
+        "transfers_in_after": [
+          "Gro\u00df"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 4.03,
+        "gain_after": 4.03,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Gro\u00df"
+        ],
+        "transfers_in_after": [
+          "Gro\u00df"
+        ],
+        "transfers_out_before": [
+          "Szoboszlai"
+        ],
+        "transfers_out_after": [
+          "Szoboszlai"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 4.03,
+        "gain_after": 4.03,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 8,
+    "manager_id": "4687536",
+    "target_gw": 7,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Calvert-Lewin"
+        ],
+        "transfers_in_after": [
+          "Calvert-Lewin"
+        ],
+        "transfers_out_before": [
+          "Gonzalo"
+        ],
+        "transfers_out_after": [
+          "Gonzalo"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 2.69,
+        "gain_after": 2.69,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Calvert-Lewin"
+        ],
+        "transfers_in_after": [
+          "Calvert-Lewin"
+        ],
+        "transfers_out_before": [
+          "Gonzalo"
+        ],
+        "transfers_out_after": [
+          "Gonzalo"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 2.69,
+        "gain_after": 2.69,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Calvert-Lewin"
+        ],
+        "transfers_in_after": [
+          "Calvert-Lewin"
+        ],
+        "transfers_out_before": [
+          "Gonzalo"
+        ],
+        "transfers_out_after": [
+          "Gonzalo"
+        ],
+        "captain_before": "Haaland",
+        "captain_after": "Haaland",
+        "gain_before": 2.69,
+        "gain_after": 2.69,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 9,
+    "manager_id": "8364971",
+    "target_gw": 5,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Barry"
+        ],
+        "transfers_in_after": [
+          "Barry"
+        ],
+        "transfers_out_before": [
+          "Isak"
+        ],
+        "transfers_out_after": [
+          "Isak"
+        ],
+        "captain_before": "B.Fernandes",
+        "captain_after": "B.Fernandes",
+        "gain_before": 1.92,
+        "gain_after": 1.92,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Barry"
+        ],
+        "transfers_in_after": [
+          "Barry"
+        ],
+        "transfers_out_before": [
+          "Isak"
+        ],
+        "transfers_out_after": [
+          "Isak"
+        ],
+        "captain_before": "B.Fernandes",
+        "captain_after": "B.Fernandes",
+        "gain_before": 1.92,
+        "gain_after": 1.92,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Barry"
+        ],
+        "transfers_in_after": [
+          "Barry"
+        ],
+        "transfers_out_before": [
+          "Isak"
+        ],
+        "transfers_out_after": [
+          "Isak"
+        ],
+        "captain_before": "B.Fernandes",
+        "captain_after": "B.Fernandes",
+        "gain_before": 1.92,
+        "gain_after": 1.92,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  },
+  {
+    "replay_index": 10,
+    "manager_id": "8364971",
+    "target_gw": 6,
+    "modes": {
+      "conservative": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Calafiori"
+        ],
+        "transfers_in_after": [
+          "Calafiori"
+        ],
+        "transfers_out_before": [
+          "Robertson"
+        ],
+        "transfers_out_after": [
+          "Robertson"
+        ],
+        "captain_before": "B.Fernandes",
+        "captain_after": "B.Fernandes",
+        "gain_before": 1.6,
+        "gain_after": 1.6,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "balanced": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Calafiori"
+        ],
+        "transfers_in_after": [
+          "Calafiori"
+        ],
+        "transfers_out_before": [
+          "Robertson"
+        ],
+        "transfers_out_after": [
+          "Robertson"
+        ],
+        "captain_before": "B.Fernandes",
+        "captain_after": "B.Fernandes",
+        "gain_before": 1.6,
+        "gain_after": 1.6,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      },
+      "aggressive": {
+        "plan_type_before": "1_TRANSFER",
+        "plan_type_after": "1_TRANSFER",
+        "transfers_in_before": [
+          "Calafiori"
+        ],
+        "transfers_in_after": [
+          "Calafiori"
+        ],
+        "transfers_out_before": [
+          "Robertson"
+        ],
+        "transfers_out_after": [
+          "Robertson"
+        ],
+        "captain_before": "B.Fernandes",
+        "captain_after": "B.Fernandes",
+        "gain_before": 1.6,
+        "gain_after": 1.6,
+        "transfers_match": true,
+        "captain_match": true,
+        "gain_match": true
+      }
+    },
+    "risk_modes_differ": false
+  }
+]
