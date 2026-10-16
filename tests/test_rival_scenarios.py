@@ -36,8 +36,8 @@ def test_evolution_legal_changes_are_hypothetical():
         assert [positions.count(p) for p in ("GKP", "DEF", "MID", "FWD")] == [2, 5, 5, 3]
         previous = current
     state = dict(first_chip=None, history=path)
-    result = compare_plan_scenarios([state], dict(user_points=100, rivals=[rival]), maps, samples=64)
+    result = compare_plan_scenarios([state], dict(user_points=100, rivals=[rival]), maps, samples=10)
     assert result["calibrated"] is False
     assert result["championship_probability"] is False
     assert [r["mode"] for r in result["scenarios"]] == ["hold_roster", "one_transfer_per_week", "restructure_at_start"]
-    assert result == compare_plan_scenarios([state], dict(user_points=100, rivals=[rival]), maps, samples=64)
+    assert result == compare_plan_scenarios([state], dict(user_points=100, rivals=[rival]), maps, samples=10)

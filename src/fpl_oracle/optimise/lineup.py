@@ -37,6 +37,7 @@ class LineupOptimizer:
         cop_doubt_penalty: float | None = None,
         aggressive_upside_weight: float | None = None,
         risk_aware_lineup: bool | None = None,
+        simulate_captaincy: bool = True,
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
@@ -203,18 +204,24 @@ class LineupOptimizer:
         safe_pick = starters_df.sort_values(by=["p10", "expected_points"], ascending=False).iloc[0]
         ceiling_pick = starters_df.sort_values(by=["p90", "expected_points"], ascending=False).iloc[0]
 
-        # Probability of outscoring next best option using scoreline simulator (WI-4.3)
+        # Probability of outscoring next best option using scoreline simulator (WI-4.3) or analytical normal
         cap_id = int(captain_row["element"])
         vice_id = int(vice_captain_row["element"])
-        try:
-            from fpl_oracle.sim.match_sim import match_simulator
+        sim_success = False
+        if simulate_captaincy:
+            try:
+                from fpl_oracle.sim.match_sim import match_simulator
 
-            sim_res = match_simulator.simulate_gameweek(starters_df, n_sims=1000, seed=42)
-            prob_outscore = round(sim_res.get_captain_win_probability(cap_id, vice_id), 3)
-            cap_draws = sim_res.get_player_draws(cap_id)
-            cap_p10 = float(np.percentile(cap_draws, 10))
-            cap_p90 = float(np.percentile(cap_draws, 90))
-        except Exception:
+                sim_res = match_simulator.simulate_gameweek(starters_df, n_sims=1000, seed=42)
+                prob_outscore = round(sim_res.get_captain_win_probability(cap_id, vice_id), 3)
+                cap_draws = sim_res.get_player_draws(cap_id)
+                cap_p10 = float(np.percentile(cap_draws, 10))
+                cap_p90 = float(np.percentile(cap_draws, 90))
+                sim_success = True
+            except Exception:
+                sim_success = False
+
+        if not sim_success:
             cap_mu = float(captain_row["expected_points"])
             cap_p10 = float(captain_row.get("p10", cap_mu * 0.4))
             cap_p90 = float(captain_row.get("p90", cap_mu * 1.8))

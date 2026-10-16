@@ -159,6 +159,11 @@ def test_four_unused_set1_chips_at_gw16_to_gw19_schedule_count(mock_squad, boots
 
     monkeypatch.setattr(
         planner,
+        "compute_chip_utility",
+        lambda chip, gw, *args, **kwargs: (5.0, "HIGH", 40.0, 45.0),
+    )
+    monkeypatch.setattr(
+        planner,
         "get_remaining_chips",
         lambda *args, **kwargs: {"set_1_remaining": list(all_four_chips), "set_2_remaining": []},
     )
