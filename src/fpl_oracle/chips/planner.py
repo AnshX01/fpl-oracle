@@ -433,8 +433,14 @@ class ChipPlanner:
                         current_gw=current_gw,
                     )
                     alt_gw = alt_assign.get(c, rec_gw + 1 if rec_gw < 19 else rec_gw - 1)
-                    ctx1 = "dgw" if rec_gw in dgw_gws else ("bgw" if rec_gw in bgw_gws else ("congested" if 14 <= rec_gw <= 19 else "normal"))
-                    base_threshold = get_chip_threshold(c, rec_gw, set_idx=1, context=ctx1, use_legacy=use_legacy_thresholds)
+                    ctx1 = (
+                        "dgw"
+                        if rec_gw in dgw_gws
+                        else ("bgw" if rec_gw in bgw_gws else ("congested" if 14 <= rec_gw <= 19 else "normal"))
+                    )
+                    base_threshold = get_chip_threshold(
+                        c, rec_gw, set_idx=1, context=ctx1, use_legacy=use_legacy_thresholds
+                    )
                     if num_chips >= num_avail or current_gw == 19:
                         # Full congestion / deadline: any positive expected gain justifies recommendation to prevent expiry
                         threshold = 0.0
@@ -558,7 +564,14 @@ class ChipPlanner:
         transfer_advice = self.get_joint_transfer_advice(joint_schedule, current_gw)
 
         # Current GW Chip Decision
-        chip_for_curr_gw = next((item for item in chip_plan_table if item["recommended_gw"] == current_gw and item["is_recommended_this_gw"]), None)
+        chip_for_curr_gw = next(
+            (
+                item
+                for item in chip_plan_table
+                if item["recommended_gw"] == current_gw and item["is_recommended_this_gw"]
+            ),
+            None,
+        )
         if chip_for_curr_gw is None:
             chip_for_curr_gw = next((item for item in chip_plan_table if item["recommended_gw"] == current_gw), None)
         recommend_chip_now = bool(chip_for_curr_gw["is_recommended_this_gw"]) if chip_for_curr_gw else False
@@ -669,9 +682,11 @@ def compare_chip_threshold_rules(
         )
 
         legacy_recs = [r["code"] for r in legacy_res.get("chip_plan_table", []) if r.get("is_recommended_this_gw")]
-        datadriven_recs = [r["code"] for r in datadriven_res.get("chip_plan_table", []) if r.get("is_recommended_this_gw")]
+        datadriven_recs = [
+            r["code"] for r in datadriven_res.get("chip_plan_table", []) if r.get("is_recommended_this_gw")
+        ]
 
-        agrees = (set(legacy_recs) == set(datadriven_recs))
+        agrees = set(legacy_recs) == set(datadriven_recs)
         if not agrees:
             disagreements += 1
             reason = (
@@ -682,14 +697,16 @@ def compare_chip_threshold_rules(
         else:
             reason = f"GW{gw}: Full agreement ({legacy_recs or 'No chip recommended this GW'})."
 
-        comparisons.append({
-            "state_index": idx,
-            "gameweek": gw,
-            "agrees": agrees,
-            "legacy_recommendations": legacy_recs,
-            "data_driven_recommendations": datadriven_recs,
-            "explanation": reason,
-        })
+        comparisons.append(
+            {
+                "state_index": idx,
+                "gameweek": gw,
+                "agrees": agrees,
+                "legacy_recommendations": legacy_recs,
+                "data_driven_recommendations": datadriven_recs,
+                "explanation": reason,
+            }
+        )
 
     total = len(historical_states)
     disagreement_rate = round(disagreements / total, 3) if total > 0 else 0.0

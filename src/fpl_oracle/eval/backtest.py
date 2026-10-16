@@ -159,7 +159,9 @@ class WalkForwardBacktester:
         """
         np.random.seed(seed)
         start_time = datetime.now(UTC)
-        logger.info(f"Starting Walk-Forward Backtest (seasons={seasons}, window={window}, retrain_every={retrain_every})...")
+        logger.info(
+            f"Starting Walk-Forward Backtest (seasons={seasons}, window={window}, retrain_every={retrain_every})..."
+        )
 
         # 1. Load full historical dataset with strictly aligned X, Y, meta
         df_raw = historical_manager.ensure_dataset_ready()
@@ -173,10 +175,7 @@ class WalkForwardBacktester:
 
         # Determine evaluation sequence of (season, round) pairs
         available_rounds = (
-            meta[test_mask][["season", "round"]]
-            .drop_duplicates()
-            .sort_values(by=["season", "round"])
-            .values
+            meta[test_mask][["season", "round"]].drop_duplicates().sort_values(by=["season", "round"]).values
         )
 
         if window == "last-20-gw":
@@ -205,9 +204,7 @@ class WalkForwardBacktester:
             if needs_retrain:
                 logger.info(f"[{step_desc}] Retraining ML models strictly on data finalised before {step_desc}...")
                 # Training barrier: all seasons prior, or current season with round < r_int
-                train_filter = (meta["season"] < s_curr) | (
-                    (meta["season"] == s_curr) & (meta["round"] < r_int)
-                )
+                train_filter = (meta["season"] < s_curr) | ((meta["season"] == s_curr) & (meta["round"] < r_int))
 
                 X_tr = X[train_filter].copy()
                 Y_tr = Y[train_filter].copy()
@@ -263,8 +260,12 @@ class WalkForwardBacktester:
                         "expected_saves": crd_cal.get("expected_saves", np.zeros(len(X_cal))),
                         "expected_card_deduction": crd_cal.get("expected_card_deductions", np.zeros(len(X_cal))),
                         "expected_penalties_saved": crd_cal.get("expected_penalties_saved", np.zeros(len(X_cal))),
-                        "expected_own_goals": X_cal.get("roll_own_goals_5", pd.Series(0, index=X_cal.index)).values * 0.05,
-                        "expected_penalties_missed": X_cal.get("roll_penalties_missed_5", pd.Series(0, index=X_cal.index)).values * 0.05,
+                        "expected_own_goals": X_cal.get("roll_own_goals_5", pd.Series(0, index=X_cal.index)).values
+                        * 0.05,
+                        "expected_penalties_missed": X_cal.get(
+                            "roll_penalties_missed_5", pd.Series(0, index=X_cal.index)
+                        ).values
+                        * 0.05,
                     }
                     self.ensemble.calibrate(cal_comps, X_cal, Y_cal)
 
@@ -303,7 +304,10 @@ class WalkForwardBacktester:
                 "expected_card_deduction": crd_pred.get("expected_card_deductions", np.zeros(len(X_curr))),
                 "expected_penalties_saved": crd_pred.get("expected_penalties_saved", np.zeros(len(X_curr))),
                 "expected_own_goals": X_curr.get("roll_own_goals_5", pd.Series(0, index=X_curr.index)).values * 0.05,
-                "expected_penalties_missed": X_curr.get("roll_penalties_missed_5", pd.Series(0, index=X_curr.index)).values * 0.05,
+                "expected_penalties_missed": X_curr.get(
+                    "roll_penalties_missed_5", pd.Series(0, index=X_curr.index)
+                ).values
+                * 0.05,
             }
             ensemble_res = self.ensemble.aggregate_components(components, X_curr)
 
@@ -321,11 +325,9 @@ class WalkForwardBacktester:
 
             # Baseline 3: Position and price-band cold-start prior
             pos_mean = np.where(
-                X_curr.get("pos_FWD", 0) > 0, 3.8,
-                np.where(
-                    X_curr.get("pos_MID", 0) > 0, 3.4,
-                    np.where(X_curr.get("pos_DEF", 0) > 0, 3.1, 3.2)
-                )
+                X_curr.get("pos_FWD", 0) > 0,
+                3.8,
+                np.where(X_curr.get("pos_MID", 0) > 0, 3.4, np.where(X_curr.get("pos_DEF", 0) > 0, 3.1, 3.2)),
             )
 
             # Baseline 4: Official FPL ep_next if snapshot exists, else heuristic approximation
@@ -574,16 +576,16 @@ class WalkForwardBacktester:
 
         md = f"""# Walk-Forward Backtest & Benchmark Evaluation Report
 
-**Generated UTC:** {report['evaluation_timestamp_utc']}
-**Duration:** {report['duration_seconds']}s
-**Seasons Evaluated:** {', '.join(report['seasons_evaluated'])}
-**Window:** {report['window']} (retrain every {report['retrain_every']} GWs)
-**Total Observations:** {report['total_observations']:,}
+**Generated UTC:** {report["evaluation_timestamp_utc"]}
+**Duration:** {report["duration_seconds"]}s
+**Seasons Evaluated:** {", ".join(report["seasons_evaluated"])}
+**Window:** {report["window"]} (retrain every {report["retrain_every"]} GWs)
+**Total Observations:** {report["total_observations"]:,}
 
 ---
 
 ## 0. Theoretical Noise Floor & Statistical Framework (WI-0.3)
-> {report['noise_floor_context']}
+> {report["noise_floor_context"]}
 
 ---
 
@@ -591,35 +593,35 @@ class WalkForwardBacktester:
 
 | Metric | View (a): All Available Players | View (b): Active Players (Mins > 0) | Baseline 2 (Rolling 5) [View b] | Delta vs Baseline 2 |
 | :--- | :--- | :--- | :--- | :--- |
-| **Observation Count** | {va.get('count', 0):,} | {vb.get('count', 0):,} | {vb.get('count', 0):,} | - |
-| **Mean Absolute Error (MAE)** | **{va.get('model_mae')}** | **{vb.get('model_mae')}** | {b_base.get('b2_roll5_mae')} | **{vb.get('gain_vs_baseline_2_mae'):+0.3f}** (Better if +) |
-| **Root Mean Squared Error (RMSE)** | **{va.get('model_rmse')}** | **{vb.get('model_rmse')}** | {b_base.get('b2_roll5_rmse')} | **{vb.get('gain_vs_baseline_2_rmse'):+0.3f}** (Better if +) |
-| **Spearman (With Ties)** | **{va.get('model_spearman_tied')}** | **{vb.get('model_spearman_tied')}** | {b_base.get('b2_roll5_spearman_tied')} | **{round(vb.get('model_spearman_tied', 0) - b_base.get('b2_roll5_spearman_tied', 0), 3):+0.3f}** |
-| **Spearman (Without Ties, Ordinal)** | **{va.get('model_spearman_noties')}** | **{vb.get('model_spearman_noties')}** | {b_base.get('b2_roll5_spearman_noties')} | **{round(vb.get('model_spearman_noties', 0) - b_base.get('b2_roll5_spearman_noties', 0), 3):+0.3f}** |
-| **Top-Decile Precision** | {va.get('top_decile_precision')} | {vb.get('top_decile_precision')} | - | - |
-| **Empirical 80% Coverage** | {va.get('coverage_80_pct')}% | {vb.get('coverage_80_pct')}% | Nominal: 80.0% | Coverage in [75%, 85%] |
+| **Observation Count** | {va.get("count", 0):,} | {vb.get("count", 0):,} | {vb.get("count", 0):,} | - |
+| **Mean Absolute Error (MAE)** | **{va.get("model_mae")}** | **{vb.get("model_mae")}** | {b_base.get("b2_roll5_mae")} | **{vb.get("gain_vs_baseline_2_mae"):+0.3f}** (Better if +) |
+| **Root Mean Squared Error (RMSE)** | **{va.get("model_rmse")}** | **{vb.get("model_rmse")}** | {b_base.get("b2_roll5_rmse")} | **{vb.get("gain_vs_baseline_2_rmse"):+0.3f}** (Better if +) |
+| **Spearman (With Ties)** | **{va.get("model_spearman_tied")}** | **{vb.get("model_spearman_tied")}** | {b_base.get("b2_roll5_spearman_tied")} | **{round(vb.get("model_spearman_tied", 0) - b_base.get("b2_roll5_spearman_tied", 0), 3):+0.3f}** |
+| **Spearman (Without Ties, Ordinal)** | **{va.get("model_spearman_noties")}** | **{vb.get("model_spearman_noties")}** | {b_base.get("b2_roll5_spearman_noties")} | **{round(vb.get("model_spearman_noties", 0) - b_base.get("b2_roll5_spearman_noties", 0), 3):+0.3f}** |
+| **Top-Decile Precision** | {va.get("top_decile_precision")} | {vb.get("top_decile_precision")} | - | - |
+| **Empirical 80% Coverage** | {va.get("coverage_80_pct")}% | {vb.get("coverage_80_pct")}% | Nominal: 80.0% | Coverage in [75%, 85%] |
 
 ---
 
 ## 2. Benchmark Correlations on Active Players (View b)
 | Feature / Predictor | Spearman (With Ties) | Spearman (Without Ties) | Target Correlation Status |
 | :--- | :--- | :--- | :--- |
-| **Model xP** | **{vb.get('model_spearman_tied')}** | **{vb.get('model_spearman_noties')}** | **Primary Evaluation Target** |
-| **Baseline 2: Rolling 5 Appearances** | {b_base.get('b2_roll5_spearman_tied')} | {b_base.get('b2_roll5_spearman_noties')} | Benchmark |
-| **Baseline 1: Season-to-Date Mean** | {b_base.get('b1_season_mean_spearman_tied')} | {b_base.get('b1_season_mean_spearman_noties')} | Benchmark (~0.2+) |
-| **Baseline 5: Previous GW Points (Lag 1)** | {b_base.get('b5_prev_gw_spearman_tied')} | {b_base.get('b5_prev_gw_spearman_noties')} | Benchmark (~0.2+) |
-| **Player Price / Value** | {b_base.get('b6_price_spearman_tied')} | {b_base.get('b6_price_spearman_noties')} | Benchmark (~0.2+) |
+| **Model xP** | **{vb.get("model_spearman_tied")}** | **{vb.get("model_spearman_noties")}** | **Primary Evaluation Target** |
+| **Baseline 2: Rolling 5 Appearances** | {b_base.get("b2_roll5_spearman_tied")} | {b_base.get("b2_roll5_spearman_noties")} | Benchmark |
+| **Baseline 1: Season-to-Date Mean** | {b_base.get("b1_season_mean_spearman_tied")} | {b_base.get("b1_season_mean_spearman_noties")} | Benchmark (~0.2+) |
+| **Baseline 5: Previous GW Points (Lag 1)** | {b_base.get("b5_prev_gw_spearman_tied")} | {b_base.get("b5_prev_gw_spearman_noties")} | Benchmark (~0.2+) |
+| **Player Price / Value** | {b_base.get("b6_price_spearman_tied")} | {b_base.get("b6_price_spearman_noties")} | Benchmark (~0.2+) |
 
 ---
 
 ## 3. Gameweek Block Bootstrap (Replacing Row-Level t-test)
-- **Number of Evaluated Gameweeks:** {boot.get('n_gameweeks', 0)}
-- **MAE Mean Gain vs Baseline 2:** {boot.get('mean_gain_mae')}
-- **MAE 95% Bootstrap CI:** [{boot.get('ci_95_mae', [0, 0])[0]}, {boot.get('ci_95_mae', [0, 0])[1]}]
-- **MAE Bootstrap p-value:** {boot.get('bootstrap_p_value_mae')}
-- **RMSE Mean Gain vs Baseline 2:** {boot.get('mean_gain_rmse')}
-- **RMSE 95% Bootstrap CI:** [{boot.get('ci_95_rmse', [0, 0])[0]}, {boot.get('ci_95_rmse', [0, 0])[1]}]
-- **RMSE Bootstrap p-value:** {boot.get('bootstrap_p_value_rmse')}
+- **Number of Evaluated Gameweeks:** {boot.get("n_gameweeks", 0)}
+- **MAE Mean Gain vs Baseline 2:** {boot.get("mean_gain_mae")}
+- **MAE 95% Bootstrap CI:** [{boot.get("ci_95_mae", [0, 0])[0]}, {boot.get("ci_95_mae", [0, 0])[1]}]
+- **MAE Bootstrap p-value:** {boot.get("bootstrap_p_value_mae")}
+- **RMSE Mean Gain vs Baseline 2:** {boot.get("mean_gain_rmse")}
+- **RMSE 95% Bootstrap CI:** [{boot.get("ci_95_rmse", [0, 0])[0]}, {boot.get("ci_95_rmse", [0, 0])[1]}]
+- **RMSE Bootstrap p-value:** {boot.get("bootstrap_p_value_rmse")}
 
 ---
 
@@ -648,16 +650,20 @@ class WalkForwardBacktester:
 | :--- | :--- | :--- |
 """
         for b_name, b_mae in vb.get("stratified_bucket_mae", {}).items():
-            r_range = "0 pts" if b_name == "zeros" else ("1-2 pts" if b_name == "blanks" else ("3-4 pts" if b_name == "tickers" else ">= 5 pts"))
+            r_range = (
+                "0 pts"
+                if b_name == "zeros"
+                else ("1-2 pts" if b_name == "blanks" else ("3-4 pts" if b_name == "tickers" else ">= 5 pts"))
+            )
             md += f"| **{b_name.capitalize()}** | {r_range} | {b_mae} |\n"
 
         md += f"""
 ---
 
 ## 6. Probabilistic Quantile Loss
-- **Pinball Loss (P10):** {va.get('pinball_loss_p10')}
-- **Pinball Loss (P50):** {va.get('pinball_loss_p50')}
-- **Pinball Loss (P90):** {va.get('pinball_loss_p90')}
+- **Pinball Loss (P10):** {va.get("pinball_loss_p10")}
+- **Pinball Loss (P50):** {va.get("pinball_loss_p50")}
+- **Pinball Loss (P90):** {va.get("pinball_loss_p90")}
 """
         return md
 

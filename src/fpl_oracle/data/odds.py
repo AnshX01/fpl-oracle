@@ -42,7 +42,7 @@ def devig_power(odds: list[float] | np.ndarray) -> np.ndarray:
         else:
             high = mid
 
-    true_p = raw_p**((low + high) / 2.0)
+    true_p = raw_p ** ((low + high) / 2.0)
     return true_p / np.sum(true_p)
 
 

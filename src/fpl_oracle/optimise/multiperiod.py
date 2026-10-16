@@ -51,9 +51,7 @@ class MultiPeriodConfig:
     w_bench_mean: float = 0.05
     lambda_bank: float = 0.05  # 0.05 xP per 1.0m (£0.1m = 0.005 xP)
     chip_week_ft_rule: Literal["preserve", "preserve_plus_one"] = "preserve"
-    pruning_limits: dict[str, int] = field(
-        default_factory=lambda: {"GKP": 15, "DEF": 45, "MID": 45, "FWD": 25}
-    )
+    pruning_limits: dict[str, int] = field(default_factory=lambda: {"GKP": 15, "DEF": 45, "MID": 45, "FWD": 25})
     enablers_count: int = 5
     ft_terminal_increments: tuple[float, float, float, float] = (1.0, 0.8, 0.6, 0.4)
     # Hit policy configuration (WI-2.5)
@@ -257,7 +255,7 @@ class MultiPeriodOptimizer:
         for idx, gw in enumerate(horizon_gws):
             df_gw = horizon_projections.get(gw, pool_df)
             gw_map = {int(r["element"]): float(r.get("expected_points", 0.0)) for _, r in df_gw.iterrows()}
-            disc = gamma ** idx
+            disc = gamma**idx
             for eid in all_elements:
                 hw_xp[int(eid)] += disc * gw_map.get(int(eid), 0.0)
 
@@ -354,9 +352,7 @@ class MultiPeriodOptimizer:
         buy_costs = {p: float(player_dict[p]["value"]) for p in players}
 
         squad_sell_map = {
-            int(r["element"]): float(
-                sell_price(int(round(float(r["purchase_price"]))), int(round(float(r["value"]))))
-            )
+            int(r["element"]): float(sell_price(int(round(float(r["purchase_price"]))), int(round(float(r["value"])))))
             for _, r in squad_df.iterrows()
         }
         sell_vals = {p: squad_sell_map.get(p, buy_costs[p]) for p in players}
@@ -425,8 +421,16 @@ class MultiPeriodOptimizer:
         tc = {t: pulp.LpVariable(f"tc_{t}", cat=pulp.LpBinary) for t in horizon_gws}
 
         # Chip product linearizations
-        tcc = {(p, t): pulp.LpVariable(f"tcc_{p}_{t}", lowBound=0, upBound=1, cat=pulp.LpContinuous) for t in horizon_gws for p in players}
-        bb_b = {(p, t): pulp.LpVariable(f"bb_b_{p}_{t}", lowBound=0, upBound=1, cat=pulp.LpContinuous) for t in horizon_gws for p in players}
+        tcc = {
+            (p, t): pulp.LpVariable(f"tcc_{p}_{t}", lowBound=0, upBound=1, cat=pulp.LpContinuous)
+            for t in horizon_gws
+            for p in players
+        }
+        bb_b = {
+            (p, t): pulp.LpVariable(f"bb_b_{p}_{t}", lowBound=0, upBound=1, cat=pulp.LpContinuous)
+            for t in horizon_gws
+            for p in players
+        }
 
         # Terminal FT variables
         v = [pulp.LpVariable(f"v_{k}", lowBound=0, upBound=1, cat=pulp.LpContinuous) for k in range(4)]
@@ -548,20 +552,14 @@ class MultiPeriodOptimizer:
 
                 # Budget
                 if idx == 0:
-                    prob += (
-                        bank_var[t]
-                        == init_bank
-                        + pulp.lpSum(sell_vals[p] * tout[p, t] for p in players)
-                        - pulp.lpSum(buy_costs[p] * tin[p, t] for p in players)
-                    )
+                    prob += bank_var[t] == init_bank + pulp.lpSum(
+                        sell_vals[p] * tout[p, t] for p in players
+                    ) - pulp.lpSum(buy_costs[p] * tin[p, t] for p in players)
                 else:
                     prev_t = horizon_gws[idx - 1]
-                    prob += (
-                        bank_var[t]
-                        == bank_var[prev_t]
-                        + pulp.lpSum(sell_vals[p] * tout[p, t] for p in players)
-                        - pulp.lpSum(buy_costs[p] * tin[p, t] for p in players)
-                    )
+                    prob += bank_var[t] == bank_var[prev_t] + pulp.lpSum(
+                        sell_vals[p] * tout[p, t] for p in players
+                    ) - pulp.lpSum(buy_costs[p] * tin[p, t] for p in players)
 
                 # Hits: h[t] >= u[t] - ft[t] - 15 * (wc[t] + fh[t])
                 prob += h[t] >= u[t] - ft_var[t] - 15 * (wc[t] + fh[t])
@@ -649,22 +647,34 @@ class MultiPeriodOptimizer:
                     if c_name == "wildcard":
                         prob += wc[f_gw] == 1
                         for t in horizon_gws:
-                            if t != f_gw and ((t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW) or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)):
+                            if t != f_gw and (
+                                (t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW)
+                                or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)
+                            ):
                                 prob += wc[t] == 0
                     elif c_name == "freehit":
                         prob += fh[f_gw] == 1
                         for t in horizon_gws:
-                            if t != f_gw and ((t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW) or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)):
+                            if t != f_gw and (
+                                (t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW)
+                                or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)
+                            ):
                                 prob += fh[t] == 0
                     elif c_name == "bboost":
                         prob += bb[f_gw] == 1
                         for t in horizon_gws:
-                            if t != f_gw and ((t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW) or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)):
+                            if t != f_gw and (
+                                (t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW)
+                                or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)
+                            ):
                                 prob += bb[t] == 0
                     elif c_name == "3xc":
                         prob += tc[f_gw] == 1
                         for t in horizon_gws:
-                            if t != f_gw and ((t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW) or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)):
+                            if t != f_gw and (
+                                (t <= SET_1_LAST_GW and f_gw <= SET_1_LAST_GW)
+                                or (t > SET_1_LAST_GW and f_gw > SET_1_LAST_GW)
+                            ):
                                 prob += tc[t] == 0
         elif forced_w1_chip is not None:
             chip_name = forced_w1_chip.lower()
@@ -707,7 +717,7 @@ class MultiPeriodOptimizer:
         obj_terms = []
 
         for idx, t in enumerate(horizon_gws):
-            discount = gamma ** idx
+            discount = gamma**idx
             df_gw = horizon_projections.get(t, player_pool_df)
             gw_xp = {int(r["element"]): float(r.get("expected_points", 0.0)) for _, r in df_gw.iterrows()}
 
@@ -722,7 +732,7 @@ class MultiPeriodOptimizer:
 
         # Terminal FT valuation
         ft_term = pulp.lpSum(w * var for w, var in zip(v_weights, v, strict=True))
-        obj_terms.append((gamma ** H) * ft_term)
+        obj_terms.append((gamma**H) * ft_term)
 
         # Micro-incentive for maintaining maximum available banked FTs across horizon
         obj_terms.append(1e-4 * pulp.lpSum(ft_var[t] for t in horizon_gws + [horizon_gws[-1] + 1]))
@@ -883,7 +893,7 @@ class MultiPeriodOptimizer:
         disc_bench_xp = 0.0
         disc_hits_cost = 0.0
         for idx, t in enumerate(horizon_gws):
-            discount = gamma ** idx
+            discount = gamma**idx
             df_gw = horizon_projections.get(t, player_pool_df)
             gw_xp = {int(r["element"]): float(r.get("expected_points", 0.0)) for _, r in df_gw.iterrows()}
             l_val = sum(gw_xp.get(p, 0.0) for p in players if s[p, t].varValue is not None and s[p, t].varValue > 0.5)
@@ -891,7 +901,9 @@ class MultiPeriodOptimizer:
             if tc[t].varValue is not None and tc[t].varValue > 0.5:
                 c_val *= 2.0
             b_mult = 1.0 if (bb[t].varValue is not None and bb[t].varValue > 0.5) else w_bench
-            b_val = b_mult * sum(gw_xp.get(p, 0.0) for p in players if b[p, t].varValue is not None and b[p, t].varValue > 0.5)
+            b_val = b_mult * sum(
+                gw_xp.get(p, 0.0) for p in players if b[p, t].varValue is not None and b[p, t].varValue > 0.5
+            )
             h_val = float(HIT_COST_POINTS) * float(h[t].varValue or 0.0)
 
             disc_lineup_xp += discount * l_val
@@ -899,7 +911,7 @@ class MultiPeriodOptimizer:
             disc_bench_xp += discount * b_val
             disc_hits_cost += discount * h_val
 
-        term_ft_val = (gamma ** H) * sum(w * float(var.varValue or 0.0) for w, var in zip(v_weights, v, strict=True))
+        term_ft_val = (gamma**H) * sum(w * float(var.varValue or 0.0) for w, var in zip(v_weights, v, strict=True))
         micro_ft_val = 1e-4 * sum(float(ft_var[t].varValue or 0.0) for t in horizon_gws + [horizon_gws[-1] + 1])
         term_bank_val = self.config.lambda_bank * (float(bank_var[horizon_gws[-1]].varValue or 0.0) / 10.0)
 
@@ -1211,10 +1223,7 @@ class MultiPeriodOptimizer:
         top_cand = candidate_plans[0]
 
         # Plan stability threshold (WI-2.5)
-        if (
-            top_cand["plan_type"] != "ROLL_TRANSFER"
-            and top_cand["expected_gain"] < stability_threshold
-        ):
+        if top_cand["plan_type"] != "ROLL_TRANSFER" and top_cand["expected_gain"] < stability_threshold:
             rec_plan = cand_dict_roll
             rec_plan["recommendation_summary"] = (
                 f"Roll transfer recommended. Top move (+{top_cand['expected_gain']:.2f} xP) "
@@ -1384,15 +1393,24 @@ class MultiPeriodOptimizer:
                 is_legal = True
                 if c == "freehit" and g == 1:
                     is_legal = False
-                elif c == "freehit" and g == 20 and (
-                    (previous_chip and previous_chip.lower() == "freehit") or unconstrained_schedule.get(19) == "freehit"
+                elif (
+                    c == "freehit"
+                    and g == 20
+                    and (
+                        (previous_chip and previous_chip.lower() == "freehit")
+                        or unconstrained_schedule.get(19) == "freehit"
+                    )
                 ):
                     is_legal = False
                 elif t0 <= SET_1_LAST_GW and g > SET_1_LAST_GW:
                     is_legal = False
 
                 f_ctx = extract_gameweek_fixture_context(g, fixtures)
-                ctx_str = "dgw" if f_ctx["has_dgw"] else ("bgw" if f_ctx["has_bgw"] else ("congested" if f_ctx["is_congested"] else "normal"))
+                ctx_str = (
+                    "dgw"
+                    if f_ctx["has_dgw"]
+                    else ("bgw" if f_ctx["has_bgw"] else ("congested" if f_ctx["is_congested"] else "normal"))
+                )
                 set_idx = 1 if g <= SET_1_LAST_GW else 2
                 threshold = get_chip_threshold(c, g, set_idx=set_idx, context=ctx_str, use_legacy=use_legacy_thresholds)
 
@@ -1501,7 +1519,8 @@ class MultiPeriodOptimizer:
                 if other_chips:
                     best_other = max(other_chips, key=lambda c2: g_gains[c2])
                     best_other_outside = max(
-                        [w["expected_gain"] for w in chip_evals[best_other] if w["gameweek"] != g and w["is_legal"]] or [0.0]
+                        [w["expected_gain"] for w in chip_evals[best_other] if w["gameweek"] != g and w["is_legal"]]
+                        or [0.0]
                     )
                     opp = max(0.0, round(g_gains[best_other] - best_other_outside, 2))
                 else:
@@ -1550,7 +1569,9 @@ class MultiPeriodOptimizer:
             # Assign latest sensible GWs ensuring 1 chip/GW
             sorted_by_peak = sorted(
                 s1_unused,
-                key=lambda c: max((w["expected_gain"] for w in chip_evals.get(c, []) if w["gameweek"] <= SET_1_LAST_GW), default=0.0),
+                key=lambda c: max(
+                    (w["expected_gain"] for w in chip_evals.get(c, []) if w["gameweek"] <= SET_1_LAST_GW), default=0.0
+                ),
                 reverse=True,
             )
             latest_sensible: dict[str, int] = {}
@@ -1558,7 +1579,9 @@ class MultiPeriodOptimizer:
                 latest_sensible[c] = min(SET_1_LAST_GW, max(t0, SET_1_LAST_GW - rank))
 
             exp_losses = {
-                c: max((w["expected_gain"] for w in chip_evals.get(c, []) if w["gameweek"] <= SET_1_LAST_GW), default=0.0)
+                c: max(
+                    (w["expected_gain"] for w in chip_evals.get(c, []) if w["gameweek"] <= SET_1_LAST_GW), default=0.0
+                )
                 for c in s1_unused
             }
             total_risk = round(sum(exp_losses.values()), 1)

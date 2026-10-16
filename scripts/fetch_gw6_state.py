@@ -35,7 +35,9 @@ print("\nHist Status:", r_hist.status_code)
 hist_data = r_hist.json()
 for gw in hist_data.get("current", []):
     if gw["event"] in [4, 5, 6]:
-        print(f"GW{gw['event']}: pts={gw['points']}, total_pts={gw['total_points']}, rank={gw['overall_rank']}, bank={gw['bank']}, val={gw['value']}, transfers={gw['event_transfers']}, cost={gw['event_transfers_cost']}")
+        print(
+            f"GW{gw['event']}: pts={gw['points']}, total_pts={gw['total_points']}, rank={gw['overall_rank']}, bank={gw['bank']}, val={gw['value']}, transfers={gw['event_transfers']}, cost={gw['event_transfers_cost']}"
+        )
 print("Chips used in history:", hist_data.get("chips"))
 
 # 4. Standings

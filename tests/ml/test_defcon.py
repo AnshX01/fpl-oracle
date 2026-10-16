@@ -16,7 +16,9 @@ def _build_synthetic_defcon_data(n: int = 400) -> tuple[pd.DataFrame, pd.DataFra
     minutes = np.random.uniform(0, 90, size=n)
 
     # Base actions: DEF/MID generate more actions conditional on minutes
-    base_rate = np.where(positions == "DEF", 0.08, np.where(positions == "MID", 0.07, np.where(positions == "FWD", 0.03, 0.0)))
+    base_rate = np.where(
+        positions == "DEF", 0.08, np.where(positions == "MID", 0.07, np.where(positions == "FWD", 0.03, 0.0))
+    )
     mean_actions = minutes * base_rate
     actions = np.random.poisson(mean_actions).astype(float)
     actions[positions == "GKP"] = 0.0
@@ -29,22 +31,26 @@ def _build_synthetic_defcon_data(n: int = 400) -> tuple[pd.DataFrame, pd.DataFra
     thresh = np.where(positions == "DEF", 10.0, np.where(np.isin(positions, ["MID", "FWD"]), 12.0, 9999.0))
     target_defcon = ((actions >= thresh) & (positions != "GKP")).astype(float)
 
-    X = pd.DataFrame({
-        "roll_minutes_5": minutes,
-        "pos_DEF": pos_def,
-        "pos_MID": pos_mid,
-        "pos_FWD": pos_fwd,
-        "pos_GKP": pos_gkp,
-        "was_home": np.random.binomial(1, 0.5, size=n).astype(float),
-        "is_2026_27": np.random.binomial(1, 0.5, size=n).astype(float),
-        "opp_strength_defence": np.random.uniform(1.0, 1.8, size=n),
-        "implied_opp_xG": np.random.uniform(0.8, 2.2, size=n),
-    })
+    X = pd.DataFrame(
+        {
+            "roll_minutes_5": minutes,
+            "pos_DEF": pos_def,
+            "pos_MID": pos_mid,
+            "pos_FWD": pos_fwd,
+            "pos_GKP": pos_gkp,
+            "was_home": np.random.binomial(1, 0.5, size=n).astype(float),
+            "is_2026_27": np.random.binomial(1, 0.5, size=n).astype(float),
+            "opp_strength_defence": np.random.uniform(1.0, 1.8, size=n),
+            "implied_opp_xG": np.random.uniform(0.8, 2.2, size=n),
+        }
+    )
 
-    Y = pd.DataFrame({
-        "target_defcon": target_defcon,
-        "target_defcon_actions": actions,
-    })
+    Y = pd.DataFrame(
+        {
+            "target_defcon": target_defcon,
+            "target_defcon_actions": actions,
+        }
+    )
 
     return X, Y
 

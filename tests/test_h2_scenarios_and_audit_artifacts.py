@@ -12,64 +12,72 @@ def create_base_mock_pool():
     rows = []
     # 4 GKP
     for i in range(1, 5):
-        rows.append({
-            "element": i,
-            "web_name": f"GKP_{i}",
-            "position": "GKP",
-            "team": (i % 20) + 1,
-            "value": 50,
-            "purchase_price": 50,
-            "selling_price": 50,
-            "expected_points": 4.5 - (i * 0.2),
-            "p10": 2.0,
-            "p90": 6.5,
-            "chance_of_playing_next_round": 100,
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"GKP_{i}",
+                "position": "GKP",
+                "team": (i % 20) + 1,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": 4.5 - (i * 0.2),
+                "p10": 2.0,
+                "p90": 6.5,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 10 DEF
     for i in range(5, 15):
-        rows.append({
-            "element": i,
-            "web_name": f"DEF_{i}",
-            "position": "DEF",
-            "team": (i % 20) + 1,
-            "value": 50,
-            "purchase_price": 50,
-            "selling_price": 50,
-            "expected_points": 5.0 - (i * 0.1),
-            "p10": 1.5,
-            "p90": 8.0,
-            "chance_of_playing_next_round": 100,
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"DEF_{i}",
+                "position": "DEF",
+                "team": (i % 20) + 1,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": 5.0 - (i * 0.1),
+                "p10": 1.5,
+                "p90": 8.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 10 MID
     for i in range(15, 25):
-        rows.append({
-            "element": i,
-            "web_name": f"MID_{i}",
-            "position": "MID",
-            "team": (i % 20) + 1,
-            "value": 65,
-            "purchase_price": 65,
-            "selling_price": 65,
-            "expected_points": 6.5 - (i * 0.15),
-            "p10": 2.0,
-            "p90": 10.0,
-            "chance_of_playing_next_round": 100,
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"MID_{i}",
+                "position": "MID",
+                "team": (i % 20) + 1,
+                "value": 65,
+                "purchase_price": 65,
+                "selling_price": 65,
+                "expected_points": 6.5 - (i * 0.15),
+                "p10": 2.0,
+                "p90": 10.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 6 FWD
     for i in range(25, 31):
-        rows.append({
-            "element": i,
-            "web_name": f"FWD_{i}",
-            "position": "FWD",
-            "team": (i % 20) + 1,
-            "value": 75,
-            "purchase_price": 75,
-            "selling_price": 75,
-            "expected_points": 7.5 - (i * 0.15),
-            "p10": 2.0,
-            "p90": 12.0,
-            "chance_of_playing_next_round": 100,
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"FWD_{i}",
+                "position": "FWD",
+                "team": (i % 20) + 1,
+                "value": 75,
+                "purchase_price": 75,
+                "selling_price": 75,
+                "expected_points": 7.5 - (i * 0.15),
+                "p10": 2.0,
+                "p90": 12.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     return pd.DataFrame(rows)
 
 

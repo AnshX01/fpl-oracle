@@ -8,10 +8,22 @@ from fpl_oracle.chips.planner import ChipPlanner
 @pytest.fixture
 def mock_squad():
     squad_rows = (
-        [{"element": i, "web_name": f"GKP_{i}", "position": "GKP", "expected_points": 3.0, "is_starter": i == 1} for i in range(1, 3)] +
-        [{"element": i, "web_name": f"DEF_{i}", "position": "DEF", "expected_points": 3.0, "is_starter": i <= 5} for i in range(3, 8)] +
-        [{"element": i, "web_name": f"MID_{i}", "position": "MID", "expected_points": 3.5, "is_starter": i <= 12} for i in range(8, 13)] +
-        [{"element": i, "web_name": f"FWD_{i}", "position": "FWD", "expected_points": 3.0, "is_starter": i <= 14} for i in range(13, 16)]
+        [
+            {"element": i, "web_name": f"GKP_{i}", "position": "GKP", "expected_points": 3.0, "is_starter": i == 1}
+            for i in range(1, 3)
+        ]
+        + [
+            {"element": i, "web_name": f"DEF_{i}", "position": "DEF", "expected_points": 3.0, "is_starter": i <= 5}
+            for i in range(3, 8)
+        ]
+        + [
+            {"element": i, "web_name": f"MID_{i}", "position": "MID", "expected_points": 3.5, "is_starter": i <= 12}
+            for i in range(8, 13)
+        ]
+        + [
+            {"element": i, "web_name": f"FWD_{i}", "position": "FWD", "expected_points": 3.0, "is_starter": i <= 14}
+            for i in range(13, 16)
+        ]
     )
     return pd.DataFrame(squad_rows)
 
@@ -67,7 +79,9 @@ def test_gw19_forces_chip_usage_on_sub_threshold_positive_gain(mock_squad, boots
 
     assert "set_1_warning" in res
     assert res["set_1_warning"] is not None
-    assert res["recommend_chip_this_gw"] is True, "Sub-threshold positive gain chip was NOT recommended at GW19 deadline!"
+    assert res["recommend_chip_this_gw"] is True, (
+        "Sub-threshold positive gain chip was NOT recommended at GW19 deadline!"
+    )
     tc_plan = next(c for c in res["chip_plan_table"] if c["code"] == "3xc")
     assert tc_plan["is_recommended_this_gw"] is True
     assert tc_plan["recommendation_threshold"] == 0.0

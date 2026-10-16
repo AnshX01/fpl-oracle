@@ -261,7 +261,11 @@ def test_progress_tracks_actual_full_chip_checks_without_changing_plan():
     import json
 
     def serialize(plan):
-        return json.dumps(plan, sort_keys=True, default=lambda value: value.to_dict("records") if isinstance(value, pd.DataFrame) else str(value))
+        return json.dumps(
+            plan,
+            sort_keys=True,
+            default=lambda value: value.to_dict("records") if isinstance(value, pd.DataFrame) else str(value),
+        )
 
     assert serialize(baseline["recommended_plan"]) == serialize(observed["recommended_plan"])
     assert stages == [

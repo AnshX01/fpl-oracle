@@ -392,7 +392,12 @@ def test_10_historical_states_reproduce_sensible_choices_and_no_illegal_sequence
         # 1. Normal GW6: healthy core -> defer
         {"current_gw": 6, "squad_df": base_squad, "projections": {gw: base_pool for gw in range(6, 11)}},
         # 2. Blank GW8: FA Cup / League Cup blank -> Free Hit viable
-        {"current_gw": 8, "squad_df": base_squad, "projections": {gw: base_pool for gw in range(8, 13)}, "fixtures": [Fixture(id=1, code=1, event=8, team_h=1, team_a=2)]},
+        {
+            "current_gw": 8,
+            "squad_df": base_squad,
+            "projections": {gw: base_pool for gw in range(8, 13)},
+            "fixtures": [Fixture(id=1, code=1, event=8, team_h=1, team_a=2)],
+        },
         # 3. Congested winter period GW15 (<4 days turnaround)
         {"current_gw": 15, "squad_df": base_squad, "projections": {gw: base_pool for gw in range(15, 20)}},
         # 4. GW18: One week before Set 1 hard deadline -> urgent deployment / lowered threshold

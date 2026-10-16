@@ -7,18 +7,32 @@ import pandas as pd
 
 from fpl_oracle.optimise.transfers import TransferOptimizer
 
-rng=np.random.default_rng(90321)
-rows=[]
-positions=['GKP']*2+['DEF']*5+['MID']*5+['FWD']*3
+rng = np.random.default_rng(90321)
+rows = []
+positions = ["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3
 # A legal owned squad and a genuine market with varied costs and projections.
 for i in range(60):
-    pos=positions[i%15]
-    xp=float(rng.uniform(1,9))
-    rows.append(dict(element=i+1,position=pos,team=i//3%20+1,value=int(rng.integers(40,80)),expected_points=xp,p10=xp*.4,p90=xp*1.8,web_name=f'P{i+1}'))
-base=pd.DataFrame(rows)
+    pos = positions[i % 15]
+    xp = float(rng.uniform(1, 9))
+    rows.append(
+        dict(
+            element=i + 1,
+            position=pos,
+            team=i // 3 % 20 + 1,
+            value=int(rng.integers(40, 80)),
+            expected_points=xp,
+            p10=xp * 0.4,
+            p90=xp * 1.8,
+            web_name=f"P{i + 1}",
+        )
+    )
+base = pd.DataFrame(rows)
 squad = base.iloc[:15].copy()
 squad["purchase_price"] = squad.value
-pools = {g: base.assign(expected_points=base.expected_points * np.random.default_rng(g).uniform(0.7, 1.4, 60)) for g in [18, 19]}
+pools = {
+    g: base.assign(expected_points=base.expected_points * np.random.default_rng(g).uniform(0.7, 1.4, 60))
+    for g in [18, 19]
+}
 start = time.monotonic()
 result = TransferOptimizer().evaluate_joint_transfer_and_chip_plan(
     current_squad_df=squad,

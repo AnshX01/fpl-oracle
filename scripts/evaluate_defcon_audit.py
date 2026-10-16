@@ -44,7 +44,7 @@ def run_defcon_audit():
 
     # --- ITEM 3: DEF POINTS OVER-PREDICTION GATE (GW29-38) ---
     print("\n--- ITEM 3: DEF PREDICTED VS ACTUAL POINTS GATE (GW29-38) ---")
-    def_mask = (pos == "DEF")
+    def_mask = pos == "DEF"
     def_pred_pts = float(np.sum(probs[def_mask] * 2.0))
     def_actual_pts = float(np.sum(y_true[def_mask] * 2.0))
     def_error_pct = abs(def_pred_pts - def_actual_pts) / def_actual_pts * 100.0
@@ -59,25 +59,39 @@ def run_defcon_audit():
     # --- ITEM 1: FULL RELIABILITY TABLES ACROSS ALL BINS & POSITIONS ---
     print("\n--- ITEM 1: FULL RELIABILITY TABLES (ALL BINS & POSITIONS) ---")
     bins = [0.0, 0.025, 0.05, 0.10, 0.20, 0.35, 0.50, 1.0]
-    bin_labels = ["[0.0, 0.025]", "(0.025, 0.05]", "(0.05, 0.10]", "(0.10, 0.20]", "(0.20, 0.35]", "(0.35, 0.50]", ">0.50"]
+    bin_labels = [
+        "[0.0, 0.025]",
+        "(0.025, 0.05]",
+        "(0.05, 0.10]",
+        "(0.10, 0.20]",
+        "(0.20, 0.35]",
+        "(0.35, 0.50]",
+        ">0.50",
+    ]
 
-    df_eval = pd.DataFrame({
-        "pred": probs,
-        "actual": y_true,
-        "pos": pos,
-        "mins": mins,
-        "roll_mins": roll_mins,
-    })
+    df_eval = pd.DataFrame(
+        {
+            "pred": probs,
+            "actual": y_true,
+            "pos": pos,
+            "mins": mins,
+            "roll_mins": roll_mins,
+        }
+    )
     df_eval["bin"] = pd.cut(df_eval["pred"], bins=bins, labels=bin_labels, include_lowest=True)
 
     for p in ["DEF", "MID", "FWD"]:
         sub_p = df_eval[df_eval["pos"] == p]
         print(f"\nReliability Table for Position: {p} (Total N={len(sub_p)}):")
-        rel = sub_p.groupby("bin", observed=False).agg(
-            count=("actual", "count"),
-            mean_pred=("pred", "mean"),
-            mean_actual=("actual", "mean"),
-        ).reset_index()
+        rel = (
+            sub_p.groupby("bin", observed=False)
+            .agg(
+                count=("actual", "count"),
+                mean_pred=("pred", "mean"),
+                mean_actual=("actual", "mean"),
+            )
+            .reset_index()
+        )
         rel["diff"] = rel["mean_pred"] - rel["mean_actual"]
         print(rel.to_string(index=False))
 
@@ -158,17 +172,19 @@ def run_defcon_audit():
             p_defc = 0.22 if p_info["val"] >= 6.0 else (0.18 if p_info["val"] >= 4.5 else 0.12)
         elif pos_code == "MID":
             p_defc = 0.04 if p_info["val"] >= 10.0 else (0.06 if p_info["val"] >= 5.0 else 0.02)
-        else: # FWD
+        else:  # FWD
             p_defc = 0.01
 
         exp_pts = round(p_defc * 2.0, 3)
-        squad_rows.append({
-            "Player": p_info["web_name"],
-            "Position": pos_code,
-            "Price": f"£{p_info['val']}m",
-            "P(DefCon)": f"{p_defc:.3f}",
-            "DefCon xP": f"+{exp_pts:.2f} pts",
-        })
+        squad_rows.append(
+            {
+                "Player": p_info["web_name"],
+                "Position": pos_code,
+                "Price": f"£{p_info['val']}m",
+                "P(DefCon)": f"{p_defc:.3f}",
+                "DefCon xP": f"+{exp_pts:.2f} pts",
+            }
+        )
 
     print("GW6 Squad Real DefCon xP Component Breakdown (Reconciling 0.07 constant):")
     df_squad = pd.DataFrame(squad_rows)

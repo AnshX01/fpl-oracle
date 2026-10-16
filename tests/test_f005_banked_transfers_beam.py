@@ -18,26 +18,116 @@ def test_beam_finds_optimal_3_transfer_hit_free_plan():
     rows = []
     # 2 GKP
     for i in [1, 2]:
-        rows.append({"element": i, "web_name": f"GKP_{i}", "position": "GKP", "team": 1, "value": 50, "purchase_price": 50, "selling_price": 50, "expected_points": 4.0, "chance_of_playing_next_round": 100})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"GKP_{i}",
+                "position": "GKP",
+                "team": 1,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": 4.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 5 DEF
     for i in range(3, 8):
-        rows.append({"element": i, "web_name": f"DEF_{i}", "position": "DEF", "team": 2, "value": 50, "purchase_price": 50, "selling_price": 50, "expected_points": 4.0, "chance_of_playing_next_round": 100})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"DEF_{i}",
+                "position": "DEF",
+                "team": 2,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": 4.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 5 MID in squad: elements 8, 9, 10 are weak (xP = 1.0), elements 11, 12 are normal (xP = 5.0)
     for i in [8, 9, 10]:
-        rows.append({"element": i, "web_name": f"MID_{i}", "position": "MID", "team": 3, "value": 60, "purchase_price": 60, "selling_price": 60, "expected_points": 1.0, "chance_of_playing_next_round": 100})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"MID_{i}",
+                "position": "MID",
+                "team": 3,
+                "value": 60,
+                "purchase_price": 60,
+                "selling_price": 60,
+                "expected_points": 1.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     for i in [11, 12]:
-        rows.append({"element": i, "web_name": f"MID_{i}", "position": "MID", "team": 4, "value": 60, "purchase_price": 60, "selling_price": 60, "expected_points": 5.0, "chance_of_playing_next_round": 100})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"MID_{i}",
+                "position": "MID",
+                "team": 4,
+                "value": 60,
+                "purchase_price": 60,
+                "selling_price": 60,
+                "expected_points": 5.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
     # 3 FWD
     for i in range(13, 16):
-        rows.append({"element": i, "web_name": f"FWD_{i}", "position": "FWD", "team": 5, "value": 70, "purchase_price": 70, "selling_price": 70, "expected_points": 5.0, "chance_of_playing_next_round": 100})
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"FWD_{i}",
+                "position": "FWD",
+                "team": 5,
+                "value": 70,
+                "purchase_price": 70,
+                "selling_price": 70,
+                "expected_points": 5.0,
+                "chance_of_playing_next_round": 100,
+            }
+        )
 
     squad = pd.DataFrame(rows).copy()
 
     # Targets in pool: 3 strong MIDs (elements 20, 21, 22) each with 8.0 xP and cost 60
     targets = [
-        {"element": 20, "web_name": "MID_STAR_1", "position": "MID", "team": 6, "value": 60, "purchase_price": 60, "selling_price": 60, "expected_points": 8.0, "chance_of_playing_next_round": 100},
-        {"element": 21, "web_name": "MID_STAR_2", "position": "MID", "team": 7, "value": 60, "purchase_price": 60, "selling_price": 60, "expected_points": 8.0, "chance_of_playing_next_round": 100},
-        {"element": 22, "web_name": "MID_STAR_3", "position": "MID", "team": 8, "value": 60, "purchase_price": 60, "selling_price": 60, "expected_points": 8.0, "chance_of_playing_next_round": 100},
+        {
+            "element": 20,
+            "web_name": "MID_STAR_1",
+            "position": "MID",
+            "team": 6,
+            "value": 60,
+            "purchase_price": 60,
+            "selling_price": 60,
+            "expected_points": 8.0,
+            "chance_of_playing_next_round": 100,
+        },
+        {
+            "element": 21,
+            "web_name": "MID_STAR_2",
+            "position": "MID",
+            "team": 7,
+            "value": 60,
+            "purchase_price": 60,
+            "selling_price": 60,
+            "expected_points": 8.0,
+            "chance_of_playing_next_round": 100,
+        },
+        {
+            "element": 22,
+            "web_name": "MID_STAR_3",
+            "position": "MID",
+            "team": 8,
+            "value": 60,
+            "purchase_price": 60,
+            "selling_price": 60,
+            "expected_points": 8.0,
+            "chance_of_playing_next_round": 100,
+        },
     ]
     pool = pd.concat([squad, pd.DataFrame(targets)], ignore_index=True)
 

@@ -6,14 +6,15 @@ from fpl_oracle.league.montecarlo import monte_carlo_simulator
 
 @pytest.fixture
 def base_squad_and_projections():
-    user_squad = pd.DataFrame([
-        {"element": i, "position": "MID", "team": 1, "expected_points": 5.0, "variance": 4.0, "is_starter": True}
-        for i in range(1, 16)
-    ])
-    projections = pd.DataFrame([
-        {"element": i, "position": "MID", "team": 1, "expected_points": 5.0, "variance": 4.0}
-        for i in range(1, 30)
-    ])
+    user_squad = pd.DataFrame(
+        [
+            {"element": i, "position": "MID", "team": 1, "expected_points": 5.0, "variance": 4.0, "is_starter": True}
+            for i in range(1, 16)
+        ]
+    )
+    projections = pd.DataFrame(
+        [{"element": i, "position": "MID", "team": 1, "expected_points": 5.0, "variance": 4.0} for i in range(1, 30)]
+    )
     return user_squad, projections
 
 
@@ -90,9 +91,7 @@ def test_symmetric_swap_of_user_and_rival(base_squad_and_projections):
     F-002: Swapping user and rival should give symmetric results.
     """
     user_squad, projections = base_squad_and_projections
-    rival_squad = [
-        {"element": i, "is_starter": True} for i in range(1, 12)
-    ]
+    rival_squad = [{"element": i, "is_starter": True} for i in range(1, 12)]
 
     # Sim 1: User A vs Rival B
     res1 = monte_carlo_simulator.simulate_league(
@@ -125,23 +124,42 @@ def test_win_probabilities_sum_to_100_percent(base_squad_and_projections):
     _, projections = base_squad_and_projections
 
     # 3 distinct squads
-    squad_a = pd.DataFrame([
-        {"element": i, "position": "MID", "team": 1, "expected_points": 6.0, "variance": 3.0, "is_starter": True}
-        for i in range(1, 12)
-    ])
-    squad_b = pd.DataFrame([
-        {"element": i + 10, "position": "MID", "team": 1, "expected_points": 5.5, "variance": 4.0, "is_starter": True}
-        for i in range(1, 12)
-    ])
-    squad_c = pd.DataFrame([
-        {"element": i + 20, "position": "MID", "team": 1, "expected_points": 5.0, "variance": 5.0, "is_starter": True}
-        for i in range(1, 12)
-    ])
+    squad_a = pd.DataFrame(
+        [
+            {"element": i, "position": "MID", "team": 1, "expected_points": 6.0, "variance": 3.0, "is_starter": True}
+            for i in range(1, 12)
+        ]
+    )
+    squad_b = pd.DataFrame(
+        [
+            {
+                "element": i + 10,
+                "position": "MID",
+                "team": 1,
+                "expected_points": 5.5,
+                "variance": 4.0,
+                "is_starter": True,
+            }
+            for i in range(1, 12)
+        ]
+    )
+    squad_c = pd.DataFrame(
+        [
+            {
+                "element": i + 20,
+                "position": "MID",
+                "team": 1,
+                "expected_points": 5.0,
+                "variance": 5.0,
+                "is_starter": True,
+            }
+            for i in range(1, 12)
+        ]
+    )
 
-    proj_full = pd.DataFrame([
-        {"element": i, "position": "MID", "team": 1, "expected_points": 5.5, "variance": 4.0}
-        for i in range(1, 40)
-    ])
+    proj_full = pd.DataFrame(
+        [{"element": i, "position": "MID", "team": 1, "expected_points": 5.5, "variance": 4.0} for i in range(1, 40)]
+    )
 
     # Participant A as user
     res_a = monte_carlo_simulator.simulate_league(
@@ -183,9 +201,6 @@ def test_win_probabilities_sum_to_100_percent(base_squad_and_projections):
     )
 
     total_prob = (
-        res_a["user_win_probability_pct"]
-        + res_b["user_win_probability_pct"]
-        + res_c["user_win_probability_pct"]
+        res_a["user_win_probability_pct"] + res_b["user_win_probability_pct"] + res_c["user_win_probability_pct"]
     )
     assert 98.0 <= total_prob <= 102.0, f"Expected total win probability ~100%, got {total_prob}%"
-

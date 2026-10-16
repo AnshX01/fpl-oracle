@@ -42,20 +42,22 @@ def synthetic_season_data():
             haul = np.random.binomial(1, cfg["haul_prob"]) * np.random.exponential(cfg["haul_val"] / 2.0)
             actual = max(0.0, xp + base_noise + haul)
 
-            records.append({
-                "round": gw,
-                "position": pos,
-                "expected_points": xp,
-                "roll_points_5": xp + np.random.normal(0, 0.5),
-                "roll_starts_ratio_5": np.random.choice([1.0, 0.8, 0.6]),
-                "opponent_difficulty": np.random.choice([2, 3, 4, 5]),
-                "was_home": np.random.choice([0, 1]),
-                "is_home": np.random.choice([0, 1]),
-                "value": np.random.uniform(45, 120),
-                "chance_of_playing": 100.0,
-                "actual_points": round(actual, 1),
-                "target_points": round(actual, 1),
-            })
+            records.append(
+                {
+                    "round": gw,
+                    "position": pos,
+                    "expected_points": xp,
+                    "roll_points_5": xp + np.random.normal(0, 0.5),
+                    "roll_starts_ratio_5": np.random.choice([1.0, 0.8, 0.6]),
+                    "opponent_difficulty": np.random.choice([2, 3, 4, 5]),
+                    "was_home": np.random.choice([0, 1]),
+                    "is_home": np.random.choice([0, 1]),
+                    "value": np.random.uniform(45, 120),
+                    "chance_of_playing": 100.0,
+                    "actual_points": round(actual, 1),
+                    "target_points": round(actual, 1),
+                }
+            )
 
     df = pd.DataFrame(records)
     # Chronological split: GW1-20 train, GW21-28 calibration, GW29-38 test
@@ -150,11 +152,13 @@ def test_cqr_invariants_monotonicity_and_inactive_zeroing():
     """Verify p10 <= p90, non-negative floor, and inactive player zeroing."""
     cqr = ConformalQuantileRegressor()
     n = 20
-    X = pd.DataFrame({
-        "expected_points": np.linspace(1.0, 8.0, n),
-        "roll_points_5": np.linspace(1.0, 8.0, n),
-        "position": ["MID"] * n,
-    })
+    X = pd.DataFrame(
+        {
+            "expected_points": np.linspace(1.0, 8.0, n),
+            "roll_points_5": np.linspace(1.0, 8.0, n),
+            "position": ["MID"] * n,
+        }
+    )
     pos_labels = ["MID"] * n
 
     # Half active, half inactive
@@ -276,5 +280,3 @@ def test_cqr_real_walk_forward_coverage_gate():
         pos_mask = (df_played["position"] == pos).values
         cov_pos = float(np.mean((y[pos_mask] >= p10[pos_mask]) & (y[pos_mask] <= p90[pos_mask])) * 100.0)
         assert 70.0 <= cov_pos <= 85.0, f"Position {pos} coverage {cov_pos:.1f}% outside reasonable bounds"
-
-

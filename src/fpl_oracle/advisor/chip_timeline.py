@@ -181,9 +181,9 @@ def simulate_staged_squad_at_gw(
         worst_pos = worst_elem.get("position", "MID")
         # Find highest xP available market replacement
         owned_ids = set(squad["element"].astype(int))
-        cands = pool_w[(pool_w["position"] == worst_pos) & (~pool_w["element"].astype(int).isin(owned_ids))].sort_values(
-            by="expected_points", ascending=False
-        )
+        cands = pool_w[
+            (pool_w["position"] == worst_pos) & (~pool_w["element"].astype(int).isin(owned_ids))
+        ].sort_values(by="expected_points", ascending=False)
         if not cands.empty and float(cands.iloc[0]["expected_points"]) > float(worst_elem["expected_points"]):
             best_rep = cands.iloc[0]
             squad = squad[squad["element"] != worst_elem["element"]].copy()
@@ -331,10 +331,12 @@ class ChipTimelineComparator:
                 df_gw = (
                     base_pool
                     if base_pool is not None and not base_pool.empty
-                    else pd.DataFrame([
-                        {"element": i, "position": p, "expected_points": 4.5, "team": 1, "value": 50}
-                        for i, p in enumerate(["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3, 1)
-                    ])
+                    else pd.DataFrame(
+                        [
+                            {"element": i, "position": p, "expected_points": 4.5, "team": 1, "value": 50}
+                            for i, p in enumerate(["GKP"] * 2 + ["DEF"] * 5 + ["MID"] * 5 + ["FWD"] * 3, 1)
+                        ]
+                    )
                 )
 
             # Staged baseline squad entering gameweek gw (Item 2)
@@ -404,7 +406,12 @@ class ChipTimelineComparator:
                     squad_eids = set(current_squad_df["element"].astype(int)) if current_squad_df is not None else set()
                     squad_in_gw = df_gw[df_gw["element"].astype(int).isin(squad_eids)] if squad_eids else top_15
                     _, p_pos, interval = bootstrap_chip_gain_interval(
-                        "wildcard", gw, current_gw, top_15.head(11).to_dict("records"), squad_in_gw.head(11).to_dict("records"), calibration_slope=calibration_slope
+                        "wildcard",
+                        gw,
+                        current_gw,
+                        top_15.head(11).to_dict("records"),
+                        squad_in_gw.head(11).to_dict("records"),
+                        calibration_slope=calibration_slope,
                     )
                     gains.append(exp_g)
                     p_pos_list.append(p_pos)
@@ -415,7 +422,12 @@ class ChipTimelineComparator:
                     squad_eids = set(staged_squad_gw["element"].astype(int)) if not staged_squad_gw.empty else set()
                     squad_in_gw = df_gw[df_gw["element"].astype(int).isin(squad_eids)] if squad_eids else top_15
                     exp_g, p_pos, interval = bootstrap_chip_gain_interval(
-                        "wildcard", gw, current_gw, top_15.head(11).to_dict("records"), squad_in_gw.head(11).to_dict("records"), calibration_slope=calibration_slope
+                        "wildcard",
+                        gw,
+                        current_gw,
+                        top_15.head(11).to_dict("records"),
+                        squad_in_gw.head(11).to_dict("records"),
+                        calibration_slope=calibration_slope,
                     )
                     congestion_bonus = 6.0 * calibration_slope if f_ctx["is_congested"] else 0.0
                     dgw_bonus = 8.0 * calibration_slope if f_ctx["has_dgw"] else 0.0
@@ -551,7 +563,9 @@ class ChipTimelineComparator:
 
         # Filter candidate later windows
         if candidate_later_windows is None:
-            candidate_later_windows = [gw for gw in [current_gw + 1, current_gw + 2, 12, 16] if current_gw < gw <= SET_1_LAST_GW]
+            candidate_later_windows = [
+                gw for gw in [current_gw + 1, current_gw + 2, 12, 16] if current_gw < gw <= SET_1_LAST_GW
+            ]
 
         later_evals = [e for e in full_wc_timeline if e.gameweek in candidate_later_windows]
         best_later = max(later_evals, key=lambda x: x.expected_gain) if later_evals else None
