@@ -5,21 +5,21 @@
     "scripts/run_league_backtest.py"
   ],
   "exit_code": 0,
-  "stdout": "Starting Proxy Simulation Replay (Synthetic League States, Strict Legality & Zero-Hindsight)...\nProxy simulation completed in 141.67s. Sample Size: 26, Model Brier: 0.1916, Naive Lead Brier: 0.3740\n",
+  "stdout": "Starting Proxy Simulation Replay (Synthetic League States, Strict Legality & Zero-Hindsight)...\nProxy simulation completed in 224.74s. Sample Size: 26, Model Brier: 0.1916, Naive Lead Brier: 0.3740\n",
   "stderr": "",
-  "output": "Starting Proxy Simulation Replay (Synthetic League States, Strict Legality & Zero-Hindsight)...\nProxy simulation completed in 141.67s. Sample Size: 26, Model Brier: 0.1916, Naive Lead Brier: 0.3740",
-  "timestamp": "2026-10-16T08:57:52.785978+00:00",
-  "git_commit": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
-  "code_head": "fc77f57203541ef5dcf3f4a65a3b4dd46262cfa8",
+  "output": "Starting Proxy Simulation Replay (Synthetic League States, Strict Legality & Zero-Hindsight)...\nProxy simulation completed in 224.74s. Sample Size: 26, Model Brier: 0.1916, Naive Lead Brier: 0.3740",
+  "timestamp": "2026-10-16T10:38:26.554850+00:00",
+  "git_commit": "cd57bab535c5fb888ca5e42c9661864ec5b09185",
+  "code_head": "cd57bab535c5fb888ca5e42c9661864ec5b09185",
   "result": "PASS",
   "artifacts": [
     {
       "path": "reports/backtest.json",
-      "sha256": "5ba3ce9e0fbf0b77effd568c61af100c1b4d5a306b15a1ff874bffc7ca1c74d6"
+      "sha256": "bdc16ee1d92afcda7b512e1313c850bf0ed628dd35d368c685269b048ec7566b"
     }
   ],
   "file_hashes": {
-    "reports/backtest.json": "5ba3ce9e0fbf0b77effd568c61af100c1b4d5a306b15a1ff874bffc7ca1c74d6"
+    "reports/backtest.json": "bdc16ee1d92afcda7b512e1313c850bf0ed628dd35d368c685269b048ec7566b"
   },
   "gates": []
 }
