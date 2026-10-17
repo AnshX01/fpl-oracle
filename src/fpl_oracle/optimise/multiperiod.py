@@ -1114,8 +1114,21 @@ class MultiPeriodOptimizer:
                 else [p["element"] if isinstance(p, dict) else int(p) for p in lineup_res.get("bench", act.bench)]
             )
 
+            if plan.plan_type == "ROLL_TRANSFER" or act.transfers_count == 0:
+                rec_summary = f"Roll transfer. Bank {act.free_transfers_next} free transfers for next gameweek."
+            elif act.transfers_count == 1:
+                in_names = ", ".join(t.get("web_name", str(t.get("element", ""))) for t in act.transfers_in)
+                out_names = ", ".join(t.get("web_name", str(t.get("element", ""))) for t in act.transfers_out)
+                rec_summary = f"Transfer out {out_names} -> {in_names} (+{imm_gain:.2f} xP, Horizon: {gain_vs_roll:+.2f} xP)"
+            else:
+                in_names = ", ".join(t.get("web_name", str(t.get("element", ""))) for t in act.transfers_in)
+                out_names = ", ".join(t.get("web_name", str(t.get("element", ""))) for t in act.transfers_out)
+                rec_summary = f"Execute {act.transfers_count} transfers: {out_names} -> {in_names} (+{imm_gain:.2f} xP, Horizon: {gain_vs_roll:+.2f} xP)"
+
             return {
                 "plan_type": plan.plan_type,
+                "recommendation_summary": rec_summary,
+                "summary": rec_summary,
                 "transfers_count": act.transfers_count,
                 "transfers_in": act.transfers_in,
                 "transfers_out": act.transfers_out,
@@ -1135,6 +1148,7 @@ class MultiPeriodOptimizer:
                 "horizon_gain_vs_roll": gain_vs_roll,
                 "horizon_gross_xp": h_gross,
                 "horizon_net_xp": h_net,
+                "net_expected_points": round(act.net_xp, 2),
                 "horizon_hits": plan.horizon_hits,
                 "gross_expected_points": round(act.lineup_xp + act.captain_xp + act.bench_xp, 2),
                 "chip": act.active_chip,

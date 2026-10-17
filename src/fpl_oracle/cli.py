@@ -96,13 +96,17 @@ def optimize():
         table.add_column("Net Gain", justify="right")
         table.add_column("Hits", justify="right")
 
-        for p in opt_res["candidate_plans"]:
+        for p in opt_res.get("candidate_plans", []):
+            summary = p.get("recommendation_summary", p.get("summary", p.get("plan_type", "Candidate Plan")))
+            net_xp = float(p.get("net_expected_points", p.get("net_xp", 0.0)))
+            gain = float(p.get("expected_gain", p.get("horizon_gain_vs_roll", 0.0)))
+            hits = str(p.get("hits", 0))
             table.add_row(
-                p["plan_type"],
-                p["recommendation_summary"],
-                f"{p['net_expected_points']:.2f}",
-                f"{p['expected_gain']:+.2f}",
-                str(p["hits"]),
+                p.get("plan_type", "PLAN"),
+                summary,
+                f"{net_xp:.2f}",
+                f"{gain:+.2f}",
+                hits,
             )
 
         console.print(table)
