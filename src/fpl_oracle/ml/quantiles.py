@@ -28,6 +28,20 @@ def calc_pinball_loss(y_true: np.ndarray, y_pred: np.ndarray, tau: float) -> flo
     return float(np.mean(np.maximum(tau * diff, (tau - 1.0) * diff)))
 
 
+def calc_wilson_ci(k: int, n: int) -> list[float]:
+    """Computes Wilson score 95% confidence interval for empirical coverage percentage."""
+    if n <= 0:
+        return [0.0, 0.0]
+    z = 1.95996
+    p = k / n
+    denom = 1.0 + (z**2) / n
+    centre = (p + (z**2) / (2.0 * n)) / denom
+    margin = (z * np.sqrt((p * (1.0 - p) / n) + ((z**2) / (4.0 * (n**2))))) / denom
+    lower = max(0.0, float(np.round((centre - margin) * 100.0, 2)))
+    upper = min(100.0, float(np.round((centre + margin) * 100.0, 2)))
+    return [lower, upper]
+
+
 class ConformalQuantileRegressor:
     """
     Position-stratified Conformalised Quantile Regression (CQR) engine.
@@ -150,10 +164,13 @@ class ConformalQuantileRegressor:
         y_cal: np.ndarray | pd.Series,
         pos_cal: np.ndarray | pd.Series,
         target_coverage: float | None = None,
+        min_pos_samples: int = 250,
+        shrink_across_positions: bool = True,
     ) -> dict[str, float]:
         """
         Applies Split Conformal Calibration (Romano et al. 2019) on a chronologically
         subsequent holdout set to determine exact per-position conformal offsets.
+        Supports cross-position empirical shrinkage for low-sample positions (e.g. GKPs).
         """
         if not self.is_fitted:
             raise RuntimeError("Cannot calibrate un-fitted ConformalQuantileRegressor.")
@@ -164,6 +181,9 @@ class ConformalQuantileRegressor:
         X_feats = self._get_feature_subset(X_cal)
 
         offsets = {}
+        all_e_scores_list = []
+        raw_offsets = {}
+
         for pos in POSITIONS:
             if pos not in self.models:
                 offsets[pos] = 0.0
@@ -194,11 +214,30 @@ class ConformalQuantileRegressor:
 
             # Conformity score E_i = max(q_10 - y_i, y_i - q_90)
             e_scores = np.maximum(raw_q10 - y_p, y_p - raw_q90)
+            all_e_scores_list.append(e_scores)
 
             # Conformal quantile level: ceil((n+1) * cov) / n
             q_level = min(1.0, np.ceil((n_pos + 1) * cov) / n_pos)
             offset_val = float(np.quantile(e_scores, q_level))
-            offsets[pos] = round(offset_val, 4)
+            raw_offsets[pos] = offset_val
+
+        # Cross-position pooled offset for empirical shrinkage
+        pooled_offset = 0.0
+        if shrink_across_positions and all_e_scores_list:
+            all_e_scores = np.concatenate(all_e_scores_list)
+            q_level_pooled = min(1.0, np.ceil((len(all_e_scores) + 1) * cov) / len(all_e_scores))
+            pooled_offset = float(np.quantile(all_e_scores, q_level_pooled))
+
+        for pos in POSITIONS:
+            if pos not in raw_offsets:
+                offsets[pos] = 0.0
+                continue
+            off = raw_offsets[pos]
+            n_pos = self.cal_sample_counts.get(pos, 0)
+            if shrink_across_positions and n_pos < min_pos_samples and pooled_offset > 0.0:
+                shrink_weight = max(0.0, 1.0 - (n_pos / min_pos_samples))
+                off = (1.0 - shrink_weight) * off + shrink_weight * pooled_offset
+            offsets[pos] = round(off, 4)
 
         self.conformal_offsets = offsets
         self.is_calibrated = True
@@ -306,6 +345,7 @@ class ConformalQuantileRegressor:
 
         res: dict[str, Any] = {
             "overall_coverage_pct": round(total_cov, 1),
+            "overall_ci_95": calc_wilson_ci(int(np.sum(in_band)), len(y_arr)),
             "pinball_loss_p10": round(pb10_tot, 4),
             "pinball_loss_p90": round(pb90_tot, 4),
             "positional_coverage": {},
@@ -319,9 +359,12 @@ class ConformalQuantileRegressor:
                     cov_pos = round(float(np.mean(in_band[mask]) * 100.0), 1)
                     pb10_p = calc_pinball_loss(y_arr[mask], p10[mask], 0.10)
                     pb90_p = calc_pinball_loss(y_arr[mask], p90[mask], 0.90)
+                    k_pos = int(np.sum(in_band[mask]))
+                    n_pos = int(np.sum(mask))
                     res["positional_coverage"][pos] = {
-                        "count": int(np.sum(mask)),
+                        "count": n_pos,
                         "coverage_pct": cov_pos,
+                        "ci_95": calc_wilson_ci(k_pos, n_pos),
                         "pinball_loss_p10": round(pb10_p, 4),
                         "pinball_loss_p90": round(pb90_p, 4),
                         "within_gate": 77.0 <= cov_pos <= 83.0,

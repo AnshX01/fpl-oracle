@@ -1,0 +1,447 @@
+{
+  "validation_summary": {
+    "candidate_managers_count": 11,
+    "validated_independent_managers_count": 11,
+    "evaluated_managers_count": 10,
+    "cash_finding": "Confirmed: 'Cash' is Aston Villa defender Matty Cash (element 32), not missing player or currency.",
+    "all_squads_15_players": true,
+    "all_formations_valid": true,
+    "all_club_limits_respected": true
+  },
+  "replays": [
+    {
+      "replay_index": 1,
+      "manager_id": 2227954,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Raya"
+      ],
+      "transfers_out": [
+        "Dubravka"
+      ],
+      "captain": "Haaland",
+      "gain": 1.88,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 1,
+      "manager_id": 2227954,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Raya"
+      ],
+      "transfers_out": [
+        "Dubravka"
+      ],
+      "captain": "Haaland",
+      "gain": 1.88,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 1,
+      "manager_id": 2227954,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Raya"
+      ],
+      "transfers_out": [
+        "Dubravka"
+      ],
+      "captain": "Haaland",
+      "gain": 1.88,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 2,
+      "manager_id": 1085141,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Hall"
+      ],
+      "transfers_out": [
+        "White"
+      ],
+      "captain": "Haaland",
+      "gain": 3.94,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 2,
+      "manager_id": 1085141,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Hall"
+      ],
+      "transfers_out": [
+        "White"
+      ],
+      "captain": "Haaland",
+      "gain": 3.94,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 2,
+      "manager_id": 1085141,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Hall"
+      ],
+      "transfers_out": [
+        "White"
+      ],
+      "captain": "Haaland",
+      "gain": 3.94,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 3,
+      "manager_id": 4687536,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Calvert-Lewin"
+      ],
+      "transfers_out": [
+        "Gonzalo"
+      ],
+      "captain": "Haaland",
+      "gain": 2.69,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 3,
+      "manager_id": 4687536,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Calvert-Lewin"
+      ],
+      "transfers_out": [
+        "Gonzalo"
+      ],
+      "captain": "Haaland",
+      "gain": 2.69,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 3,
+      "manager_id": 4687536,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Calvert-Lewin"
+      ],
+      "transfers_out": [
+        "Gonzalo"
+      ],
+      "captain": "Haaland",
+      "gain": 2.69,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 4,
+      "manager_id": 8364971,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Calafiori"
+      ],
+      "transfers_out": [
+        "Robertson"
+      ],
+      "captain": "Gro\u00df",
+      "gain": 4.29,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 4,
+      "manager_id": 8364971,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Calafiori"
+      ],
+      "transfers_out": [
+        "Robertson"
+      ],
+      "captain": "Gro\u00df",
+      "gain": 4.29,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 4,
+      "manager_id": 8364971,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Calafiori"
+      ],
+      "transfers_out": [
+        "Robertson"
+      ],
+      "captain": "Gro\u00df",
+      "gain": 4.29,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 5,
+      "manager_id": 2230307,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Hall"
+      ],
+      "transfers_out": [
+        "Mykolenko"
+      ],
+      "captain": "Haaland",
+      "gain": 1.95,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 5,
+      "manager_id": 2230307,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Hall"
+      ],
+      "transfers_out": [
+        "Mykolenko"
+      ],
+      "captain": "Haaland",
+      "gain": 1.95,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 5,
+      "manager_id": 2230307,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Hall"
+      ],
+      "transfers_out": [
+        "Mykolenko"
+      ],
+      "captain": "Haaland",
+      "gain": 1.95,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 6,
+      "manager_id": 7793828,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Gro\u00df",
+        "Hall"
+      ],
+      "transfers_out": [
+        "Senesi",
+        "Wilson"
+      ],
+      "captain": "Haaland",
+      "gain": 8.31,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 6,
+      "manager_id": 7793828,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Gro\u00df",
+        "Hall"
+      ],
+      "transfers_out": [
+        "Senesi",
+        "Wilson"
+      ],
+      "captain": "Haaland",
+      "gain": 8.31,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 6,
+      "manager_id": 7793828,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Gro\u00df",
+        "Hall"
+      ],
+      "transfers_out": [
+        "Senesi",
+        "Wilson"
+      ],
+      "captain": "Haaland",
+      "gain": 8.31,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 7,
+      "manager_id": 9778590,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Gro\u00df"
+      ],
+      "transfers_out": [
+        "Rayan"
+      ],
+      "captain": "Haaland",
+      "gain": 4.26,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 7,
+      "manager_id": 9778590,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Gro\u00df"
+      ],
+      "transfers_out": [
+        "Rayan"
+      ],
+      "captain": "Haaland",
+      "gain": 4.26,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 7,
+      "manager_id": 9778590,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Gro\u00df"
+      ],
+      "transfers_out": [
+        "Rayan"
+      ],
+      "captain": "Haaland",
+      "gain": 4.26,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 8,
+      "manager_id": 9153936,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Barnes"
+      ],
+      "transfers_out": [
+        "Szoboszlai"
+      ],
+      "captain": "Haaland",
+      "gain": 1.16,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 8,
+      "manager_id": 9153936,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Barnes"
+      ],
+      "transfers_out": [
+        "Szoboszlai"
+      ],
+      "captain": "Haaland",
+      "gain": 1.16,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 8,
+      "manager_id": 9153936,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Barnes"
+      ],
+      "transfers_out": [
+        "Szoboszlai"
+      ],
+      "captain": "Haaland",
+      "gain": 1.16,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 9,
+      "manager_id": 6861977,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Gro\u00df",
+        "Hall"
+      ],
+      "transfers_out": [
+        "Bentancur",
+        "Pedro Porro"
+      ],
+      "captain": "Gro\u00df",
+      "gain": 11.23,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 9,
+      "manager_id": 6861977,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Gro\u00df",
+        "Hall"
+      ],
+      "transfers_out": [
+        "Bentancur",
+        "Pedro Porro"
+      ],
+      "captain": "Gro\u00df",
+      "gain": 11.23,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 9,
+      "manager_id": 6861977,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Gro\u00df",
+        "Hall"
+      ],
+      "transfers_out": [
+        "Bentancur",
+        "Pedro Porro"
+      ],
+      "captain": "Gro\u00df",
+      "gain": 11.23,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 10,
+      "manager_id": 9216581,
+      "risk_mode": "conservative",
+      "transfers_in": [
+        "Gro\u00df"
+      ],
+      "transfers_out": [
+        "Yalcouy\u00e9"
+      ],
+      "captain": "Haaland",
+      "gain": 5.53,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 10,
+      "manager_id": 9216581,
+      "risk_mode": "balanced",
+      "transfers_in": [
+        "Gro\u00df"
+      ],
+      "transfers_out": [
+        "Yalcouy\u00e9"
+      ],
+      "captain": "Haaland",
+      "gain": 5.53,
+      "sim_matches_no_sim": true
+    },
+    {
+      "replay_index": 10,
+      "manager_id": 9216581,
+      "risk_mode": "aggressive",
+      "transfers_in": [
+        "Gro\u00df"
+      ],
+      "transfers_out": [
+        "Yalcouy\u00e9"
+      ],
+      "captain": "Haaland",
+      "gain": 5.53,
+      "sim_matches_no_sim": true
+    }
+  ],
+  "any_change_from_simulate_captaincy": false,
+  "risk_modes_differ": false
+}

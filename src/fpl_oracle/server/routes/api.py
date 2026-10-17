@@ -1338,11 +1338,10 @@ async def post_contingency_panic(req: PanicRequest):
     )
 
     if joint.get("normal_plan_feasible") is False:
+        chip_name = str(plan.get("chip_applied", "Chip"))
+        prev_rec = str(crisis_res.get("recommendation", ""))
         crisis_res["recommendation"] = (
-            "Not possible within the ordinary transfer/hit limit. "
-            + str(plan.get("chip_applied", "Chip"))
-            + " gives a legal XI. "
-            + crisis_res["recommendation"]
+            f"Not possible within the ordinary transfer/hit limit. {chip_name} gives a legal XI. {prev_rec}"
         )
     crisis_res["stale"] = is_stale
     crisis_res["is_stale"] = is_stale

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "command": [
+    ".venv\\Scripts\\python.exe",
+    "scripts\\reconcile_d2_squad.py"
+  ],
+  "exit_code": 0,
+  "stdout": "================================================================================\nD2. RECONCILE ON THE CURRENT SQUAD (MANAGER 1085141, GW7)\n================================================================================\n\n--- 1. DEADLINE AND STATE DISCREPANCY RESOLUTION ---\nTarget Deadline: Gameweek 7 (GW7)\nGround Truth API State:    Bank = 0.1m (1 tenths) | Free Transfers = 1\nUser Profile Override:    Bank = 1.5m (15 tenths) | Free Transfers = 2\nResolution: The earlier brief used the ground-truth FPL API picks entry_history (bank=0.1m, 1 FT).\nThe C3 run invoked manager_state_service.get_current_state(), which applied manual overrides from user_profile table (bank=1.5m, 2 FTs).\n\n================================================================================\nEVALUATION UNDER Ground_Truth_API (Bank 0.1m, 1 FT)\n================================================================================\n1. Beam Search (<= 2 Transfers):\n   Plan: 1_TRANSFER | In: ['Hall'] | Out: ['White'] | C: Haaland | Gain: 3.94\n2. MILP Optimizer (Unconstrained with Chips):\n   Plan: WILDCARD | In count: 11 | Out count: 11 | C: Haaland | Gain: 11.78\n3. MILP Optimizer (Chips Forbidden, identical transfer action set):\n   Plan: 1_TRANSFER | In: ['Hall'] | Out: ['White'] | C: Haaland | Gain: 2.59\n\n================================================================================\nEVALUATION UNDER Profile_Override (Bank 1.5m, 2 FT)\n================================================================================\n1. Beam Search (<= 2 Transfers):\n   Plan: 2_TRANSFERS | In: ['Cherki', 'Hall'] | Out: ['Szoboszlai', 'White'] | C: Haaland | Gain: 7.06\n2. MILP Optimizer (Unconstrained with Chips):\n   Plan: WILDCARD | In count: 8 | Out count: 8 | C: Haaland | Gain: 10.83\n3. MILP Optimizer (Chips Forbidden, identical transfer action set):\n   Plan: 2_TRANSFERS | In: ['Cherki', 'Hall'] | Out: ['Szoboszlai', 'White'] | C: Haaland | Gain: 4.79\n\nSaved machine artifact to reports\\d2_squad_reconciliation.json\n",
+  "stderr": "",
+  "output": "================================================================================\nD2. RECONCILE ON THE CURRENT SQUAD (MANAGER 1085141, GW7)\n================================================================================\n\n--- 1. DEADLINE AND STATE DISCREPANCY RESOLUTION ---\nTarget Deadline: Gameweek 7 (GW7)\nGround Truth API State:    Bank = 0.1m (1 tenths) | Free Transfers = 1\nUser Profile Override:    Bank = 1.5m (15 tenths) | Free Transfers = 2\nResolution: The earlier brief used the ground-truth FPL API picks entry_history (bank=0.1m, 1 FT).\nThe C3 run invoked manager_state_service.get_current_state(), which applied manual overrides from user_profile table (bank=1.5m, 2 FTs).\n\n================================================================================\nEVALUATION UNDER Ground_Truth_API (Bank 0.1m, 1 FT)\n================================================================================\n1. Beam Search (<= 2 Transfers):\n   Plan: 1_TRANSFER | In: ['Hall'] | Out: ['White'] | C: Haaland | Gain: 3.94\n2. MILP Optimizer (Unconstrained with Chips):\n   Plan: WILDCARD | In count: 11 | Out count: 11 | C: Haaland | Gain: 11.78\n3. MILP Optimizer (Chips Forbidden, identical transfer action set):\n   Plan: 1_TRANSFER | In: ['Hall'] | Out: ['White'] | C: Haaland | Gain: 2.59\n\n================================================================================\nEVALUATION UNDER Profile_Override (Bank 1.5m, 2 FT)\n================================================================================\n1. Beam Search (<= 2 Transfers):\n   Plan: 2_TRANSFERS | In: ['Cherki', 'Hall'] | Out: ['Szoboszlai', 'White'] | C: Haaland | Gain: 7.06\n2. MILP Optimizer (Unconstrained with Chips):\n   Plan: WILDCARD | In count: 8 | Out count: 8 | C: Haaland | Gain: 10.83\n3. MILP Optimizer (Chips Forbidden, identical transfer action set):\n   Plan: 2_TRANSFERS | In: ['Cherki', 'Hall'] | Out: ['Szoboszlai', 'White'] | C: Haaland | Gain: 4.79\n\nSaved machine artifact to reports\\d2_squad_reconciliation.json",
+  "timestamp": "2026-10-17T03:48:59.772132+00:00",
+  "git_commit": "b02d09da3bef8144c87809a93cc4b4052fce5867",
+  "code_head": "b02d09da3bef8144c87809a93cc4b4052fce5867",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "path": "reports/d2_squad_reconciliation.json",
+      "sha256": "fc5b02a3e05197dc9cffd8103a714e335e9e9bab27ec9fb943bfba2ff43d660a"
+    }
+  ],
+  "file_hashes": {
+    "reports/d2_squad_reconciliation.json": "fc5b02a3e05197dc9cffd8103a714e335e9e9bab27ec9fb943bfba2ff43d660a"
+  },
+  "gates": []
+}
