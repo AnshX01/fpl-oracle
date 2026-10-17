@@ -615,7 +615,21 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
             next((p for p in milp_res["candidate_plans"] if p.get("plan_type") == "ROLL_TRANSFER"), rec_plan),
         )
         milp_res.setdefault("roll_plan", milp_res["hold_plan"])
-        milp_res.setdefault("chip_comparison_table", milp_res["candidate_plans"])
+        chip_table = []
+        for p in milp_res.get("candidate_plans", [rec_plan]):
+            chip_code = p.get("chip") or "HOLD"
+            chip_table.append(
+                {
+                    "chip": chip_code,
+                    "chip_code": chip_code,
+                    "action": "DEPLOY" if p.get("chip") else "HOLD",
+                    "net_gain_vs_hold": float(p.get("horizon_gain_vs_roll", 0.0)),
+                    "reason": f"Plan {p.get('plan_type')} across projection horizon.",
+                    "is_recommended": bool(p.get("plan_type") == rec_plan.get("plan_type")),
+                    "plan": p,
+                }
+            )
+        milp_res.setdefault("chip_comparison_table", chip_table)
         horizon_gws = sorted(kwargs.get("horizon_projections", {}).keys()) or [kwargs.get("target_gw", 1)]
         milp_res["decision_scope"] = {
             "method": "authoritative_multi_period_milp",
