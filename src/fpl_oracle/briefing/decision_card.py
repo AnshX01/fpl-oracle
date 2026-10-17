@@ -616,9 +616,9 @@ class DecisionCardGenerator:
             "ranked_options": [
                 {
                     "rank": i + 1,
-                    "chip": c["chip"],
-                    "net_gain_vs_hold": c["net_gain_vs_hold"],
-                    "reason": c["reason"],
+                    "chip": c.get("chip", "HOLD"),
+                    "net_gain_vs_hold": c.get("net_gain_vs_hold", c.get("horizon_gain_vs_roll", 0.0)),
+                    "reason": c.get("reason", "Projection horizon trajectory."),
                     "recommended": c.get("is_recommended", False),
                 }
                 for i, c in enumerate(joint_res.get("chip_comparison_table", []))
