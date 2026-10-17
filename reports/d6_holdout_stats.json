@@ -1,0 +1,169 @@
+{
+  "evaluation_horizon": "2026-27 Gameweeks 1 through 6",
+  "population": "Active players (actual_minutes > 0)",
+  "total_active_observations": 1853,
+  "gameweek_count": 6,
+  "per_gameweek_results": [
+    {
+      "gameweek": 1,
+      "sample_count": 310,
+      "ml_mae": 2.323,
+      "best_baseline_mae": 2.541,
+      "best_baseline_mae_type": "Season",
+      "mae_gain": 0.218,
+      "ml_rmse": 3.499,
+      "ml_spearman": 0.238,
+      "best_baseline_spearman": 0.192,
+      "best_baseline_spearman_type": "Season",
+      "spearman_gain": 0.046,
+      "all_baselines_mae": {
+        "recent": 2.615,
+        "season": 2.541,
+        "fixture": 2.688
+      },
+      "all_baselines_spearman": {
+        "recent": 0.165,
+        "season": 0.192,
+        "fixture": 0.181
+      }
+    },
+    {
+      "gameweek": 2,
+      "sample_count": 312,
+      "ml_mae": 1.94,
+      "best_baseline_mae": 2.331,
+      "best_baseline_mae_type": "Recent",
+      "mae_gain": 0.391,
+      "ml_rmse": 3.004,
+      "ml_spearman": 0.369,
+      "best_baseline_spearman": 0.3,
+      "best_baseline_spearman_type": "Fixture",
+      "spearman_gain": 0.069,
+      "all_baselines_mae": {
+        "recent": 2.331,
+        "season": 2.343,
+        "fixture": 2.381
+      },
+      "all_baselines_spearman": {
+        "recent": 0.263,
+        "season": 0.237,
+        "fixture": 0.3
+      }
+    },
+    {
+      "gameweek": 3,
+      "sample_count": 307,
+      "ml_mae": 1.956,
+      "best_baseline_mae": 2.29,
+      "best_baseline_mae_type": "Season",
+      "mae_gain": 0.334,
+      "ml_rmse": 2.923,
+      "ml_spearman": 0.283,
+      "best_baseline_spearman": 0.287,
+      "best_baseline_spearman_type": "Fixture",
+      "spearman_gain": -0.004,
+      "all_baselines_mae": {
+        "recent": 2.33,
+        "season": 2.29,
+        "fixture": 2.44
+      },
+      "all_baselines_spearman": {
+        "recent": 0.252,
+        "season": 0.241,
+        "fixture": 0.287
+      }
+    },
+    {
+      "gameweek": 4,
+      "sample_count": 307,
+      "ml_mae": 2.101,
+      "best_baseline_mae": 2.301,
+      "best_baseline_mae_type": "Season",
+      "mae_gain": 0.2,
+      "ml_rmse": 3.162,
+      "ml_spearman": 0.379,
+      "best_baseline_spearman": 0.387,
+      "best_baseline_spearman_type": "Fixture",
+      "spearman_gain": -0.008,
+      "all_baselines_mae": {
+        "recent": 2.302,
+        "season": 2.301,
+        "fixture": 2.347
+      },
+      "all_baselines_spearman": {
+        "recent": 0.349,
+        "season": 0.34,
+        "fixture": 0.387
+      }
+    },
+    {
+      "gameweek": 5,
+      "sample_count": 302,
+      "ml_mae": 2.077,
+      "best_baseline_mae": 2.313,
+      "best_baseline_mae_type": "Season",
+      "mae_gain": 0.236,
+      "ml_rmse": 3.192,
+      "ml_spearman": 0.404,
+      "best_baseline_spearman": 0.386,
+      "best_baseline_spearman_type": "Fixture",
+      "spearman_gain": 0.018,
+      "all_baselines_mae": {
+        "recent": 2.328,
+        "season": 2.313,
+        "fixture": 2.473
+      },
+      "all_baselines_spearman": {
+        "recent": 0.371,
+        "season": 0.357,
+        "fixture": 0.386
+      }
+    },
+    {
+      "gameweek": 6,
+      "sample_count": 315,
+      "ml_mae": 1.901,
+      "best_baseline_mae": 2.194,
+      "best_baseline_mae_type": "Season",
+      "mae_gain": 0.293,
+      "ml_rmse": 2.919,
+      "ml_spearman": 0.362,
+      "best_baseline_spearman": 0.363,
+      "best_baseline_spearman_type": "Fixture",
+      "spearman_gain": -0.001,
+      "all_baselines_mae": {
+        "recent": 2.245,
+        "season": 2.194,
+        "fixture": 2.271
+      },
+      "all_baselines_spearman": {
+        "recent": 0.322,
+        "season": 0.295,
+        "fixture": 0.363
+      }
+    }
+  ],
+  "pooled_overall_metrics": {
+    "sample_count": 1853,
+    "ml_mae": 2.049,
+    "best_baseline_mae": 2.33,
+    "best_baseline_mae_type": "Season",
+    "mae_gain_vs_best_baseline": 0.281,
+    "ml_rmse": 3.122,
+    "ml_spearman": 0.339,
+    "best_baseline_spearman": 0.315,
+    "best_baseline_spearman_type": "Fixture",
+    "spearman_gain_vs_best_baseline": 0.024
+  },
+  "block_bootstrap_95_ci": {
+    "mae_gain_ci_95": [
+      0.2273,
+      0.3401
+    ],
+    "spearman_gain_ci_95": [
+      -0.0005,
+      0.0484
+    ]
+  },
+  "sample_size_caveat": "SAMPLE SIZE CAVEAT: The 2026-27 forward holdout comprises 6 early-season gameweeks (GW1-6) encompassing N=1,853 active player observations (mean ~308 active players/GW). While observation counts are statistically substantial for overall point estimates, temporal clustering at the gameweek level yields an effective sample size governed by B=6 gameweek blocks. Gameweek-level systemic shocks (e.g., gameweek fixture variance, tactical anomalies, referee cards) induce intra-gameweek correlation. Consequently, gameweek-block bootstrap confidence intervals are reported to account for block-level dependence."
+}

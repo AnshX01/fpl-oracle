@@ -409,7 +409,7 @@ class MultiPeriodOptimizer:
         h = {t: pulp.LpVariable(f"h_{t}", lowBound=0, upBound=15, cat=pulp.LpContinuous) for t in horizon_gws}
         bank_var = {t: pulp.LpVariable(f"bank_{t}", lowBound=0, cat=pulp.LpContinuous) for t in horizon_gws}
         ft_var = {
-            t: pulp.LpVariable(f"ft_{t}", lowBound=1, upBound=MAX_BANKED_FREE_TRANSFERS, cat=pulp.LpInteger)
+            t: pulp.LpVariable(f"ft_{t}", lowBound=0, upBound=MAX_BANKED_FREE_TRANSFERS, cat=pulp.LpInteger)
             for t in horizon_gws + [horizon_gws[-1] + 1]
         }
         z = {t: pulp.LpVariable(f"z_{t}", cat=pulp.LpBinary) for t in horizon_gws}
@@ -437,7 +437,7 @@ class MultiPeriodOptimizer:
 
         # --- Constraints ---
         # Initial FT state
-        prob += ft_var[t0] == int(max(1, min(MAX_BANKED_FREE_TRANSFERS, free_transfers)))
+        prob += ft_var[t0] == int(max(0, min(MAX_BANKED_FREE_TRANSFERS, free_transfers)))
 
         # Total FH squad budget cap: current squad sell value + bank
         initial_team_value = sum(sell_vals[p] for p in squad_ids) + init_bank
@@ -833,7 +833,7 @@ class MultiPeriodOptimizer:
 
             t_hits = int(round(h[t].varValue or 0))
             t_u = int(round(u[t].varValue or 0))
-            t_ft = int(round(ft_var[t].varValue or 1))
+            t_ft = int(round(ft_var[t].varValue if ft_var[t].varValue is not None else 1))
             t_ft_next, _ = next_free_transfers(
                 ft=t_ft,
                 transfers_made=t_u,
@@ -1045,6 +1045,75 @@ class MultiPeriodOptimizer:
             gain_vs_roll = round(h_net - roll_net, 2)
             imm_gain = round(act.net_xp - roll_plan.recommended_action.net_xp, 2)
 
+            # Reconstruct updated squad after GW1 transfers to obtain lineup & captaincy from LineupOptimizer
+            out_ids = {t["element"] for t in act.transfers_out}
+            in_ids = {t["element"] for t in act.transfers_in}
+            retained = current_squad_df[~current_squad_df["element"].isin(out_ids)].copy()
+            incoming = player_pool_df[player_pool_df["element"].isin(in_ids)].copy()
+            for col in retained.columns:
+                if col not in incoming.columns:
+                    if col in ("purchase_price", "selling_price"):
+                        incoming[col] = incoming.get("value", 50.0)
+                    elif col == "chance_of_playing":
+                        incoming[col] = 100.0
+                    else:
+                        incoming[col] = 0.0
+            updated_squad_df = pd.concat([retained, incoming], ignore_index=True)
+
+            from fpl_oracle.optimise.lineup import lineup_optimizer
+
+            lineup_res: dict[str, Any] = {}
+            if len(updated_squad_df) == 15:
+                try:
+                    lineup_res = lineup_optimizer.select_lineup_and_captain(
+                        updated_squad_df,
+                        is_triple_captain=(act.active_chip == "3xc"),
+                        is_bench_boost=(act.active_chip == "bboost"),
+                        risk_preference=risk_preference,
+                        simulate_captaincy=False,
+                    )
+                except Exception as ex:
+                    logger.warning(f"lineup_optimizer.select_lineup_and_captain failed: {ex}")
+                    lineup_res = {}
+
+            if not lineup_res:
+                pool_map = {int(r["element"]): r for _, r in player_pool_df.iterrows()}
+                cap_row = pool_map.get(act.captain, {})
+                vc_id = act.vice_captain or (act.starters[1] if len(act.starters) > 1 else act.captain)
+                vc_row = pool_map.get(vc_id, {})
+                cap_name = cap_row.get("web_name", f"Player {act.captain}")
+                vc_name = vc_row.get("web_name", f"Player {vc_id}")
+                lineup_res = {
+                    "starters": [pool_map.get(e, {"element": e}) for e in act.starters],
+                    "bench": [pool_map.get(e, {"element": e}) for e in act.bench],
+                    "captain": {
+                        "element": act.captain,
+                        "web_name": cap_name,
+                        "expected_points": round(float(cap_row.get("expected_points", act.captain_xp)), 2),
+                    },
+                    "vice_captain": {
+                        "element": vc_id,
+                        "web_name": vc_name,
+                        "expected_points": round(float(vc_row.get("expected_points", 0.0)), 2),
+                    },
+                }
+
+            cap_obj = lineup_res["captain"]
+            vc_obj = lineup_res["vice_captain"]
+            cap_id = int(cap_obj["element"]) if isinstance(cap_obj, dict) else act.captain
+            vc_id = int(vc_obj["element"]) if isinstance(vc_obj, dict) else (act.vice_captain or act.captain)
+
+            starters_list = (
+                [int(x) for x in lineup_res["starters"]["element"].tolist()]
+                if isinstance(lineup_res.get("starters"), pd.DataFrame)
+                else [p["element"] if isinstance(p, dict) else int(p) for p in lineup_res.get("starters", act.starters)]
+            )
+            bench_list = (
+                [int(x) for x in lineup_res["bench"]["element"].tolist()]
+                if isinstance(lineup_res.get("bench"), pd.DataFrame)
+                else [p["element"] if isinstance(p, dict) else int(p) for p in lineup_res.get("bench", act.bench)]
+            )
+
             return {
                 "plan_type": plan.plan_type,
                 "transfers_count": act.transfers_count,
@@ -1054,8 +1123,10 @@ class MultiPeriodOptimizer:
                 "hit_cost": act.hit_cost,
                 "free_transfers_used": act.free_transfers_used,
                 "free_transfers_next": act.free_transfers_next,
+                "next_banked_ft": act.free_transfers_next,
                 "bank_delta": round(act.bank_end - float(bank), 1),
                 "bank_remaining": act.bank_end,
+                "remaining_bank": round(float(act.bank_end) / 10.0, 2),
                 "expected_gain": imm_gain,
                 "pure_xp_gain": imm_gain,
                 "price_movement_gain": 0.0,
@@ -1067,10 +1138,13 @@ class MultiPeriodOptimizer:
                 "horizon_hits": plan.horizon_hits,
                 "gross_expected_points": round(act.lineup_xp + act.captain_xp + act.bench_xp, 2),
                 "chip": act.active_chip,
-                "starting_xi": act.starters,
-                "captain_id": act.captain,
-                "vice_captain_id": act.vice_captain,
-                "bench_ids": act.bench,
+                "lineup": lineup_res,
+                "captain": cap_obj,
+                "vice_captain": vc_obj,
+                "starting_xi": starters_list,
+                "captain_id": cap_id,
+                "vice_captain_id": vc_id,
+                "bench_ids": bench_list,
                 "trajectory": [
                     {
                         "gameweek": a.gameweek,

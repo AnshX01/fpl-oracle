@@ -1,0 +1,114 @@
+{
+  "Ground_Truth_API (Bank 0.1m, 1 FT)": {
+    "bank_tenths": 1,
+    "free_transfers": 1,
+    "beam_search": {
+      "plan_type": "1_TRANSFER",
+      "transfers_in": [
+        "Hall"
+      ],
+      "transfers_out": [
+        "White"
+      ],
+      "captain": "Haaland",
+      "horizon_gain": 3.94
+    },
+    "milp_unconstrained": {
+      "plan_type": "WILDCARD",
+      "transfers_in": [
+        "Bogle",
+        "Cherki",
+        "Davis",
+        "De Cuyper",
+        "Emersonn",
+        "Hall",
+        "Kelleher",
+        "Mbeumo",
+        "Rogers",
+        "Semenyo",
+        "Tzolakis"
+      ],
+      "transfers_out": [
+        "Ajer",
+        "Belloumi",
+        "Diop",
+        "Jo\u00e3o Pedro",
+        "Kinsky",
+        "Maguire",
+        "Palmer",
+        "Saka",
+        "Szoboszlai",
+        "Verbruggen",
+        "White"
+      ],
+      "captain": "Haaland",
+      "horizon_gain": 11.78
+    },
+    "milp_chips_forbidden": {
+      "plan_type": "1_TRANSFER",
+      "transfers_in": [
+        "Hall"
+      ],
+      "transfers_out": [
+        "White"
+      ],
+      "captain": "Haaland",
+      "horizon_gain": 2.59
+    }
+  },
+  "Profile_Override (Bank 1.5m, 2 FT)": {
+    "bank_tenths": 15,
+    "free_transfers": 2,
+    "beam_search": {
+      "plan_type": "2_TRANSFERS",
+      "transfers_in": [
+        "Cherki",
+        "Hall"
+      ],
+      "transfers_out": [
+        "Szoboszlai",
+        "White"
+      ],
+      "captain": "Haaland",
+      "horizon_gain": 7.06
+    },
+    "milp_unconstrained": {
+      "plan_type": "WILDCARD",
+      "transfers_in": [
+        "Bogle",
+        "Cherki",
+        "De Cuyper",
+        "Hall",
+        "McBurnie",
+        "Rogers",
+        "Semenyo",
+        "Tzolakis"
+      ],
+      "transfers_out": [
+        "Belloumi",
+        "Diop",
+        "Jo\u00e3o Pedro",
+        "Kinsky",
+        "Maguire",
+        "Palmer",
+        "Szoboszlai",
+        "White"
+      ],
+      "captain": "Haaland",
+      "horizon_gain": 10.83
+    },
+    "milp_chips_forbidden": {
+      "plan_type": "2_TRANSFERS",
+      "transfers_in": [
+        "Cherki",
+        "Hall"
+      ],
+      "transfers_out": [
+        "Szoboszlai",
+        "White"
+      ],
+      "captain": "Haaland",
+      "horizon_gain": 4.79
+    }
+  }
+}

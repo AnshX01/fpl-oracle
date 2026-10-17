@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "command": [
+    ".venv\\Scripts\\python.exe",
+    "scripts\\evaluate_d4_cqr_bands.py"
+  ],
+  "exit_code": 0,
+  "stdout": "================================================================================\nD4: CQR PRODUCTION BANDS EMPIRICAL EVALUATION & RECALIBRATION\n================================================================================\n\n--- 1. ROOT CAUSE ANALYSIS OF C5 GOALKEEPER UNDER-COVERAGE (71.7%) ---\nPrior CQR model was calibrated strictly on 2025-26 GW11-18 (8 gameweeks).\nIn that small 8-week slice, there were only N=161 Goalkeepers.\nThis small sample produced a loose offset (0.1905) that under-covered on the 2026-27 holdout (71.67%).\nRemediation: (1) Multi-season calibration data (N=405-887 GKPs) and (2) Cross-position empirical shrinkage.\n\n--- 2. FORWARD HOLDOUT EVALUATION (2026-27 GW1-6 ACTIVE PLAYERS) ---\nCalibration Sample Counts: {'GKP': 767, 'DEF': 3950, 'MID': 5347, 'FWD': 1434}\nConformal Offsets (Multi-season Cal): {'GKP': 0.3367, 'DEF': 0.4627, 'MID': 0.0, 'FWD': 0.0}\n\nEmpirical Coverage vs SPEC Gate [77.0%, 83.0%]:\nPosition | N      | Coverage | Wilson 95% CI    | Block Boot 95% CI  | Width  | PB10   | PB90   | SPEC Gate [77, 83]\n---------------------------------------------------------------------------------------------------------\nGKP      | 120    | 78.33%  | [70.15, 84.76]%   | [71.67, 84.17]%     | 6.22   | 0.3305 | 0.7331 | PASS\nDEF      | 640    | 79.69%  | [76.40, 82.62]%   | [75.58, 83.86]%     | 5.63   | 0.3338 | 0.8027 | PASS\nMID      | 878    | 78.93%  | [76.11, 81.50]%   | [71.85, 83.75]%     | 5.24   | 0.2815 | 0.7043 | PASS\nFWD      | 215    | 77.21%  | [71.15, 82.31]%   | [69.12, 85.19]%     | 5.51   | 0.2817 | 0.7149 | PASS\nALL      | 1853   | 78.95%  | [77.04, 80.75]%   | [73.55, 82.19]%     | 5.47   | 0.3027 | 0.7414 | PASS\n\n--- 3. PRODUCTION CQR RECALIBRATION (ALL FINALISED DATA TO DATE) ---\nProduction Calibrated Sample Counts: {'GKP': 887, 'DEF': 4590, 'MID': 6225, 'FWD': 1649}\nProduction Conformal Offsets: {'GKP': 0.3519, 'DEF': 0.4658, 'MID': 0.0, 'FWD': 0.0}\n\nSaved machine artifact to reports\\d4_cqr_bands.json\n\nD4 CQR PRODUCTION BANDS EVALUATION COMPLETED SUCCESSFULLY\n",
+  "stderr": "",
+  "output": "================================================================================\nD4: CQR PRODUCTION BANDS EMPIRICAL EVALUATION & RECALIBRATION\n================================================================================\n\n--- 1. ROOT CAUSE ANALYSIS OF C5 GOALKEEPER UNDER-COVERAGE (71.7%) ---\nPrior CQR model was calibrated strictly on 2025-26 GW11-18 (8 gameweeks).\nIn that small 8-week slice, there were only N=161 Goalkeepers.\nThis small sample produced a loose offset (0.1905) that under-covered on the 2026-27 holdout (71.67%).\nRemediation: (1) Multi-season calibration data (N=405-887 GKPs) and (2) Cross-position empirical shrinkage.\n\n--- 2. FORWARD HOLDOUT EVALUATION (2026-27 GW1-6 ACTIVE PLAYERS) ---\nCalibration Sample Counts: {'GKP': 767, 'DEF': 3950, 'MID': 5347, 'FWD': 1434}\nConformal Offsets (Multi-season Cal): {'GKP': 0.3367, 'DEF': 0.4627, 'MID': 0.0, 'FWD': 0.0}\n\nEmpirical Coverage vs SPEC Gate [77.0%, 83.0%]:\nPosition | N      | Coverage | Wilson 95% CI    | Block Boot 95% CI  | Width  | PB10   | PB90   | SPEC Gate [77, 83]\n---------------------------------------------------------------------------------------------------------\nGKP      | 120    | 78.33%  | [70.15, 84.76]%   | [71.67, 84.17]%     | 6.22   | 0.3305 | 0.7331 | PASS\nDEF      | 640    | 79.69%  | [76.40, 82.62]%   | [75.58, 83.86]%     | 5.63   | 0.3338 | 0.8027 | PASS\nMID      | 878    | 78.93%  | [76.11, 81.50]%   | [71.85, 83.75]%     | 5.24   | 0.2815 | 0.7043 | PASS\nFWD      | 215    | 77.21%  | [71.15, 82.31]%   | [69.12, 85.19]%     | 5.51   | 0.2817 | 0.7149 | PASS\nALL      | 1853   | 78.95%  | [77.04, 80.75]%   | [73.55, 82.19]%     | 5.47   | 0.3027 | 0.7414 | PASS\n\n--- 3. PRODUCTION CQR RECALIBRATION (ALL FINALISED DATA TO DATE) ---\nProduction Calibrated Sample Counts: {'GKP': 887, 'DEF': 4590, 'MID': 6225, 'FWD': 1649}\nProduction Conformal Offsets: {'GKP': 0.3519, 'DEF': 0.4658, 'MID': 0.0, 'FWD': 0.0}\n\nSaved machine artifact to reports\\d4_cqr_bands.json\n\nD4 CQR PRODUCTION BANDS EVALUATION COMPLETED SUCCESSFULLY",
+  "timestamp": "2026-10-17T04:13:19.915918+00:00",
+  "git_commit": "b02d09da3bef8144c87809a93cc4b4052fce5867",
+  "code_head": "b02d09da3bef8144c87809a93cc4b4052fce5867",
+  "result": "PASS",
+  "artifacts": [
+    {
+      "path": "reports/d4_cqr_bands.json",
+      "sha256": "75cae8862f8cfdfe1c418692f0cadaedae231ab392240b91c159b89b03019fed"
+    }
+  ],
+  "file_hashes": {
+    "reports/d4_cqr_bands.json": "75cae8862f8cfdfe1c418692f0cadaedae231ab392240b91c159b89b03019fed"
+  },
+  "gates": []
+}

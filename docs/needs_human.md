@@ -50,8 +50,10 @@ Inspection of diffs via `git grep -n "AIza" b8b880d fd00d00 c54deb1`:
 
 ---
 
-## 2. Finding F-011: Risk-Aware Lineup Feature Flag Approval
-- The feature flag `risk_aware_lineup` in `config/flags.yaml` defaults to `false`.
-- A golden fixture diff was executed comparing `balanced`, `conservative`, and `aggressive` modes.
-- Conservative mode benches doubtful starters (e.g. 75% flag with high spread) in favor of secure defenders, while aggressive mode prioritizes P90 upside.
-- **Required Action:** Repository owner should review the golden fixture diff in `docs/remediation_log.md` (F-011) and decide whether to approve enabling `risk_aware_lineup: true` by default.
+## 2. Finding F-011: Risk-Aware Lineup Feature Flag & Risk Modes (Owner Decision)
+- **Status:** Owner Decision Recorded — Keep Default-Off (`risk_aware_lineup: false`).
+- **Mechanism:** In `src/fpl_oracle/optimise/lineup.py`, the `risk_aware_lineup` feature flag is default-off (`is_flag_enabled("risk_aware_lineup", default=False)`).
+- **Consequence:** The risk modes (`conservative`, `balanced`, `aggressive`) are currently **inert** across all optimization runs (all 3 modes solve standard linear expectation maximization, as empirically verified across 30 replay runs in C2 and D3).
+- **Owner Directive (D7):** Do **NOT** enable `risk_aware_lineup` by default. It remains `false` in production config.
+- **Superseding Architecture Note:** Item 4's simulator-based mini-league mode (which simulates joint rival lineups and stochastic match distributions to select tactical chasing vs defending strategies) is designed to supersede this heuristic quadratic variance penalty (`lambda * sigma^2`). Any activation or overhaul is deferred to the mini-league simulator integration.
+
