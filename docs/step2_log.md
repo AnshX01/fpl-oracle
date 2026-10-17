@@ -18,6 +18,10 @@ Pursuant to directive **C1**, every numeric value, sample count, gain metric, an
 | **C3** | `reports/evidence/C3-planners.txt` | `reports/c3_planner_comparison.json` | `debe052e42549a7791b4b0a321a28ab14a8610ed12bcf6ae6c963515b19959c3` |
 | **C4** | `reports/evidence/C4-corpus.txt` | `reports/c4_training_corpus.json` | `2424216ea269c6b030832db05da7f25035d428562b4d9fe5c805e882283d0884` |
 | **C5** | `reports/evidence/C5-active-holdout.txt` | `reports/c5_active_holdout_metrics.json` | `8178e7e1b43f1405f4cb4ff39c8c7de6415380ac64fc2cade147cb6c296cdd98` |
+| **D2** | `reports/evidence/D2-reconcile.txt` | `reports/d2_squad_reconciliation.json` | `fc5b02a3e05197dc9cffd8103a714e335e9e9bab27ec9fb943bfba2ff43d660a` |
+| **D3** | `reports/evidence/D3-replays.txt` | `reports/d3_replays.json` | `aa04c61217f4166241203f07ca3c99c2abf15327c435a0b982672a72d62389f0` |
+| **D4** | `reports/evidence/D4-cqr.txt` | `reports/d4_cqr_bands.json` | `75cae8862f8cfdfe1c418692f0cadaedae231ab392240b91c159b89b03019fed` |
+| **D6** | `reports/evidence/D6-holdout.txt` | `reports/d6_holdout_stats.json` | `abd2143487f466e6b8aea0e133ce0dcb36b54e2b13c3c98871572156923cc0da` |
 
 ---
 
@@ -180,3 +184,133 @@ Evaluated strictly on active players (`actual_minutes > 0`) over the 2026-27 for
 - **Overall Empirical 80% Coverage:** `78.04%` (within nominal tolerance $[75.0\%, 85.0\%]$)
 
 ---
+
+## D1. Planner Authority: Multi-Period MILP & Unified Surface Routing
+
+Pursuant to directive **D1** (Spec Phase 2/5):
+1. **Authoritative Designation:** The **Multi-Period Mixed-Integer Linear Program (MILP)** (`fpl_oracle.optimise.multiperiod.MultiPeriodOptimizer`) is established as the single authoritative planning engine across the system.
+2. **Fallback & Cross-Check:** The bounded **Beam Search Optimizer** (`fpl_oracle.optimise.transfers_beam.TransferOptimizer`) is retained strictly as a fast fallback engine and validation cross-check for <= 2 transfers.
+3. **Unified Surface Routing:** All live consumer surfaces (`/api/transfers`, `/api/optimize`, `/api/contingency/*`, `/api/league/scenarios`, pipeline background runner, weekly briefing generator, decision card generator, and CLI) route through `analysis_service.plan()`, which directly executes the authoritative MILP plan with the full legal action set (all chips, hits, FT banking).
+4. **Resolution of "Captain: None":** In `src/fpl_oracle/optimise/multiperiod.py`, `_to_plan_dict` now reconstructs the legal 15-player squad following transfers and invokes `lineup_optimizer.select_lineup_and_captain` to select the starting XI, captain, and vice-captain. The output contains `plan["lineup"]["captain"]["web_name"]`, ensuring complete captain parity across all surfaces.
+
+---
+
+## D2. Current Squad Reconciliation (Manager 1085141, GW7)
+
+Reconciled entering Gameweek 7 under identical player universe, action set, and optimizer shrinkage.  
+*Source: `reports/d2_squad_reconciliation.json` and `reports/evidence/D2-reconcile.txt`*
+
+### State Discrepancy Resolution:
+- **Ground Truth FPL API State:** `entry_history` for GW6 picks reports **Bank = 0.1m** (1 tenth), **Free Transfers = 1**.
+- **User Profile Override State:** The SQLite table `user_profile` in `data/fpl_oracle.db` had manual overrides enabled (`bank_override_enabled=1`, `ft_override_enabled=1`), reporting **Bank = 1.5m** (15 tenths), **Free Transfers = 2**.
+- **Resolution:** The earlier briefing invoked the live profile service which picked up the override, whereas raw API audit scripts read `entry:1085141:event:6:picks`. Both states were evaluated side-by-side.
+
+### Comparative Execution Table:
+| Setting | Planner Engine | Constraints / Chips | Transfers In | Transfers Out | Captain | Horizon Gain | Discrepancy Explanation |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: | :--- |
+| **Ground Truth** (0.1m, 1 FT) | Beam Search | Normal (<= 2 Xfers) | `['Hall']` | `['White']` | Haaland | +3.94 | Exact transfer match |
+| **Ground Truth** (0.1m, 1 FT) | Multi-Period MILP | Chips Forbidden | `['Hall']` | `['White']` | Haaland | +2.59 | Exact transfer match; gain discounted ($\gamma=0.9$) |
+| **Ground Truth** (0.1m, 1 FT) | Multi-Period MILP | Full Legal Action Set | 11 Players In | 11 Players Out | Haaland | +11.78 | Optimal Wildcard discovered |
+| **Profile Override** (1.5m, 2 FT) | Beam Search | Normal (<= 2 Xfers) | `['Cherki', 'Hall']` | `['Szoboszlai', 'White']` | Haaland | +7.06 | Exact transfer match |
+| **Profile Override** (1.5m, 2 FT) | Multi-Period MILP | Chips Forbidden | `['Cherki', 'Hall']` | `['Szoboszlai', 'White']` | Haaland | +4.79 | Exact transfer match; gain discounted ($\gamma=0.9$) |
+| **Profile Override** (1.5m, 2 FT) | Multi-Period MILP | Full Legal Action Set | 8 Players In | 8 Players Out | Haaland | +10.83 | Optimal Wildcard discovered |
+
+**Key Findings:** Under identical action sets (chips forbidden), Beam Search and MILP choose **identical transfers** (Hall for White on 0.1m/1FT; Cherki & Hall for Szoboszlai & White on 1.5m/2FT) and identical captaincy (Haaland). Gain differences stem purely from MILP's multi-period discount factor and shrinkage. Unconstrained MILP discovers superior horizon value via early Wildcard (+11.78 / +10.83 xP).
+
+---
+
+## D3. Replay Fixtures & Squad Validation
+
+Evaluated across 10 independent managers from mini-league `435956` in all 3 risk modes (30 total optimization runs).  
+*Source: `reports/d3_replays.json` and `reports/evidence/D3-replays.txt`*
+
+### Clarification of "Out: Cash":
+- Replay 3 showed transfer `"Out: Cash"`. Investigation verified that player element 32 is **Matty Cash** (Aston Villa defender, value £4.6m).
+- Manager `2227954` legitimately owned Matty Cash in their 15-player squad and sold him for De Cuyper. No missing cash or currency corruption occurred.
+
+### Squad Validation:
+- All 11 independent managers audited from mini-league `435956` (`2227954`, `1085141`, `4687536`, `8364971`, `2230307`, `7793828`, `9778590`, `9153936`, `6861977`, `9216581`, `9223805`) strictly validated: exactly 15 players (2 GKP, 5 DEF, 5 MID, 3 FWD; $\le 3$ players per Premier League club). Zero invalid squads were found.
+
+### Replay Invariant Verification (30 comparative runs):
+1. **Any change detected from `simulate_captaincy=False`:** `False` (`0` transfer changes, `0` captain changes across all 30 runs).
+2. **Risk modes difference:** `False` (identical plans across conservative, balanced, aggressive because `risk_aware_lineup` is default-off).
+
+---
+
+## D4. CQR Production Bands Empirical Recalibration & SPEC Gate Audit
+
+*Source: `reports/d4_cqr_bands.json` and `reports/evidence/D4-cqr.txt`*
+
+### Root Cause Analysis of Prior Goalkeeper Under-Coverage (71.7%):
+- The earlier snapshot in C5 was calibrated strictly on 2025-26 GW11-18 (8 gameweeks), providing only N=161 played Goalkeepers.
+- The small sample size generated high variance and an underestimated offset (0.1905), leading to 71.67% empirical coverage on the 2026-27 forward holdout.
+- **Remediation:** (1) Multi-season calibration data (N=767 played GKPs in 2025-26, N=887 played GKPs when rolling finalised data is incorporated) and (2) Cross-position empirical Bayes shrinkage for low-sample strata.
+
+### Forward Holdout Empirical Coverage vs SPEC Gate `[77.0%, 83.0%]`:
+Evaluated strictly on active players (`actual_minutes > 0`) over 2026-27 GW1-6 (N=1,853):
+
+| Position | Sample Size (N) | Coverage % | Wilson 95% CI | Gameweek-Block Boot 95% CI | Mean Width | PB10 Loss | PB90 Loss | SPEC Gate `[77, 83]` |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **GKP** | 120 | **78.33%** | [70.15, 84.76]% | [71.67, 84.17]% | 6.22 | 0.3305 | 0.7331 | **PASS** |
+| **DEF** | 640 | **79.69%** | [76.40, 82.62]% | [75.58, 83.86]% | 5.63 | 0.3338 | 0.8027 | **PASS** |
+| **MID** | 878 | **78.93%** | [76.11, 81.50]% | [71.85, 83.75]% | 5.24 | 0.2815 | 0.7043 | **PASS** |
+| **FWD** | 215 | **77.21%** | [71.15, 82.31]% | [69.12, 85.19]% | 5.51 | 0.2817 | 0.7149 | **PASS** |
+| **ALL** | 1853 | **78.95%** | [77.04, 80.75]% | [73.55, 82.19]% | 5.47 | 0.3027 | 0.7414 | **PASS** |
+
+*All positions strictly satisfy the SPEC gate `[77.0%, 83.0%]`. Do NOT use relaxed `[75, 85]`.*
+
+### Production Rolling Recalibration (All Finalised Data to Date):
+- **Training Set:** Seasons `2023-24` and `2024-25` (57,330 rows).
+- **Rolling Calibration Window:** Season `2025-26` + finalised `2026-27 GW1-6` (`minutes > 0`).
+- **Calibration Sample Counts:** `{'GKP': 887, 'DEF': 4590, 'MID': 6225, 'FWD': 1649}` (total N=17,351).
+- **Calibrated Production Conformal Offsets:** `{'GKP': 0.3519, 'DEF': 0.4658, 'MID': 0.0, 'FWD': 0.0}`.
+
+---
+
+## D5. Dead Feature Protocol & Weekly Retraining Specification
+
+1. **Dead Feature Context:** In pre-2026 historical training (seasons 2023-24 through 2025-26), the feature `is_2026_27` was constant `0.0` for 100% of rows (87,087 observations).
+2. **Weekly Retraining Protocol (Step Plan Specification):**
+   - Retraining is triggered weekly immediately following gameweek $g-1$ finalization (`event.finished == True` and `event.data_checked == True`).
+   - The training and calibration dataset pool incorporates all historical seasons plus 2026-27 rows through gameweek $g-1$ only.
+   - Predictions for gameweek $g$ are strictly frozen before the official gameweek deadline (forward holdout protocol).
+   - Because rows with `season == '2026-27'` through $g-1$ enter the training corpus, `is_2026_27` becomes non-constant (containing both 0 and 1 values), allowing the model to learn 2026-27 era dynamics (such as revised DefCon points rules and 5-FT banking) without data leakage.
+   - Retrained candidate models must pass the automated bootstrap promotion gate against active served weights before production promotion.
+   - *Status:* Specification added to step plan. Standing scheduler implementation deferred.
+
+---
+
+## D6. 2026-27 GW1-6 Forward Holdout Per-Gameweek Performance & Bootstrap CIs
+
+Evaluated strictly on active players (`actual_minutes > 0`) over 2026-27 GW1 through GW6 (N=1,853 observations).  
+*Source: `reports/d6_holdout_stats.json` and `reports/evidence/D6-holdout.txt`*
+
+### Per-Gameweek Performance Breakdown:
+| GW | Active N | ML MAE | Best Baseline MAE | MAE Gain vs Best | ML RMSE | ML Spearman | Best Baseline Spearman | Spearman Gain vs Best |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **GW1** | 310 | 2.323 | 2.541 (Season) | **+0.218** | 3.499 | 0.238 | 0.192 (Season) | **+0.046** |
+| **GW2** | 312 | 1.940 | 2.331 (Recent) | **+0.391** | 3.004 | 0.369 | 0.300 (Fixture) | **+0.069** |
+| **GW3** | 307 | 1.956 | 2.290 (Season) | **+0.334** | 2.923 | 0.283 | 0.287 (Fixture) | -0.004 |
+| **GW4** | 307 | 2.101 | 2.301 (Season) | **+0.200** | 3.162 | 0.379 | 0.387 (Fixture) | -0.008 |
+| **GW5** | 302 | 2.077 | 2.313 (Season) | **+0.236** | 3.192 | 0.404 | 0.386 (Fixture) | **+0.018** |
+| **GW6** | 315 | 1.901 | 2.194 (Season) | **+0.293** | 2.919 | 0.362 | 0.363 (Fixture) | -0.001 |
+| **TOT** | **1853** | **2.049** | **2.330 (Season)** | **+0.281** | **3.122** | **0.339** | **0.315 (Fixture)** | **+0.024** |
+
+### Gameweek-Block Bootstrap 95% Confidence Intervals (5,000 Resamples):
+- **Pooled MAE Gain vs Best Baseline:** `+0.281` pts | **95% Block Bootstrap CI:** `[+0.2273, +0.3401]`
+- **Pooled Spearman Gain vs Best Baseline:** `+0.024` | **95% Block Bootstrap CI:** `[-0.0005, +0.0484]`
+
+### Sample Size Caveat:
+The 2026-27 forward holdout comprises 6 early-season gameweeks (GW1-6) encompassing N=1,853 active player observations (mean ~308 active players/GW). While observation counts are statistically substantial for overall point estimates, temporal clustering at the gameweek level yields an effective sample size governed by B=6 gameweek blocks. Gameweek-level systemic shocks (e.g., gameweek fixture variance, tactical anomalies, referee cards) induce intra-gameweek correlation. Consequently, gameweek-block bootstrap confidence intervals are reported to account for block-level dependence.
+
+---
+
+## D7. Risk Modes Owner Decision
+
+Pursuant to directive **D7**:
+- The feature flag `risk_aware_lineup` in `config/flags.yaml` defaults to `false`.
+- Consequently, the risk modes (`conservative`, `balanced`, `aggressive`) are **inert** (all 3 modes solve standard linear expectation maximization, confirmed by the 30 replay runs in C2 and D3).
+- **Owner Decision:** `risk_aware_lineup` remains **default-off** (`false`). It has **NOT** been turned on.
+- **Repository Record:** Formally recorded in `docs/needs_human.md` Section 2.
+- **Superseding Note:** Item 4's simulator-based mini-league mode (which simulates opponent lineups and match distributions to dynamically optimize chasing vs defending strategies) is designed to supersede this heuristic quadratic variance penalty (`lambda * sigma^2`). Any overhaul is deferred to the mini-league simulator integration.
+

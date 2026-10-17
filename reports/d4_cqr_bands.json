@@ -1,0 +1,111 @@
+{
+  "evaluation_protocol": "Forward holdout on active players (minutes > 0) in 2026-27 GW1-6",
+  "spec_gate": [
+    77.0,
+    83.0
+  ],
+  "holdout_results": {
+    "GKP": {
+      "sample_count": 120,
+      "coverage_pct": 78.33,
+      "wilson_ci_95": [
+        70.15,
+        84.76
+      ],
+      "block_bootstrap_ci_95": [
+        71.67,
+        84.17
+      ],
+      "mean_interval_width": 6.22,
+      "pinball_loss_p10": 0.3305,
+      "pinball_loss_p90": 0.7331,
+      "within_spec_gate_77_83": true
+    },
+    "DEF": {
+      "sample_count": 640,
+      "coverage_pct": 79.69,
+      "wilson_ci_95": [
+        76.4,
+        82.62
+      ],
+      "block_bootstrap_ci_95": [
+        75.58,
+        83.86
+      ],
+      "mean_interval_width": 5.63,
+      "pinball_loss_p10": 0.3338,
+      "pinball_loss_p90": 0.8027,
+      "within_spec_gate_77_83": true
+    },
+    "MID": {
+      "sample_count": 878,
+      "coverage_pct": 78.93,
+      "wilson_ci_95": [
+        76.11,
+        81.5
+      ],
+      "block_bootstrap_ci_95": [
+        71.85,
+        83.75
+      ],
+      "mean_interval_width": 5.24,
+      "pinball_loss_p10": 0.2815,
+      "pinball_loss_p90": 0.7043,
+      "within_spec_gate_77_83": true
+    },
+    "FWD": {
+      "sample_count": 215,
+      "coverage_pct": 77.21,
+      "wilson_ci_95": [
+        71.15,
+        82.31
+      ],
+      "block_bootstrap_ci_95": [
+        69.12,
+        85.19
+      ],
+      "mean_interval_width": 5.51,
+      "pinball_loss_p10": 0.2817,
+      "pinball_loss_p90": 0.7149,
+      "within_spec_gate_77_83": true
+    },
+    "ALL": {
+      "sample_count": 1853,
+      "coverage_pct": 78.95,
+      "wilson_ci_95": [
+        77.04,
+        80.75
+      ],
+      "block_bootstrap_ci_95": [
+        73.55,
+        82.19
+      ],
+      "mean_interval_width": 5.47,
+      "pinball_loss_p10": 0.3027,
+      "pinball_loss_p90": 0.7414,
+      "within_spec_gate_77_83": true
+    }
+  },
+  "production_recalibration": {
+    "seasons_trained": [
+      "2023-24",
+      "2024-25"
+    ],
+    "seasons_calibrated": [
+      "2025-26",
+      "2026-27 GW1-6"
+    ],
+    "cal_sample_counts": {
+      "GKP": 887,
+      "DEF": 4590,
+      "MID": 6225,
+      "FWD": 1649
+    },
+    "conformal_offsets": {
+      "GKP": 0.3519,
+      "DEF": 0.4658,
+      "MID": 0.0,
+      "FWD": 0.0
+    }
+  }
+}

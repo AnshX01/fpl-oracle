@@ -23,6 +23,7 @@ from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import ScoringEnsemble
 from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.model_registry import model_registry
+from fpl_oracle.ml.quantiles import ConformalQuantileRegressor
 
 logger = logging.getLogger("fpl_oracle.train")
 
@@ -242,6 +243,22 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
     bw = candidate_ensemble.fit_stacking_weights(cal_comps_flat, X_cal, Y_cal)
     z10, z90 = candidate_ensemble.calibrate(cal_comps_flat, X_cal, Y_cal)
     logger.info(f"Empirical quantile calibration fit: z10={z10:.3f}, z90={z90:.3f}, blend_weights={bw}")
+
+    # 6b. Refit and recalibrate CQR quantile regression models on rolling finalised data (D4)
+    logger.info("Refitting and recalibrating CQR quantile regression models on rolling data (D4)...")
+    candidate_cqr = ConformalQuantileRegressor(nominal_coverage=0.80, n_estimators=50, random_state=42)
+    candidate_cqr.fit(
+        X_train=X_fit,
+        y_train=Y_fit["target_points"],
+        pos_train=meta_train.loc[fit_mask, "position"],
+    )
+    candidate_cqr.calibrate_conformal(
+        X_cal=X_cal,
+        y_cal=Y_cal["target_points"],
+        pos_cal=meta_train.loc[cal_mask, "position"],
+        shrink_across_positions=True,
+    )
+    candidate_ensemble.set_cqr(candidate_cqr)
 
     # 7. Evaluate candidate models on holdout validation split with real dynamic ablation (M8)
     logger.info("Evaluating candidate models on holdout validation split with real ablation...")
