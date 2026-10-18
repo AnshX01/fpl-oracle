@@ -4,7 +4,8 @@ from fpl_oracle.server import advice_job
 
 
 def card(deadline):
-    return {"decisionCard": {"deadline": deadline.isoformat()}}
+    # Same shape as the published decision card
+    return {"decisionCard": {"deadline": {"deadline_time": deadline.isoformat(), "label": "GW8"}}}
 
 
 def test_last_advice_is_reused_for_the_same_manager_until_the_deadline(tmp_path, monkeypatch):

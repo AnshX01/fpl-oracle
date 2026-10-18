@@ -1053,7 +1053,11 @@ async def get_briefing():
 
 @router.post("/chat")
 async def chat_endpoint(req: ChatRequest):
-    ans = await expert_agent.answer(user_message=req.message, session_id=req.session_id or "default")
+    try:
+        ans = await expert_agent.answer(user_message=req.message, session_id=req.session_id or "default")
+    except HTTPException as error:
+        # A chat answer is never an HTTP error: say what blocks the advice instead.
+        ans = f"I can't answer that with fresh numbers right now: {error.detail}"
     return safe_json_serialize({"response": ans, "data_as_of": fpl_client.get_data_as_of("bootstrap-static")})
 
 
