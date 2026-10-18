@@ -76,3 +76,8 @@ data/models/quarantine/
 data/models/recovery_event.json
 data/models/promotion_journal.json
 data/models/.staging_*/
+
+# Local screenshots shared during support
+/image*.png
+data/last_advice.json
+data/last_advice.json.tmp
