@@ -1,3 +1,2 @@
-# Manifest records the original Windows calibration artifact bytes.
-# Preserve those bytes on fresh clones regardless of core.autocrlf.
-data/models/calibration.json text eol=crlf
+# Model bundle files are hash-verified against manifest.json: git must never rewrite their bytes.
+data/models/** -text
