@@ -18,3 +18,20 @@ def test_minutes_note_names_only_coin_flip_starters():
 def test_games_since_start_counts_matches_before_each_row():
     starts = pd.Series([0, 1, 0, 0, 1])
     assert _games_since_start(starts).tolist() == [10.0, 10.0, 1.0, 2.0, 3.0]
+
+
+def test_close_call_names_a_narrow_sale_in_plain_words():
+    from fpl_oracle.briefing.decision_card import _close_calls
+
+    plan = {
+        "trajectory": [{}] * 12,
+        "league": {"p_win": 0.241},
+        "league_cover_checks": [
+            dict(player="Haaland", owners=7, points_vs_plan=-2.7, p_win=0.22, chosen=False, owned=True, close=True),
+            dict(player="Groß", owners=5, points_vs_plan=-9.0, p_win=0.2, chosen=False, owned=True, close=False),
+        ],
+    }
+    assert _close_calls(plan) == [
+        "Selling Haaland is only slightly better: 2.7 points over the next 12 gameweeks, inside the forecast's "
+        "uncertainty. Keeping him is a fair choice; your chance of finishing first would be about 22% instead of 24%."
+    ]

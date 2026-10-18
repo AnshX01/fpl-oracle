@@ -210,6 +210,7 @@ def build_decision_record(result: dict[str, Any], extras: dict[str, Any] | None 
         ),
         "caveats": _clean(card.get("caveats"), items=6),
         "what_changed": card.get("what_changed"),
+        "close_calls": _clean(card.get("close_calls"), items=4),
         "press_signals": _clean([n.get("text") for n in card.get("press_signals") or []], items=8),
     }
 

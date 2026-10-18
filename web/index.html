@@ -127,6 +127,7 @@
             </div>
           </div>
           <p v-else class="muted">No transfers this week.</p>
+          <p v-for="line in card.close_calls || []" :key="line" class="subtle" data-testid="close-call">{{ line }}</p>
           <p v-if="card.transfers.comparison" class="subtle">{{ card.transfers.comparison }}</p>
           <div v-if="draftChoices.length || savedChoices.length" class="stack-sm" data-testid="your-choices">
             <p class="muted">{{ choicesChanged ? 'Your choices (not applied yet). Mark as many players as you like, then apply.' : 'Built around your choices. The planner finds the best plan that respects them.' }}</p>
