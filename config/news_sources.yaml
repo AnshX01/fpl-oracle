@@ -23,18 +23,6 @@ rss_feeds:
     weight: 0.85
     enabled: true
 
-search_apis:
-  tavily:
-    endpoint: "https://api.tavily.com/search"
-    env_key: "TAVILY_API_KEY"
-  brave:
-    endpoint: "https://api.search.brave.com/res/v1/web/search"
-    env_key: "BRAVE_API_KEY"
-
-sentiment_and_signals:
-  confidence_threshold: 0.65
-  max_article_age_days: 7
-
 trusted_publishers:
   - "bbc.co.uk"
   - "bbci.co.uk"

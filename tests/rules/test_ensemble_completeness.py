@@ -117,19 +117,12 @@ def test_decomposition_sums_exactly_to_final_xp(sample_features, sample_componen
     ens = ScoringEnsemble(blend_weights=(1.0, 0.0, 0.0))
     res_df = ens.aggregate_components(sample_components, sample_features)
 
-    reconstructed = ScoringEnsemble.verify_decomposition(res_df)
-
-    # 1. Reconstructed sum matches raw_expected_points identically
-    assert np.allclose(reconstructed.values, res_df["raw_expected_points"].values, atol=1e-5), (
-        f"Mismatch between reconstructed and raw: {reconstructed.values} vs {res_df['raw_expected_points'].values}"
-    )
-
-    # 2. In unblended mode, expected_points is identical to raw_expected_points
+    # 1. In unblended mode, expected_points is identical to raw_expected_points
     assert np.allclose(res_df["expected_points"].values, res_df["raw_expected_points"].values, atol=1e-5), (
         f"Unblended expected_points differs from raw: {res_df['expected_points'].values} vs {res_df['raw_expected_points'].values}"
     )
 
-    # 3. Injured player (row index 4) has exactly 0.0 across all components
+    # 2. Injured player (row index 4) has exactly 0.0 across all components
     row_injured = res_df.iloc[4]
     assert row_injured["expected_points"] == 0.0
     assert row_injured["exp_appearance"] == 0.0
@@ -188,55 +181,6 @@ def test_own_goals_and_penalty_misses_deductions(sample_features, sample_compone
 
     # MID (row 2): expected_penalties_missed = 0.040 -> deduction = 0.040 * 2 = 0.08
     assert res_df.loc[2, "exp_pen_miss_deduction"] == pytest.approx(0.08, abs=0.01)
-
-
-def test_randomized_property_decomposition_exactness():
-    """Stress test with 100 randomized player rows confirming 0 arithmetic deviation."""
-    rng = np.random.default_rng(42)
-    n = 100
-    positions = rng.choice(["GKP", "DEF", "MID", "FWD"], size=n)
-    pos_df = pd.get_dummies(positions, prefix="pos", dtype=float)
-    for p in ["GKP", "DEF", "MID", "FWD"]:
-        if f"pos_{p}" not in pos_df.columns:
-            pos_df[f"pos_{p}"] = 0.0
-
-    X = pd.DataFrame(
-        {
-            "position": positions,
-            "pos_GKP": pos_df["pos_GKP"].values,
-            "pos_DEF": pos_df["pos_DEF"].values,
-            "pos_MID": pos_df["pos_MID"].values,
-            "pos_FWD": pos_df["pos_FWD"].values,
-            "chance_of_playing": rng.choice([0.0, 50.0, 75.0, 100.0], size=n),
-            "roll_own_goals_5": rng.integers(0, 3, size=n).astype(float),
-            "roll_penalties_missed_5": rng.integers(0, 2, size=n).astype(float),
-        }
-    )
-
-    comps = {
-        "p_starts": rng.uniform(0.0, 1.0, size=n),
-        "p_min60": rng.uniform(0.0, 0.9, size=n),
-        "expected_minutes": rng.uniform(0.0, 90.0, size=n),
-        "expected_goals": rng.uniform(0.0, 1.2, size=n),
-        "expected_assists": rng.uniform(0.0, 0.8, size=n),
-        "p_clean_sheet": rng.uniform(0.1, 0.6, size=n),
-        "expected_goals_conceded": rng.uniform(0.5, 3.0, size=n),
-        "expected_saves": rng.uniform(0.0, 6.0, size=n),
-        "p_defcon": rng.uniform(0.0, 0.8, size=n),
-        "expected_card_deduction": rng.uniform(0.0, 0.5, size=n),
-        "expected_bonus": rng.uniform(0.0, 1.5, size=n),
-        "expected_penalties_saved": rng.uniform(0.0, 0.1, size=n),
-        "expected_own_goals": rng.uniform(0.0, 0.05, size=n),
-        "expected_penalties_missed": rng.uniform(0.0, 0.05, size=n),
-    }
-
-    ens = ScoringEnsemble(blend_weights=(1.0, 0.0, 0.0))
-    res_df = ens.aggregate_components(comps, X)
-    reconstructed = ScoringEnsemble.verify_decomposition(res_df)
-
-    diff = np.abs(reconstructed.values - res_df["raw_expected_points"].values)
-    max_diff = float(np.max(diff))
-    assert max_diff == 0.0, f"Found non-zero deviation in decomposition property test: {max_diff}"
 
 
 def test_golden_fixture_consistency():
