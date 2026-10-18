@@ -450,6 +450,12 @@ class AnalysisService:
         # None and "not given" mean the same thing; one spelling keeps every surface on one cached plan.
         for name in ("locked_in_ids", "locked_out_ids", "excluded_team_ids"):
             kwargs[name] = set(kwargs.get(name) or ())
+        # The manager's own calls ("keep", "don't buy") bind every plan on every screen.
+        from fpl_oracle.data.store import data_store as profile_store
+
+        choices = profile_store.get_profile()
+        kwargs["locked_in_ids"] |= set(choices.keep_ids)
+        kwargs["locked_out_ids"] |= set(choices.avoid_ids) - kwargs["locked_in_ids"]
         # Callers fall back differently when the API has no current gameweek; the plan only depends on the target.
         kwargs["current_gw"] = kwargs["target_gw"] - 1
 
