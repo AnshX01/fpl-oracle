@@ -4,20 +4,4 @@
 
 flags:
   multiperiod_milp: false
-  proper_dixon_coles: false
-  odds_blended_expectancy: false
-  cqr_quantiles: false
-  scoreline_simulator: false
-  staged_ft_chip_planner: false
-  squad_health_diagnosis: false
-  efficient_frontier_advisor: false
-  risk_aware_lineup: false
-  use_legacy_chip_thresholds: false
   wilson_news_gate: false
-
-assistant:
-  model_tier: "flash_lite"  # A/B config: "flash_lite" vs "pro"
-  primary_model: "gemini-flash-lite-latest"
-  fallback_model: "offline"
-  enforce_numeric_grounding: true
-  label_offline_mode: true
