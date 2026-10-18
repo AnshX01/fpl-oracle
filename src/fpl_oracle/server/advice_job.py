@@ -92,8 +92,15 @@ class AdvicePublisher:
         from fpl_oracle.data.store import data_store
         from fpl_oracle.ml.holdout import compute_manifest_sha256
         from fpl_oracle.ml.model_registry import model_registry
+        from fpl_oracle.server.retraining import ensure_latest_data
         from fpl_oracle.server.routes.api import get_contingency_plans, get_squad
 
+        self.current["stage"] = "Getting the latest match data"
+        try:
+            data_basis = await ensure_latest_data()
+        except Exception as error:
+            logger.warning("Latest-data check failed (%s); advising on the data already held", error)
+            data_basis = {"warning": "Could not check for newer match data"}
         model_before = model_registry.get_active_version()
         manifest_before = compute_manifest_sha256()
         from fpl_oracle.config import HISTORICAL_DIR
@@ -144,6 +151,7 @@ class AdvicePublisher:
                 context = read_context.get() or {}
                 timestamps = [stamp for _, _, stamp in context.values() if stamp is not None]
                 candidate = dict(
+                    dataBasis=data_basis,
                     squadData=squad,
                     decisionCard=card,
                     contingencyPlans=plans,

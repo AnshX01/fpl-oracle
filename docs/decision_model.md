@@ -4,6 +4,13 @@ What the tool decides each gameweek, the formula behind every step, and the evid
 Goal: win mini-league 435956 over the season. Every recommendation answers one question:
 *which legal action now maximises my chance of finishing first?*
 
+## 0. Data basis
+
+Before every advice run the tool pulls each gameweek FPL has finalized (finished and data-checked, bonus
+confirmed) into the match history and retrains on it if it is new, so form and weights include the latest
+completed gameweek. In-progress gameweeks are never used (their numbers can still change). The card shows
+"form through GW x, model trained through GW y".
+
 ## 1. Player projection (per player i, gameweek t)
 
 For each fixture f of player i in gameweek t (0 fixtures = blank, 2 = double):
@@ -25,7 +32,7 @@ Scoring constants come from the live `game_config.scoring` (GKP goal 10, DEF 6, 
 **Evidence (held-out 2025-26 GW27–38 + 2026-27 GW1–6):** mean xP 1.183 vs actual 1.182; calibration within
 ±0.2 pts in every position × predicted-xP bin with n ≥ 100; by price band 12.0m+ 4.62 vs 4.60; attacking share
 player-level slope 1.03 (no elite compression); DefCon calibrated per bin up to p ≈ 0.45.
-Known limit: DefCon probabilities saturate at 0.80 for the highest-volume defenders (actual ≈ 0.66).
+DefCon uses logit-Platt calibration (held-out Brier 0.1088; the isotonic version plateaued at 0.80 live).
 
 ## 2. Plan objective (multi-period MILP, horizon H = clamp(weeks to chip expiry, 6, 12))
 
@@ -51,7 +58,12 @@ players with few minutes of evidence. Recommend action a over baseline b only if
 
     σ_est(Δ)² = Σ_players changed ( Σ_t γ^t · σ_est(i,t) )²    (same player's errors are correlated across weeks)
 
-with σ_est(i,t) fitted from held-out data as a function of the player's minutes of evidence.
+σ_est is fitted at training time on the latest held-out block:
+σ_est² = Var_i(mean residual of player i) − mean_i(within-player residual variance / n_i)
+(regular players, n ≥ 6, mean xP ≥ 2). Measured: 0.37 xP per player-gameweek, with no reliable dependence on
+minutes of evidence, so one value is used. z = Φ⁻¹(0.75) = 0.674 (act on a 3-to-1 edge), m_min = 0.3 xP.
+Limit: errors shared by team-mates (a mis-rated team) are not modelled, so σ_Δ is a lower bound for plans that
+stack one team.
 Baseline b: for transfers, rolling; for a chip now, the same chip next week (or the best no-chip plan).
 This is what stops a 13-player Wildcard built on small samples from beating a two-transfer fix by a
 margin smaller than its own uncertainty.
@@ -62,8 +74,8 @@ margin smaller than its own uncertainty.
 
 Over a long remaining season σ_Δ ≫ any one week's choice, so maximising expected points (section 2) is
 the dominant term. Rival ownership only changes σ_Δ: selling a rival-owned player raises variance (helps
-a chaser slightly, hurts a leader). Therefore rival exposure only breaks near-ties, and its weight grows
-as the season shortens (Monte Carlo over remaining gameweeks).
+a chaser slightly, hurts a leader). Current status: the live plan maximises expected points; rival exposure
+and league win probability are shown alongside it (Monte Carlo) but do not yet change the recommended move.
 
 ## 5. Captaincy and bench
 
