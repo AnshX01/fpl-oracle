@@ -14,6 +14,8 @@ const SOFT_ADVICE_MINUTES = 60;
 const app = createApp({
   data() {
     return {
+      // Draft of keep / don't-buy calls: edited freely, applied (and recalculated) only on request.
+      draftChoices: [],
       theme: 'dark',
       activeTab: 'week',
       mainTabs: [
@@ -78,9 +80,13 @@ const app = createApp({
 
   computed: {
     isDark() { return this.theme === 'dark'; },
-    choiceCount() {
-      const c = this.card && this.card.your_choices;
-      return c ? (c.keep || []).length + (c.avoid || []).length : 0;
+    savedChoices() {
+      const c = (this.card && this.card.your_choices) || {};
+      return [...(c.keep || []).map(p => ({ ...p, kind: 'keep' })), ...(c.avoid || []).map(p => ({ ...p, kind: 'avoid' }))];
+    },
+    choicesChanged() {
+      const key = list => list.map(p => p.kind + p.element).sort().join(',');
+      return key(this.draftChoices) !== key(this.savedChoices);
     },
     card() {
       const c = this.advice && this.advice.decisionCard;
@@ -345,23 +351,20 @@ const app = createApp({
         if (generation === this.generation) this.adviceBusy = false;
       }
     },
-    async saveChoices(update) {
-      // Keep / don't-buy calls live in the profile; every plan on every screen respects them.
-      const profile = await fetch('/api/profile').then(r => (r.ok ? r.json() : {})).catch(() => ({}));
-      const keep = new Set(profile.keep_ids || []), avoid = new Set(profile.avoid_ids || []);
-      update(keep, avoid);
+    choiceOf(player) {
+      const found = this.draftChoices.find(p => p.element === player.element);
+      return found ? found.kind : null;
+    },
+    toggleChoice(player, kind) {
+      const rest = this.draftChoices.filter(p => p.element !== player.element);
+      this.draftChoices = this.choiceOf(player) === kind ? rest : [...rest, { element: player.element, web_name: player.web_name, kind }];
+    },
+    discardChoices() { this.draftChoices = this.savedChoices.map(p => ({ ...p })); },
+    async applyChoices() {
+      const ids = kind => this.draftChoices.filter(p => p.kind === kind).map(p => p.element);
       await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keep_ids: [...keep], avoid_ids: [...avoid] }) });
+        body: JSON.stringify({ keep_ids: ids('keep'), avoid_ids: ids('avoid') }) });
       this.refreshAll(true);
-    },
-    setChoice(player, kind) {
-      return this.saveChoices((keep, avoid) => {
-        keep.delete(player.element); avoid.delete(player.element);
-        (kind === 'keep' ? keep : avoid).add(player.element);
-      });
-    },
-    clearChoice(player) {
-      return this.saveChoices((keep, avoid) => { keep.delete(player.element); avoid.delete(player.element); });
     },
     async useOfficialNumbers() {
       // Drop saved bank / free-transfer overrides so the advice uses FPL's own figures.
@@ -547,6 +550,8 @@ const app = createApp({
   },
 
   watch: {
+    // A new or saved advice brings its own choices; start the draft from them.
+    savedChoices(value) { if (!this.choicesChanged || !this.draftChoices.length) this.draftChoices = value.map(p => ({ ...p })); },
     activeTab(value) { if (location.hash !== '#' + value) location.hash = value; },
     showChatDrawer(v) { if (v) { this.showPanicModal = false; this.showConfirmTeam = false; } },
     showPanicModal(v) { if (v) { this.showChatDrawer = false; this.showConfirmTeam = false; } },
