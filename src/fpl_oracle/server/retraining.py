@@ -22,6 +22,16 @@ def _save(state):
     os.replace(temporary, STATE_PATH)
 
 
+def _trained_through_current_season() -> int:
+    """Last current-season gameweek the served model was trained on (0 if none): a fresh install that ships
+    a model trained through GW6 must not retrain GW1-6 again."""
+    from fpl_oracle.utils.season import derive_season
+
+    provenance = model_registry.get_active_version().get("training_provenance") or {}
+    fit = provenance.get("served_fit") or provenance.get("corpus") or {}
+    return int((fit.get("by_season") or {}).get(derive_season(format="hyphen"), {}).get("last_gw") or 0)
+
+
 async def retrain_finalized_gameweeks():
     if _lock.locked():
         return "Candidate training already running"
@@ -36,10 +46,12 @@ async def retrain_finalized_gameweeks():
         if stale:
             raise RuntimeError("Finalization requires fresh official event data")
         finalized = sorted(e.id for e in boot.events if e.finished and e.data_checked)
+        trained_through = _trained_through_current_season()
         pending = [
             g
             for g in finalized
-            if state["gameweeks"].get(f"2026-27:{g}", {}).get("status") not in ("promoted", "rejected")
+            if g > trained_through
+            and state["gameweeks"].get(f"2026-27:{g}", {}).get("status") not in ("promoted", "rejected")
         ]
         if not pending:
             return "No new finalized gameweek"
