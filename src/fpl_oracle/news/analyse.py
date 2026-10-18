@@ -10,10 +10,11 @@ import logging
 from typing import Any
 
 from fpl_oracle.api.models import BootstrapStatic
+from fpl_oracle.news import press, press_log
 from fpl_oracle.news.extract import text_extractor
 from fpl_oracle.news.gemini_extractor import gemini_extractor
 from fpl_oracle.news.ingest import news_ingestion
-from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence
+from fpl_oracle.news.models import PlayerEvidence
 from fpl_oracle.news.reconcile import availability_reconciler
 
 logger = logging.getLogger("fpl_oracle.news.analyse")
@@ -44,42 +45,36 @@ class NewsAnalyzer:
             is_gemini_ready, _ = gemini_extractor.is_configured()
             self._active_extractor = "gemini" if is_gemini_ready else "deterministic_fallback"
 
-            if articles:
-                for art in articles[:10]:
-                    cleaned_text = text_extractor.clean_html(art["title"] + " " + art.get("summary", ""))
-                    if not cleaned_text:
-                        continue
-
-                    if is_gemini_ready:
-                        try:
-                            extracted_payload = await gemini_extractor.extract_evidence_from_text(
-                                article_text=cleaned_text,
-                                article_url=art.get("link", ""),
-                                published_at=art.get("published_at"),
-                                candidate_players=roster_batch,
-                                target_gw=target_gw,
-                            )
-                            if "429" in (extracted_payload.raw_response_snippet or ""):
-                                is_gemini_ready = False
-                            candidate_evidences.extend(extracted_payload.evidences)
-                        except Exception as e:
-                            logger.warning(f"Error extracting evidence via Gemini: {e}")
+            recent = press.recent_articles(articles)
+            bodies = await press.fetch_bodies(recent) if recent else {}
+            index = press.PlayerIndex(bootstrap)
+            for art in recent:
+                body = bodies.get(art.get("link", ""), "")
+                if is_gemini_ready:
+                    try:
+                        full = " ".join([art["title"], art.get("summary", ""), body])
+                        extracted_payload = await gemini_extractor.extract_evidence_from_text(
+                            article_text=text_extractor.clean_html(full),
+                            article_url=art.get("link", ""),
+                            published_at=art["published_dt"],
+                            candidate_players=roster_batch,
+                            target_gw=target_gw,
+                        )
+                        if "429" in (extracted_payload.raw_response_snippet or ""):
                             is_gemini_ready = False
-                    else:
-                        try:
-                            # Production path: deterministic fallback extractor
-                            for p in roster_batch:
-                                p_evs = text_extractor.extract_evidence_from_text(
-                                    text=cleaned_text,
-                                    player_name=str(p["web_name"]),
-                                    player_id=int(str(p["id"])),
-                                )
-                                for ev in p_evs:
-                                    if ev.category != EvidenceCategory.UNKNOWN:
-                                        ev.source_url = art.get("link", "")
-                                        candidate_evidences.append(ev)
-                        except Exception as e:
-                            logger.warning(f"Error in deterministic fallback extraction: {e}")
+                        for ev in extracted_payload.evidences:
+                            if index.club_ok(ev.player_id, full):
+                                ev.published_at = art["published_dt"]
+                                ev.source_url = ev.source_url or art.get("link", "")
+                                candidate_evidences.append(ev)
+                    except Exception as e:
+                        logger.warning(f"Error extracting evidence via Gemini: {e}")
+                        is_gemini_ready = False
+                else:
+                    try:
+                        candidate_evidences.extend(press.extract_article_evidence(art, body, index))
+                    except Exception as e:
+                        logger.warning(f"Error in deterministic fallback extraction: {e}")
         except Exception as e:
             logger.warning(f"Error ingesting news feeds: {e}")
 
@@ -88,9 +83,9 @@ class NewsAnalyzer:
         prior = [
             ev
             for ev in self._last_candidate_evidences
-            if ev.published_at and ev.published_at.tzinfo and datetime.now(UTC) - ev.published_at < timedelta(hours=48)
+            if ev.published_at and ev.published_at.tzinfo and datetime.now(UTC) - ev.published_at < timedelta(hours=72)
         ]
-        combined = {ev.model_dump_json(): ev for ev in prior + candidate_evidences}
+        combined = {(ev.player_id, ev.source_url, ev.quote): ev for ev in prior + candidate_evidences}
         candidate_evidences = list(combined.values())
         self._last_candidate_evidences = candidate_evidences
 
@@ -98,6 +93,7 @@ class NewsAnalyzer:
         elem_map = {int(e.id): e for e in bootstrap.elements}
         first_gw = next((e.id for e in bootstrap.events if e.is_next), None)
         signals: list[dict[str, Any]] = []
+        team_names = {t.id: t.name for t in bootstrap.teams}
 
         # Collect official FPL signals
         fpl_signals = news_ingestion.fetch_official_fpl_signals(bootstrap)
@@ -133,7 +129,7 @@ class NewsAnalyzer:
                 {
                     "element_id": elem_id,
                     "web_name": elem.web_name,
-                    "team_name": getattr(elem, "team_name", str(elem.team)),
+                    "team_name": team_names.get(elem.team, str(elem.team)),
                     "signal_type": signal_type,
                     "status_code": status_code,
                     "headline": getattr(elem, "news", "") or f"Reconciled status: {reconciled.reconciliation_reason}",
@@ -151,6 +147,11 @@ class NewsAnalyzer:
                 }
             )
 
+        if player_filter_id is None and first_gw == target_gw:
+            try:
+                press_log.log_applied(signals, target_gw)
+            except Exception as e:
+                logger.warning(f"Could not log applied press signals: {e}")
         return signals
 
     def get_reconciled_inputs(self, bootstrap, target_gw):

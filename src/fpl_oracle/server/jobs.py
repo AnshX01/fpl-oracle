@@ -402,6 +402,13 @@ async def holdout_forward_job():
             await score_pending()
         except Exception as error:
             logger.warning("League forward evidence not recorded/scored: %s", error)
+        try:
+            from fpl_oracle.news.press_log import score_finished
+
+            if (press_report := await score_finished()) is not None:
+                logger.info("Press signal forward validation: %s", press_report)
+        except Exception as error:
+            logger.warning("Press signals not scored: %s", error)
 
 
 async def odds_snapshot_job():
