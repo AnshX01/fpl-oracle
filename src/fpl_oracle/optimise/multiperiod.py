@@ -701,7 +701,7 @@ class MultiPeriodOptimizer:
                 t != 1
                 and free_hit_week(horizon_projections.get(t), t)
                 and not (t == t0 and suppress_t0_chips)
-                and (forced_w1_chip or "").lower() != "wildcard"
+                and not (t == t0 and (forced_w1_chip or "").lower() == "wildcard")  # one chip per week
                 and "freehit" in (avail_by_set[1] if t <= SET_1_LAST_GW else avail_by_set[2])
             )
             fh_squad = None
@@ -1752,106 +1752,11 @@ class MultiPeriodOptimizer:
                 gate_new()
                 ranked, top_cand, hold_cand = standings()
 
-            def week_weights_of(act: dict[str, Any]) -> dict[int, float]:
-                """Objective weight of each player in one planned week: starter 1, captain +1 (+2 with Triple
-                Captain), bench w_bench (1 with Bench Boost)."""
-                weights: dict[int, float] = defaultdict(float)
-                for p_id in act["starters"]:
-                    weights[int(p_id)] += 1.0
-                if act.get("captain") is not None:
-                    weights[int(act["captain"])] += 2.0 if act.get("chip") == "3xc" else 1.0
-                for p_id in act["bench"]:
-                    weights[int(p_id)] += 1.0 if act.get("chip") == "bboost" else self.config.w_bench_mean
-                return weights
-
-            def information_gain(now: dict[str, Any], hold: dict[str, Any]) -> dict[str, Any] | None:
-                """(chip now - keep it), allowing for who goes missing next (information.py). In each scenario each
-                arm keeps its week-1 squad; its plan is scored as it stands, then re-planned from there. The
-                re-planning gain is what reacting is worth; solver slack can only shrink it, never invent it, so
-                gain = planned gain + mean(re-planning gain now - re-planning gain kept)."""
-                from fpl_oracle.optimise.information import SCENARIOS, scenario_projections
-
-                report_search_progress("Checking what waiting would teach you")
-                rng = np.random.default_rng(target_gw)
-                worlds = [scenario_projections(horizon_projections, target_gw, rng) for _ in range(SCENARIOS)]
-                if all(w is horizon_projections for w in worlds):
-                    return None  # no chance-of-playing forecasts: nothing to learn from
-                # Each arm starts from its own plan: always feasible, since a scenario changes points, not rules.
-                arms = {
-                    "now": {
-                        "forced_w1_chip": now["chip"],
-                        "locked_in_ids": sorted(map(int, now["trajectory"][0]["elements"])),
-                        "warm_start": plans[now["source"]].integer_solution,
-                    },
-                    "hold": {
-                        "no_chip_w1": True,
-                        "locked_in_ids": sorted(map(int, hold["trajectory"][0]["elements"])),
-                        "warm_start": plans[hold["source"]].integer_solution,
-                    },
-                }
-                jobs = {(s, arm): extra for s in range(SCENARIOS) for arm, extra in arms.items()}
-
-                def as_planned(cand: dict[str, Any], world: dict[int, pd.DataFrame]) -> float:
-                    """The plan's objective with its own line-ups scored on the scenario's points (same weights)."""
-                    total = float(cand["total_objective"])
-                    for idx, act in enumerate(cand["trajectory"]):
-                        gw = act["gameweek"]
-                        if world[gw] is horizon_projections.get(gw):
-                            continue
-                        new = _xp_map(world[gw])
-                        for p_id, w in week_weights_of(act).items():
-                            total += self.config.gamma**idx * w * (new.get(p_id, 0.0) - maps[gw].get(p_id, 0.0))
-                    return total
-
-                def replan(key: tuple[int, str]) -> MultiPeriodPlan | Exception:
-                    """Re-plan one arm in one scenario with the same search the main plans get (solve, then polish)."""
-                    world = worlds[key[0]]
-                    fh: dict[Any, Any] = {}
-
-                    def scenario_run(name: str, extra: dict[str, Any], lim: float) -> MultiPeriodPlan | Exception:
-                        return run(name, extra, lim, horizon_projections=world, fh_cache=fh)
-
-                    first = scenario_run(f"info:{key[1]}:{key[0]}", jobs[key], wave2_limit)
-                    if not isinstance(first, MultiPeriodPlan):
-                        return first
-                    return self._polish(scenario_run, jobs[key], first, f"info:{key[1]}:{key[0]}", None)
-
-                with ThreadPoolExecutor(max_workers=max(1, min(workers, len(jobs)))) as pool:
-                    futures = {key: pool.submit(replan, key) for key in jobs}
-                    solved = {key: fut.result() for key, fut in futures.items()}
-                reacting: list[float] = []
-                for s in range(SCENARIOS):
-                    now_re, hold_re = solved[(s, "now")], solved[(s, "hold")]
-                    if isinstance(now_re, MultiPeriodPlan) and isinstance(hold_re, MultiPeriodPlan):
-                        reacting.append(
-                            max(0.0, now_re.total_objective - as_planned(now, worlds[s]))
-                            - max(0.0, hold_re.total_objective - as_planned(hold, worlds[s]))
-                        )
-                if len(reacting) < SCENARIOS // 2:
-                    return None
-                diffs = np.array(reacting)
-                return {
-                    "mean": round(float(now["total_objective"] - hold["total_objective"] + diffs.mean()), 2),
-                    "value_of_waiting": round(float(-diffs.mean()), 2),
-                    "se": round(float(diffs.std(ddof=1) / math.sqrt(len(diffs))), 2),
-                    "scenarios": len(diffs),
-                }
-
             rec_plan = top_cand
             stability_note = None
             if not forced and rec_plan["chip"] and hold_cand is not None:
-                # Playing a chip now is judged against keeping it (which includes the same chip next week). A
-                # Wildcard kept can react to who goes missing first, so its gain is measured over those scenarios.
+                # Playing a chip now is judged against keeping it (which includes the same chip next week)
                 check = confident(rec_plan, hold_cand)
-                info = information_gain(rec_plan, hold_cand) if rec_plan["chip"] == "wildcard" else None
-                if info is not None:
-                    check = dict(
-                        check,
-                        gain_ignoring_information=check["gain"],
-                        gain=info["mean"],
-                        passed=info["mean"] >= check["needed"],
-                        information=info,
-                    )
                 if not check["passed"]:
                     stability_note = (
                         f"Keep the chip: playing it now gains {check['gain']:+.2f} xP over keeping it, within the "
