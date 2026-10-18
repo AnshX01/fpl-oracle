@@ -620,6 +620,9 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
     if unknown:
         logger.warning("MILP planner does not accept inputs %s; they are ignored", unknown)
     milp_kwargs = {k: v for k, v in milp_args.items() if k in accepted}
+    from fpl_oracle.ml.ensemble import scoring_ensemble
+
+    milp_kwargs.setdefault("xp_estimation_sd", scoring_ensemble.xp_estimation_sd)
 
     try:
         milp_res = multiperiod_optimizer.evaluate_transfer_options(**milp_kwargs)

@@ -1,16 +1,15 @@
 """
 Stateful Transfer Optimizer Routing Module.
 
-Routes callers between the Multi-Period Mixed-Integer Linear Programming (MILP)
-optimizer (src/fpl_oracle/optimise/multiperiod.py) and the preserved legacy
-beam search optimizer (src/fpl_oracle/optimise/transfers_beam.py).
+Transfer options for every caller come from the Multi-Period MILP (src/fpl_oracle/optimise/multiperiod.py),
+the same engine as the main advice. The beam search class is inherited only for its chip-plan fallback.
 """
 
 from typing import Any
 
 import pandas as pd
 
-from fpl_oracle.config import is_flag_enabled
+from fpl_oracle.ml.ensemble import scoring_ensemble
 from fpl_oracle.optimise.multiperiod import multiperiod_optimizer
 from fpl_oracle.optimise.transfers_beam import (
     TransferOptimizer as BeamSearchTransferOptimizer,
@@ -19,9 +18,7 @@ from fpl_oracle.optimise.transfers_beam import (
 
 class TransferOptimizer(BeamSearchTransferOptimizer):
     """
-    Unified Transfer Optimizer router.
-    Routes to Multi-Period MILP when flag is active or when 3+ FTs are banked (F-005 fix).
-    Otherwise, executes beam search trajectory engine.
+    Transfer options (no chips unless named) from the MILP; chip-plan fallback inherited from the beam search.
     """
 
     def evaluate_transfer_options(
@@ -39,7 +36,7 @@ class TransferOptimizer(BeamSearchTransferOptimizer):
         risk_preference: str = "balanced",
         include_price_gain: bool = False,
         stability_threshold: float = 0.3,
-        num_mc_scenarios: int = 50,
+        num_mc_scenarios: int = 0,  # beam-search signature; the MILP gate uses the fitted estimation error instead
         horizon_len: int | None = None,
         chips_available: list[str] | None = None,
         previous_chip: str | None = None,
@@ -50,28 +47,8 @@ class TransferOptimizer(BeamSearchTransferOptimizer):
         """
         projections = horizon_projections if horizon_projections is not None else {target_gw: player_pool_df}
 
-        if is_flag_enabled("multiperiod_milp", default=False) or free_transfers >= 3:
-            return multiperiod_optimizer.evaluate_transfer_options(
-                current_squad_df=current_squad_df,
-                player_pool_df=player_pool_df,
-                bank=bank,
-                free_transfers=free_transfers,
-                horizon_projections=projections,
-                current_gw=current_gw,
-                target_gw=target_gw,
-                locked_in_ids=locked_in_ids,
-                locked_out_ids=locked_out_ids,
-                excluded_team_ids=excluded_team_ids,
-                chips_available=chips_available or [],
-                previous_chip=previous_chip,
-                risk_preference=risk_preference,
-                include_price_gain=include_price_gain,
-                stability_threshold=stability_threshold,
-                num_mc_scenarios=num_mc_scenarios,
-                horizon_len=horizon_len,
-            )
-
-        return super().evaluate_transfer_options(
+        # Every surface plans with the same MILP as the main advice, so a backup plan can never contradict it.
+        return multiperiod_optimizer.evaluate_transfer_options(
             current_squad_df=current_squad_df,
             player_pool_df=player_pool_df,
             bank=bank,
@@ -82,11 +59,13 @@ class TransferOptimizer(BeamSearchTransferOptimizer):
             locked_in_ids=locked_in_ids,
             locked_out_ids=locked_out_ids,
             excluded_team_ids=excluded_team_ids,
+            chips_available=chips_available or [],
+            previous_chip=previous_chip,
             risk_preference=risk_preference,
             include_price_gain=include_price_gain,
             stability_threshold=stability_threshold,
-            num_mc_scenarios=num_mc_scenarios,
             horizon_len=horizon_len,
+            xp_estimation_sd=scoring_ensemble.xp_estimation_sd,
         )
 
 

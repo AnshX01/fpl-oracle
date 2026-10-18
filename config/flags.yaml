@@ -3,5 +3,4 @@
 # Default OFF until the work item's acceptance gate passes, then ON.
 
 flags:
-  multiperiod_milp: false
   wilson_news_gate: false
