@@ -21,3 +21,20 @@ def test_threats_rank_rival_players_we_do_not_own():
     top = league_threats(rivals, [8], {8: xp(13)}, POS, mine=set(range(1, 14)), cache=cache, top=2)
     assert top == [99, 14]
     assert 0 in cache
+
+
+def test_win_probability_counts_shared_risk_once():
+    from fpl_oracle.league.objective import win_probability
+
+    xp_map = {8: xp(13)}
+    sd = {8: {p: 3.0 for p in POS}}
+    mine = rival_weeks(list(range(1, 15)) + [99], [8], xp_map, POS)
+    other = [dict(points=105, elements=[*range(1, 13), 14, 15, 99])]
+
+    def p(rivals):
+        context = dict(user_points=100, rivals=rivals)
+        return win_probability(mine, mine, 0.0, [8], context, xp_map, sd, POS)
+
+    one, two = p(other), p(other * 2)
+    assert abs(one["p_win"] - one["rivals"][0]["p_above"]) < 0.01
+    assert abs(two["p_win"] - one["p_win"]) < 0.01  # not one squared
