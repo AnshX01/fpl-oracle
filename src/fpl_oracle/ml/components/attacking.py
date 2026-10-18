@@ -107,6 +107,56 @@ class AttackingModel(BaseComponent):
             )
         self.is_fitted = True
 
+    @staticmethod
+    def _with_market_scorers(
+        goals: np.ndarray,
+        p_play: np.ndarray,
+        chance: np.ndarray,
+        X: pd.DataFrame,
+        team_ids: pd.Series | np.ndarray,
+        fixture_ids: pd.Series | np.ndarray,
+    ) -> np.ndarray:
+        """Players with a bookmaker goalscorer price take the market's goals-if-he-plays. The prices carry a
+        margin, most of it on long shots, so it is removed per team-match by the power method: chances p^k with
+        k chosen so the priced players' goals, -ln(1 - p^k), add up to the team's market goals (own goals
+        excluded) less what the model gives the unpriced players. The market sets the split, the match odds the
+        total."""
+        out = np.asarray(goals, dtype=float).copy()
+        chance = np.asarray(chance, dtype=float)
+        priced = np.isfinite(chance) & (chance > 0) & (chance < 1)
+        if not priced.any():
+            return out
+        lam = pd.to_numeric(X["implied_team_xG"], errors="coerce").fillna(1.35).to_numpy(float)
+        avail = (
+            np.clip(pd.to_numeric(X["chance_of_playing"], errors="coerce").fillna(100.0).to_numpy(float) / 100.0, 0, 1)
+            if "chance_of_playing" in X
+            else np.ones(len(out))
+        )
+        keys = pd.Series([f"{t}_{f}" for t, f in zip(team_ids, fixture_ids, strict=True)])
+        for idx in keys.groupby(keys).groups.values():
+            idx = np.asarray(idx)
+            listed = idx[priced[idx]]
+            if len(listed) == 0:
+                continue
+            team_goals = PLAYER_GOALS_PER_TEAM_GOAL * float(np.mean(lam[idx]))
+            unpriced = float(np.sum(avail[idx[~priced[idx]]] * out[idx[~priced[idx]]]))
+            target = max(team_goals - unpriced, 0.25 * team_goals)
+            w = avail[listed] * p_play[listed]
+
+            def total(k: float, listed: np.ndarray = listed, w: np.ndarray = w) -> float:
+                return float(np.sum(w * -np.log1p(-(chance[listed] ** k))))
+
+            lo, hi = 1.0, 8.0
+            if total(lo) <= target:  # no margin left to remove: keep the market's split, scale to the total
+                rate = -np.log1p(-chance[listed])
+                out[listed] = p_play[listed] * rate * target / max(total(lo), 1e-9)
+                continue
+            for _ in range(50):
+                mid = (lo + hi) / 2
+                lo, hi = (mid, hi) if total(mid) > target else (lo, mid)
+            out[listed] = p_play[listed] * -np.log1p(-(chance[listed] ** hi))
+        return out
+
     def reconcile_team_goals_and_assists(
         self,
         exp_goals: np.ndarray,
@@ -251,6 +301,7 @@ class AttackingModel(BaseComponent):
         fixture_ids: pd.Series | np.ndarray | None = None,
         reconcile: bool = True,
         assist_rate: float = ASSISTS_PER_TEAM_GOAL,
+        market_scoring_chance: np.ndarray | None = None,
     ) -> dict[str, np.ndarray]:
         """
         Produce expected goals and assists, reconciling with team fixture expected goals (WI-3.3).
@@ -287,6 +338,10 @@ class AttackingModel(BaseComponent):
         for reg, target in ((self.reg_goals, "goals"), (self.reg_assists, "assists")):
             score = reg.predict(X_feat, raw_score=True, num_iteration=reg.best_iteration_)
             raw[target] = np.exp(score + share_offset(X, mins_if_plays, target)) * p_play
+        if market_scoring_chance is not None and team_ids is not None and fixture_ids is not None:
+            raw["goals"] = self._with_market_scorers(
+                raw["goals"], p_play, market_scoring_chance, X, team_ids, fixture_ids
+            )
         exp_goals = np.clip(raw["goals"], 0.0, 3.5)
         exp_assists = np.clip(raw["assists"], 0.0, 3.0)
 
