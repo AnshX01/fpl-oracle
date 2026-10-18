@@ -152,10 +152,10 @@ def test_attacking_model_fit_predict(synthetic_component_data):
     X, Y = synthetic_component_data
     model = AttackingModel()
     with pytest.raises(RuntimeError):
-        model.predict(X)
+        model.predict(X, {"p_play": np.ones(len(X)), "expected_minutes": np.full(len(X), 90.0)})
 
     model.fit(X, Y)
-    preds = model.predict(X)
+    preds = model.predict(X, {"p_play": np.ones(len(X)), "expected_minutes": np.full(len(X), 90.0)})
     assert "expected_goals" in preds
     assert "expected_assists" in preds
     assert len(preds["expected_goals"]) == len(X)

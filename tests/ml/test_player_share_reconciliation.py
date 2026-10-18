@@ -36,6 +36,7 @@ def fitted_attacking_model():
         {
             "target_goals": np.random.poisson(0.25, size=n).astype(float),
             "target_assists": np.random.poisson(0.20, size=n).astype(float),
+            "target_minutes": np.full(n, 90.0),
         }
     )
 
@@ -73,7 +74,13 @@ def test_reconciliation_exact_sum_matches_team_lambda(fitted_attacking_model):
             fixture_ids.append(100 + (t // 2))
 
     df_X = pd.DataFrame(rows)
-    preds = model.predict(df_X, team_ids=team_ids, fixture_ids=fixture_ids, reconcile=True)
+    preds = model.predict(
+        df_X,
+        {"p_play": np.ones(len(df_X)), "expected_minutes": np.full(len(df_X), 90.0)},
+        team_ids=team_ids,
+        fixture_ids=fixture_ids,
+        reconcile=True,
+    )
 
     exp_goals = preds["expected_goals"]
     exp_assists = preds["expected_assists"]
@@ -201,17 +208,12 @@ def test_property_reconciliation_on_live_upcoming_pipeline(fitted_attacking_mode
     )
 
     assert not features_df.empty
-    assert "penalties_order" in features_df.columns
     assert "implied_team_xG" in features_df.columns
 
     X = features_df[FEATURE_COLUMNS].copy()
-    X_att = X.copy()
-    for col in ("penalties_order", "direct_freekicks_order", "corners_and_indirect_freekicks_order"):
-        if col in features_df.columns:
-            X_att[col] = features_df[col].values
-
     preds = fitted_attacking_model.predict(
-        X_att,
+        X,
+        {"p_play": np.ones(len(X)), "expected_minutes": np.full(len(X), 90.0)},
         team_ids=features_df["team"].values,
         fixture_ids=features_df["fixture_id"].values,
         reconcile=True,
@@ -229,50 +231,6 @@ def test_property_reconciliation_on_live_upcoming_pipeline(fitted_attacking_mode
         )
 
 
-def test_set_piece_hierarchy_boosts_shares(fitted_attacking_model):
-    """
-    Verifies that designated penalty and corner takers receive appropriately higher shares.
-    """
-    model = fitted_attacking_model
-    n = 15
-    rows = []
-    for i in range(n):
-        row = {col: 0.5 for col in FEATURE_COLUMNS}
-        row["implied_team_xG"] = 2.0
-        row["pos_FWD"] = 1.0 if i in (11, 12) else 0.0
-        row["pos_MID"] = 1.0 if 6 <= i <= 10 else 0.0
-        row["roll_xG_5"] = 0.35 if i in (11, 12) else 0.1
-        row["roll_xA_5"] = 0.30 if i in (7, 8) else 0.1
-        row["chance_of_playing"] = 100.0
-        rows.append(row)
-
-    df_X = pd.DataFrame(rows)
-    # Player 11 is primary penalty taker; Player 12 is identical forward without penalties
-    df_X["penalties_order"] = None
-    df_X.loc[11, "penalties_order"] = 1
-
-    # Player 7 is corner taker; Player 8 is identical midfielder without corners
-    df_X["corners_and_indirect_freekicks_order"] = None
-    df_X.loc[7, "corners_and_indirect_freekicks_order"] = 1
-
-    preds = model.predict(df_X, team_ids=[1] * n, fixture_ids=[101] * n, reconcile=True)
-
-    # 1. Penalty taker receives strictly higher goal expectation and share
-    assert preds["expected_goals"][11] > preds["expected_goals"][12], (
-        f"Penalty taker {preds['expected_goals'][11]:.4f} should exceed non-taker {preds['expected_goals'][12]:.4f}"
-    )
-    assert preds["goal_shares"][11] > preds["goal_shares"][12]
-
-    # 2. Corner taker receives strictly higher assist expectation and share
-    assert preds["expected_assists"][7] > preds["expected_assists"][8], (
-        f"Corner taker {preds['expected_assists'][7]:.4f} should exceed non-taker {preds['expected_assists'][8]:.4f}"
-    )
-    assert preds["assist_shares"][7] > preds["assist_shares"][8]
-
-    # 3. Sum of team goals is still strictly equal to lambda
-    assert np.isclose(np.sum(preds["expected_goals"]), 2.0, atol=1e-4)
-
-
 def test_single_player_evaluation_safety(fitted_attacking_model):
     """
     Verifies that querying a single player does not assign 100% of team goals to that one player.
@@ -282,7 +240,11 @@ def test_single_player_evaluation_safety(fitted_attacking_model):
     single_row["implied_team_xG"] = 2.5
     single_row["pos_FWD"] = 1.0
 
-    preds = model.predict(single_row, reconcile=True)
+    preds = model.predict(
+        single_row,
+        {"p_play": np.ones(len(single_row)), "expected_minutes": np.full(len(single_row), 90.0)},
+        reconcile=True,
+    )
     exp_g = float(preds["expected_goals"][0])
     # A single forward should have realistic individual goals (~0.3 to 0.7), never the whole 2.5 team goals!
     assert exp_g < 1.5, f"Single player query allocated excessive goals: {exp_g:.3f}"
@@ -315,6 +277,9 @@ def test_rmse_mid_fwd_not_worse_on_historical(fitted_attacking_model):
             row["pos_GKP"] = 1.0 if i < 2 else 0.0
             row["roll_xG_5"] = 0.4 if is_fwd else (0.2 if is_mid else 0.02)
             row["roll_xA_5"] = 0.3 if is_mid else (0.15 if is_fwd else 0.02)
+            row["xg_share_30"] = 0.25 if is_fwd else (0.12 if is_mid else 0.01)
+            row["xa_share_30"] = 0.2 if is_fwd else (0.1 if is_mid else 0.01)
+            row["finishing_30"], row["assist_conversion_30"] = 1.0, 1.35
             row["chance_of_playing"] = 100.0
             rows.append(row)
             team_ids.append(t)
@@ -329,9 +294,21 @@ def test_rmse_mid_fwd_not_worse_on_historical(fitted_attacking_model):
     y_true_g = np.array(y_true_goals)
 
     # Predictions without reconciliation
-    preds_raw = fitted_attacking_model.predict(df_val, team_ids=team_ids, fixture_ids=fixture_ids, reconcile=False)
+    preds_raw = fitted_attacking_model.predict(
+        df_val,
+        {"p_play": np.ones(len(df_val)), "expected_minutes": np.full(len(df_val), 90.0)},
+        team_ids=team_ids,
+        fixture_ids=fixture_ids,
+        reconcile=False,
+    )
     # Predictions with reconciliation
-    preds_rec = fitted_attacking_model.predict(df_val, team_ids=team_ids, fixture_ids=fixture_ids, reconcile=True)
+    preds_rec = fitted_attacking_model.predict(
+        df_val,
+        {"p_play": np.ones(len(df_val)), "expected_minutes": np.full(len(df_val), 90.0)},
+        team_ids=team_ids,
+        fixture_ids=fixture_ids,
+        reconcile=True,
+    )
 
     mid_fwd_mask = (df_val["pos_MID"] == 1.0) | (df_val["pos_FWD"] == 1.0)
     rmse_raw = float(np.sqrt(np.mean((preds_raw["expected_goals"][mid_fwd_mask] - y_true_g[mid_fwd_mask]) ** 2)))

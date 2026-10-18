@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from fpl_oracle.data.features import FeatureEngineering, compute_player_rolling_stats
-from fpl_oracle.ml.components.attacking import AttackingModel
+from fpl_oracle.ml.components.attacking import ASSISTS_PER_TEAM_GOAL, PLAYER_GOALS_PER_TEAM_GOAL, AttackingModel
 from fpl_oracle.ml.components.defcon import DefConModel
 from fpl_oracle.ml.components.defending import DefendingModel
 from fpl_oracle.ml.components.dixon_coles import DixonColesModel
@@ -181,10 +181,12 @@ def test_team_goal_reconciliation_hands_absent_players_share_to_teammates():
     g_plain, _, _, _ = model.reconcile_team_goals_and_assists(goals, assists, X, **kwargs)
     g_avail, a_avail, _, _ = model.reconcile_team_goals_and_assists(goals, assists, X, availability=avail, **kwargs)
 
-    assert float(np.sum(g_avail * avail)) == pytest.approx(2.0)  # team total survives the availability step
+    assert float(np.sum(g_avail * avail)) == pytest.approx(
+        2.0 * PLAYER_GOALS_PER_TEAM_GOAL
+    )  # team total survives the availability step
     assert float(np.sum(g_plain * avail)) < 2.0  # old behaviour: the absent player's share is lost
     assert g_avail[1] > g_plain[1]
-    assert float(np.sum(a_avail * avail)) == pytest.approx(2.0 * 0.85)
+    assert float(np.sum(a_avail * avail)) == pytest.approx(2.0 * ASSISTS_PER_TEAM_GOAL)
 
 
 # --------------------------------------------------------------------------------------------------

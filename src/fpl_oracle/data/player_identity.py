@@ -62,11 +62,15 @@ class PlayerIdentityResolver:
         """
         Load historical records and construct canonical identity mappings.
         """
+        from fpl_oracle.data.historical import players_only, with_team_match_xg
+
         if history_df is not None and not history_df.empty:
-            self._history_df = history_df.reset_index(drop=True)
+            self._history_df = with_team_match_xg(players_only(history_df)).reset_index(drop=True)
         elif self.master_csv_path.exists():
             try:
-                self._history_df = pd.read_csv(self.master_csv_path).reset_index(drop=True)
+                self._history_df = with_team_match_xg(players_only(pd.read_csv(self.master_csv_path))).reset_index(
+                    drop=True
+                )
             except Exception as e:
                 logger.error("Failed to load master history CSV from %s: %s", self.master_csv_path, e)
                 self._history_df = pd.DataFrame()

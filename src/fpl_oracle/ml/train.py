@@ -66,7 +66,7 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
             f"Evaluating rolling origin: Train {train_seasons} ({len(X_tr)}) -> Test {test_seasons} ({len(X_te)})..."
         )
 
-        models = {
+        models: dict[str, Any] = {
             "minutes_model": MinutesModel(),
             "attacking_model": AttackingModel(),
             "defending_model": DefendingModel(),
@@ -78,7 +78,7 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
             m.fit(X_tr, Y_tr)
 
         mins_p = models["minutes_model"].predict(X_te)
-        att_p = models["attacking_model"].predict(X_te)
+        att_p = models["attacking_model"].predict(X_te, mins_p)
         def_p = models["defending_model"].predict(X_te)
         defcon_p = models["defcon_model"].predict(X_te)
         bonus_p = models["bonus_model"].predict(X_te)
@@ -99,9 +99,10 @@ def compute_rolling_origin_cv(X: pd.DataFrame, Y: pd.DataFrame, meta: pd.DataFra
 
         if val_mask.sum() > 0:
             X_v, Y_v = X[val_mask], Y[val_mask]
+            v_mins = models["minutes_model"].predict(X_v)
             v_comps = {
-                **models["minutes_model"].predict(X_v),
-                **models["attacking_model"].predict(X_v),
+                **v_mins,
+                **models["attacking_model"].predict(X_v, v_mins),
                 **models["defending_model"].predict(X_v),
                 **models["defcon_model"].predict(X_v),
                 **models["bonus_model"].predict(X_v),
@@ -208,7 +209,7 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
 
     # 5. Train candidate component models on fitting block
     logger.info("Training candidate models on training fit split...")
-    candidate_models = {
+    candidate_models: dict[str, Any] = {
         "minutes_model": MinutesModel(),
         "attacking_model": AttackingModel(),
         "defending_model": DefendingModel(),
@@ -222,9 +223,10 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
 
     # 6. Fit empirical residual quantiles on disjoint calibration block
     logger.info("Calibrating empirical residual quantiles on calibration block (M7)...")
+    cal_mins = candidate_models["minutes_model"].predict(X_cal)
     cal_comps = {
-        "minutes_model": candidate_models["minutes_model"].predict(X_cal),
-        "attacking_model": candidate_models["attacking_model"].predict(X_cal),
+        "minutes_model": cal_mins,
+        "attacking_model": candidate_models["attacking_model"].predict(X_cal, cal_mins),
         "defending_model": candidate_models["defending_model"].predict(X_cal),
         "defcon_model": candidate_models["defcon_model"].predict(X_cal),
         "bonus_model": candidate_models["bonus_model"].predict(X_cal),
@@ -246,7 +248,7 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
     # 7. Evaluate candidate models on holdout validation split with real dynamic ablation (M8)
     logger.info("Evaluating candidate models on holdout validation split with real ablation...")
     mins_val = candidate_models["minutes_model"].predict(X_val)
-    att_val = candidate_models["attacking_model"].predict(X_val)
+    att_val = candidate_models["attacking_model"].predict(X_val, mins_val)
     def_val = candidate_models["defending_model"].predict(X_val)
     defcon_val = candidate_models["defcon_model"].predict(X_val)
     bonus_val = candidate_models["bonus_model"].predict(X_val)
@@ -300,9 +302,10 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
         if col in X_val_ablated.columns:
             X_val_ablated[col] = prior_val
 
+    ablated_mins = candidate_models["minutes_model"].predict(X_val_ablated)
     ablated_comps = {
-        "minutes_model": candidate_models["minutes_model"].predict(X_val_ablated),
-        "attacking_model": candidate_models["attacking_model"].predict(X_val_ablated),
+        "minutes_model": ablated_mins,
+        "attacking_model": candidate_models["attacking_model"].predict(X_val_ablated, ablated_mins),
         "defending_model": candidate_models["defending_model"].predict(X_val_ablated),
         "defcon_model": candidate_models["defcon_model"].predict(X_val_ablated),
         "bonus_model": candidate_models["bonus_model"].predict(X_val_ablated),

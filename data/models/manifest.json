@@ -1,6 +1,6 @@
 {
-  "active_version": "v2026.10.18.1352",
-  "last_updated": "2026-10-18T13:52:50.510760+00:00",
+  "active_version": "v2026.10.18.1705",
+  "last_updated": "2026-10-18T17:17:23.872411+00:00",
   "versions": [
     {
       "version": "v1.0.0",
@@ -1892,8 +1892,221 @@
         }
       ],
       "bootstrap_promotion_gate": null,
-      "status": "production",
+      "status": "archived",
       "notes": "Candidate model passed verification. MAE: 1.000, RMSE: 1.934 (MAE improvement: +0.019). Promoted to production. | Automated retrain pipeline with true rolling origins"
+    },
+    {
+      "version": "v2026.10.18.1705",
+      "created_at": "2026-10-18T17:05:06.831358+00:00",
+      "git_commit": "f78b89aea01f4dc6d3b4341c397fd360d8aad2fb",
+      "recipe_id": "fpl_oracle_canonical_v5",
+      "training_data_hash": "5e9c1d4355a22d710895c7776adaade5295747b56743234554449f749ac96cf4",
+      "training_provenance": {
+        "operation_id": null,
+        "fit": {
+          "rows": 65005,
+          "by_season": {
+            "2023-24": {
+              "first_gw": 1,
+              "last_gw": 38,
+              "rows": 29649
+            },
+            "2024-25": {
+              "first_gw": 1,
+              "last_gw": 38,
+              "rows": 27283
+            },
+            "2025-26": {
+              "first_gw": 1,
+              "last_gw": 11,
+              "rows": 8073
+            }
+          }
+        },
+        "calibration": {
+          "rows": 11823,
+          "by_season": {
+            "2025-26": {
+              "first_gw": 12,
+              "last_gw": 26,
+              "rows": 11823
+            }
+          }
+        },
+        "validation": {
+          "rows": 13744,
+          "by_season": {
+            "2025-26": {
+              "first_gw": 27,
+              "last_gw": 38,
+              "rows": 9861
+            },
+            "2026-27": {
+              "first_gw": 1,
+              "last_gw": 6,
+              "rows": 3883
+            }
+          }
+        },
+        "corpus": {
+          "rows": 90572,
+          "by_season": {
+            "2023-24": {
+              "first_gw": 1,
+              "last_gw": 38,
+              "rows": 29649
+            },
+            "2024-25": {
+              "first_gw": 1,
+              "last_gw": 38,
+              "rows": 27283
+            },
+            "2025-26": {
+              "first_gw": 1,
+              "last_gw": 38,
+              "rows": 29757
+            },
+            "2026-27": {
+              "first_gw": 1,
+              "last_gw": 6,
+              "rows": 3883
+            }
+          }
+        },
+        "served_fit": {
+          "rows": 90572,
+          "by_season": {
+            "2023-24": {
+              "first_gw": 1,
+              "last_gw": 38,
+              "rows": 29649
+            },
+            "2024-25": {
+              "first_gw": 1,
+              "last_gw": 38,
+              "rows": 27283
+            },
+            "2025-26": {
+              "first_gw": 1,
+              "last_gw": 38,
+              "rows": 29757
+            },
+            "2026-27": {
+              "first_gw": 1,
+              "last_gw": 6,
+              "rows": 3883
+            }
+          }
+        },
+        "metrics_scope": "held_out_candidate_before_final_refit",
+        "served_interval_coverage_verified": false
+      },
+      "max_gw": 6,
+      "feature_list_hash": "c128fe2a81f48154fe19d5c99fa478467a2373b672ec875b05b2167ebc1d5587",
+      "metric_applies_to": "held_out_candidate_before_final_refit",
+      "file_hashes": {
+        "minutes_model.pkl": "d8dd2c9628267608d722c9cf3b15a12cc6deae289e646d8a0007bb3a0e6f3082",
+        "attacking_model.pkl": "300e78604aa01deb68bfa25a66ba093eab2b08ce27f98943fc3e1564903a00c3",
+        "defending_model.pkl": "d8a88bc3bafb5f99bbc7e2053e8013fb0bcf8dfd1e5ef1217014e2cd022e4a19",
+        "defcon_model.pkl": "62863dc9c036017fbc3596d3392cd5e7787686379093b0cdfd5619c43e769d17",
+        "bonus_model.pkl": "3602249c09347812b8a2d365cf9cadfec82ee7ecf659acec70c3fa497681a189",
+        "cards_saves_model.pkl": "7143c2c45e68dfdff72244cdca692e2863190e6c9ee34026c60763af8a7b830c",
+        "calibration.json": "bac8cd7f27d8302dd24490638df4199d353f4613eaa7bbd74ff1efa280142c01"
+      },
+      "ml_mae": 1.001,
+      "ml_spearman": 0.711,
+      "base_mae": 1.022,
+      "ml_rmse": 1.927,
+      "base_rmse": 2.131,
+      "rolling_origins": [
+        {
+          "season": "Holdout 2024-25 (trained on 2023-24)",
+          "train_size": 21371,
+          "test_size": 27283,
+          "mae": 0.976,
+          "rmse": 1.903,
+          "spearman": 0.707,
+          "base_recent_mae": 1.001,
+          "base_season_mae": 0.996,
+          "base_fixture_mae": 1.106,
+          "best_baseline_mae": 0.996,
+          "gain_vs_baseline": 0.02,
+          "interval_80_coverage_pct": 82.23,
+          "position_coverage": {
+            "GKP": 82.05,
+            "DEF": 83.63,
+            "MID": 81.16,
+            "FWD": 82.47
+          },
+          "minutes_bucket_coverage": {
+            "low": 83.27,
+            "mid": 80.44,
+            "high": 80.55
+          }
+        },
+        {
+          "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
+          "train_size": 29649,
+          "test_size": 29757,
+          "mae": 0.946,
+          "rmse": 1.93,
+          "spearman": 0.72,
+          "base_recent_mae": 0.999,
+          "base_season_mae": 0.995,
+          "base_fixture_mae": 1.056,
+          "best_baseline_mae": 0.995,
+          "gain_vs_baseline": 0.049,
+          "interval_80_coverage_pct": 85.04,
+          "position_coverage": {
+            "GKP": 90.4,
+            "DEF": 83.02,
+            "MID": 84.61,
+            "FWD": 87.19
+          },
+          "minutes_bucket_coverage": {
+            "low": 87.77,
+            "mid": 80.41,
+            "high": 79.4
+          }
+        },
+        {
+          "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
+          "train_size": 56932,
+          "test_size": 3883,
+          "mae": 1.233,
+          "rmse": 2.18,
+          "spearman": 0.663,
+          "base_recent_mae": 1.293,
+          "base_season_mae": 1.287,
+          "base_fixture_mae": 1.333,
+          "best_baseline_mae": 1.287,
+          "gain_vs_baseline": 0.054,
+          "interval_80_coverage_pct": 77.59,
+          "position_coverage": {
+            "GKP": 76.94,
+            "DEF": 79.56,
+            "MID": 76.71,
+            "FWD": 76.09
+          },
+          "minutes_bucket_coverage": {
+            "low": 77.15,
+            "mid": 78.22,
+            "high": 78.08
+          }
+        }
+      ],
+      "bootstrap_promotion_gate": null,
+      "status": "production",
+      "notes": "Candidate model passed verification. MAE: 1.001, RMSE: 1.927 (MAE improvement: -0.001). Promoted to production. | Automated retrain pipeline with true rolling origins | Candidate passed all promotion gate criteria; no worse than the active model on origin 'Holdout 2025-26 (trained on 2023-24, 2024-25)' coverage 85.04% (active model 84.58%)."
+    },
+    {
+      "version": "rej_20261018_171723",
+      "created_at": "2026-10-18T17:17:23.872403+00:00",
+      "ml_mae": 1.001,
+      "ml_spearman": 0.711,
+      "base_mae": 1.022,
+      "status": "rejected_gate_failed",
+      "notes": "Candidate RMSE (1.928) degraded vs active production RMSE (1.927) by > 0.00."
     }
   ]
 }

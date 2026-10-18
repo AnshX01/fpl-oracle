@@ -17,6 +17,28 @@ from fpl_oracle.config import HISTORICAL_DIR
 logger = logging.getLogger("fpl_oracle.historical")
 
 SEASONS_TO_FETCH = ["2023-24", "2024-25", "2025-26"]
+
+
+def players_only(df: pd.DataFrame) -> pd.DataFrame:
+    """Drops non-players. 2024-25 listed managers (Assistant Manager chip) who score for results with zero
+    minutes; older saved datasets filed them as midfielders. A player never scores without playing."""
+    if df.empty or not {"season", "element", "minutes", "total_points"} <= set(df.columns):
+        return df
+    per = df.groupby(["season", "element"])[["minutes", "total_points"]].transform(lambda s: s.abs().sum())
+    return df[~((per["minutes"] == 0) & (per["total_points"] > 0))]
+
+
+def with_team_match_xg(df: pd.DataFrame) -> pd.DataFrame:
+    """Adds team_xG_match: the expected goals of the player's team in that match (sum over its players).
+    Training and live features both read it to measure a player's share of his team's chances."""
+    keys = ["season", "round", "team", "opponent_team"]
+    if df.empty or not set(keys + ["expected_goals"]) <= set(df.columns):
+        return df
+    df = df.copy()
+    df["team_xG_match"] = df.groupby(keys)["expected_goals"].transform("sum")
+    return df
+
+
 VAASTAV_BASE_URL = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
 
 POSITION_MAP = {
@@ -77,8 +99,7 @@ class HistoricalDataManager:
     def ensure_dataset_ready(self, force_refresh: bool = False) -> pd.DataFrame:
         if self.output_file.exists() and not force_refresh:
             logger.info(f"Loading existing historical dataset from {self.output_file}")
-            df = pd.read_csv(self.output_file)
-            return df
+            return players_only(pd.read_csv(self.output_file))
 
         logger.info("Building unified historical dataset...")
         dfs = []
@@ -294,7 +315,8 @@ class HistoricalDataManager:
     def _clean_and_standardize(self, df: pd.DataFrame) -> pd.DataFrame:
         # Standardize position
         if "position" in df.columns:
-            df["position"] = df["position"].map(lambda p: POSITION_MAP.get(p, "MID"))
+            df["position"] = df["position"].map(POSITION_MAP)
+            df = df[df["position"].notna()]  # managers ("AM") and anything else that is not a player
 
         # Ensure all standard columns exist. Seasons published before the DefCon stat existed have no
         # label: keep it NaN (unknown), never 0 ("no actions"), so training can exclude those rows.

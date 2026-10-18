@@ -121,7 +121,7 @@ class BacktestHarness:
 
             # Predict component models using only pre-deadline features
             mins_p = min_m.predict(X_r)
-            att_p = att_m.predict(X_r)
+            att_p = att_m.predict(X_r, mins_p)
             def_p = def_m.predict(X_r)
             defcon_p = defc_m.predict(X_r)
             bonus_p = bon_m.predict(X_r)

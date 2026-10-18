@@ -296,7 +296,7 @@ def test_historical_clean_and_standardize():
                 "season": "2025-26",
                 "round": 1,
                 "element": 101,
-                "position": "UNKNOWN",  # unknown -> MID
+                "position": "AM",  # a manager, not a player: dropped
                 "was_home": True,
                 "goals_scored": 1,
             },
@@ -325,7 +325,7 @@ def test_historical_clean_and_standardize():
     # Positions standardized
     assert clean_df.loc[clean_df["element"] == 50, "position"].iloc[0] == "GKP"
     assert clean_df.loc[clean_df["element"] == 102, "position"].iloc[0] == "GKP"
-    assert clean_df.loc[clean_df["element"] == 101, "position"].iloc[0] == "MID"
+    assert 101 not in clean_df["element"].tolist()
 
     # Numeric coercion and fillna
     assert clean_df.loc[clean_df["element"] == 102, "goals_scored"].iloc[0] == 3.0
@@ -335,9 +335,9 @@ def test_historical_clean_and_standardize():
     assert isinstance(clean_df.loc[clean_df["element"] == 102, "was_home"].iloc[0], (bool, np.bool_))
 
     # Chronologically sorted by season, round, element
-    assert clean_df["season"].tolist() == ["2024-25", "2025-26", "2025-26"]
-    assert clean_df["round"].tolist() == [1, 1, 2]
-    assert clean_df["element"].tolist() == [50, 101, 102]
+    assert clean_df["season"].tolist() == ["2024-25", "2025-26"]
+    assert clean_df["round"].tolist() == [1, 2]
+    assert clean_df["element"].tolist() == [50, 102]
 
 
 def test_get_last_finished_gameweek(tmp_path, monkeypatch):

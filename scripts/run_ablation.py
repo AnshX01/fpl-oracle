@@ -132,9 +132,10 @@ def fit_and_evaluate_models(
     for m in models.values():
         m.fit(X_tr, Y_tr)
 
+    mins_te = models["minutes_model"].predict(X_te)
     comps = {
-        **models["minutes_model"].predict(X_te),
-        **models["attacking_model"].predict(X_te),
+        **mins_te,
+        **models["attacking_model"].predict(X_te, mins_te),
         **models["defending_model"].predict(X_te),
         **models["defcon_model"].predict(X_te),
         **models["bonus_model"].predict(X_te),
