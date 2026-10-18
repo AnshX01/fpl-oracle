@@ -1331,17 +1331,11 @@ class TransferOptimizer:
         sequences.sort(key=lambda state: state["score"], reverse=True)
         # Compare complete trajectories with the same chip opportunities, not a
         # current-chip bonus against a chip-free continuation.
-        from fpl_oracle.league.objective import select_balanced_sequence
-
-        # Rival exposure only breaks ties between near-equal trajectories that make the SAME first-chip
-        # decision. It must never trade a chip decision (or a better move) for exposure.
+        # Fallback search: no league tie-break (the MILP path applies the win-probability tie-break).
         by_first: dict[str | None, dict[str, Any]] = {}
         for state in sequences:
             by_first.setdefault(state["first_chip"], state)
-        same_decision = [state for state in sequences if state["first_chip"] == sequences[0]["first_chip"]]
-        league_choice, league_objective = select_balanced_sequence(same_decision, rival_context, player_maps)
-        by_first[league_choice["first_chip"]] = league_choice
-        sequences = [league_choice] + [s for s in sequences if s is not league_choice]
+        league_objective = dict(status="unavailable", applied=False)
         normal_plan_feasible = None in by_first
         # Expose data-derived option-value break-even, never a fabricated tail constant.
         resource_frontier = []
@@ -1457,7 +1451,7 @@ class TransferOptimizer:
 
         # 4. Rank candidates by net gain vs hold
         candidates.sort(key=lambda c: c["net_gain_vs_hold"], reverse=True)
-        best_cand = next(c for c in candidates if c["chip_code"] == league_choice["first_chip"])
+        best_cand = next(c for c in candidates if c["chip_code"] == sequences[0]["first_chip"])
 
         if (
             best_cand["chip"] == "freehit"
