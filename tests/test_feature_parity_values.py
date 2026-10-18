@@ -1,6 +1,6 @@
 """
 Test Suite for Strict Value-Based Feature Parity (F12).
-Asserts that all 62 feature values produced by the live serving kernel
+Asserts that all 66 feature values produced by the live serving kernel
 (extract_live_features_for_upcoming) numerically equal the values produced
 by the training kernel (build_historical_features) on identical historical snapshots.
 """
@@ -214,9 +214,9 @@ def synthetic_history_and_upcoming():
     return fe, hist_df, train_full_df, boot, fixtures, players_meta
 
 
-def test_feature_parity_all_62_features_exact_values(synthetic_history_and_upcoming, monkeypatch):
+def test_feature_parity_all_66_features_exact_values(synthetic_history_and_upcoming, monkeypatch):
     """
-    Assert that all 62 feature values produced by the live serving kernel
+    Assert that all 66 feature values produced by the live serving kernel
     match the values produced by the training kernel with absolute error < 1e-4.
     """
     fe, hist_df, train_full_df, boot, fixtures, players_meta = synthetic_history_and_upcoming
@@ -237,7 +237,7 @@ def test_feature_parity_all_62_features_exact_values(synthetic_history_and_upcom
         history_df=hist_df,
     )
 
-    assert len(FEATURE_COLUMNS) == 62, f"Expected 62 canonical features, found {len(FEATURE_COLUMNS)}"
+    assert len(FEATURE_COLUMNS) == 66, f"Expected 66 canonical features, found {len(FEATURE_COLUMNS)}"
 
     # Evaluate parity for each player
     for p in players_meta:
@@ -266,7 +266,7 @@ def test_feature_parity_all_62_features_exact_values(synthetic_history_and_upcom
 
 
 def test_feature_parity_schema_and_types(synthetic_history_and_upcoming):
-    """Verify that all 62 columns exist in both dataframes and cast cleanly to float."""
+    """Verify that all 66 columns exist in both dataframes and cast cleanly to float."""
     fe, hist_df, train_full_df, boot, fixtures, _ = synthetic_history_and_upcoming
 
     X_train, _ = fe.build_historical_features(train_full_df)
@@ -531,7 +531,7 @@ def real_multiseason_history_and_upcoming():
 @pytest.mark.slow
 def test_real_multi_season_parity_colliding_ids(real_multiseason_history_and_upcoming, monkeypatch):
     """
-    Assert 100% numerical parity across all 62 features for David Raya (element 1 in 2026-27),
+    Assert 100% numerical parity across all 66 features for David Raya (element 1 in 2026-27),
     verifying complete isolation from historical element 1 collision (Fabio Vieira in 2024-25).
     """
     fe, history_df, train_full_df, boot, fixtures, _ = real_multiseason_history_and_upcoming
@@ -560,7 +560,7 @@ def test_real_multi_season_parity_colliding_ids(real_multiseason_history_and_upc
 @pytest.mark.slow
 def test_real_multi_season_parity_transferred_player(real_multiseason_history_and_upcoming, monkeypatch):
     """
-    Assert 100% numerical parity across all 62 features for Cole Palmer (transferred Man City -> Chelsea),
+    Assert 100% numerical parity across all 66 features for Cole Palmer (transferred Man City -> Chelsea),
     verifying that personal form follows the player while club stats reflect Chelsea.
     """
     fe, history_df, train_full_df, boot, fixtures, _ = real_multiseason_history_and_upcoming
@@ -589,7 +589,7 @@ def test_real_multi_season_parity_transferred_player(real_multiseason_history_an
 @pytest.mark.slow
 def test_real_multi_season_parity_new_player(real_multiseason_history_and_upcoming, monkeypatch):
     """
-    Assert 100% numerical parity across all 62 features for Christos Tzolis (new player in 2026-27).
+    Assert 100% numerical parity across all 66 features for Christos Tzolis (new player in 2026-27).
     """
     fe, history_df, train_full_df, boot, fixtures, tzolis_id = real_multiseason_history_and_upcoming
 
@@ -638,7 +638,7 @@ def test_real_parity_blank_gameweek(real_multiseason_history_and_upcoming):
 def test_real_parity_double_gameweek(real_multiseason_history_and_upcoming, monkeypatch):
     """
     Verify parity for Double Gameweek:
-    - Match 1 has 100% exact parity across all 62 features.
+    - Match 1 has 100% exact parity across all 66 features.
     - Match 2 matches on all match context features (including rest days, implied xG, clean sheet probability, opponent difficulty, etc.).
     - Divergences on Match 2 are strictly confined to the locked PARITY_DGW_ALLOW_LIST.
     """
@@ -818,7 +818,7 @@ def test_real_parity_double_gameweek(real_multiseason_history_and_upcoming, monk
     assert len(t_rows) == 2
     assert len(s_rows) == 2
 
-    # Fixture 1: 100% exact parity across all 62 features
+    # Fixture 1: 100% exact parity across all 66 features
     for col in FEATURE_COLUMNS:
         v_train = float(t_rows.iloc[0][col])
         v_serve = float(s_rows.iloc[0][col])
