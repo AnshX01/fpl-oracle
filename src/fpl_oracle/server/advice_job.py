@@ -37,6 +37,8 @@ def load_last_advice(profile_key_value):
     if saved.get("profile_key") != json.dumps(profile_key_value, sort_keys=True, default=str):
         return None
     deadline = (saved.get("result") or {}).get("decisionCard", {}).get("deadline")
+    if isinstance(deadline, dict):
+        deadline = deadline.get("deadline_time")
     try:
         if deadline and datetime.fromisoformat(str(deadline).replace("Z", "+00:00")) <= datetime.now(UTC):
             return None

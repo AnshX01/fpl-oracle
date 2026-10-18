@@ -64,7 +64,9 @@ _POSITION_WORDS = {
 }
 
 
-def _fmt_move(m: dict[str, Any]) -> str:
+def _fmt_move(m: dict[str, Any] | str) -> str:
+    if isinstance(m, str):  # trimmed lists end with a "+N more" note
+        return m
     return f"{m.get('name')} (£{m.get('price')}m, {m.get('xp_gw')} xP)"
 
 
@@ -105,7 +107,13 @@ class OfflineExpertProvider:
         team = rec.get("team") or {}
         cap, vice = lineup.get("captain") or {}, lineup.get("vice_captain") or {}
         outs, ins = t.get("out") or [], t.get("in") or []
-        if ins:
+        if ins and chip.get("play_now") and str(chip.get("chip") or "").lower() in ("wildcard", "free hit"):
+            # A rebuild is not a list of like-for-like swaps
+            move = (
+                f"play your {chip.get('chip')}: bring in {', '.join(_fmt_move(i) for i in ins)}; "
+                f"sell {', '.join(_fmt_move(o) for o in outs)}"
+            )
+        elif ins:
             move = "; ".join(f"sell {_fmt_move(o)} and buy {_fmt_move(i)}" for o, i in zip(outs, ins, strict=False))
         else:
             move = "roll the free transfer"
@@ -178,6 +186,27 @@ class OfflineExpertProvider:
             action = "chip"
         else:
             action = None
+        chip = rec.get("chip") or {}
+        names = {"wildcard": "wildcard", "freehit": "free hit", "bboost": "bench boost", "3xc": "triple captain"}
+        if action in names and names[action] in str(chip.get("chip") or "").lower():
+            # The published chip decision already measured now against later: answer from it, no re-solve.
+            check = chip.get("check") or {}
+            lines = [f"### {chip.get('chip')}: {'play it now' if chip.get('play_now') else 'keep it'}"]
+            if chip.get("comparison"):
+                lines.append(str(chip["comparison"]))
+            if check:
+                lines.append(
+                    f"Measured: {check.get('gain')} predicted points versus {check.get('versus')}, against a forecast "
+                    f"uncertainty of {check.get('uncertainty')} (needs {check.get('needed')} to act at "
+                    f"{int(float(check.get('confidence') or 0.75) * 100)}% confidence)."
+                )
+            for later in chip.get("later_provisional") or []:
+                if isinstance(later, dict):
+                    lines.append(
+                        f"Pencilled in for later (re-decided every week): {later.get('chip_display_name')} in "
+                        f"gameweek {later.get('gameweek')}, about +{later.get('gain')} points."
+                    )
+            return "\n\n".join(lines)
         if action:
             res = await tool_executor.execute("explain_why_not", {"action_type": action})
             if "error" in res:

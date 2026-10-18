@@ -82,7 +82,7 @@ async def upstream_snapshot_guard(request: Request, call_next):
         if (
             changed
             and request.url.path.startswith("/api/")
-            and (request.method == "GET" or request.url.path in ("/api/transfers", "/api/optimize", "/api/chat"))
+            and (request.method == "GET" or request.url.path in ("/api/transfers", "/api/optimize"))
         ):
             return SafeJSONResponse(
                 status_code=409,
