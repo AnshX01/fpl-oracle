@@ -189,6 +189,7 @@
           <p class="subtle" data-testid="data-basis">{{ basisText }}</p>
           <p v-if="liveNote" class="subtle">{{ liveNote }}</p>
           <p class="subtle">{{ card.caution }}</p>
+          <p v-if="card.track_record" class="subtle" data-testid="track-record">{{ card.track_record }}</p>
         </section>
       </glass-card>
     </section>
