@@ -91,6 +91,24 @@ Baseline b: for transfers, rolling; for a chip now, the same chip next week (or 
 This is what stops a 13-player Wildcard built on small samples from beating a two-transfer fix by a
 margin smaller than its own uncertainty.
 
+**Wildcard now vs keeping it, allowing for what waiting teaches.** The plain comparison scores both plans on
+today's forecasts, so a kept Wildcard gets no credit for reacting to injuries first. The planner adds that
+credit (optimise/information.py): 10 scenarios of who goes missing over the next 3 gameweeks (one average
+absence), drawn per player so that each player's long-run availability equals the planner's own chance of
+playing; absence lengths follow 2023-24 to 2026-27 (regular starters: 8.6% start an absence each week; 53% last
+one match, 25% four or more; mean 3.1). In each scenario both arms keep their week-1 squad, are scored as
+planned, and are then re-planned with the same search as the main plans:
+
+    gain with information = E[J(now) − J(keep)] + mean_s( re-planning gain(now) − re-planning gain(keep) )
+
+Re-planning starts from the plan itself, so solver slack can only shrink a re-planning gain, never invent one;
+with the main plans' polish on both arms the two are searched equally hard. Form changes are not simulated,
+so the value of waiting is a lower bound. GW8 2026-27: waiting worth +0.9 ± 1.2 points; the Wildcard gain
+falls 4.6 → 3.7 and still clears its 0.9 margin.
+
+**Free Hit**: planned only in a blank or double gameweek, or the last week of its set (GW19 / GW38: use it or
+lose it). In a normal week it does what one more transfer does.
+
 ## 4. Mini-league layer
 
 Tracked rivals: every manager above you, and every manager below who can still finish above you with at

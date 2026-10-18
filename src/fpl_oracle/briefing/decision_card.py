@@ -68,13 +68,17 @@ def _comparison_sentences(rec_plan: dict[str, Any], chip_display: str | None) ->
             continue
         if versus == "keeping the chip":
             name = CHIP_DISPLAY_NAMES.get(check.get("chip"), chip_display or "The chip")
+            # The gain already allows for the injuries a later chip would see first (planner information check)
+            learned = (
+                f", allowing for the injuries you would see before a later {name}" if check.get("information") else ""
+            )
             if rejected:
                 chip_text = (
                     f"Keep your {name} for now: playing it this week is only {_better(gain)} "
-                    "than waiting, too close to justify using it."
+                    f"than waiting{learned}, too close to justify using it."
                 )
             else:
-                chip_text = f"Playing it now is {_better(gain)} than keeping your {name} for later."
+                chip_text = f"Playing it now is {_better(gain)} than keeping your {name} for later{learned}."
         elif versus == "rolling":
             if rejected:
                 move_text = (
