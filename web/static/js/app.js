@@ -1114,7 +1114,8 @@ const app = createApp({
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: q })
+          // One server-side conversation per gameweek so stale advice never leaks into new turns.
+          body: JSON.stringify({ message: q, session_id: this.decisionCard?.gameweek ? `gw${this.decisionCard.gameweek}` : 'default' })
         });
         const data = await res.json();
         const body = res.ok && typeof data.response === 'string' && data.response.trim()

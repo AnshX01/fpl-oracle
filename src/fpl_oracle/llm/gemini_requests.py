@@ -17,17 +17,6 @@ class GeminiGate:
         self.lock = asyncio.Lock()
         self._next_allowed: dict[str, float] = {}
 
-    @property
-    def next_allowed(self):
-        # Backwards compatibility: return max timestamp
-        if not self._next_allowed:
-            return 0.0
-        return max(self._next_allowed.values())
-
-    @next_allowed.setter
-    def next_allowed(self, value):
-        self._next_allowed["default"] = value
-
     @staticmethod
     def retry_seconds(value):
         if value:
@@ -46,8 +35,7 @@ class GeminiGate:
         # this lock. A cooldown applies to both chat and news extraction.
         async with self.lock:
             for attempt in range(2):
-                target_allowed = max(self._next_allowed.get(url, 0.0), self._next_allowed.get("default", 0.0))
-                delay = max(0.0, target_allowed - time.monotonic())
+                delay = max(0.0, self._next_allowed.get(url, 0.0) - time.monotonic())
                 if delay > 30:
                     raise GeminiRateLimitError("Gemini rate limit cooldown")
                 if delay:

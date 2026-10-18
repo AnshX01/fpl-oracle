@@ -7,7 +7,7 @@ import os
 import httpx
 
 from fpl_oracle.llm.gemini_requests import gemini_gate
-from fpl_oracle.llm.tools import TOOL_DEFINITIONS, tool_executor
+from fpl_oracle.llm.tools import MAX_TOOL_ROUNDS, TOOL_DEFINITIONS, tool_executor
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,6 @@ class GeminiProvider:
         self.api_key = api_key
         model = (model if model is not None else os.getenv("GEMINI_MODEL", "")).strip() or "gemini-flash-lite-latest"
         self.model = model
-        self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
     async def _chat_with_model(self, model_name: str, messages, system_prompt, timeout_secs: float):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
@@ -25,18 +24,18 @@ class GeminiProvider:
             {"role": "user" if m["role"] == "user" else "model", "parts": [{"text": m["content"]}]} for m in messages
         ]
         declarations = [
-            {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}
+            {"name": t["name"], "description": t["description"]}
+            | ({"parameters": t["parameters"]} if t["parameters"].get("properties") else {})
             for t in TOOL_DEFINITIONS
         ]
-        grounded = False
         async with httpx.AsyncClient(timeout=timeout_secs) as client:
-            for _ in range(5):
+            for round_no in range(MAX_TOOL_ROUNDS):
                 payload = {
                     "system_instruction": {"parts": [{"text": system_prompt}]},
                     "contents": contents,
                     "tools": [{"function_declarations": declarations}],
-                    "tool_config": {"function_calling_config": {"mode": "AUTO" if grounded else "ANY"}},
-                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
+                    "tool_config": {"function_calling_config": {"mode": "AUTO"}},
+                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 4096},
                 }
                 resp = await gemini_gate.post(client, url, json=payload, headers={"x-goog-api-key": self.api_key})
                 if resp.status_code != 200:
@@ -52,7 +51,7 @@ class GeminiProvider:
                 logger.info(
                     "Gemini chat response: model=%s round=%s finish_reason=%s function_calls=%s",
                     model_name,
-                    _ + 1,
+                    round_no + 1,
                     candidate.get("finishReason", "unspecified"),
                     sum("functionCall" in p for p in parts),
                 )
@@ -67,12 +66,11 @@ class GeminiProvider:
                         result = json.loads(json.dumps(result, default=str))
                         responses.append({"functionResponse": {"name": call["name"], "response": result}})
                     contents.append({"role": "user", "parts": responses})
-                    grounded = True
                     continue
                 text = "\n".join(p["text"] for p in parts if "text" in p).strip()
-                if grounded and text:
+                if text:
                     return text
-                raise RuntimeError("No grounded Gemini answer returned")
+                raise RuntimeError("Gemini returned no answer text")
         raise RuntimeError("Gemini data-request limit reached")
 
     async def chat(self, messages, system_prompt):

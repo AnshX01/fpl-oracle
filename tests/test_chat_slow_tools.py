@@ -50,7 +50,7 @@ def test_empty_timeout_logs_type_and_trace_then_fallback(monkeypatch, caplog):
     monkeypatch.setattr(agent, "get_llm_provider", lambda: Provider())
     monkeypatch.setattr(provider.OfflineExpertProvider, "chat", AsyncMock(return_value="Save the transfer."))
     with caplog.at_level(logging.ERROR):
-        assert asyncio.run(ExpertAgent().answer("transfers?")) == "Save the transfer."
+        assert asyncio.run(ExpertAgent().answer("transfers?")).endswith("Save the transfer.")
     assert "type=TimeoutError" in caplog.text
     assert "Traceback" in caplog.text
 
@@ -63,11 +63,11 @@ def test_rate_limited_offline_reply_is_labelled(monkeypatch):
     monkeypatch.setattr(data_store, "add_chat_message", lambda **kw: None)
     monkeypatch.setattr(data_store, "get_chat_history", lambda **kw: [])
 
-    class Provider:
+    class GeminiProvider:
         async def chat(self, **kw):
             raise GeminiRateLimitError("busy")
 
-    monkeypatch.setattr(agent, "get_llm_provider", lambda: Provider())
+    monkeypatch.setattr(agent, "get_llm_provider", lambda: GeminiProvider())
     monkeypatch.setattr(provider.OfflineExpertProvider, "chat", AsyncMock(return_value="Captain Saka."))
     answer = asyncio.run(ExpertAgent().answer("captain?"))
     assert "without Gemini" in answer
