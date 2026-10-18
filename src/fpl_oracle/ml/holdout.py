@@ -253,8 +253,9 @@ async def freeze_predictions(
 class FinalizedActuals(dict):
     """Only official retrieval constructs this marker. Plain maps are research-only."""
 
-    def __init__(self, gw, points, fetched_at):
+    def __init__(self, gw, points, fetched_at, minutes=None):
         super().__init__(points)
+        self.minutes = minutes or {}
         self.gameweek = gw
         self.fetched_at = fetched_at
         self.source_kind = "official_finalized_live"
@@ -278,8 +279,99 @@ async def fetch_finalized_actuals(gw: int):
     if live_stale or not isinstance(live.get("elements"), list):
         return None
     return FinalizedActuals(
-        gw, {int(e["id"]): float(e["stats"]["total_points"]) for e in live["elements"]}, datetime.now(UTC).isoformat()
+        gw,
+        {int(e["id"]): float(e["stats"]["total_points"]) for e in live["elements"]},
+        datetime.now(UTC).isoformat(),
+        minutes={int(e["id"]): float(e["stats"].get("minutes") or 0) for e in live["elements"]},
     )
+
+
+TRACK_RECORD_MD = REPORTS_DIR / "track_record.md"
+BUCKETS = (("did not play", None), ("1-2 pts", (None, 2)), ("3-4 pts", (3, 4)), ("5+ pts", (5, None)))
+
+
+def _last5_baseline(gw: int) -> dict[int, float]:
+    """Average points over each player's last five current-season appearances before this gameweek."""
+    import pandas as pd
+
+    from fpl_oracle.config import HISTORICAL_DIR
+    from fpl_oracle.utils.season import derive_season
+
+    path = HISTORICAL_DIR / "master_history.csv"
+    if not path.exists():
+        return {}
+    hist = pd.read_csv(path, usecols=["season", "element", "round", "total_points"])
+    hist = hist[(hist["season"] == derive_season(format="hyphen")) & (hist["round"] < gw)].sort_values("round")
+    return {int(e): float(g["total_points"].tail(5).mean()) for e, g in hist.groupby("element")}
+
+
+def compare_forecasts(
+    freeze_data: dict[str, Any], points: dict[int, float], minutes: dict[int, float], last5: dict[int, float]
+) -> dict[str, Any]:
+    """Our frozen forecast vs FPL's own ep_next (from the same frozen snapshot) vs a last-5 average, on the same
+    players: overall error, error per return bucket (the OpenFPL paper's buckets) and the decision check
+    'what did each source's top 20 picks actually score'."""
+    ours = {int(p["element"]): float(p["expected_points"]) for p in freeze_data.get("predictions", [])}
+    boot = (freeze_data.get("snapshot_inputs") or {}).get("bootstrap") or {}
+    fpl = {int(e["id"]): float(e["ep_next"]) for e in boot.get("elements", []) if e.get("ep_next") not in (None, "")}
+    sources = {"FPL Oracle": ours, "FPL ep_next": fpl, "Last-5 average": last5}
+    common = sorted(
+        e
+        for e in ours
+        if e in points and all(e in src for name, src in sources.items() if src and name != "FPL Oracle")
+    )
+    sources = {k: v for k, v in sources.items() if v}
+    actual = np.array([points[e] for e in common])
+    played = np.array([minutes.get(e, 1.0) > 0 for e in common])
+    result: dict[str, Any] = {"players": len(common), "sources": {}}
+    for name, src in sources.items():
+        pred = np.array([src[e] for e in common])
+        buckets = {}
+        for label, rng in BUCKETS:
+            if rng is None:
+                mask = ~played
+            else:
+                lo, hi = rng
+                mask = played & (actual >= (lo if lo is not None else -99)) & (actual <= (hi if hi is not None else 99))
+            if mask.any():
+                buckets[label] = round(float(np.sqrt(np.mean((pred[mask] - actual[mask]) ** 2))), 3)
+        top = np.argsort(-pred)[:20]
+        result["sources"][name] = {
+            "rmse": round(float(np.sqrt(np.mean((pred - actual) ** 2))), 3),
+            "mae": round(float(np.mean(np.abs(pred - actual))), 3),
+            "rmse_by_bucket": buckets,
+            "top20_actual_points": round(float(actual[top].mean()), 2),
+        }
+    return result
+
+
+def render_track_record(log_data: dict[str, Any]) -> None:
+    """Plain table of every scored gameweek, newest first, for the manager to read."""
+    lines = [
+        "# Prediction track record",
+        "",
+        "Predictions frozen before each deadline, scored after FPL finalises the gameweek. Same players for every",
+        "source. Lower error is better; 'Top 20' is the average points actually scored by each source's 20",
+        "highest-predicted players (higher is better). Buckets follow the OpenFPL paper (arXiv 2508.09992).",
+        "",
+    ]
+    for rec in sorted(log_data.get("evaluated_gameweeks", []), key=lambda r: -r["gameweek"]):
+        comp = rec.get("comparison")
+        if not comp:
+            continue
+        lines += [
+            f"## Gameweek {rec['gameweek']} (model {rec.get('model_version')}, {comp['players']} players)",
+            "",
+            "| Source | Error (RMSE) | Did not play | 1-2 pts | 3-4 pts | 5+ pts | Top 20 scored |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for name, m in comp["sources"].items():
+            b = m["rmse_by_bucket"]
+            cells = [str(b.get(label, "-")) for label, _ in BUCKETS]
+            lines.append(f"| {name} | {m['rmse']} | {' | '.join(cells)} | {m['top20_actual_points']} |")
+        lines.append("")
+    TRACK_RECORD_MD.parent.mkdir(parents=True, exist_ok=True)
+    TRACK_RECORD_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def score_frozen_predictions(
@@ -374,6 +466,10 @@ def score_frozen_predictions(
         "ml_spearman": sp_val,
         "coverage_80_pct": cov_pct,
     }
+    if isinstance(actual_points_map, FinalizedActuals) or dry_run:
+        score_record["comparison"] = compare_forecasts(
+            freeze_data, dict(actual_points_map), getattr(actual_points_map, "minutes", {}), _last5_baseline(gw)
+        )
 
     if not dry_run:
         if log_path.exists():
@@ -394,6 +490,7 @@ def score_frozen_predictions(
         tmp_log = log_path.with_suffix(".json.tmp")
         tmp_log.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
         os.replace(tmp_log, log_path)
+        render_track_record(log_data)
 
         logger.info(f"Scored GW{gw} forward holdout: MAE={mae}, RMSE={rmse}, Spearman={sp_val}, Cov={cov_pct}%")
 

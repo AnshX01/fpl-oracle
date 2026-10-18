@@ -291,6 +291,9 @@ class AdvicePublisher:
                 save_last_advice(original_key, result)
             except OSError as error:
                 logger.warning("Could not save the last advice: %s", error)
+            # Every published advice before a deadline also refreshes the frozen forecast that the weekly track
+            # record scores, so the record never depends on the app being open in the final 24 hours.
+            self.freeze_task = asyncio.create_task(_freeze_for_track_record(result))
             saved_recommendation = result["decisionCard"].pop("confirmation_recommendation", None)
             if saved_recommendation:
                 from fpl_oracle.domain.team_confirmation import team_confirmation
@@ -365,6 +368,18 @@ class AdvicePublisher:
         except Exception as error:
             if self.current is publication:
                 publication["result"]["expiryResearch"] = dict(status="unavailable", reason=str(error))
+
+
+async def _freeze_for_track_record(result):
+    from fpl_oracle.ml.holdout import freeze_predictions
+
+    try:
+        deadline = (result.get("decisionCard") or {}).get("deadline") or {}
+        when = datetime.fromisoformat(str(deadline.get("deadline_time")).replace("Z", "+00:00"))
+        if datetime.now(UTC) < when:
+            await freeze_predictions(target_gw=int(result["decisionCard"]["gameweek"]))
+    except Exception as error:
+        logger.warning("Track-record freeze skipped: %s", error)
 
 
 def profile_key(profile):
