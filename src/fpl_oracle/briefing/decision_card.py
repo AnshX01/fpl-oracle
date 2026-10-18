@@ -142,6 +142,22 @@ def track_record_summary() -> str | None:
     return text + " (lower error and higher points are better)."
 
 
+def _minutes_note(target_df: pd.DataFrame, players: list[dict[str, Any]]) -> str | None:
+    """Plain line naming chosen players whose starting place this week is a genuine coin-flip (35-75% to start)."""
+    if target_df.empty or "p_starts" not in target_df:
+        return None
+    p_starts = target_df.groupby("element")["p_starts"].max()
+    unsure = {
+        p["web_name"]: float(p_starts[p["element"]])
+        for p in players
+        if p["element"] in p_starts.index and 0.35 < p_starts[p["element"]] < 0.75
+    }
+    if not unsure:
+        return None
+    names = ", ".join(f"{name} ({chance:.0%} to start)" for name, chance in unsure.items())
+    return f"Starting place not certain: {names}. Check team news before the deadline."
+
+
 def _your_choices(boot: Any) -> dict[str, list[dict[str, Any]]]:
     """The manager's 'keep' / "don't buy" calls the plan was built around, by name."""
     from fpl_oracle.data.store import data_store
@@ -837,6 +853,9 @@ class DecisionCardGenerator:
             caveats.append(str(chip_decision["set_1_deadline_warning"]))
         if effective_state.error_message:
             caveats.insert(0, effective_state.error_message)
+        minutes_note = _minutes_note(target_df, starters_list + transfers_in)
+        if minutes_note:
+            caveats.append(minutes_note)
         # One short line for the screen; the longer list above stays for the chat context.
         caution = (
             effective_state.error_message
@@ -935,6 +954,7 @@ class DecisionCardGenerator:
             "your_choices": _your_choices(boot),
             "track_record": track_record_summary(),
             "what_changed": what_changed,
+            "minutes_note": minutes_note,
             "press_signals": press_notes,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
             "is_stale": is_stale,
