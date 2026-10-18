@@ -32,3 +32,8 @@ def _no_live_refresh_before_advice(monkeypatch):
         return {"form_through_gameweek": None, "model_trained_through_gameweek": None}
 
     monkeypatch.setattr("fpl_oracle.server.retraining.ensure_latest_data", held_data)
+
+    async def no_freeze(result):
+        return None
+
+    monkeypatch.setattr("fpl_oracle.server.advice_job._freeze_for_track_record", no_freeze)

@@ -6,6 +6,7 @@ and rival simulations.
 """
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -115,6 +116,30 @@ def _ordinal(n: Any) -> str:
     n = int(n or 0)
     suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"
+
+
+def track_record_summary() -> str | None:
+    """One plain line from the scored pre-deadline forecasts (reports/holdout_log.json), or None before any."""
+    from fpl_oracle.ml.holdout import HOLDOUT_LOG_PATH
+
+    try:
+        log = json.loads(HOLDOUT_LOG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    scored = [r["comparison"] for r in log.get("evaluated_gameweeks", []) if r.get("comparison")]
+    if not scored:
+        return None
+
+    def avg(source: str, key: str) -> float | None:
+        vals = [c["sources"][source][key] for c in scored if source in c["sources"]]
+        return round(sum(vals) / len(vals), 2) if vals else None
+
+    ours, fpl = avg("FPL Oracle", "rmse"), avg("FPL ep_next", "rmse")
+    top_ours, top_fpl = avg("FPL Oracle", "top20_actual_points"), avg("FPL ep_next", "top20_actual_points")
+    text = f"Track record ({len(scored)} gameweek{'s' if len(scored) > 1 else ''}): forecast error {ours}"
+    if fpl is not None:
+        text += f" vs FPL's own {fpl}; our top-20 picks scored {top_ours} pts on average vs FPL's {top_fpl}"
+    return text + " (lower error and higher points are better)."
 
 
 def _your_choices(boot: Any) -> dict[str, list[dict[str, Any]]]:
@@ -908,6 +933,7 @@ class DecisionCardGenerator:
             "caveats": caveats,
             "caution": caution,
             "your_choices": _your_choices(boot),
+            "track_record": track_record_summary(),
             "what_changed": what_changed,
             "press_signals": press_notes,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
