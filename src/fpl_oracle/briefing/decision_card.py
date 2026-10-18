@@ -25,11 +25,154 @@ from fpl_oracle.server.analysis import analysis_service, target_gameweek
 logger = logging.getLogger("fpl_oracle.briefing.decision_card")
 
 
+MIN_LATER_CHIP_GAIN = 1.0
+
+
 def _millions(price: Any) -> float:
     """Plan prices arrive in tenths from the MILP trajectory and in millions from the beam search; no FPL
     player costs more than 20m, so anything above that is tenths."""
     value = float(price or 0.0)
     return value / 10.0 if value > 20.0 else value
+
+
+def _better(value: Any) -> str:
+    gain = float(value)
+    return f"about {abs(gain):.1f} points {'better' if gain >= 0 else 'worse'}"
+
+
+def _pair_moves(ins: list[dict[str, Any]], outs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Match each player going out with one coming in, same position first, so a screen can show 'A -> B'."""
+    free = list(ins)
+    pairs = []
+    for out in outs:
+        pick = next((i for i in free if i.get("position") and i.get("position") == out.get("position")), None)
+        pick = pick or (free[0] if free else None)
+        if pick is not None:
+            free.remove(pick)
+        pairs.append({"out": out, "in": pick})
+    pairs.extend({"out": None, "in": i} for i in free)
+    return pairs
+
+
+def _comparison_sentences(rec_plan: dict[str, Any], chip_display: str | None) -> tuple[str | None, str | None]:
+    """(chip sentence, transfer sentence): the planner's own confidence check in plain words."""
+    from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
+
+    chip_text = move_text = None
+    for check, rejected in ((rec_plan.get("decision_check"), False), (rec_plan.get("rejected_alternative"), True)):
+        if not check:
+            continue
+        gain, versus = check.get("gain"), check.get("versus")
+        if gain is None:
+            continue
+        if versus == "keeping the chip":
+            name = CHIP_DISPLAY_NAMES.get(check.get("chip"), chip_display or "The chip")
+            if rejected:
+                chip_text = (
+                    f"Keep your {name} for now: playing it this week is only {_better(gain)} "
+                    "than waiting, too close to justify using it."
+                )
+            else:
+                chip_text = f"Playing it now is {_better(gain)} than keeping your {name} for later."
+        elif versus == "rolling":
+            if rejected:
+                move_text = (
+                    f"The best move is only {_better(gain)} than saving the transfer, too close to justify making it."
+                )
+            else:
+                move_text = f"These moves are {_better(gain)} than saving the transfer."
+        elif versus == "best plan without a hit" and not rejected:
+            move_text = f"The points hit pays off: {_better(gain)} than the best plan without one."
+    return chip_text, move_text
+
+
+def _later_chips(rec_plan: dict[str, Any], roadmap: list[dict[str, Any]], target_gw: int) -> list[dict[str, Any]]:
+    """Chips the plan would play in later weeks. Provisional: the plan is re-decided at every deadline."""
+    from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
+
+    gains = {r.get("code"): r.get("expected_gain") for r in roadmap or []}
+    later = []
+    for act in rec_plan.get("trajectory") or []:
+        chip, gw = act.get("chip"), int(act["gameweek"])
+        if chip and gw > target_gw:
+            gain = gains.get(chip)
+            if gain is None or float(gain) < MIN_LATER_CHIP_GAIN:
+                continue  # a gain this small is noise, and the plan is re-decided every week anyway
+            later.append(
+                {
+                    "chip": chip,
+                    "chip_display_name": CHIP_DISPLAY_NAMES.get(chip, chip),
+                    "gameweek": gw,
+                    "gain": round(float(gain), 1),
+                    "provisional": True,
+                    "label": "provisional - re-decided each week",
+                }
+            )
+    return later
+
+
+def _ordinal(n: Any) -> str:
+    n = int(n or 0)
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def standing_summary(standings_data: dict[str, Any], manager_id: int | None) -> dict[str, Any] | None:
+    """Where the manager stands in the mini-league: position, gap to the leader and to the next rival."""
+    rows = sorted(standings_data.get("standings") or [], key=lambda r: r.get("rank") or 10**9)
+    me = next((r for r in rows if manager_id and r.get("entry") == manager_id), None)
+    if me is None:
+        return None
+    idx = rows.index(me)
+
+    def person(row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        return {"manager": row.get("player_name"), "team": row.get("entry_name"), "points": row.get("total")}
+
+    points = int(me.get("total") or 0)
+    above, below = (rows[idx - 1] if idx else None), (rows[idx + 1] if idx + 1 < len(rows) else None)
+    table = [
+        {
+            "rank": r.get("rank"),
+            "manager": r.get("player_name"),
+            "team": r.get("entry_name"),
+            "points": r.get("total"),
+            "last_gw_points": r.get("event_total"),
+            "is_you": r is me,
+        }
+        for i, r in enumerate(rows)
+        if i < 10 or r is me
+    ]
+    league = standings_data.get("league_name") or "your mini-league"
+    if idx == 0:
+        lead = max(0, points - int(below.get("total") or 0)) if below else None
+        text = f"You lead {league}" + (
+            f", {lead} points clear of {below.get('player_name')}." if below is not None else "."
+        )
+    else:
+        assert above is not None  # idx > 0
+        gap_leader = max(0, int(rows[0].get("total") or 0) - points)
+        gap_next = max(0, int(above.get("total") or 0) - points)
+        text = (
+            f"You are {_ordinal(me.get('rank'))} in {league}: {gap_leader} points behind the leader "
+            f"({rows[0].get('player_name')})"
+            + (f", {gap_next} behind {above.get('player_name')} just above you." if idx > 1 else ".")
+        )
+    return {
+        "text": text,
+        "position": me.get("rank"),
+        "league_size": (standings_data.get("coverage") or {}).get("total_entries") or len(rows),
+        "points": points,
+        "is_leader": idx == 0,
+        "leader": person(rows[0]),
+        "gap_to_leader": max(0, int(rows[0].get("total") or 0) - points),
+        "next_above": person(above),
+        "gap_to_next_above": max(0, int(above.get("total") or 0) - points) if above else None,
+        "next_below": person(below),
+        "lead_over_next_below": max(0, points - int(below.get("total") or 0)) if below else None,
+        "table": table,
+    }
 
 
 class DecisionCardGenerator:
@@ -219,29 +362,34 @@ class DecisionCardGenerator:
         t_in_raw = rec_plan.get("transfers_in", [])
         t_out_raw = rec_plan.get("transfers_out", [])
 
-        transfers_in = []
-        for p in t_in_raw:
-            if isinstance(p, dict):
-                transfers_in.append(
-                    {
-                        "element": int(p.get("element", 0)),
-                        "web_name": p.get("web_name", ""),
-                        "cost": round(_millions(p.get("cost")), 1),
-                        "expected_points": round(float(p.get("expected_points", 0.0)), 2),
-                    }
-                )
+        pool_lookup = (
+            target_df.drop_duplicates("element").set_index("element")[["position", "team"]].to_dict("index")
+            if {"position", "team"} <= set(target_df.columns)
+            else {}
+        )
 
-        transfers_out = []
-        for p in t_out_raw:
-            if isinstance(p, dict):
-                transfers_out.append(
+        def move_rows(raw: list[Any], price_key: str) -> list[dict[str, Any]]:
+            rows = []
+            for p in raw:
+                if not isinstance(p, dict):
+                    continue
+                eid = int(p.get("element", 0))
+                known = pool_lookup.get(eid, {})
+                tm = team_map.get(int(p.get("team") or known.get("team") or 0))
+                rows.append(
                     {
-                        "element": int(p.get("element", 0)),
+                        "element": eid,
                         "web_name": p.get("web_name", ""),
-                        "cost": round(_millions(p.get("sell_price")), 1),
+                        "position": p.get("position") or known.get("position"),
+                        "team_short": tm.short_name if tm else None,
+                        "cost": round(_millions(p.get(price_key)), 1),
                         "expected_points": round(float(p.get("expected_points", 0.0)), 2),
                     }
                 )
+            return rows
+
+        transfers_in = move_rows(t_in_raw, "cost")
+        transfers_out = move_rows(t_out_raw, "sell_price")
 
         is_roll = rec_plan.get("plan_type") == "ROLL_TRANSFER"
         action_name = (
@@ -279,7 +427,8 @@ class DecisionCardGenerator:
             "horizon_label": f"GW{horizon_gws[0]}-{horizon_gws[-1]}" if len(horizon_gws) > 1 else f"GW{horizon_gws[0]}",
             "horizon_gameweeks": horizon_gws,
             "no_regret_flag": bool(rec_plan.get("is_no_regret", False)),
-            "action_summary": rec_plan.get("recommendation_summary", "Roll transfer for tactical flexibility."),
+            "pairs": _pair_moves(transfers_in, transfers_out),
+            "temporary": rec_plan.get("chip") == "freehit",
         }
 
         # Synchronize chip decision directly with joint planner
@@ -290,11 +439,24 @@ class DecisionCardGenerator:
         best_cand = joint_res.get("best_candidate", {})
         active_chip_name = CHIP_DISPLAY_NAMES.get(active_chip_code, active_chip_code) if active_chip_code else None
 
+        chip_decision_gain = best_cand.get("net_gain_vs_hold")
+        chip_text, move_text = _comparison_sentences(rec_plan, active_chip_name)
+        if chip_rec_now and not chip_text:
+            if not joint_res.get("normal_plan_feasible", True):
+                chip_text = f"{active_chip_name} is needed: no legal team is possible this week without it."
+            elif chip_decision_gain is not None:
+                chip_text = (
+                    f"Playing it now is {_better(chip_decision_gain)} than keeping your {active_chip_name} for later."
+                )
+        transfers_summary["comparison"] = move_text
         chip_decision = {
             "recommend": chip_rec_now,
             "chip_name": active_chip_code,
             "chip_display_name": active_chip_name,
-            "reason": ("Compare the extra points with saving the chip." if chip_rec_now else "Save chips this week."),
+            "reason": chip_text or ("Save your chips this week." if not chip_rec_now else None),
+            "comparison": chip_text,
+            "check": rec_plan.get("decision_check") or rec_plan.get("rejected_alternative"),
+            "later": _later_chips(rec_plan, joint_res.get("measured_chip_roadmap") or [], target_gw),
             "next_best_window": None,
             "gain_vs_hold": (
                 round(float(best_cand.get("net_gain_vs_hold", 0.0)), 1)
@@ -331,23 +493,22 @@ class DecisionCardGenerator:
             "simulation_note": "No mini-league configured for Monte Carlo championship simulation.",
         }
 
+        standings_data: dict[str, Any] | None = None
         if league_id and not include_league:
-            deferred_name = f"League #{league_id}"
-            try:
-                page_1, _ = await fpl_client.get_classic_league_standings(league_id, page=1)
-                info = page_1.league if isinstance(page_1.league, dict) else page_1.league.model_dump()
-                deferred_name = info.get("name") or deferred_name
-            except Exception as e:
-                logger.warning("Decision card league name fetch warning: %s", e)
             rivals_dict.update(
-                league_name=deferred_name,
-                status="deferred",
-                posture_reason="Detailed league report is calculating separately; core plan already uses observed rival exposure.",
+                league_name=f"League #{league_id}",
+                status="unavailable",
+                posture=None,
+                posture_reason="Mini-league standings could not be loaded.",
             )
             win_prob_dict.update(
-                status="deferred",
-                simulation_note="Detailed league simulation is separate from core advice. Probability not yet measured.",
+                status="not_simulated", simulation_note="Win chances are not part of the weekly advice."
             )
+            try:
+                standings_data = await league_standings_manager.get_league_standings(league_id)
+                rivals_dict["league_name"] = standings_data.get("league_name") or rivals_dict["league_name"]
+            except Exception as e:
+                logger.warning("Decision card league standings warning: %s", e)
 
         if league_id and include_league:
             try:
@@ -564,25 +725,70 @@ class DecisionCardGenerator:
                     "simulation_note": f"Simulation failed: {e}",
                 }
 
+        summary = standing_summary(standings_data, effective_state.manager_id) if standings_data else None
+        league_odds = rec_plan.get("league") if summary else None
+        if summary and league_odds:
+            # From the planner's win-probability model (docs/decision_model.md section 4), same plan as the card
+            summary["win_chance"] = league_odds["p_win"]
+            summary["text"] += f" Chance of finishing first with this plan: about {league_odds['p_win']:.0%}."
+        if summary:
+            finished = [e.id for e in boot.events if e.finished]
+            rivals_dict.update(
+                standing=summary,
+                summary=summary["text"],
+                standings_after_gameweek=max(finished) if finished else None,
+            )
+            if rivals_dict["status"] == "unavailable":
+                rivals_dict.update(status="configured", posture_reason=None)
+            rivals_dict["nearest_above_gap"] = summary["gap_to_next_above"]
+            rivals_dict["nearest_below_gap"] = summary["lead_over_next_below"]
+        elif league_id and rivals_dict["status"] == "unavailable" and standings_data:
+            rivals_dict["posture_reason"] = "You are not listed in this mini-league."
+
         # ----------------------------------------------------------------------
         # 6. Two-line Reasoning, Caveats & Freshness
         # ----------------------------------------------------------------------
+        n_moves = len(transfers_in)
+        hit_note = f" (-{transfers_summary['hit_cost']} point hit)" if transfers_summary["hit_cost"] else ""
+        if active_chip_code in ("wildcard", "freehit"):
+            if active_chip_code == "freehit":
+                headline = f"Play your Free Hit this week: {n_moves} players change for this gameweek only"
+            else:
+                headline = f"Play your Wildcard now: {n_moves} players change"
+        elif active_chip_name:
+            extra = f", plus {n_moves} transfer{'s' if n_moves != 1 else ''}{hit_note}" if n_moves else ""
+            headline = f"Play your {active_chip_name} this week{extra}"
+        elif is_roll:
+            headline = "Save your free transfer"
+        else:
+            moves = [
+                f"{pair['out']['web_name']} for {pair['in']['web_name']}"
+                for pair in transfers_summary["pairs"]
+                if pair["out"] and pair["in"]
+            ]
+            headline = (
+                f"Transfer {moves[0]}{hit_note}"
+                if len(moves) == 1
+                else f"Make {n_moves} transfers{hit_note}: {', '.join(moves)}"
+            )
+        transfers_summary["action_summary"] = headline
+        team_pts = lineup_res["total_gameweek_expected_points"]
         if is_roll:
             two_line = (
-                f"Rolling the free transfer banks flexibility (reaching {transfers_summary['ft_next_gw']} FTs next GW) with starting XI projecting {lineup_res['starters_expected_points']:.1f} pts. "
-                f"Captain {captain_dict['web_name']} leads output at {captain_dict['expected_points']:.1f} xP."
+                f"Saving it gives you {transfers_summary['ft_next_gw']} free transfers next week. Your team is "
+                f"predicted to score {team_pts:.1f} points this week with {captain_dict['web_name']} as captain."
             )
         elif not transfers_in:
             two_line = (
-                f"Play {chip_decision['chip_display_name']} this week with no transfers: starting XI "
-                f"{lineup_res['total_gameweek_expected_points']:.1f} predicted pts. Captain: {captain_dict['web_name']}."
+                f"Your team is predicted to score {team_pts:.1f} points this week with "
+                f"{captain_dict['web_name']} as captain."
             )
         else:
-            in_names = ", ".join(p["web_name"] for p in transfers_in)
-            out_names = ", ".join(p["web_name"] for p in transfers_out)
             two_line = (
-                f"{out_names} → {in_names}: +{transfers_summary['expected_gain_gw']:.1f} predicted pts this week and +{transfers_summary['net_gain_vs_roll']:.1f} xP across the {len(joint_res['decision_scope']['horizon_gameweeks'])} weeks. "
-                f"Starting XI: {lineup_res['total_gameweek_expected_points']:.1f} predicted pts. Captain: {captain_dict['web_name']}."
+                f"Compared with saving your transfer, this gains about {transfers_summary['expected_gain_gw']:+.1f} "
+                f"points this week and {transfers_summary['net_gain_vs_roll']:+.1f} over {transfers_summary['horizon_label']}. "
+                f"Your team is predicted to score {team_pts:.1f} points this week with "
+                f"{captain_dict['web_name']} as captain."
             )
 
         caveats = [
@@ -594,6 +800,12 @@ class DecisionCardGenerator:
             caveats.append(str(chip_decision["set_1_deadline_warning"]))
         if effective_state.error_message:
             caveats.insert(0, effective_state.error_message)
+        # One short line for the screen; the longer list above stays for the chat context.
+        caution = (
+            effective_state.error_message
+            or ("Chips left from the first set expire after GW19." if chip_decision["set_1_deadline_warning"] else None)
+            or "Check team news before the deadline."
+        )
 
         # News summary note
         news_count = 0
@@ -604,9 +816,9 @@ class DecisionCardGenerator:
             pass
 
         what_changed = (
-            f"{news_count} team-news signals loaded; only gated, reconciled inputs may affect projections."
+            f"{news_count} team-news items checked against the official injury and availability flags."
             if news_count > 0
-            else "Projections refreshed against latest fixture and availability states."
+            else "Predictions use the latest fixtures and official availability flags."
         )
 
         deadline_seconds = game_state.seconds_to_deadline or 0.0
@@ -671,8 +883,11 @@ class DecisionCardGenerator:
             "chip": chip_decision,
             "rivals": rivals_dict,
             "win_prob": win_prob_dict,
+            "headline": headline,
+            "team_points": round(float(team_pts), 1),
             "two_line_reasoning": two_line,
             "caveats": caveats,
+            "caution": caution,
             "what_changed": what_changed,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
             "is_stale": is_stale,
@@ -711,7 +926,7 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
         f"Vice captain: {vice.get('web_name', 'Unknown')}",
         f"Formation: {card.get('formation', 'Unknown')}",
         "",
-        "| Player | Position | Est. points |",
+        "| Player | Position | Predicted points |",
         "|---|---|---|",
     ]
     for player in card.get("xi", []):
@@ -723,13 +938,15 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
         lines.append(f"{player.get('bench_order')}. {player.get('web_name')}")
     lines += ["", "## Chips", str(chip.get("chip_display_name")) if chip.get("recommend") else "Save chips"]
     if chip.get("recommend") and chip.get("gain_vs_hold") is not None:
-        lines.append(f"Est. +{chip['gain_vs_hold']} pts")
+        lines.append(chip.get("comparison") or f"+{chip['gain_vs_hold']} predicted points")
     if chip.get("set_1_deadline_warning"):
         lines.append(chip["set_1_deadline_warning"])
     if riv.get("league_name") and riv.get("status") not in ("unconfigured", "unavailable"):
         lines += ["", "## League", str(riv["league_name"])]
     if wp.get("p_first") is not None:
-        lines.append(f"Simulated first-place rate: {wp['p_first']:.1f}%")
+        lines.append(f"Chance of finishing first: {wp['p_first']:.0f}%")
+    if riv.get("summary"):
+        lines.append(str(riv["summary"]))
     return "\n".join(lines)
 
 
