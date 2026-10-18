@@ -10,7 +10,6 @@ from fpl_oracle.rules.transfers import (
     TransferStateConfig,
     next_free_transfers,
     sell_price,
-    sell_price_millions,
     validate_chip_legality,
 )
 
@@ -30,13 +29,6 @@ from fpl_oracle.rules.transfers import (
 )
 def test_selling_price_oracle_tenths(purchase_tenths, current_tenths, expected_sell_tenths):
     assert sell_price(purchase_tenths, current_tenths) == expected_sell_tenths
-
-
-def test_selling_price_oracle_millions():
-    assert sell_price_millions(5.0, 5.1) == 5.0
-    assert sell_price_millions(5.0, 5.2) == 5.1
-    assert sell_price_millions(5.0, 5.3) == 5.1
-    assert sell_price_millions(5.0, 4.8) == 4.8
 
 
 @pytest.mark.parametrize(
@@ -125,7 +117,6 @@ def test_selling_price_real_player_trajectories():
     trough_palmer = int(palmer_23["value"].min())  # 49
     # Profit = 63 - 50 = 13 -> 13 // 2 = 6 -> sell price = 56
     assert sell_price(buy_palmer, peak_palmer) == 56
-    assert sell_price_millions(buy_palmer / 10.0, peak_palmer / 10.0) == 5.6
     # Dip below purchase -> full pass-through -> 49
     assert sell_price(buy_palmer, trough_palmer) == 49
 

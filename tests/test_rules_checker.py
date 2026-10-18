@@ -32,7 +32,7 @@ def valid_bootstrap() -> BootstrapStatic:
     }
     game_config = {
         "scoring": {
-            "goals_scored": {"GKP": 6, "DEF": 6, "MID": 5, "FWD": 4},
+            "goals_scored": {"GKP": 10, "DEF": 6, "MID": 5, "FWD": 4},
             "assists": 3,
             "clean_sheets": {"GKP": 4, "DEF": 4, "MID": 1, "FWD": 0},
             "defensive_contribution": {"GKP": 0, "DEF": 2, "MID": 2, "FWD": 2},

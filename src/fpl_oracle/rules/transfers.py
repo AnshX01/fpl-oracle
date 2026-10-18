@@ -3,7 +3,7 @@ Centralised FPL Transfer & Chip Rules Module (WI-1.3, WI-1.4).
 Deterministic functions for:
 1. Selling price oracle with 50% profit retention rounded down (tenths of a million).
 2. Free transfer banking state machine across normal gameweeks and chip deployments.
-3. Chip legality validation (Set 1 GW19 boundary, GW1 FH restriction, GW19/GW20 FH adjacency).
+3. Chip legality validation (Set 1 GW19 boundary, GW1 WC/FH restriction, GW19/GW20 FH adjacency).
 """
 
 from dataclasses import dataclass
@@ -28,19 +28,17 @@ def sell_price(purchase_tenths: int, current_tenths: int) -> int:
     return purchase_tenths + (profit // 2)
 
 
-def sell_price_millions(purchase: float, current: float) -> float:
-    """Float wrapper for sell_price operating on millions (e.g., 5.5)."""
-    p10 = int(round(purchase * 10))
-    c10 = int(round(current * 10))
-    return sell_price(p10, c10) / 10.0
-
-
 # Named config constant for post-chip free-transfer state transition rule (WI-1.3, WI-1.4).
 # Flagged as UNCONFIRMED in official documentation: FPL rules confirm banked transfers are
 # preserved when Wildcard or Free Hit is deployed, but whether an additional transfer (+1)
 # is earned for the subsequent gameweek is ambiguous in the rulebook.
 POST_CHIP_FT_RULE_DEFAULT: Literal["preserve", "preserve_plus_one"] = "preserve"
 POST_CHIP_FT_RULE_STATUS: str = "UNCONFIRMED"
+
+
+# First gameweek each chip can be played (bootstrap `chips[].start_event`): the GW1 squad is built
+# with unlimited free transfers, so Wildcard and Free Hit open in GW2. Other chips open in GW1.
+CHIP_FIRST_GW: dict[str, int] = {"wildcard": 2, "freehit": 2}
 
 
 @dataclass(frozen=True)
@@ -113,9 +111,12 @@ def validate_chip_legality(
     if target_gw < 1 or target_gw > 38:
         return False, f"Invalid gameweek {target_gw}. Gameweeks must be between 1 and 38."
 
-    # R2: Free Hit cannot be played in GW1
-    if chip_lower == "freehit" and target_gw == 1:
-        return False, "Free Hit cannot be played in Gameweek 1 (Rule R2)."
+    # R2: Free Hit cannot be played in GW1 (nor Wildcard: both open in GW2)
+    first_gw = CHIP_FIRST_GW.get(chip_lower, 1)
+    if target_gw < first_gw:
+        if chip_lower == "freehit":
+            return False, "Free Hit cannot be played in Gameweek 1 (Rule R2)."
+        return False, f"{chip} cannot be played before Gameweek {first_gw}."
 
     current_set = 1 if target_gw <= SET_1_LAST_GW else 2
 
