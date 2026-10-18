@@ -42,3 +42,12 @@ def test_up_to_date_history_is_not_refetched(monkeypatch, tmp_path):
     basis, calls = run_check(monkeypatch, tmp_path, finalized={1, 2, 3, 4, 5, 6}, held=[1, 2, 3, 4, 5, 6])
     assert calls == ["retrain"]
     assert basis["form_through_gameweek"] == 6
+
+
+def test_shipped_model_is_not_retrained_on_gameweeks_it_already_covers(monkeypatch):
+    from fpl_oracle.server import retraining
+
+    active = {"training_provenance": {"corpus": {"by_season": {"2026-27": {"last_gw": 6}}}}}
+    monkeypatch.setattr(retraining.model_registry, "get_active_version", lambda: active)
+    monkeypatch.setattr("fpl_oracle.utils.season.derive_season", lambda format="hyphen": "2026-27")
+    assert retraining._trained_through_current_season() == 6
