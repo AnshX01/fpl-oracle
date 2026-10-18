@@ -176,7 +176,11 @@ class AnalysisService:
             user_rank=user["rank"],
             standings=[dict(rank=r["rank"], points=r["total"]) for r in rows],
             rivals=[
-                dict(points=r["total_points"], elements=[p["element"] for p in r["squad"]])
+                dict(
+                    points=r["total_points"],
+                    elements=[p["element"] for p in r["squad"]],
+                    captain=r.get("captain_element"),
+                )
                 for r in result.get("rival_squads", [])
             ],
         )

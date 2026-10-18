@@ -1454,7 +1454,7 @@ class MultiPeriodOptimizer:
 
         def run(name: str, extra: dict[str, Any], lim: float, **override: Any) -> MultiPeriodPlan | Exception:
             try:
-                return self.optimize(**dict(common, **override), **extra, time_limit_sec=lim)
+                return self.optimize(**dict(common, **override, **extra), time_limit_sec=lim)
             except Exception as ex:
                 logger.warning("MILP solve %s failed: %s", name, ex)
                 return ex
@@ -1690,6 +1690,23 @@ class MultiPeriodOptimizer:
             extra_tasks["opt_nohit"] = dict(forced_kw, max_w1_hits=0)
         if not forced and next((c for c in ranked if c["chip"] is None), None) is not hold_cand:
             extra_tasks["hold_nohit"] = {"no_chip_w1": True, "max_w1_hits": 0}
+        # League cover (decision_model.md section 4): the best plan that also owns a player our rivals score
+        # most from, with this week's chip unchanged. The tie-break below decides whether it is worth it.
+        positions = {int(e): str(p) for e, p in zip(player_pool_df["element"], player_pool_df["position"], strict=True)}
+        rival_cache: dict[int, list[dict[int, float]]] = {}
+        if rival_context and rival_context.get("rivals"):
+            from fpl_oracle.league.objective import league_threats
+
+            if forced:
+                same_chip: dict[str, Any] = dict(forced_kw)
+            elif top_cand["chip"]:
+                same_chip = {"forced_w1_chip": top_cand["chip"]}
+            else:
+                same_chip = {"no_chip_w1": True}
+            mine = {int(p) for p in top_cand["trajectory"][0]["elements"]}
+            for p in league_threats(rival_context["rivals"], horizon_gws, maps, positions, mine, rival_cache):
+                if p not in set(locked_out_ids or ()):
+                    extra_tasks[f"cover:{p}"] = dict(same_chip, locked_in_ids=sorted(set(locked_in_ids or ()) | {p}))
 
         pool2 = ThreadPoolExecutor(max_workers=max(1, min(workers, len(alt_runs) + len(chips_now) + len(extra_tasks))))
         try:
@@ -1700,6 +1717,16 @@ class MultiPeriodOptimizer:
             if extra_tasks:
                 extra = run_batch(extra_tasks, wave2_limit)
                 new_plans = {n: p for n, p in extra.items() if isinstance(p, MultiPeriodPlan)}
+                # A cover is compared with fully polished plans, so it gets the same polish
+                new_plans.update(
+                    run_parallel(
+                        {
+                            n: (lambda n=n: self._polish(run, extra_tasks[n], new_plans[n], n, None))
+                            for n in new_plans
+                            if n.startswith("cover:")
+                        }
+                    )
+                )
                 plans.update(new_plans)
                 add_plans(new_plans)
                 gate_new()
@@ -1739,9 +1766,6 @@ class MultiPeriodOptimizer:
             if rival_context and rival_context.get("rivals"):
                 from fpl_oracle.league.objective import SD_PER_P10_P90, rival_weeks, week_weights, win_probability
 
-                positions = {
-                    int(e): str(p) for e, p in zip(player_pool_df["element"], player_pool_df["position"], strict=True)
-                }
                 sd_maps = {}
                 for g in horizon_gws:
                     frame = horizon_projections.get(g, player_pool_df)
@@ -1749,7 +1773,6 @@ class MultiPeriodOptimizer:
                         frame.get("p90", frame["expected_points"]) - frame.get("p10", frame["expected_points"])
                     ).clip(lower=0)
                     sd_maps[g] = dict(zip(frame["element"].astype(int), spread / SD_PER_P10_P90, strict=True))
-                rival_cache: dict[int, list[dict[int, float]]] = {}
                 held = rival_weeks(list(current_squad_df["element"].astype(int)), horizon_gws, maps, positions)
 
                 def plan_weeks(cand: dict[str, Any]) -> list[dict[int, float]]:
@@ -1795,11 +1818,32 @@ class MultiPeriodOptimizer:
                         "p_win_before": rec_plan["league"]["p_win"],
                         "p_win_after": choice["league"]["p_win"],
                     }
+                    reason = "League tie-break"
+                    if str(choice.get("source", "")).startswith("cover:"):
+                        covered = int(choice["source"].split(":")[1])
+                        owners = sum(covered in r["elements"] for r in rival_context["rivals"])
+                        name = player_pool_df.loc[player_pool_df["element"] == covered, "web_name"].iloc[0]
+                        reason = f"League cover: owns {name}, like {owners} of the {len(rival_context['rivals'])} rivals in reach"
+                        choice["league_tiebreak"]["covered_player"] = name
                     choice["recommendation_summary"] = (
-                        f"League tie-break: as good on predicted points (within forecast uncertainty) and raises the "
+                        f"{reason}. As good on predicted points (within forecast uncertainty) and raises the "
                         f"chance of finishing first from {rec_plan['league']['p_win']:.0%} to {choice['league']['p_win']:.0%}."
                     )
                     rec_plan = choice
+                # Every cover that was checked, for the card and the chat: what owning him does to the title chance
+                rec_plan["league_cover_checks"] = [
+                    {
+                        "player": player_pool_df.loc[
+                            player_pool_df["element"] == int(name.split(":")[1]), "web_name"
+                        ].iloc[0],
+                        "owners": sum(int(name.split(":")[1]) in r["elements"] for r in rival_context["rivals"]),
+                        "points_vs_plan": round(by_name[name]["total_objective"] - rec_plan["total_objective"], 1),
+                        "p_win": by_name[name]["league"]["p_win"],
+                        "chosen": by_name[name] is rec_plan or move_key(by_name[name]) == move_key(rec_plan),
+                    }
+                    for name in by_name
+                    if name.startswith("cover:") and by_name[name].get("league")
+                ]
             rejected_hit = next((c for c in ranked if c["total_objective"] > top_cand["total_objective"]), None)
             rec_chip = rec_plan["chip"]
 
