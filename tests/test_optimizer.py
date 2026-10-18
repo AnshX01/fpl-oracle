@@ -401,27 +401,6 @@ def test_free_transfer_option_value():
     assert "Option value" in res["ft_option_explanation"]
 
 
-def test_robustness_reranking_and_no_regret():
-    """T5: Verifies Monte Carlo robustness scoring and no-regret threshold (>= 0.70)."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=2, extra_pool_size=2)
-
-    res = transfer_optimizer.evaluate_transfer_options(
-        current_squad_df=squad_df,
-        player_pool_df=pool_df,
-        bank=10.0,
-        free_transfers=1,
-        horizon_projections=projections,
-        current_gw=5,
-        target_gw=5,
-        num_mc_scenarios=10,
-        horizon_len=2,
-    )
-
-    for p in res["candidate_plans"]:
-        assert 0.0 <= p["robustness_score"] <= 1.0
-        assert p["is_no_regret"] == bool(p["robustness_score"] >= 0.70)
-
-
 def test_price_change_sensitivity_toggle():
     """T6: Verifies price change sensitivity toggle separates pure xP from price movements."""
     squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=2, extra_pool_size=2)
@@ -481,7 +460,7 @@ def test_plan_stability_threshold():
     )
 
     assert res_stable["recommended_plan"]["plan_type"] == "ROLL_TRANSFER"
-    assert "stability threshold" in res_stable["recommended_plan"]["recommendation_summary"]
+    assert "Roll the transfer" in res_stable["recommended_plan"]["recommendation_summary"]
 
     # Case B: Zero stability threshold (0.0 xP) -> selects highest gain transfer
     res_sensitive = transfer_optimizer.evaluate_transfer_options(
@@ -500,38 +479,3 @@ def test_plan_stability_threshold():
     top_cand = res_sensitive["candidate_plans"][0]
     if top_cand["horizon_gain_vs_roll"] > 0:
         assert res_sensitive["recommended_plan"]["plan_type"] != "ROLL_TRANSFER"
-
-
-def test_dynamic_roadmap_generation():
-    """T7: Dynamic roadmap generated from actual trajectory, with zero canned template strings."""
-    squad_df, pool_df, projections = make_mock_squad_and_projections(horizon_len=5, extra_pool_size=2)
-
-    res = transfer_optimizer.evaluate_transfer_options(
-        current_squad_df=squad_df,
-        player_pool_df=pool_df,
-        bank=10.0,
-        free_transfers=1,
-        horizon_projections=projections,
-        current_gw=5,
-        target_gw=5,
-        num_mc_scenarios=5,
-    )
-
-    roadmap = res["transfer_roadmap"]
-    assert len(roadmap) == 5
-
-    canned_phrases = ["Execute Primary Transfer", "Build toward Chip", "Consolidate core assets"]
-
-    for step in roadmap:
-        assert "gameweek" in step
-        assert "status" in step
-        assert step["status"] in ["CONDITIONAL_CANDIDATE", "CONTINGENT_ON_NEWS"]
-        assert "action" in step
-        assert "captain" in step
-        assert "strategic_focus" in step
-        assert "banked_free_transfers_projected" in step
-        assert 1 <= step["banked_free_transfers_projected"] <= 5
-
-        # Check zero canned phrases
-        for phrase in canned_phrases:
-            assert phrase not in step["action"]

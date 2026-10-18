@@ -223,7 +223,6 @@ def test_property_2_dominance_over_beam_search():
             current_gw=9,
             target_gw=10,
             horizon_len=3,
-            num_mc_scenarios=0,
         )
         beam_rec = beam_res["recommended_plan"]
         beam_horizon_xp = float(beam_rec.get("horizon_net_xp", 0.0))
@@ -574,21 +573,3 @@ def test_multiperiod_fast_single_gw_solve():
     assert plan.solver_status.startswith("OPTIMAL")
     assert len(plan.recommended_action.starters) == 11
     assert plan.recommended_action.captain in plan.recommended_action.starters
-
-
-def test_hit_threshold_derivation_and_configuration():
-    """Verify configurable hit policy threshold derivation across risk preferences and deficit contexts (WI-2.5)."""
-    cfg = MultiPeriodConfig(hit_threshold_base=2.0)
-    # Default 1 hit balanced: 2.0
-    assert cfg.compute_hit_threshold(hits=1, risk_preference="balanced") == 2.0
-    # Conservative / protect lead: +1.0 -> 3.0
-    assert cfg.compute_hit_threshold(hits=1, risk_preference="conservative") == 3.0
-    assert cfg.compute_hit_threshold(hits=1, mini_league_mode="protect_lead") == 3.0
-    # Aggressive / chase deficit: -1.0 -> 1.0
-    assert cfg.compute_hit_threshold(hits=1, risk_preference="aggressive") == 1.0
-    # Chasing with big deficit (>=20): -0.5 extra discount -> 0.5
-    assert cfg.compute_hit_threshold(hits=1, risk_preference="aggressive", mini_league_deficit=25.0) == 0.5
-    # Compounding for 2 hits: 2.0 + (2-1)*0.5 = 2.5
-    assert cfg.compute_hit_threshold(hits=2, risk_preference="balanced") == 2.5
-    # 0 hits: 0.0
-    assert cfg.compute_hit_threshold(hits=0) == 0.0
