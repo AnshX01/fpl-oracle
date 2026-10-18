@@ -2,7 +2,7 @@
 Rival Intelligence & League Ownership Analyzer.
 
 Features:
-- Proximity-based rival selection (all managers above + managers within RIVAL_POINTS_WINDOW below) (R1)
+- Rival selection: all managers above + managers below who can still finish above us (reach_window) (R1)
 - Full pagination support through mini-league standings (R1)
 - Published rival details: Effective Ownership (EO), net exposure vs user squad, differentials (R2)
 - 2026/27 chip tracking: remaining chips, used chips, and Set 1 GW19 expiration rules (R2)
@@ -11,6 +11,7 @@ Features:
 
 import asyncio
 import logging
+import math
 from collections import defaultdict
 from typing import Any
 
@@ -21,6 +22,18 @@ from fpl_oracle.api.models import BootstrapStatic
 from fpl_oracle.config import RIVAL_POINTS_WINDOW
 
 logger = logging.getLogger("fpl_oracle.league.rivals")
+
+
+# Spread of the points gap between two managers per remaining gameweek. It matches the planner's own
+# win-probability variance (docs/decision_model.md section 4: GW8 2026-27, 71 points over 31 weeks).
+GAP_SD_PER_GW = 13.0
+REACH_Z = 1.645  # a manager below us is tracked while they have at least a 5% chance to finish above us
+
+
+def reach_window(target_gw: int) -> int:
+    """Points behind us that a manager can still make up with 5% probability over the weeks left."""
+    weeks_left = max(1, 38 - int(target_gw) + 1)
+    return math.ceil(REACH_Z * GAP_SD_PER_GW * math.sqrt(weeks_left))
 
 
 def get_rival_set(
@@ -165,7 +178,7 @@ class RivalAnalyzer:
         Extract squad compositions for proximity rivals and compute effective ownership & exposure.
         """
         elem_map = {e.id: e for e in bootstrap.elements}
-        active_window = points_window if points_window is not None else RIVAL_POINTS_WINDOW
+        active_window = points_window or RIVAL_POINTS_WINDOW or reach_window(current_gw)
 
         selected_entries, selection_mode, user_rank = self.select_proximity_rivals(
             standings=standings,

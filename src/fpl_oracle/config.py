@@ -90,7 +90,9 @@ class FPLSettings(BaseModel):
     openai_api_key: str = Field(default="", description="Optional OpenAI API Key")
 
     # League & Rival Intelligence Settings
-    rival_points_window: int = Field(default=20, description="Points window below user for proximity rival selection")
+    rival_points_window: int = Field(
+        default=0, description="Fixed points window below the user for rival selection; 0 = everyone still in reach"
+    )
     max_standings_pages: int = Field(default=200, description="High safety limit for mini-league standings pagination")
 
     # Clean Sheet Intelligence Settings
@@ -167,7 +169,7 @@ def _load_settings_from_env() -> FPLSettings:
         llm_provider=os.getenv("LLM_PROVIDER", "gemini").strip(),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
-        rival_points_window=_parse_int(os.getenv("RIVAL_POINTS_WINDOW")) or 20,
+        rival_points_window=_parse_int(os.getenv("RIVAL_POINTS_WINDOW")) or 0,
         odds_api_key=os.getenv("ODDS_API_KEY", "").strip(),
         planner_min_horizon=_parse_int(os.getenv("PLANNER_MIN_HORIZON")) or 6,
         planner_max_horizon=_parse_int(os.getenv("PLANNER_MAX_HORIZON")) or 12,
