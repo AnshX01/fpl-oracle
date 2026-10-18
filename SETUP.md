@@ -50,8 +50,8 @@ Open `.env` in any text editor. The application runs immediately **without any e
 | Provider | Environment Variable | Where to Get It | Notes |
 |---|---|---|---|
 | **Google Gemini (Default)** | `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/) | **Recommended**. High rate limits, excellent tool-calling support, generous free tier. |
-| **Anthropic Claude** | `ANTHROPIC_API_KEY` | [Anthropic Console](https://console.anthropic.com/) | Set `LLM_PROVIDER=anthropic` in `.env`. Uses `claude-3-5-sonnet-20241022`. |
-| **OpenAI GPT** | `OPENAI_API_KEY` | [OpenAI Platform](https://platform.openai.com/) | Set `LLM_PROVIDER=openai` in `.env`. Uses `gpt-4o`. |
+| **Anthropic Claude** | `ANTHROPIC_API_KEY` | [Anthropic Console](https://console.anthropic.com/) | Set `LLM_PROVIDER=anthropic` in `.env`. Model set by `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`). |
+| **OpenAI GPT** | `OPENAI_API_KEY` | [OpenAI Platform](https://platform.openai.com/) | Set `LLM_PROVIDER=openai` in `.env`. Model set by `OPENAI_MODEL` (default `gpt-4o`). |
 | **Offline Expert** | *(None required)* | Built-in | Set `LLM_PROVIDER=offline`. Fully operational locally with zero network calls or credentials. |
 
 ### 2.2 Optional News & Search Enhancement Keys

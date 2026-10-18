@@ -63,7 +63,7 @@ def test_decision_card_generator_contract(configured_advisor):
         # Transfers
         assert "transfers" in card
         t = card["transfers"]
-        assert t["action"] in ["ROLL", "SINGLE_TRANSFER", "MULTIPLE_TRANSFERS"]
+        assert t["action"] in ["ROLL", "CHIP_ONLY", "SINGLE_TRANSFER", "MULTIPLE_TRANSFERS"]
         assert "is_roll" in t
         assert "in" in t
         assert "out" in t
@@ -240,7 +240,6 @@ def test_decision_card_api_endpoints():
         },
         "win_prob": {
             "p_first": 24.5,
-            "p_above_key_rivals": 78.0,
             "expected_rank": 2.1,
             "mc_se": 0.45,
             "simulation_note": "Joint Bernoulli Monte Carlo simulation.",
@@ -430,8 +429,8 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
                         "rival_squads": [
                             {"entry_id": 2, "player_name": "Rival Leader", "rank": 1, "total_points": 490, "squad": []}
                         ],
-                        "template_players": [],
-                        "differential_players": [],
+                        "template_players": [{"web_name": "Template"}],
+                        "differential_players": [{"web_name": "Differential"}],
                     }
                 ),
             ),
@@ -441,6 +440,10 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
             ),
         ):
             card = await decision_card_generator.generate_decision_card()
+            rivals = card["rivals"]
+            assert rivals["exposure_players"] == ["Template"] and rivals["differential_players"] == ["Differential"]
+            assert rivals["posture"] == "DEFENDING_LEAD" and rivals["nearest_below_gap"] == 10
+            assert rivals["nearest_above_gap"] is None
             wp = card["win_prob"]
             assert wp["status"] == "error"
             assert wp["p_first"] is None, "Failed simulation must emit p_first=None, not 0.0"
@@ -448,3 +451,11 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
             assert "Simulated Monte Carlo numerical breakdown" in wp["error_message"]
 
     asyncio.run(_run())
+
+
+def test_plan_prices_normalised_to_millions():
+    from fpl_oracle.briefing.decision_card import _millions
+
+    assert _millions(65.0) == 6.5  # MILP trajectory: tenths
+    assert _millions(6.5) == 6.5  # beam search: millions
+    assert _millions(None) == 0.0

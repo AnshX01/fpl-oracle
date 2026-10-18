@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from fpl_oracle.optimise.lineup import play_probability
 from fpl_oracle.rules.transfers import sell_price
 
 
@@ -170,8 +171,11 @@ class AffordabilityPathFinder:
         # Required when direct swap is unaffordable or to explore alternative funding pairs
         # Find budget enablers across pool in any position
         enabler_candidates = player_pool_df[
-            (player_pool_df["value"] <= 45.0) & (~player_pool_df["element"].isin(squad_ids))
-        ].copy()
+            (player_pool_df["value"] <= 45.0)
+            & (~player_pool_df["element"].isin(squad_ids))
+            & (player_pool_df["element"] != target_element)
+        ]
+        enabler_candidates = enabler_candidates[play_probability(enabler_candidates) >= 0.75].sort_values("value")
 
         for cand in same_pos_candidates:
             out_eid = cand["element"]
@@ -186,12 +190,17 @@ class AffordabilityPathFinder:
                     other_pos = other["position"]
                     other_sell = other["sell_price"]
 
-                    # Find cheapest enabler in other_pos
-                    pos_enablers = enabler_candidates[enabler_candidates["position"] == other_pos]
-                    if pos_enablers.empty:
+                    # Cheapest available enabler in other_pos that keeps every club at <= 3 after both moves
+                    after_moves = dict(club_counts)
+                    for tm, d in ((other["team"], -1), (cand["team"], -1), (target_team, 1)):
+                        after_moves[tm] = after_moves.get(tm, 0) + d
+                    cheapest_enabler = None
+                    for _, e in enabler_candidates[enabler_candidates["position"] == other_pos].iterrows():
+                        if after_moves.get(int(e["team"]), 0) + 1 <= 3 and max(after_moves.values()) <= 3:
+                            cheapest_enabler = e
+                            break
+                    if cheapest_enabler is None:
                         continue
-
-                    cheapest_enabler = pos_enablers.sort_values(by="value").iloc[0]
                     enabler_eid = int(cheapest_enabler["element"])
                     enabler_cost = int(round(float(cheapest_enabler["value"])))
 

@@ -20,9 +20,16 @@ from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.ml.model_registry import model_registry
-from fpl_oracle.server.analysis import analysis_service
+from fpl_oracle.server.analysis import analysis_service, target_gameweek
 
 logger = logging.getLogger("fpl_oracle.briefing.decision_card")
+
+
+def _millions(price: Any) -> float:
+    """Plan prices arrive in tenths from the MILP trajectory and in millions from the beam search; no FPL
+    player costs more than 20m, so anything above that is tenths."""
+    value = float(price or 0.0)
+    return value / 10.0 if value > 20.0 else value
 
 
 class DecisionCardGenerator:
@@ -46,7 +53,7 @@ class DecisionCardGenerator:
         is_stale = is_stale or fixtures_stale or effective_state.is_stale
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
         effective_curr_gw = curr_gw or game_state.current_gw or 1
-        target_gw = next_gw or game_state.next_gw or (effective_curr_gw + 1 if effective_curr_gw < 38 else 38)
+        target_gw = target_gameweek(effective_curr_gw, next_gw or game_state.next_gw)
 
         team_map = {t.id: t for t in boot.teams}
 
@@ -132,7 +139,11 @@ class DecisionCardGenerator:
 
         else:
             chip_strat = {
-                "set_1_deadline_warning": "First-set chips expire at GW19; value beyond the loaded projection window remains unresolved."
+                "set_1_deadline_warning": (
+                    "First-set chips expire at GW19; value beyond the loaded projection window remains unresolved."
+                    if target_gw <= 19 and effective_state.chips_remaining_set_1
+                    else None
+                )
             }
 
         # ----------------------------------------------------------------------
@@ -215,7 +226,7 @@ class DecisionCardGenerator:
                     {
                         "element": int(p.get("element", 0)),
                         "web_name": p.get("web_name", ""),
-                        "cost": round(float(p.get("cost", 0.0)), 1),
+                        "cost": round(_millions(p.get("cost")), 1),
                         "expected_points": round(float(p.get("expected_points", 0.0)), 2),
                     }
                 )
@@ -227,14 +238,24 @@ class DecisionCardGenerator:
                     {
                         "element": int(p.get("element", 0)),
                         "web_name": p.get("web_name", ""),
-                        "cost": round(float(p.get("sell_price", 0.0)), 1),
+                        "cost": round(_millions(p.get("sell_price")), 1),
                         "expected_points": round(float(p.get("expected_points", 0.0)), 2),
                     }
                 )
 
         is_roll = rec_plan.get("plan_type") == "ROLL_TRANSFER"
-        action_name = "ROLL" if is_roll else ("SINGLE_TRANSFER" if len(transfers_in) == 1 else "MULTIPLE_TRANSFERS")
+        action_name = (
+            "ROLL"
+            if is_roll
+            else "CHIP_ONLY"
+            if not transfers_in
+            else "SINGLE_TRANSFER"
+            if len(transfers_in) == 1
+            else "MULTIPLE_TRANSFERS"
+        )
 
+        # The planner's trajectory is the horizon that horizon_pts / net_gain_vs_roll are summed over.
+        horizon_gws = [int(a["gameweek"]) for a in rec_plan.get("trajectory") or []] or [target_gw]
         transfers_summary = {
             "action": action_name,
             "is_roll": is_roll,
@@ -255,6 +276,8 @@ class DecisionCardGenerator:
             "net_gain_vs_roll": round(float(rec_plan.get("horizon_gain_vs_roll", 0.0)), 2),
             "expected_gain_gw": round(float(rec_plan.get("expected_gain", 0.0)), 2),
             "horizon_pts": round(float(rec_plan.get("horizon_net_xp", 0.0)), 2),
+            "horizon_label": f"GW{horizon_gws[0]}-{horizon_gws[-1]}" if len(horizon_gws) > 1 else f"GW{horizon_gws[0]}",
+            "horizon_gameweeks": horizon_gws,
             "no_regret_flag": bool(rec_plan.get("is_no_regret", False)),
             "action_summary": rec_plan.get("recommendation_summary", "Roll transfer for tactical flexibility."),
         }
@@ -290,7 +313,7 @@ class DecisionCardGenerator:
         league_id = profile.target_league_id
         rivals_dict: dict[str, Any] = {
             "status": "unconfigured",
-            "league_name": "None",
+            "league_name": None,
             "posture": "BALANCED_ATTACK",
             "posture_reason": "No target mini-league configured. Add your mini-league ID in settings to activate rival analysis.",
             "nearest_above_gap": None,
@@ -303,14 +326,21 @@ class DecisionCardGenerator:
         win_prob_dict: dict[str, Any] = {
             "status": "unconfigured",
             "p_first": None,
-            "p_above_key_rivals": None,
             "expected_rank": None,
             "mc_se": None,
             "simulation_note": "No mini-league configured for Monte Carlo championship simulation.",
         }
 
         if league_id and not include_league:
+            deferred_name = f"League #{league_id}"
+            try:
+                page_1, _ = await fpl_client.get_classic_league_standings(league_id, page=1)
+                info = page_1.league if isinstance(page_1.league, dict) else page_1.league.model_dump()
+                deferred_name = info.get("name") or deferred_name
+            except Exception as e:
+                logger.warning("Decision card league name fetch warning: %s", e)
             rivals_dict.update(
+                league_name=deferred_name,
                 status="deferred",
                 posture_reason="Detailed league report is calculating separately; core plan already uses observed rival exposure.",
             )
@@ -341,7 +371,6 @@ class DecisionCardGenerator:
                     win_prob_dict = {
                         "status": "unavailable",
                         "p_first": None,
-                        "p_above_key_rivals": None,
                         "expected_rank": None,
                         "mc_se": None,
                         "simulation_note": "Current gameweek is unknown.",
@@ -362,7 +391,6 @@ class DecisionCardGenerator:
                     win_prob_dict = {
                         "status": "unavailable",
                         "p_first": None,
-                        "p_above_key_rivals": None,
                         "expected_rank": None,
                         "mc_se": None,
                         "simulation_note": "Standings are empty or unavailable.",
@@ -395,7 +423,6 @@ class DecisionCardGenerator:
                         win_prob_dict = {
                             "status": "unavailable",
                             "p_first": None,
-                            "p_above_key_rivals": None,
                             "expected_rank": None,
                             "mc_se": None,
                             "simulation_note": "Manager not found in mini-league standings."
@@ -409,6 +436,7 @@ class DecisionCardGenerator:
                             user_manager_id=effective_state.manager_id,
                             current_gw=eval_gw,
                             bootstrap=boot,
+                            user_squad_df=user_squad_df,
                         )
 
                         user_pts = (
@@ -419,19 +447,18 @@ class DecisionCardGenerator:
                         selection_mode = rivals_res.get("rival_selection_mode", "")
 
                         if selection_mode == "leader, no close chasers":
-                            strategy = league_strategy_advisor.evaluate_strategy(
-                                user_rank=user_rank,
-                                user_total_points=user_pts,
-                                rivals_analysis=rivals_res,
-                                user_squad_df=user_squad_df,
-                            )
+                            others = [
+                                float(r.get("total", 0))
+                                for r in standings_data["standings"]
+                                if r.get("entry") != effective_state.manager_id
+                            ]
                             rivals_dict = {
                                 "status": "leader, no close chasers",
                                 "league_name": standings_data.get("league_name", "Mini-League"),
-                                "posture": strategy.get("posture", "CONSOLIDATE_LEAD"),
+                                "posture": "CONSOLIDATE_LEAD",
                                 "posture_reason": "Leader with no close chasers within points window.",
                                 "nearest_above_gap": 0,
-                                "nearest_below_gap": strategy.get("gap_to_next"),
+                                "nearest_below_gap": int(user_pts - max(others)) if others else None,
                                 "rival_count": 0,
                                 "exposure_players": [],
                                 "differential_players": [],
@@ -440,7 +467,6 @@ class DecisionCardGenerator:
                             win_prob_dict = {
                                 "status": "leader, no close chasers",
                                 "p_first": None,
-                                "p_above_key_rivals": None,
                                 "expected_rank": None,
                                 "mc_se": None,
                                 "simulation_note": "Leader with no rivals within points window.",
@@ -454,31 +480,34 @@ class DecisionCardGenerator:
                             )
 
                             # Monte Carlo simulation across multi-gameweek horizon
-                            mc_res = await asyncio.to_thread(
-                                monte_carlo_simulator.simulate_league,
-                                user_points=user_pts,
-                                user_squad_df=user_squad_df,
-                                rival_squads=rivals_res.get("rival_squads", []),
-                                projections_df=target_df,
-                                horizon_gws=5,
-                                seed=42,
-                                projections_by_gw=horizon_proj,
-                            )
+                            # A failed simulation must not hide the rival analysis that already succeeded.
+                            try:
+                                mc_res = await asyncio.to_thread(
+                                    monte_carlo_simulator.simulate_league,
+                                    user_points=user_pts,
+                                    user_squad_df=user_squad_df,
+                                    rival_squads=rivals_res.get("rival_squads", []),
+                                    projections_df=target_df,
+                                    horizon_gws=5,
+                                    seed=42,
+                                    projections_by_gw=horizon_proj,
+                                )
+                            except Exception as e:
+                                logger.error(f"[DecisionCard] Error during rival/Monte Carlo simulation: {e}")
+                                mc_res = {"status": "SIMULATION_ERROR", "error": str(e)}
 
-                            exposure_names = [
-                                p.get("web_name", "") for p in rivals_res.get("differential_players", [])[:3]
-                            ]
-                            diff_names = [p.get("web_name", "") for p in rivals_res.get("template_players", [])[:3]]
+                            exposure_names = [p.get("web_name", "") for p in rivals_res.get("template_players", [])[:3]]
+                            diff_names = [p.get("web_name", "") for p in rivals_res.get("differential_players", [])[:3]]
 
                             rivals_dict = {
                                 "status": "configured",
                                 "league_name": standings_data.get("league_name", "Mini-League"),
-                                "posture": strategy.get("posture", "BALANCED_ATTACK"),
+                                "posture": strategy.get("strategy_mode", "BALANCED_ATTACK"),
                                 "posture_reason": strategy.get(
                                     "rationale", "Maintain balanced upside with core template coverage."
                                 ),
-                                "nearest_above_gap": strategy.get("gap_to_leader"),
-                                "nearest_below_gap": strategy.get("gap_to_next"),
+                                "nearest_above_gap": strategy.get("nearest_above_gap"),
+                                "nearest_below_gap": strategy.get("nearest_below_gap"),
                                 "rival_count": len(rivals_res.get("rival_squads", [])),
                                 "exposure_players": exposure_names,
                                 "differential_players": diff_names,
@@ -489,18 +518,25 @@ class DecisionCardGenerator:
                                 win_prob_dict = {
                                     "status": "no_rivals",
                                     "p_first": None,
-                                    "p_above_key_rivals": None,
                                     "expected_rank": None,
                                     "mc_se": None,
                                     "simulation_note": mc_res.get(
                                         "message", "No rivals found in window for simulation."
                                     ),
                                 }
+                            elif mc_res.get("status") == "SIMULATION_ERROR":
+                                win_prob_dict = {
+                                    "status": "error",
+                                    "error_message": mc_res["error"],
+                                    "p_first": None,
+                                    "expected_rank": None,
+                                    "mc_se": None,
+                                    "simulation_note": f"Simulation failed: {mc_res['error']}",
+                                }
                             elif mc_res.get("status") != "SIMULATION_SUCCESS":
                                 win_prob_dict = {
                                     "status": "unavailable",
                                     "p_first": None,
-                                    "p_above_key_rivals": None,
                                     "expected_rank": None,
                                     "mc_se": None,
                                     "simulation_note": mc_res.get("status", "Unknown simulation state"),
@@ -509,17 +545,13 @@ class DecisionCardGenerator:
                                 win_prob_dict = {
                                     "status": "simulated",
                                     "p_first": round(float(mc_res.get("user_win_probability_pct", 0.0)), 1),
-                                    "p_above_key_rivals": round(
-                                        float(
-                                            mc_res.get(
-                                                "p_above_key_rivals", mc_res.get("user_win_probability_pct", 0.0)
-                                            )
-                                        ),
-                                        1,
-                                    ),
                                     "expected_rank": round(float(mc_res.get("expected_final_rank", 1.0)), 1),
                                     "mc_se": round(float(mc_res.get("win_prob_se", 0.5)), 2),
-                                    "simulation_note": "Owned squad held with observed prior picks/captain; selected-rival horizon scenario, not selected transfer plan or season title odds.",
+                                    "simulation_note": (
+                                        "Owned squad held with observed prior picks/captain; selected-rival horizon scenario, "
+                                        "not selected transfer plan or season title odds. "
+                                        f"{mc_res.get('rivals_simulated')} of {mc_res.get('rivals_requested')} rivals simulated."
+                                    ),
                                 }
             except Exception as e:
                 logger.error(f"[DecisionCard] Error during rival/Monte Carlo simulation: {e}")
@@ -528,7 +560,6 @@ class DecisionCardGenerator:
                     "error_message": str(e),
                     "p_first": None,
                     "expected_rank": None,
-                    "p_above_key_rivals": None,
                     "mc_se": None,
                     "simulation_note": f"Simulation failed: {e}",
                 }
@@ -540,6 +571,11 @@ class DecisionCardGenerator:
             two_line = (
                 f"Rolling the free transfer banks flexibility (reaching {transfers_summary['ft_next_gw']} FTs next GW) with starting XI projecting {lineup_res['starters_expected_points']:.1f} pts. "
                 f"Captain {captain_dict['web_name']} leads output at {captain_dict['expected_points']:.1f} xP."
+            )
+        elif not transfers_in:
+            two_line = (
+                f"Play {chip_decision['chip_display_name']} this week with no transfers: starting XI "
+                f"{lineup_res['total_gameweek_expected_points']:.1f} predicted pts. Captain: {captain_dict['web_name']}."
             )
         else:
             in_names = ", ".join(p["web_name"] for p in transfers_in)
@@ -556,6 +592,8 @@ class DecisionCardGenerator:
         ]
         if chip_decision["set_1_deadline_warning"]:
             caveats.append(str(chip_decision["set_1_deadline_warning"]))
+        if effective_state.error_message:
+            caveats.insert(0, effective_state.error_message)
 
         # News summary note
         news_count = 0

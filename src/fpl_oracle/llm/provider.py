@@ -5,6 +5,9 @@ that operates purely on live data, projections, and mathematical optimizations.
 """
 
 import logging
+import re
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from fpl_oracle.config import ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
@@ -12,64 +15,261 @@ from fpl_oracle.llm.tools import tool_executor
 
 logger = logging.getLogger("fpl_oracle.llm.provider")
 
-SYSTEM_PROMPT = """You are the FPL Oracle — an elite, mathematically rigorous Fantasy Premier League expert analyst and decision-support assistant.
-Your mission is to provide deeply insightful, fully justified, and data-grounded recommendations for transfers, captaincy, bench selection, and chip strategy.
+VOICE_CONTRACT = Path(__file__).parent / "prompts" / "advisor_system.md"
 
-Core Operating Principles:
-1. DEEP THINKING & JUSTIFICATION:
-   - Provide the complete working, reasoning, and mathematical justifications behind all tool recommendations.
-   - For Transfers: Detail why the recommended plan is selected over competing plans (e.g. rolling vs 1 transfer vs hits). Explain expected points (xP) differentials, fixture difficulty, whether taking a -4 hit is justified according to the hit verdict, and the multi-week roadmap.
-   - For Captaincy: Compare the safe captain versus the differential/vice-captain. Explain their expected points, floor (P10) vs explosive ceiling (P90), and opponent fixture.
-   - For Chips: Explain the strategic timing, why holding or playing a chip is optimal, Set 1 vs Set 2 deadlines (GW19 boundary rule), and projected point gains.
-   - For Player Comparisons: Break down the head-to-head metrics: expected points, cost efficiency, fixture difficulty, DefCon (defensive contribution) boost, and statistical upside.
+SYSTEM_PROMPT = """You are the FPL Oracle: the manager's hired Fantasy Premier League expert and decision-support advisor.
+You know the whole tool: squad, bank, free transfers, chips per set, form, fixtures, availability, projections, the published decision and how it was made.
 
-2. STRICT FACTUAL GROUNDING (ANTI-HALLUCINATION):
-   - Cite exact player names, prices, expected points, and metrics directly from tool outputs.
-   - Never invent player prices, fixtures, news, or injuries not present in tool results.
-   - If a player is not found or data is unavailable, state this honestly.
-   - Label all forecasts as statistical estimates.
-
-3. STRUCTURE & CLARITY:
-   - Action first: Give the clear verdict / recommendation.
-   - Working & Rationale: Detail the mathematical and tactical justifications.
-   - Next Steps / Alternatives: Highlight future roadmap or key decision points.
+Operating rules:
+1. THE PUBLISHED DECISION IS THE ANSWER. The decision record below is what the app shows the manager. Explain it, justify it with its numbers, and debate it. If the manager proposes something else, compare it with the record using evaluate_plan, compare_options, explain_why_not or compare_players, then concede or push back with the computed numbers. Do not silently replace the published advice with a new plan.
+2. STRICT GROUNDING. Quote only names, prices, xP, probabilities and fixtures from the record or tool results. Never invent news, injuries or numbers. If data is missing or stale, say so. Label forecasts as estimates.
+3. TOOLS. Use get_current_decision for any section of the decision (or raw card). Use the other tools for anything the record lacks (other players, other transfers, price changes, news, fixtures).
+4. Earlier chat turns may refer to older advice; the record in this prompt wins.
+5. Action first. Answer the question asked; use the structured elements of the voice contract for full recommendations, not for every follow-up.
 """
 
 
 OFFLINE_MODE_PREFIX = "[OFFLINE EXPERT MODE: Running purely on live local data, projections, and mathematical optimizations without external LLM keys.]\n\n"
 
 
+async def build_system_prompt() -> str:
+    """Voice contract + rules + today's date + the published decision record, rebuilt every turn."""
+    from fpl_oracle.llm.decision_record import current_decision_record, prompt_section
+
+    try:
+        voice = VOICE_CONTRACT.read_text(encoding="utf-8").strip()
+    except OSError:
+        logger.warning("Advisor voice contract missing: %s", VOICE_CONTRACT)
+        voice = ""
+    try:
+        record = await current_decision_record()
+    except Exception as e:
+        logger.warning("Decision record unavailable for chat prompt: %s", type(e).__name__)
+        record = {"status": "unavailable", "reason": "The published decision could not be read."}
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    return "\n\n".join(
+        p for p in (SYSTEM_PROMPT.strip(), voice, f"Today is {today} (UTC).", prompt_section(record)) if p
+    )
+
+
+_WHY_NOT_WORDS = {"instead", "rather"}
+_EXPLAIN_WORDS = {"why", "justify", "explain", "defend", "reason", "reasoning", "decision", "recommend", "recommended"}
+_POSITION_WORDS = {
+    "goalkeeper": "GKP",
+    "keeper": "GKP",
+    "defender": "DEF",
+    "midfielder": "MID",
+    "mid": "MID",
+    "forward": "FWD",
+}
+
+
+def _fmt_move(m: dict[str, Any]) -> str:
+    return f"{m.get('name')} (£{m.get('price')}m, {m.get('xp_gw')} xP)"
+
+
+def _find_players(text: str, pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pool players named in `text`, in the order they are mentioned (best-projected player per name)."""
+    low = text.lower()
+    hits: dict[str, tuple[int, dict[str, Any]]] = {}
+    for p in pool:  # pool is ranked best first
+        name = p["web_name"].lower()
+        if name in hits:
+            continue
+        m = re.search(rf"(?<!\w){re.escape(name)}(?!\w)", low)
+        if m:
+            hits[name] = (m.start(), p)
+    return [p for _, p in sorted(hits.values(), key=lambda t: t[0])]
+
+
 class OfflineExpertProvider:
     """
-    Offline data-grounded expert analyst that executes live tools
-    and generates structured FPL Oracle recommendations without external API keys (WI-6.3).
+    Offline data-grounded expert analyst. With a published decision it answers from the decision
+    record (what to do, why, alternatives, why-not comparisons); otherwise it runs the live tools.
+    No external LLM keys needed, and the same question always gets the same answer.
     """
 
     is_offline: bool = True
 
     async def chat(self, messages: list[dict[str, str]], system_prompt: str) -> str:
-        raw_res = await self._generate_response(messages, system_prompt)
+        raw_res = await self._generate_response(messages)
         if not raw_res.startswith(OFFLINE_MODE_PREFIX):
             return OFFLINE_MODE_PREFIX + raw_res
         return raw_res
 
-    async def _generate_response(self, messages: list[dict[str, str]], system_prompt: str) -> str:
+    # ---- published-decision answers -------------------------------------------------------
+
+    @staticmethod
+    def _render_decision(rec: dict[str, Any]) -> str:
+        t, chip, lineup = rec.get("transfers") or {}, rec.get("chip") or {}, rec.get("lineup") or {}
+        team = rec.get("team") or {}
+        cap, vice = lineup.get("captain") or {}, lineup.get("vice_captain") or {}
+        outs, ins = t.get("out") or [], t.get("in") or []
+        if ins:
+            move = "; ".join(f"sell {_fmt_move(o)} and buy {_fmt_move(i)}" for o, i in zip(outs, ins, strict=False))
+        else:
+            move = "roll the free transfer"
+        chip_line = f"play {chip.get('chip')}" if chip.get("play_now") else "save your chips"
+        lines = [
+            f"### GW{rec.get('gameweek')} decision",
+            f"**Decision:** {move}; captain {cap.get('web_name')} (vice {vice.get('web_name')}); {chip_line}.",
+            "",
+            "**Why:**",
+        ]
+        if t.get("why"):
+            lines.append(f"- {t['why']}")
+        if t.get("gain_vs_roll_over_horizon_xp") is not None:
+            lines.append(
+                f"- Transfers: +{t['gain_vs_roll_over_horizon_xp']} xP over the planning horizon vs rolling "
+                f"({t.get('gain_this_gw_xp')} xP this GW); horizon total {t.get('horizon_xp')} xP."
+            )
+        if cap:
+            lines.append(
+                f"- Captain {cap.get('web_name')}: {cap.get('expected_points')} xP "
+                f"(floor {cap.get('p10')}, ceiling {cap.get('p90')}); {lineup.get('captain_reason')}"
+            )
+        if chip:
+            lines.append(
+                f"- Chip: {'play ' + str(chip.get('chip')) if chip.get('play_now') else 'hold'}"
+                f" (gain vs hold {chip.get('gain_vs_hold_xp')} xP). {chip.get('reason') or ''}"
+            )
+        alt = rec.get("alternatives") or {}
+        lines += ["", "**Alternatives considered:**"]
+        for o in (chip.get("now_vs_later") or [])[:6]:
+            if isinstance(o, dict):
+                lines.append(
+                    f"- {o.get('chip')}: {o.get('net_gain_vs_hold')} xP vs holding"
+                    f"{' (recommended)' if o.get('recommended') else ''}"
+                )
+        for plan in (alt.get("contingency") or {}).values():
+            lines.append(f"- {plan.get('title')}: {plan.get('net_xp')} xP ({plan.get('delta_vs_plan_a')} vs Plan A)")
+        lines += [
+            "",
+            f"**Cost:** {t.get('hits') or 0} hit(s) (-{t.get('hit_cost') or 0} pts), "
+            f"{t.get('free_transfers_used')} free transfer(s) used, {t.get('free_transfers_next_gw')} banked next GW, "
+            f"bank after £{t.get('bank_after_millions')}m (now £{team.get('bank_millions')}m).",
+        ]
+        for key, plan in (alt.get("contingency") or {}).items():
+            if plan.get("trigger") and key != "plan_a":
+                lines.append(f"**What would change this:** {plan['trigger']}")
+        meta = rec.get("meta") or {}
+        lines.append(
+            f"**Data:** model {meta.get('model_version')}, as of {meta.get('data_as_of')}"
+            f"{'; DATA IS STALE' if meta.get('is_stale') else ''}."
+        )
+        dl = rec.get("deadline") or {}
+        lines.append(f"**Deadline:** {dl.get('label') or dl.get('deadline_time')}")
+        return "\n".join(lines)
+
+    @staticmethod
+    async def _why_not(rec: dict[str, Any], text: str, tokens: set[str]) -> str | None:
+        """'Why not X?': hits/chips use the planner's scored plans; players are compared by projection."""
+        if {"free", "hit"} <= tokens or "freehit" in tokens:
+            action = "freehit"
+        elif tokens & {"hit", "hits"}:
+            action = "hit"
+        elif "wildcard" in tokens:
+            action = "wildcard"
+        elif "bench" in tokens:
+            action = "bboost"
+        elif "triple" in tokens:
+            action = "3xc"
+        elif "chip" in tokens:
+            action = "chip"
+        else:
+            action = None
+        if action:
+            res = await tool_executor.execute("explain_why_not", {"action_type": action})
+            if "error" in res:
+                return None
+            nums = ", ".join(f"{k}={v}" for k, v in (res.get("numbers") or {}).items())
+            return f"### {res['query_action']}\n**{res['verdict']}.** {res['explanation']}" + (
+                f"\nNumbers: {nums}" if nums else ""
+            )
+
+        pool_res = await tool_executor.execute("get_projections", {"horizon": 5, "limit": 800})
+        pool = pool_res.get("players", [])
+        named = _find_players(text, pool)
+        t, lineup = rec.get("transfers") or {}, rec.get("lineup") or {}
+        rec_in_ids = {m.get("id") for m in t.get("in") or []}
+        named = [p for p in named if p["element"] not in rec_in_ids] or named
+        if not named:
+            return None
+        x = named[0]
+        by_id = {p["element"]: p for p in pool}
+        horizon = pool_res.get("gameweeks") or []
+        if "captain" in tokens:
+            ref = by_id.get((lineup.get("captain") or {}).get("element"))
+            role = "captain"
+        else:
+            ins = [by_id[m["id"]] for m in t.get("in") or [] if m.get("id") in by_id]
+            ref = next((p for p in ins if p["position"] == x["position"]), ins[0] if ins else None)
+            role = "recommended signing"
+
+        def line(p: dict[str, Any]) -> str:
+            return (
+                f"**{p['web_name']}** ({p['position']}, £{p['cost']}m, {p['ownership_pct']}% owned): "
+                f"{p['expected_points_horizon']} xP over GW{horizon[0]}-{horizon[-1]} "
+                f"(this GW {p['expected_points_gw']}, floor {p['p10_floor']}, ceiling {p['p90_ceiling']})"
+            )
+
+        if ref is None and role == "captain":
+            return None
+        if ref is None:
+            return (
+                f"### Why not {x['web_name']}?\n- {line(x)}\n"
+                f"**Verdict:** the optimiser's best plan this week makes no signing ({t.get('summary')})."
+            )
+
+        diff = round(ref["expected_points_horizon"] - x["expected_points_horizon"], 2)
+        verdict = (
+            f"{ref['web_name']} leads by {diff:+.2f} xP over the horizon."
+            if diff >= 0
+            else f"{x['web_name']} projects {-diff:.2f} xP higher over the horizon, so the gap has to come from "
+            "budget, the 3-per-club limit or the other moves in the plan (see the cost check below)."
+        )
+        out = [f"### Why not {x['web_name']}?", f"- {line(x)}", f"- {role}: {line(ref)}", f"**Verdict:** {verdict}"]
+        outs = t.get("out") or []
+        if role == "recommended signing" and len(outs) == 1 and len(t.get("in") or []) == 1:
+            ev = await tool_executor.execute(
+                "evaluate_plan", {"proposed_transfers": [{"out": outs[0]["id"], "in": x["element"]}]}
+            )
+            if "error" not in ev:
+                out.append(
+                    f"**Planner check, {outs[0]['name']} -> {x['web_name']}:** {ev['verdict']}. {ev['numeric_reason']} "
+                    f"Regret vs best plan {ev['regret_xp']} xP."
+                )
+        return "\n".join(out)
+
+    # ---- main dispatch ---------------------------------------------------------------------
+
+    async def _generate_response(self, messages: list[dict[str, str]]) -> str:
         last_raw = messages[-1]["content"] if messages else ""
         last_msg = last_raw.lower()
-        import re
+        token_list = re.findall(r"\w+", last_msg)
+        tokens = set(token_list)
 
-        tokens = set(re.findall(r"\w+", last_msg))
+        rec = await tool_executor.execute("get_current_decision", {})
+        ready = rec.get("status") == "ready"
 
-        # 1. Comparison questions (e.g., "compare A vs B", "A over B", "A or B")
-        if "compare" in tokens or "vs" in tokens or ("over" in tokens and len(tokens) >= 3):
-            # Resolve player names dynamically from active projections
-            proj = await tool_executor.execute("get_projections", {"horizon": 1})
-            all_web_names = {p["web_name"].lower(): p["web_name"] for p in proj.get("players", [])}
-            players_to_compare = [full_name for lower_name, full_name in all_web_names.items() if lower_name in tokens]
-            if len(players_to_compare) < 2:
+        # 1. "Why not X / X instead of Y": the published pick against X, using projections.
+        if ready and (("why" in tokens and "not" in tokens) or tokens & _WHY_NOT_WORDS):
+            answer = await self._why_not(rec, last_raw, tokens)
+            if answer:
+                return answer
+
+        # 2. Comparison questions (e.g., "compare A vs B", "A over B")
+        pool: list[dict[str, Any]] | None = None
+        if "compare" in tokens or "vs" in tokens or "over" in tokens:
+            pool = (await tool_executor.execute("get_projections", {"horizon": 1, "limit": 800})).get("players", [])
+            players_to_compare = [p["web_name"] for p in _find_players(last_raw, pool)][:2]
+            if len(players_to_compare) < 2 and tokens & {"compare", "vs"}:
                 return "Name both players you want to compare."
-
-            res = await tool_executor.execute("compare_players", {"player_names": players_to_compare[:2]})
+            res = (
+                await tool_executor.execute("compare_players", {"player_names": players_to_compare})
+                if len(players_to_compare) == 2
+                else {}
+            )
             comps = res.get("comparisons", [])
             if len(comps) >= 2:
                 p1, p2 = comps[0], comps[1]
@@ -85,7 +285,11 @@ class OfflineExpertProvider:
                     f"**Verdict:** {better['web_name']} leads by +{diff_xp} est. points for GW{res['gameweek']}."
                 )
 
-        # 2. Transfer Roadmap questions
+        # 3. Justify / explain the published decision
+        if ready and tokens & _EXPLAIN_WORDS:
+            return self._render_decision(rec)
+
+        # 4. Transfer Roadmap questions
         if "roadmap" in tokens:
             res = await tool_executor.execute("optimise_transfers", {})
             roadmap = res.get("roadmap", [])
@@ -100,29 +304,31 @@ class OfflineExpertProvider:
                 + roadmap_table
             )
 
-        # 3. Differentials under budget questions (e.g., "best differential midfielder under 6.5")
-        if "differential" in tokens or (
-            "under" in tokens and any(pos in tokens for pos in ["midfielder", "mid", "defender", "forward"])
-        ):
-            pos_filter = (
-                "MID" if any(w in tokens for w in ["midfielder", "mid"]) else ("DEF" if "defender" in tokens else "FWD")
-            )
-            proj = await tool_executor.execute("get_projections", {"query": pos_filter, "horizon": 3})
-            players = proj.get("players", [])
-            # Extract budget dynamically (e.g. "under 6.5", "under £7.0m", "under 5")
+        # 5. Differentials under budget (e.g., "best differential midfielder under 6.5")
+        pos_filter = next((code for word, code in _POSITION_WORDS.items() if word in tokens), "")
+        if "differential" in tokens or ("under" in tokens and pos_filter):
+            proj = await tool_executor.execute("get_projections", {"query": pos_filter, "horizon": 3, "limit": 800})
             budget_match = re.search(r"under\s+(?:£)?(\d+(?:\.\d+)?)", last_raw, re.IGNORECASE)
             max_cost = float(budget_match.group(1)) if budget_match else 6.5
-            budget_cands = [p for p in players if p.get("cost", 10.0) <= max_cost]
+            budget_cands = [
+                p
+                for p in proj.get("players", [])
+                if p.get("cost", 10.0) <= max_cost
+                and (p.get("ownership_pct", 0.0) < 10.0 or "differential" not in tokens)
+            ]
             if not budget_cands:
                 return f"No matching players found within £{max_cost:.1f}m. Try a different budget."
-            top3 = budget_cands[:3]
             c_lines = [
-                f"- **{c['web_name']}** (£{c.get('cost', 6.0)}m): {c['expected_points_gw']} xP (DefCon: +{c.get('exp_defcon_points', 0.0)})"
-                for c in top3
+                f"- **{c['web_name']}** (£{c['cost']}m, {c['ownership_pct']}% owned): {c['expected_points_horizon']} xP over the next {len(proj['gameweeks'])} GWs (this GW {c['expected_points_gw']}, DefCon: +{c['exp_defcon_points']})"
+                for c in budget_cands[:3]
             ]
-            return f"### {pos_filter} options under £{max_cost:.1f}m\n" + "\n".join(c_lines)
+            label = "differential " if "differential" in tokens else ""
+            return (
+                f"### {pos_filter or 'All'} {label}options under £{max_cost:.1f}m (best projected first)\n"
+                + "\n".join(c_lines)
+            )
 
-        # 4. Chip questions (Wildcard, Free Hit, Bench Boost, Triple Captain)
+        # 6. Chip questions (Wildcard, Free Hit, Bench Boost, Triple Captain)
         chip_tokens = {"chip", "chips", "wildcard", "freehit", "bboost", "bb", "fh", "tc"}
         chip_phrases = ["bench boost", "free hit", "triple captain"]
         if (tokens & chip_tokens) or any(p in last_msg for p in chip_phrases):
@@ -132,48 +338,54 @@ class OfflineExpertProvider:
                 f"| {row['chip']} | {('GW' + str(row['recommended_gw'])) if row['recommended_gw'] is not None else 'Save'} | {row.get('expected_gain', 'Unknown')} |"
                 for row in res.get("chip_table", [])[:4]
             ]
+            published = ""
+            if ready:
+                c = rec["chip"]
+                published = (
+                    f"Published decision: {'play ' + str(c.get('chip')) if c.get('play_now') else 'save your chips this week'}"
+                    f" (gain vs hold {c.get('gain_vs_hold_xp')} xP). Chips left: {(rec['team'] or {}).get('chips_remaining')}.\n\n"
+                )
             return (
-                "### Chips\n| Chip | Week | Est. extra points |\n|---|---|---|\n"
+                published
+                + "### Chips\n| Chip | Week | Est. extra points |\n|---|---|---|\n"
                 + "\n".join(table_rows)
                 + ("\n" + warning if warning else "")
             )
 
-        # 5. Captaincy questions
+        # 7. Captaincy questions
         if any(w in tokens for w in ["captain", "armband", "vice", "vc"]):
             res = await tool_executor.execute("captain_options", {})
             if res.get("status") == "unavailable" or res.get("error"):
                 return "Captain advice unavailable: " + res.get("reason", res.get("error", "No verified lineup"))
-            safe = res["safe_captain"]
-            diff = res["differential_captain"]
-            cands = res["candidates"]
+            cap, vice = res["captain_name"], res["vice_captain_name"]
             lines = [
-                f"- **{c['web_name']}** ({c.get('position', '')}): **{c['expected_points']} est. points** "
+                f"- **{c['web_name']}** ({c.get('position', '')}, {c.get('ownership_pct', 0)}% owned): **{c['expected_points']} est. points** "
                 f"(Floor: {c.get('p10_floor', c.get('p10', 0))} | Ceiling: {c.get('p90_ceiling', c.get('p90', 0))} | DefCon: +{c.get('defcon_pts', 0.0)})"
-                for c in cands[:3]
+                for c in res["candidates"][:3]
             ]
+            diff = res.get("differential_option")
             return (
-                f"GW{res['gameweek']}: captain {safe}, vice captain {diff}.\n"
-                f"- **Safe / Armband Choice:** **{safe}** (highest projected expected points).\n"
-                f"- **Differential / Vice-Captain:** **{diff}** (high explosive ceiling).\n\n"
-                f"**Top Candidates Breakdown:**\n" + "\n".join(lines)
+                f"GW{res['gameweek']}: captain {cap}, vice captain {vice}.\n"
+                f"- **Captain:** **{cap}** (highest projected expected points in the selected XI).\n"
+                f"- **Vice-captain:** **{vice}** (takes the armband if {cap} does not play).\n"
+                + (f"- **Low-ownership option:** **{diff}** (under 10% owned).\n" if diff else "")
+                + "\n**Top Candidates Breakdown:**\n"
+                + "\n".join(lines)
             )
 
-        # 6. Injury & Availability questions
-        if any(
-            w in tokens
-            for w in [
-                "injury",
-                "injuries",
-                "injured",
-                "fit",
-                "fitness",
-                "available",
-                "availability",
-                "doubt",
-                "doubtful",
-                "knock",
-            ]
-        ):
+        # 8. Injury & Availability questions
+        if tokens & {
+            "injury",
+            "injuries",
+            "injured",
+            "fit",
+            "fitness",
+            "available",
+            "availability",
+            "doubt",
+            "doubtful",
+            "knock",
+        }:
             ignore_words = {
                 "is",
                 "are",
@@ -194,9 +406,12 @@ class OfflineExpertProvider:
                 "next",
                 "round",
             }
-            cand_tokens = [w for w in tokens if w not in ignore_words and len(w) > 2]
-            player_cand = cand_tokens[0] if cand_tokens else last_msg
-            news_res = await tool_executor.execute("get_news", {"query": player_cand})
+            if pool is None:
+                pool = (await tool_executor.execute("get_projections", {"horizon": 1, "limit": 800})).get("players", [])
+            named = _find_players(last_raw, pool)
+            cand_tokens = [w for w in token_list if w not in ignore_words and len(w) > 2]
+            player_cand = named[0]["web_name"] if named else (cand_tokens[0] if cand_tokens else last_msg)
+            news_res = await tool_executor.execute("get_news", {"player_name": player_cand})
             if news_res.get("status") == "found":
                 p_name = news_res["web_name"]
                 if news_res.get("is_fit"):
@@ -209,7 +424,7 @@ class OfflineExpertProvider:
                 return "Team news is old. Refresh before deciding."
             return f"Player not found: {player_cand}."
 
-        # 6. Mini-league questions
+        # 9. Mini-league questions
         if any(w in tokens for w in ["league", "rival", "rivals", "standings", "catch", "win", "rank"]):
             res = await tool_executor.execute("league_analysis", {})
             if "message" in res:
@@ -219,8 +434,7 @@ class OfflineExpertProvider:
             diffs = [f"{p['web_name']} ({p['effective_ownership']}%)" for p in res.get("differentials", [])[:3]]
             return f"### {res['league_name']}\nCommon players: {', '.join(temps) or 'Unknown'}\nDifferentials: {', '.join(diffs) or 'Unknown'}"
 
-        # 7. Specific entity / player projection lookup and unknown player handling
-        # Match full player name/token after a preposition
+        # 10. Specific entity / player projection lookup and unknown player handling
         entity_match = re.search(r"(?:for|about|is|on)\s+([a-zA-Z0-9_\-]+)", last_raw, re.IGNORECASE)
         if ("projected" in tokens or "points" in tokens or "xp" in tokens) and entity_match:
             entity = entity_match.group(1).strip()
@@ -252,7 +466,7 @@ class OfflineExpertProvider:
                     f"Please verify the spelling or confirm the player is registered in FPL 2026/27."
                 )
 
-        # 8. Price changes
+        # 11. Price changes
         if any(w in tokens for w in ["rise", "rises", "fall", "falls", "drop", "drops"]) or (
             "price" in tokens and any(w in tokens for w in ["change", "changes", "tonight", "watch", "imminent"])
         ):
@@ -263,12 +477,14 @@ class OfflineExpertProvider:
                 "Possible rises: " + (", ".join(rises) or "None") + "\nPossible falls: " + (", ".join(falls) or "None")
             )
 
-        # 9. Transfer & Hit questions
+        # 12. Transfer & Hit questions
         if any(w in tokens for w in ["transfer", "transfers", "hit", "hits", "sell", "buy", "swap", "move", "replace"]):
+            if ready:
+                return self._render_decision(rec)
             res = await tool_executor.execute("optimise_transfers", {})
             if "error" in res:
                 return f"### Transfer Strategy & Hit Analysis\nUnable to optimize transfers: {res['error']}"
-            rec = res["decision"]
+            rec_plan = res["decision"]
             hit = res["hit_verdict"]
             rec_transfers = res.get("recommended_transfers", [])
             transfers_text = ""
@@ -287,20 +503,24 @@ class OfflineExpertProvider:
 
             return (
                 f"### Transfer Strategy & Mathematical Working\n"
-                f"**Verdict:** {rec}\n"
+                f"**Verdict:** {rec_plan}\n"
                 f"{transfers_text}\n"
                 f"**Hit Analysis:** {hit}\n\n"
                 f"**Evaluated Candidate Plans:**\n" + "\n".join(plan_lines)
             )
 
-        # Default: General squad / projection overview
+        # Default: the published decision, else a general projection overview
+        if ready:
+            return self._render_decision(rec)
         proj = await tool_executor.execute("get_projections", {"horizon": 3})
         top_players = [
             f"**{p['web_name']}** ({p['expected_points_gw']} xP, DefCon: +{p['exp_defcon_points']})"
             for p in proj.get("players", [])[:5]
         ]
-
-        return f"### GW{proj.get('gameweek')} player options\n" + "\n".join(f"- {player}" for player in top_players)
+        note = "No published decision is ready yet; showing the top projected players instead.\n"
+        return f"### GW{proj.get('gameweek')} player options\n{note}" + "\n".join(
+            f"- {player}" for player in top_players
+        )
 
 
 def get_llm_status() -> dict[str, Any]:

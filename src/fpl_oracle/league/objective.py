@@ -3,6 +3,17 @@
 from math import tanh
 
 
+def _starting_xi(elements, pmap):
+    """Rival exposure only matters for players who score: the best legal XI of the squad, not the bench."""
+    from fpl_oracle.optimise.multiperiod import best_lineup
+
+    squad = list(elements)
+    if len(squad) != 15 or any("position" not in pmap[e] for e in squad):
+        return squad
+    xp = {e: float(pmap[e].get("expected_points", 0)) for e in squad}
+    return best_lineup(squad, {e: pmap[e]["position"] for e in squad}, xp, 0.0)[0]
+
+
 def select_balanced_sequence(states, rival_context, maps, max_xp_loss=0.5):
     from fpl_oracle.league.strategy import automatic_strategy
 
@@ -26,7 +37,7 @@ def select_balanced_sequence(states, rival_context, maps, max_xp_loss=0.5):
                 observed = set(rival["elements"])
                 possible = set(evolved[index][step]["elements"]) if evolved[index] else observed
                 pmap = maps[row["gameweek"]]
-                for e in row["elements"]:
+                for e in _starting_xi(row["elements"], pmap):
                     player = pmap[e]
                     xp = float(player.get("expected_points", 0))
                     spread = max(0.0, float(player.get("p90", xp)) - float(player.get("p10", xp)))

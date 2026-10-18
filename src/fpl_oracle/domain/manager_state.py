@@ -110,14 +110,6 @@ class EffectiveManagerState(BaseModel):
     def bank_millions(self) -> float:
         return round(self.bank_tenths / 10.0, 1)
 
-    @property
-    def total_team_value_tenths(self) -> int:
-        return sum(p.selling_price for p in self.squad) + self.bank_tenths
-
-    @property
-    def total_team_value_millions(self) -> float:
-        return round(self.total_team_value_tenths / 10.0, 1)
-
     def to_squad_dataframe(self) -> pd.DataFrame:
         """Converts squad to pandas DataFrame format required by optimizers."""
         if not self.squad:
@@ -266,7 +258,6 @@ class ManagerStateService:
         cls,
         profile_data: Any,
         bootstrap: Any,
-        fixtures: list[Any],
         manager_entry: Any | None = None,
         manager_picks: Any | None = None,
         manager_history: Any | None = None,
@@ -314,6 +305,7 @@ class ManagerStateService:
         picks_list: list[Any] = []
         published_lineup = PublishedLineup()
         chips_used_list: list[dict[str, Any]] = []
+        history_error: str | None = None
 
         # 1. Attempt Real Manager Path
         if manager_id and manager_picks and hasattr(manager_picks, "picks"):
@@ -332,6 +324,11 @@ class ManagerStateService:
                 bank_source = "fpl_api"
 
             # Replay FTs
+            if not (manager_history and hasattr(manager_history, "current")):
+                history_error = (
+                    "Official transfer and chip history unavailable: free transfers and chip availability "
+                    "are unverified defaults. Refresh before acting on them."
+                )
             if manager_history and hasattr(manager_history, "current"):
                 chips_hist = getattr(manager_history, "chips", [])
                 free_transfers = cls.calculate_banked_free_transfers(manager_history.current, chips_hist)
@@ -378,6 +375,8 @@ class ManagerStateService:
                 team_name = "Custom / Pasted Squad"
 
         # 3. Handle Explicit Overrides (distinguish 0.0 / 0 from None!)
+        official_bank = bank_tenths if bank_source == "fpl_api" else None
+        official_ft = free_transfers if ft_source == "fpl_api_calculated" else None
         if profile_bank_val is not None:
             # User set explicit bank override
             bank_tenths = int(round(float(profile_bank_val) * 10.0))
@@ -388,6 +387,19 @@ class ManagerStateService:
             free_transfers = int(profile_ft_val)
             ft_source = "manual_override"
             has_ft_override = True
+
+        # A stale saved override silently beats the official figure; make the disagreement visible.
+        override_notes = []
+        if official_bank is not None and has_bank_override and bank_tenths != official_bank:
+            override_notes.append(
+                f"Saved bank override £{bank_tenths / 10:.1f}m differs from the official £{official_bank / 10:.1f}m."
+            )
+        if official_ft is not None and has_ft_override and free_transfers != official_ft:
+            override_notes.append(
+                f"Saved free-transfer override {free_transfers} differs from the official count {official_ft}."
+            )
+        if override_notes:
+            history_error = " ".join(filter(None, [history_error, *override_notes]))
 
         # Resolve prices
         prices_map = cls.resolve_prices_for_squad(squad_ids, getattr(bootstrap, "elements", []), manager_transfers)
@@ -467,7 +479,7 @@ class ManagerStateService:
             mode = ManagerMode.DEMO
             confidence = "estimated"
         else:
-            confidence = "manual" if mode == ManagerMode.MANUAL else "high"
+            confidence = "manual" if mode == ManagerMode.MANUAL else ("estimated" if history_error else "high")
 
         return EffectiveManagerState(
             manager_id=manager_id,
@@ -495,6 +507,7 @@ class ManagerStateService:
             source_timestamp=datetime.now(UTC).isoformat(),
             is_stale=is_stale,
             confidence=confidence,
+            error_message=history_error,
         )
 
     async def get_current_state(self, force_refresh: bool = False) -> EffectiveManagerState:
@@ -504,7 +517,7 @@ class ManagerStateService:
 
         profile = data_store.get_profile()
         boot, is_stale = await fpl_client.get_bootstrap_static(force_refresh=force_refresh)
-        fixtures, fixtures_stale = await fpl_client.get_fixtures(force_refresh=force_refresh)
+        _, fixtures_stale = await fpl_client.get_fixtures(force_refresh=force_refresh)
         is_stale = is_stale or fixtures_stale
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
@@ -546,7 +559,6 @@ class ManagerStateService:
         state = self.build_effective_state(
             profile_data=profile,
             bootstrap=boot,
-            fixtures=fixtures,
             manager_entry=manager_entry,
             manager_picks=manager_picks,
             manager_history=manager_history,
@@ -571,7 +583,9 @@ class ManagerStateService:
             state.source_timestamp = min(known).isoformat()
         if len(known) != len(timestamps):
             state.is_stale = True
-            state.error_message = "Data age unknown. Refresh before using advice."
+            state.error_message = " ".join(
+                filter(None, [state.error_message, "Data age unknown. Refresh before using advice."])
+            )
         if profile.manager_id and manager_picks is None:
             state.error_message = "Official published squad unavailable; saved manual squad was not substituted"
         from fpl_oracle.domain.team_confirmation import team_confirmation

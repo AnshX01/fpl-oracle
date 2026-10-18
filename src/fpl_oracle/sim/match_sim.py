@@ -62,26 +62,6 @@ class SimulationResult:
     penalties_missed: np.ndarray
     penalties_saved: np.ndarray
 
-    @property
-    def simulated_means(self) -> np.ndarray:
-        return np.mean(self.scores, axis=1)
-
-    @property
-    def simulated_p10(self) -> np.ndarray:
-        return np.percentile(self.scores, 10, axis=1)
-
-    @property
-    def simulated_p50(self) -> np.ndarray:
-        return np.percentile(self.scores, 50, axis=1)
-
-    @property
-    def simulated_p90(self) -> np.ndarray:
-        return np.percentile(self.scores, 90, axis=1)
-
-    @property
-    def simulated_variance(self) -> np.ndarray:
-        return np.var(self.scores, axis=1)
-
     def get_player_draws(self, element_id: int) -> np.ndarray:
         idx = np.where(self.player_ids == element_id)[0]
         if len(idx) == 0:
@@ -92,10 +72,6 @@ class SimulationResult:
         cap_draws = self.get_player_draws(cap_id)
         vice_draws = self.get_player_draws(vice_id)
         return float(np.mean(cap_draws >= vice_draws))
-
-    def get_haul_probability(self, element_id: int, threshold: float = 10.0) -> float:
-        draws = self.get_player_draws(element_id)
-        return float(np.mean(draws >= threshold))
 
     def get_squad_score_distribution(
         self,
@@ -142,6 +118,64 @@ class SimulationResult:
         return total_scores
 
 
+def _expand_fixture_components(df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray | None]:
+    """One row per (element, fixture) for double-gameweek players. Returns (df, owner) where owner[i] is the
+    original row of expanded row i, or (df, None) when no player has more than one fixture."""
+    if "fixture_components" not in df.columns:
+        return df, None
+    comps = df["fixture_components"].tolist()
+    if not any(isinstance(c, list) and len(c) > 1 for c in comps):
+        return df.drop(columns="fixture_components"), None
+    rows: list[dict[str, Any]] = []
+    owner: list[int] = []
+    for i, rec in enumerate(df.drop(columns="fixture_components").to_dict("records")):
+        for c in comps[i] if isinstance(comps[i], list) and len(comps[i]) > 1 else [{}]:
+            rows.append({**rec, **c})
+            owner.append(i)
+    return pd.DataFrame(rows), np.asarray(owner)
+
+
+def _collapse_fixture_rows(res: SimulationResult, owner: np.ndarray, df: pd.DataFrame) -> SimulationResult:
+    """Sum per-fixture draws back to one row per original player."""
+    n = len(df)
+    first = np.searchsorted(owner, np.arange(n))
+
+    def total(a: np.ndarray) -> np.ndarray:
+        out = np.zeros((n, a.shape[1]), dtype=a.dtype)
+        np.add.at(out, owner, a)
+        return out
+
+    analytic = (
+        df["expected_points"].to_numpy(dtype=float) if "expected_points" in df.columns else res.analytic_xp[first]
+    )
+    return SimulationResult(
+        scores=total(res.scores),
+        player_ids=res.player_ids[first],
+        player_names=[res.player_names[i] for i in first],
+        positions=res.positions[first],
+        teams=res.teams[first],
+        n_sims=res.n_sims,
+        analytic_xp=analytic,
+        minutes=total(res.minutes),
+        goals=total(res.goals),
+        assists=total(res.assists),
+        clean_sheets=total(res.clean_sheets),
+        goals_conceded=total(res.goals_conceded),
+        saves=total(res.saves),
+        defcon=total(res.defcon),
+        bonus=total(res.bonus),
+        cards=total(res.cards),
+        own_goals=total(res.own_goals),
+        penalties_missed=total(res.penalties_missed),
+        penalties_saved=total(res.penalties_saved),
+    )
+
+
+# Mean minutes (as a fraction of 90) of each participation category drawn below:
+# 60-90 min (90 minus the mean of the early-sub draw = 86.1), started-then-subbed U[45,60), bench cameo U[5,30).
+_MEAN_MINUTES = (86.1, 52.0, 17.0)
+
+
 class MatchSimulator:
     """
     High-performance, scoreline-based gameweek match simulator.
@@ -156,11 +190,23 @@ class MatchSimulator:
         projections_df: pd.DataFrame,
         n_sims: int | None = None,
         seed: int | None = None,
-        fixture_cs_prob_map: dict[Any, float] | None = None,
     ) -> SimulationResult:
         """
         Executes full vectorized Monte Carlo match simulation across all players for the gameweek.
+        Double-gameweek players (``fixture_components`` with >1 fixture) are simulated once per fixture
+        and their draws summed, matching the analytic xP which is the sum of both fixtures.
         """
+        df = projections_df.reset_index(drop=True)
+        expanded, owner = _expand_fixture_components(df)
+        res = self._simulate_rows(expanded, n_sims, seed)
+        return res if owner is None else _collapse_fixture_rows(res, owner, df)
+
+    def _simulate_rows(
+        self,
+        projections_df: pd.DataFrame,
+        n_sims: int | None,
+        seed: int | None,
+    ) -> SimulationResult:
         sims = n_sims or self.n_sims
         rng = np.random.default_rng(seed or self.seed)
 
@@ -218,75 +264,95 @@ class MatchSimulator:
             df["p_play"] = inferred_p_play
 
         if "expected_goals" not in df.columns:
-            inferred_exp_g = []
-            inferred_exp_a = []
-            for i in range(n_players):
-                xp = analytic_xp[i]
-                pos = positions[i]
-                if pos == "FWD":
-                    inferred_exp_g.append(max(0.0, (xp - 2.0) * 0.18))
-                    inferred_exp_a.append(max(0.0, (xp - 2.0) * 0.06))
-                elif pos == "MID":
-                    inferred_exp_g.append(max(0.0, (xp - 2.0) * 0.12))
-                    inferred_exp_a.append(max(0.0, (xp - 2.0) * 0.08))
-                elif pos == "DEF":
-                    inferred_exp_g.append(max(0.0, (xp - 2.5) * 0.03))
-                    inferred_exp_a.append(max(0.0, (xp - 2.5) * 0.04))
-                else:
-                    inferred_exp_g.append(0.0)
-                    inferred_exp_a.append(0.0)
-            df["expected_goals"] = inferred_exp_g
-            df["expected_assists"] = inferred_exp_a
+            if "exp_goals_pts" in df.columns:
+                # Model components (already availability-weighted): points / points-per-goal
+                goal_pts = np.array([float(GOAL_POINTS.get(str(p), 4)) for p in positions])
+                df["expected_goals"] = np.asarray(df["exp_goals_pts"], dtype=float) / goal_pts
+                df["expected_assists"] = (
+                    np.asarray(df["exp_assists_pts"], dtype=float) / float(ASSIST_POINTS)
+                    if "exp_assists_pts" in df.columns
+                    else 0.0
+                )
+            else:
+                inferred_exp_g = []
+                inferred_exp_a = []
+                for i in range(n_players):
+                    xp = analytic_xp[i]
+                    pos = positions[i]
+                    if pos == "FWD":
+                        inferred_exp_g.append(max(0.0, (xp - 2.0) * 0.18))
+                        inferred_exp_a.append(max(0.0, (xp - 2.0) * 0.06))
+                    elif pos == "MID":
+                        inferred_exp_g.append(max(0.0, (xp - 2.0) * 0.12))
+                        inferred_exp_a.append(max(0.0, (xp - 2.0) * 0.08))
+                    elif pos == "DEF":
+                        inferred_exp_g.append(max(0.0, (xp - 2.5) * 0.03))
+                        inferred_exp_a.append(max(0.0, (xp - 2.5) * 0.04))
+                    else:
+                        inferred_exp_g.append(0.0)
+                        inferred_exp_a.append(0.0)
+                df["expected_goals"] = inferred_exp_g
+                df["expected_assists"] = inferred_exp_a
+
+        # Expected minutes as a fraction of 90, from the participation probabilities.
+        _ps = np.clip(np.asarray(df["p_starts"], dtype=float) if "p_starts" in df.columns else 0.7, 0.0, 1.0)
+        _pm = np.clip(np.asarray(df["p_min60"], dtype=float) if "p_min60" in df.columns else _ps * 0.9, 0.0, _ps)
+        _pp = np.clip(
+            np.asarray(df["p_play"], dtype=float) if "p_play" in df.columns else np.maximum(_ps, 0.75), _ps, 1.0
+        )
+        mean_minutes_frac = np.maximum(
+            (_pm * _MEAN_MINUTES[0] + (_ps - _pm) * _MEAN_MINUTES[1] + (_pp - _ps) * _MEAN_MINUTES[2]) / 90.0, 0.05
+        )
+        if "p_defcon" not in df.columns and "exp_defcon_pts" in df.columns:
+            df["p_defcon"] = np.clip(
+                np.asarray(df["exp_defcon_pts"], dtype=float) / float(DEFCON_POINTS) / mean_minutes_frac, 0.0, 1.0
+            )
+        if "expected_saves" not in df.columns and "exp_saves_pts" in df.columns:
+            # Save points are floor(saves / 3); E[floor(Poisson(m) / 3)] ~ (m - 1) / 3 for the usual 1-6 range
+            _sv = np.asarray(df["exp_saves_pts"], dtype=float)
+            df["expected_saves"] = np.where(_sv > 0, 3.0 * _sv + 1.0, 0.0) / mean_minutes_frac
 
         # 1. Group by fixtures to draw bivariate scorelines
-        # Identify unique fixtures
-        fixtures: dict[Any, dict[str, Any]] = {}
+        has_fixture_ids = "fixture_id" in df.columns or "fixture" in df.columns
+        fix_key: list[Any] = []
         for i, row in df.iterrows():
             fix_id = row.get("fixture_id", row.get("fixture"))
-            if fix_id is None:
-                fix_id = row.get("team", i)
+            fix_key.append(row.get("team", i) if fix_id is None else fix_id)
+
+        fixtures: dict[Any, dict[str, Any]] = {}
+        team_p_cs: dict[tuple[Any, Any], list[tuple[int, float]]] = {}
+        for i, row in df.iterrows():
+            fix_id = fix_key[i]
+            is_home = row.get("is_home", 1.0) == 1.0
 
             if fix_id not in fixtures:
-                t_home = row.get("team") if row.get("is_home", 1.0) == 1.0 else row.get("opponent_team", 0)
-                t_away = row.get("opponent_team", 0) if row.get("is_home", 1.0) == 1.0 else row.get("team")
-
-                h_xg = (
-                    float(row.get("implied_team_xG", 1.35))
-                    if row.get("is_home", 1.0) == 1.0
-                    else float(row.get("implied_opp_xG", 1.35))
-                )
-                a_xg = (
-                    float(row.get("implied_opp_xG", 1.20))
-                    if row.get("is_home", 1.0) == 1.0
-                    else float(row.get("implied_team_xG", 1.20))
-                )
-
-                # If fixture_cs_prob_map or p_clean_sheet is provided, match implied opponent xG
-                if fixture_cs_prob_map:
-                    if (fix_id, t_home) in fixture_cs_prob_map:
-                        a_xg = -np.log(np.clip(fixture_cs_prob_map[(fix_id, t_home)], 0.02, 0.98))
-                    elif t_home in fixture_cs_prob_map:
-                        a_xg = -np.log(np.clip(fixture_cs_prob_map[t_home], 0.02, 0.98))
-
-                    if (fix_id, t_away) in fixture_cs_prob_map:
-                        h_xg = -np.log(np.clip(fixture_cs_prob_map[(fix_id, t_away)], 0.02, 0.98))
-                    elif t_away in fixture_cs_prob_map:
-                        h_xg = -np.log(np.clip(fixture_cs_prob_map[t_away], 0.02, 0.98))
-                elif "p_clean_sheet" in row and pd.notna(row["p_clean_sheet"]):
-                    p_cs_val = float(row["p_clean_sheet"])
-                    if 0.0 < p_cs_val < 1.0:
-                        if row.get("is_home", 1.0) == 1.0:
-                            a_xg = -np.log(np.clip(p_cs_val, 0.02, 0.98))
-                        else:
-                            h_xg = -np.log(np.clip(p_cs_val, 0.02, 0.98))
-
+                t_home = row.get("team") if is_home else row.get("opponent_team", 0)
+                t_away = row.get("opponent_team", 0) if is_home else row.get("team")
                 fixtures[fix_id] = {
                     "fixture_id": fix_id,
                     "home_team": t_home,
                     "away_team": t_away,
-                    "home_xg": h_xg,
-                    "away_xg": a_xg,
+                    "home_xg": float(row.get("implied_team_xG", 1.35))
+                    if is_home
+                    else float(row.get("implied_opp_xG", 1.35)),
+                    "away_xg": float(row.get("implied_opp_xG", 1.20))
+                    if is_home
+                    else float(row.get("implied_team_xG", 1.20)),
                 }
+
+            if "p_clean_sheet" in row and pd.notna(row["p_clean_sheet"]) and 0.0 < float(row["p_clean_sheet"]) < 1.0:
+                # Team clean-sheet probability: back-line rows are the cleanest signal, others are a fallback
+                weight = 0 if row.get("position") in ("GKP", "DEF") else 1
+                team_p_cs.setdefault((fix_id, row.get("team")), []).append((weight, float(row["p_clean_sheet"])))
+
+        # A team's P(clean sheet) = exp(-opponent xG): both sides of every fixture are set from their own team's rows
+        for fix_id, f_info in fixtures.items():
+            for team_key, xg_key in (("home_team", "away_xg"), ("away_team", "home_xg")):
+                cands = team_p_cs.get((fix_id, f_info[team_key]))
+                if cands:
+                    best = min(w for w, _ in cands)
+                    p_cs_val = float(np.mean([v for w, v in cands if w == best]))
+                    f_info[xg_key] = float(-np.log(np.clip(p_cs_val, 0.02, 0.98)))
 
         # Draw scorelines per fixture: Shape (len(fixtures), sims)
         fixture_scores: dict[Any, dict[str, np.ndarray]] = {}
@@ -298,6 +364,7 @@ class MatchSimulator:
             g_h = rng.poisson(lam_h, size=sims)
             g_a = rng.poisson(lam_a, size=sims)
 
+            f_info["lam_home"], f_info["lam_away"] = lam_h, lam_a
             fixture_scores[fix_id] = {
                 "home_goals": g_h,
                 "away_goals": g_a,
@@ -350,9 +417,7 @@ class MatchSimulator:
         goals_conceded = np.zeros((n_players, sims), dtype=np.int32)
 
         for i, row in df.iterrows():
-            fix_id = row.get("fixture_id", row.get("fixture"))
-            if fix_id is None:
-                fix_id = row.get("team", i)
+            fix_id = fix_key[i]
             is_home = row.get("is_home", 1.0) == 1.0
             f_res = fixture_scores.get(fix_id)
             if f_res is None:
@@ -389,28 +454,36 @@ class MatchSimulator:
             if "expected_assists" in df.columns
             else np.full(n_players, 0.05)
         )
-        pen_order = (
-            np.asarray(df["penalties_order"], dtype=float)
-            if "penalties_order" in df.columns
-            else np.full(n_players, 5.0)
-        )
+        # Penalty taker = lowest order; without order data the player with the highest scoring rate takes it
+        pen_order = np.asarray(df["penalties_order"], dtype=float) if "penalties_order" in df.columns else -exp_g
 
-        # Group players by team to allocate team goals
-        team_player_indices = df.groupby("team").groups
+        # Players of each team within each fixture (a double-gameweek team has a separate row set per fixture)
+        team_player_indices: dict[tuple[Any, Any], list[int]] = {}
+        for i in range(n_players):
+            team_player_indices.setdefault((fix_key[i] if has_fixture_ids else None, df["team"].iloc[i]), []).append(i)
 
         for fix_id, f_res in fixture_scores.items():
             f_info = fixtures[fix_id]
             h_team, a_team = f_info["home_team"], f_info["away_team"]
+            fk = fix_id if has_fixture_ids else None
 
             for t_id, is_h in [(h_team, True), (a_team, False)]:
-                if t_id not in team_player_indices:
+                if (fk, t_id) not in team_player_indices:
                     continue
-                p_indices = np.array(team_player_indices[t_id])
+                p_indices = np.array(team_player_indices[(fk, t_id)])
                 if len(p_indices) == 0:
                     continue
 
                 t_goals_all = f_res["home_goals"] if is_h else f_res["away_goals"]
-                opp_indices = np.array(team_player_indices.get(a_team if is_h else h_team, []))
+                opp_indices = np.array(team_player_indices.get((fk, a_team if is_h else h_team), []))
+
+                # Goals/assists are only attributed to players in this frame. The frame may hold just a few of
+                # the club's players, so scale by how much of the team's expected output they account for.
+                team_lam = f_info["lam_home"] if is_h else f_info["lam_away"]
+                p_scorer_in_frame = min(1.0, float(exp_g[p_indices].sum()) / team_lam)
+                # Penalties (15% of scoring sims) replace the first goal and are unassisted.
+                non_penalty_goals = team_lam - 0.15 * (1.0 - np.exp(-team_lam))
+                p_assisted_in_frame = min(0.75, float(exp_a[p_indices].sum()) / non_penalty_goals)
 
                 active_sims = np.where(t_goals_all > 0)[0]
                 for sim in active_sims:
@@ -437,6 +510,8 @@ class MatchSimulator:
                         taker = active_p[best_order]
 
                     for g_idx in range(n_team_goals):
+                        if rng.uniform(0, 1) >= p_scorer_in_frame:
+                            continue  # scored by a player outside this frame
                         if is_pen and g_idx == 0 and taker is not None:
                             # 78% conversion
                             if rng.uniform(0, 1) < 0.78:
@@ -465,7 +540,7 @@ class MatchSimulator:
                         goals[scorer, sim] += 1
 
                         # Assist check (75% of non-penalty goals assisted)
-                        if rng.uniform(0, 1) < 0.75 and len(active_p) > 1:
+                        if rng.uniform(0, 1) < p_assisted_in_frame and len(active_p) > 1:
                             assister_candidates = [idx for idx in active_p if idx != scorer]
                             a_shares = exp_a[assister_candidates] * (minutes[assister_candidates, sim] / 90.0)
                             a_sum = np.sum(a_shares)
@@ -532,9 +607,7 @@ class MatchSimulator:
         bps_matrix += background_bps
 
         # Allocate 3/2/1 bonus per fixture per simulation (WI-3.6 zero-sum guarantee, vectorized)
-        fixture_player_indices = df.groupby(
-            [row.get("fixture_id", row.get("fixture", row.get("team", i))) for i, row in df.iterrows()]
-        ).groups
+        fixture_player_indices = df.groupby(fix_key).groups
 
         for _fix_id, p_indices in fixture_player_indices.items():
             fix_p = np.array(p_indices)

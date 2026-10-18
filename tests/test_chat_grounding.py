@@ -41,8 +41,9 @@ async def test_chat_grounding_captaincy_recommendation():
 
 @pytest.mark.slow
 @pytest.mark.anyio
-async def test_chat_grounding_chip_strategy():
+async def test_chat_grounding_chip_strategy(configured_advisor):
     """Verify chip questions cite official 2026/27 rules and Set 1 GW19 boundary."""
+    configured_advisor[0].chips_remaining_set_1 = ["3xc", "bboost"]
     ans = await expert_agent.answer(
         user_message="When should I use my Triple Captain or Bench Boost?", session_id=f"gt_chip_{_RUN_ID}"
     )

@@ -1,83 +1,60 @@
 """
-Anthropic Claude LLM Provider with tool calling.
+Anthropic Claude LLM Provider with a bounded multi-round tool loop.
 """
 
+import json
 import logging
+import os
 from typing import Any
 
 import httpx
 
-from fpl_oracle.llm.tools import TOOL_DEFINITIONS, tool_executor
+from fpl_oracle.llm.tools import MAX_TOOL_ROUNDS, TOOL_DEFINITIONS, tool_executor
 
 logger = logging.getLogger("fpl_oracle.llm.anthropic")
 
+DEFAULT_MODEL = "claude-sonnet-5-5"
+
 
 class AnthropicProvider:
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, api_key: str, model: str | None = None):
         self.api_key = api_key
-        self.model = model
+        self.model = (model or os.environ.get("ANTHROPIC_MODEL", "")).strip() or DEFAULT_MODEL
         self.url = "https://api.anthropic.com/v1/messages"
 
     async def chat(self, messages: list[dict[str, Any]], system_prompt: str) -> str:
-        formatted_tools = [
+        tools = [
             {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
             for t in TOOL_DEFINITIONS
         ]
-
-        payload = {
-            "model": self.model,
-            "system": system_prompt,
-            "messages": messages,
-            "tools": formatted_tools,
-            "max_tokens": 2048,
-            "temperature": 0.2,
-        }
-
         headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+        convo = list(messages)
 
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            resp = await client.post(self.url, json=payload, headers=headers)
-            if resp.status_code != 200:
-                raise RuntimeError(f"Anthropic error {resp.status_code}: {resp.text}")
-
-            res = resp.json()
-            content = res.get("content", [])
-
-            # Check for tool use
-            for block in content:
-                if block.get("type") == "tool_use":
-                    fn_name = block["name"]
-                    fn_args = block.get("input", {})
-                    tool_res = await tool_executor.execute(fn_name, fn_args)
-
-                    import json
-
-                    followup_messages = list(messages)
-                    followup_messages.append({"role": "assistant", "content": content})
-                    followup_messages.append(
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(tool_res)}
-                            ],
-                        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for _ in range(MAX_TOOL_ROUNDS):
+                payload = {
+                    "model": self.model,
+                    "system": system_prompt,
+                    "messages": convo,
+                    "tools": tools,
+                    "max_tokens": 4096,
+                }
+                resp = await client.post(self.url, json=payload, headers=headers)
+                if resp.status_code != 200:
+                    # Do not log or raise API response bodies.
+                    raise RuntimeError(f"Anthropic error {resp.status_code}")
+                content = resp.json().get("content", [])
+                tool_uses = [b for b in content if b.get("type") == "tool_use"]
+                if not tool_uses:
+                    text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text").strip()
+                    if not text:
+                        raise RuntimeError("Anthropic returned no answer text")
+                    return text
+                results = []
+                for block in tool_uses:
+                    out = await tool_executor.execute(block["name"], block.get("input") or {})
+                    results.append(
+                        {"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(out, default=str)}
                     )
-
-                    resp2 = await client.post(
-                        self.url,
-                        json={
-                            "model": self.model,
-                            "system": system_prompt,
-                            "messages": followup_messages,
-                            "max_tokens": 2048,
-                        },
-                        headers=headers,
-                    )
-                    if resp2.status_code == 200:
-                        res2 = resp2.json()
-                        text_blocks = [b.get("text", "") for b in res2.get("content", []) if b.get("type") == "text"]
-                        return "\n".join(text_blocks)
-                elif block.get("type") == "text":
-                    return block.get("text", "")
-
-            return "Analysis complete."
+                convo += [{"role": "assistant", "content": content}, {"role": "user", "content": results}]
+        raise RuntimeError("Anthropic tool-round limit reached")

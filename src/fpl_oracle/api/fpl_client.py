@@ -260,24 +260,6 @@ class FPLClient:
         )
         return ElementSummary.model_validate(raw), is_stale
 
-    async def get_element_summaries_batch(
-        self, element_ids: list[int], batch_size: int = 8, polite_delay: float = 0.05
-    ) -> dict[int, tuple[ElementSummary, bool]]:
-        """Polite batch fetch of player summaries to prevent rate limits."""
-        results: dict[int, tuple[ElementSummary, bool]] = {}
-        for i in range(0, len(element_ids), batch_size):
-            chunk = element_ids[i : i + batch_size]
-            tasks = [self.get_element_summary(eid) for eid in chunk]
-            chunk_results = await asyncio.gather(*tasks, return_exceptions=True)
-            for eid, res in zip(chunk, chunk_results, strict=False):
-                if isinstance(res, BaseException):
-                    logger.warning(f"Failed element summary for {eid}: {res}")
-                elif isinstance(res, tuple):
-                    results[eid] = res
-            if polite_delay > 0 and i + batch_size < len(element_ids):
-                await asyncio.sleep(polite_delay)
-        return results
-
     async def get_live_gameweek(self, gw: int, force_refresh: bool = False) -> tuple[dict[str, Any], bool]:
         cache_key = f"event:{gw}:live"
         ttl = SETTINGS.get("cache", {}).get("live_gw_ttl_seconds", 60)
@@ -328,16 +310,6 @@ class FPLClient:
         cache_key = "event-status"
         ttl = 60
         return await self._fetch_json("event-status/", cache_key, ttl)
-
-    async def get_dream_team(self, gw: int) -> tuple[dict[str, Any], bool]:
-        cache_key = f"dream-team:{gw}"
-        ttl = 3600
-        return await self._fetch_json(f"dream-team/{gw}/", cache_key, ttl)
-
-    async def get_set_piece_notes(self) -> tuple[dict[str, Any], bool]:
-        cache_key = "team-set-piece-notes"
-        ttl = 3600
-        return await self._fetch_json("team/set-piece-notes/", cache_key, ttl)
 
     async def get_current_and_next_gw(self) -> tuple[int | None, int | None]:
         """Always derive current and next gameweeks live from API."""

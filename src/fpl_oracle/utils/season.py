@@ -13,20 +13,6 @@ from typing import Any
 
 from fpl_oracle.config import SETTINGS
 
-_SEASON_OVERRIDE: str | None = None
-
-
-def set_season_override(season: str | None) -> None:
-    """Testing hook to explicitly override current season."""
-    global _SEASON_OVERRIDE
-    _SEASON_OVERRIDE = season
-
-
-def clear_season_override() -> None:
-    """Clear testing season override."""
-    global _SEASON_OVERRIDE
-    _SEASON_OVERRIDE = None
-
 
 def _format_years(start_year: int, target_format: str) -> str:
     end_year_short = str(start_year + 1)[-2:]
@@ -58,15 +44,11 @@ def derive_season(
     Derive the Premier League season dynamically.
 
     Priority:
-    1. Explicit test override
-    2. FPL_SEASON environment variable
-    3. settings.toml 'season' configuration
-    4. Earliest kickoff timestamp among provided fixtures
-    5. Provided datetime (or current UTC time) with Premier League year rollover (July-June)
+    1. FPL_SEASON environment variable
+    2. settings.yaml 'season' configuration
+    3. Earliest kickoff timestamp among provided fixtures
+    4. Provided datetime (or current UTC time) with Premier League year rollover (July-June)
     """
-    if _SEASON_OVERRIDE:
-        return _format_season(_SEASON_OVERRIDE, format)
-
     env_season = os.environ.get("FPL_SEASON")
     if env_season:
         return _format_season(env_season, format)
@@ -75,7 +57,7 @@ def derive_season(
     if cfg_season:
         return _format_season(str(cfg_season), format)
 
-    # 4. Check fixture dates if available
+    # 3. Check fixture dates if available
     if fixtures:
         for f in fixtures:
             ko = getattr(f, "kickoff_time", None)
@@ -94,7 +76,7 @@ def derive_season(
                 except Exception:
                     pass
 
-    # 5. Check UTC date
+    # 4. Check UTC date
     now = dt or datetime.now(UTC)
     if now.tzinfo is None:
         now = now.replace(tzinfo=UTC)

@@ -20,9 +20,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
-from fpl_oracle.config import BASE_DIR, DB_PATH
+from fpl_oracle.config import DATA_DIR, DB_PATH
 
-PROFILE_JSON_PATH = BASE_DIR / "data" / "profile.json"
+PROFILE_JSON_PATH = DATA_DIR / "profile.json"
 
 
 class Base(DeclarativeBase):
@@ -60,19 +60,6 @@ class UserProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
-
-
-class DecisionRecord(Base):
-    __tablename__ = "decision_records"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    gameweek = Column(Integer, nullable=False)
-    decision_type = Column(String(50), nullable=False)  # transfer, captain, chip, lineup
-    recommendation = Column(Text, nullable=False)
-    user_choice = Column(Text, nullable=True)
-    expected_points = Column(Float, nullable=True)
-    actual_points = Column(Float, nullable=True)
-    notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class ChatMessage(Base):
@@ -205,15 +192,6 @@ class DataStore:
                 except Exception:
                     return None
         return None
-
-    def get_cache(self, key: str) -> dict[str, Any] | None:
-        res = self.get_cache_entry(key)
-        return res[0] if res else None
-
-    def get_stale_cache(self, key: str) -> dict[str, Any] | None:
-        """Fallback to any existing cache when API is unreachable."""
-        res = self.get_stale_cache_entry(key)
-        return res[0] if res else None
 
     def set_cache(self, key: str, data: Any, ttl_seconds: int):
         with self.get_session() as session:
@@ -374,35 +352,6 @@ class DataStore:
                 updated_at=profile.updated_at if isinstance(profile.updated_at, datetime) else None,
             )
 
-    def sync_from_env(self) -> ProfileData:
-        """Explicit action to overwrite profile IDs from .env if user requests it."""
-        from fpl_oracle.config import FPL_MANAGER_ID, FPL_TARGET_LEAGUE_ID
-
-        with self.get_session() as session:
-            profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
-            if not profile:
-                profile = UserProfile(id=1, bank_override_enabled=0, ft_override_enabled=0)
-                session.add(profile)
-            if FPL_MANAGER_ID:
-                try:
-                    val = int(str(FPL_MANAGER_ID).strip())
-                    if val > 0:
-                        profile.manager_id = val
-                except (ValueError, TypeError):
-                    pass
-            if FPL_TARGET_LEAGUE_ID:
-                try:
-                    val = int(str(FPL_TARGET_LEAGUE_ID).strip())
-                    if val > 0:
-                        profile.target_league_id = val
-                except (ValueError, TypeError):
-                    pass
-            profile.updated_at = datetime.now(UTC)
-            session.commit()
-            session.refresh(profile)
-            self._sync_profile_json(profile)
-            return self.get_profile()
-
     def update_profile(self, **kwargs):
         with self.get_session() as session:
             profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
@@ -429,20 +378,6 @@ class DataStore:
             session.commit()
             session.refresh(profile)
             self._sync_profile_json(profile)
-
-    def log_decision(
-        self, gameweek: int, decision_type: str, recommendation: str, expected_points: float | None = None
-    ):
-        with self.get_session() as session:
-            rec = DecisionRecord(
-                gameweek=gameweek,
-                decision_type=decision_type,
-                recommendation=recommendation,
-                expected_points=expected_points,
-                created_at=datetime.now(UTC),
-            )
-            session.add(rec)
-            session.commit()
 
     def get_chat_history(self, session_id: str = "default", limit: int = 50) -> list[dict[str, str]]:
         with self.get_session() as session:

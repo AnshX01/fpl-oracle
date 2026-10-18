@@ -183,7 +183,7 @@ def test_mean_check_within_one_percent():
     sim = MatchSimulator(n_sims=1500, seed=999)
     res = sim.simulate_gameweek(df)
 
-    sim_means = res.simulated_means
+    sim_means = res.scores.mean(axis=1)
     analytic_xP = df["expected_points"].to_numpy()
 
     # Position-level checks
@@ -220,9 +220,10 @@ def test_squad_distribution_and_captain_multiplier():
     res = sim.simulate_gameweek(df)
 
     # Pick 11 starters and 4 bench players from team 1 and 2
-    t1_players = df[df["team"] == 1]["element"].tolist()
-    starters = t1_players[:11]
-    bench = t1_players[11:15]
+    t1 = df[df["team"] == 1]
+    starters = t1[t1["p_starts"] > 0.8]["element"].tolist()  # 1 GKP, 4 DEF, 4 MID, 2 FWD
+    bench = t1[t1["p_starts"] < 0.8]["element"].tolist()[:4]
+    assert len(starters) == 11
 
     captain = starters[0]
     vice = starters[1]
@@ -237,3 +238,91 @@ def test_squad_distribution_and_captain_multiplier():
     assert len(squad_scores) == 500
     assert np.all(squad_scores >= 0)
     assert np.mean(squad_scores) > 20.0  # Realistic gameweek squad score
+
+
+def _component_row(eid, team, opp, pos, fixture_id, is_home, p_cs, g, a, **extra):
+    goal_pts = {"GKP": 10, "DEF": 6, "MID": 5, "FWD": 4}[pos]
+    return {
+        "element": eid,
+        "web_name": f"P{eid}",
+        "team": team,
+        "position": pos,
+        "fixture_id": fixture_id,
+        "is_home": is_home,
+        "opponent_team": opp,
+        "p_clean_sheet": p_cs,
+        "p_starts": 0.9,
+        "p_min60": 0.85,
+        "p_play": 0.93,
+        "exp_goals_pts": g * goal_pts,
+        "exp_assists_pts": a * 3.0,
+        "exp_defcon_pts": 0.0 if pos == "GKP" else 0.3,
+        "exp_saves_pts": 1.0 if pos == "GKP" else 0.0,
+        "expected_points": 4.0,
+        **extra,
+    }
+
+
+def test_simulation_uses_model_components_for_both_sides_of_a_fixture():
+    """Team strength comes from BOTH teams' clean-sheet probs; goals/assists/defcon/saves follow model components."""
+    rows, eid = [], 1
+    for team, opp, is_home, p_cs in [(1, 2, 1.0, 0.45), (2, 1, 0.0, 0.20)]:
+        team_goals = -math.log(0.20 if team == 1 else 0.45)  # scored against the other side's clean-sheet odds
+        for pos, n, g_share, a_share in [
+            ("GKP", 1, 0, 0),
+            ("DEF", 2, 0.04, 0.05),
+            ("MID", 2, 0.25, 0.15),
+            ("FWD", 2, 0.20, 0.08),
+        ]:
+            for _ in range(n):
+                rows.append(
+                    _component_row(eid, team, opp, pos, 1, is_home, p_cs, team_goals * g_share, team_goals * a_share)
+                )
+                eid += 1
+    df = pd.DataFrame(rows)
+    res = MatchSimulator(n_sims=4000, seed=3).simulate_gameweek(df)
+
+    for team in (1, 2):
+        m = (df["team"] == team).to_numpy()
+        goal_pts = df["position"].map({"GKP": 10, "DEF": 6, "MID": 5, "FWD": 4})
+        exp_goals = float((df["exp_goals_pts"] / goal_pts)[m].sum())
+        exp_assists = float(df["exp_assists_pts"][m].sum() / 3.0)
+        assert abs(res.goals[m].sum(axis=0).mean() - exp_goals) / exp_goals < 0.08
+        assert abs(res.assists[m].sum(axis=0).mean() - exp_assists) / exp_assists < 0.10
+        assert abs(res.defcon[m].sum(axis=0).mean() - df["exp_defcon_pts"][m].sum() / 2.0) < 0.1
+        gk = m & (df["position"] == "GKP").to_numpy()
+        assert abs(np.floor(res.saves[gk] / 3.0).mean() - 1.0) < 0.1
+    # Home side (team 1) is much more likely to keep a clean sheet than the away side
+    cs_home = res.clean_sheets[((df["team"] == 1) & (df["position"] == "DEF")).to_numpy()].mean()
+    cs_away = res.clean_sheets[((df["team"] == 2) & (df["position"] == "DEF")).to_numpy()].mean()
+    assert cs_home > 2 * cs_away
+
+
+def test_lone_player_frame_does_not_score_the_whole_team_total():
+    """A frame holding one player of a club must give him only his own expected goals, not every team goal."""
+    rows = [
+        _component_row(1, 1, 2, "FWD", 1, 1.0, 0.30, 0.9, 0.0),  # opp CS 0.30 -> team xG for club 1 is ~1.2
+        _component_row(2, 2, 1, "GKP", 1, 0.0, 0.45, 0.0, 0.0),
+    ]
+    rows[1]["exp_saves_pts"] = 1.0
+    res = MatchSimulator(n_sims=4000, seed=5).simulate_gameweek(pd.DataFrame(rows))
+    assert res.goals[0].mean() < 1.05  # ~0.9 model goals x availability, never the full ~1.2+ team total
+
+
+def test_double_gameweek_player_is_simulated_in_both_fixtures():
+    comps = [
+        _component_row(1, 1, 2, "FWD", 10, 1.0, 0.40, 0.4, 0.1),
+        _component_row(1, 1, 3, "FWD", 11, 0.0, 0.40, 0.4, 0.1),
+    ]
+    dgw_row = {**comps[0], "fixture_components": comps, "expected_points": 8.0}
+    others = [
+        _component_row(2, 2, 1, "GKP", 10, 0.0, 0.40, 0.0, 0.0),
+        _component_row(3, 3, 1, "GKP", 11, 1.0, 0.40, 0.0, 0.0),
+    ]
+    df = pd.DataFrame([dgw_row, *others])
+    res = MatchSimulator(n_sims=3000, seed=9).simulate_gameweek(df)
+    assert res.scores.shape == (3, 3000)  # one row per player, DGW fixtures summed
+    single = MatchSimulator(n_sims=3000, seed=9).simulate_gameweek(pd.DataFrame([comps[0], *others]))
+    assert res.minutes[0].mean() > 1.8 * single.minutes[0].mean()
+    assert res.goals[0].mean() > 1.7 * single.goals[0].mean()
+    assert res.analytic_xp[0] == 8.0

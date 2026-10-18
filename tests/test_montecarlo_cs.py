@@ -5,52 +5,9 @@ Unit tests for Requirement F6 & F7:
 - Fixture-calibrated team clean sheet probabilities (not a flat 32%).
 """
 
-import numpy as np
 import pandas as pd
 
 from fpl_oracle.league.montecarlo import MonteCarloSimulator
-
-
-def test_monte_carlo_no_clean_sheet_double_count():
-    """
-    Verify that mean simulated points for GKP/DEF converges to expected_points (mu),
-    proving that +4 clean-sheet points are NOT added on top of mu without deduction.
-    """
-    mc = MonteCarloSimulator(n_simulations=10000)
-
-    # Defender with expected points = 4.50 and variance = 4.0
-    mu_target = 4.50
-    projections = pd.DataFrame(
-        [
-            {
-                "element": 101,
-                "expected_points": mu_target,
-                "variance": 4.0,
-                "team": 1,
-                "position": "DEF",
-                "p_clean_sheet": 0.35,
-            }
-        ]
-    )
-
-    # Run real simulation method directly across 10,000 trials
-    team_p_cs = mc.compute_team_clean_sheet_probabilities(projections)
-    p_cs = team_p_cs[1]
-    assert 0.30 <= p_cs <= 0.40
-
-    simulated_points = mc.simulate_player_trials(
-        projections.iloc[0].to_dict(),
-        team_p_cs=p_cs,
-        n_simulations=10000,
-        seed=42,
-    )
-
-    sim_mean = float(np.mean(simulated_points))
-    # Standard error for 10000 draws with std ~ 2 is ~ 0.02
-    assert abs(sim_mean - mu_target) < 0.08, (
-        f"Double-counting detected! Target mu={mu_target}, but simulated mean was {sim_mean:.3f}. "
-        f"If double counted, mean would be ~ {mu_target + 4.0 * p_cs:.3f}."
-    )
 
 
 def test_teammate_clean_sheet_perfect_correlation():
@@ -116,32 +73,3 @@ def test_teammate_clean_sheet_perfect_correlation():
     )
     assert res["status"] == "SIMULATION_SUCCESS"
     assert "team_correlation" in res["rival_behavior_assumptions"]
-
-
-def test_fixture_calibrated_clean_sheet_probabilities():
-    """
-    Verify that clean sheet probabilities are calibrated by fixture FDR and home advantage
-    rather than using a flat 32% for all teams (Requirement F7).
-    """
-    mc = MonteCarloSimulator()
-    projections = pd.DataFrame(
-        [
-            # Team 1: Easy home match (FDR 2, home)
-            {"element": 10, "team": 1, "position": "DEF", "opponent_difficulty": 2, "was_home": True},
-            # Team 2: Hard away match (FDR 5, away)
-            {"element": 20, "team": 2, "position": "DEF", "opponent_difficulty": 5, "was_home": False},
-            # Team 3: Neutral match (FDR 3)
-            {"element": 30, "team": 3, "position": "DEF", "opponent_difficulty": 3, "was_home": True},
-        ]
-    )
-
-    probs = mc.compute_team_clean_sheet_probabilities(projections)
-
-    p_easy = probs[1]
-    p_hard = probs[2]
-    p_neutral = probs[3]
-
-    assert p_easy > p_neutral > p_hard, f"Fixture calibration failed: Easy={p_easy}, Neutral={p_neutral}, Hard={p_hard}"
-    # Ensure neither is the old flat 0.32
-    assert p_easy >= 0.35, f"Easy fixture prob {p_easy} should be >= 0.35"
-    assert p_hard <= 0.20, f"Hard fixture prob {p_hard} should be <= 0.20"

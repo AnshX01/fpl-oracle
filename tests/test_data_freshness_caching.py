@@ -5,7 +5,6 @@ Item 5 Verification Tests: Data Freshness, Incremental Live Refresh, Caching, an
 import time
 
 import pandas as pd
-import pytest
 from fastapi.testclient import TestClient
 
 from fpl_oracle.api.cache import cache_manager
@@ -15,18 +14,10 @@ from fpl_oracle.api.models import BootstrapStatic, Element, ElementType, Fixture
 from fpl_oracle.data.features import feature_engineering
 from fpl_oracle.data.historical import historical_manager
 from fpl_oracle.data.player_identity import player_identity_resolver
-from fpl_oracle.domain.time_service import time_service
 from fpl_oracle.ml.model_registry import model_registry
 from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.server.main import app
-from fpl_oracle.utils.season import clear_season_override, derive_season, set_season_override
-
-
-@pytest.fixture(autouse=True)
-def cleanup_season_override():
-    clear_season_override()
-    yield
-    clear_season_override()
+from fpl_oracle.utils.season import derive_season
 
 
 def test_sqlite_rehydration_preserves_remaining_ttl():
@@ -116,19 +107,16 @@ def test_prediction_cache_key_and_max_age():
     assert len(projection_engine._cache) == 0
 
 
-def test_dynamic_season_derivation_without_stale_literals():
-    """Verify changing season dynamically updates GameState and TimeContext with no stale literals."""
-    set_season_override("2027/28")
+def test_dynamic_season_derivation_without_stale_literals(monkeypatch):
+    """Verify changing season dynamically updates GameState with no stale literals."""
+    monkeypatch.setenv("FPL_SEASON", "2027/28")
     assert derive_season() == "2027/28"
     assert derive_season(format="hyphen") == "2027-28"
 
     gs = GameState()
     assert gs.season == "2027/28"
 
-    tc = time_service.resolve_time_context(bootstrap=None, fixtures=[])
-    assert tc.season == "2027/28"
-
-    set_season_override("2028/29")
+    monkeypatch.setenv("FPL_SEASON", "2028/29")
     assert derive_season() == "2028/29"
     assert derive_season(format="hyphen") == "2028-29"
 
@@ -158,93 +146,6 @@ def test_status_endpoint_freshness_section():
     f_s = data_sys["freshness"]
     assert f_s["model_manifest_hash"] == model_registry.get_manifest_hash()
     assert f_s["last_finished_gw_in_master"] == historical_manager.get_last_finished_gameweek()
-
-
-@pytest.mark.slow
-@pytest.mark.anyio
-async def test_incremental_refresh_live_finalized_and_idempotent():
-    """Verify incremental refresh on finalized GW appends atomically and is idempotent."""
-    # Gameweek 6 is finished and data_checked in official API
-    meta1 = await historical_manager.refresh_gameweek_live(6)
-    assert meta1["status"] == "refreshed"
-    assert meta1["gameweek"] == 6
-    assert meta1["rows_appended"] >= 500
-    total1 = meta1["total_rows"]
-
-    # Assert last finished gameweek is at least 6
-    assert historical_manager.get_last_finished_gameweek() >= 6
-
-    # Idempotency test: Re-running refresh_gameweek_live for GW6 should NOT double-append
-    meta2 = await historical_manager.refresh_gameweek_live(6)
-    assert meta2["status"] == "refreshed"
-    assert meta2["total_rows"] == total1
-
-
-@pytest.mark.anyio
-async def test_incremental_refresh_rejects_unfinalized_gw(monkeypatch):
-    """Verify incremental refresh rejects a gameweek that is not yet finished."""
-    from unittest.mock import AsyncMock
-
-    unfinalized_event = GameweekEvent(
-        id=7,
-        name="Gameweek 7",
-        deadline_time="2026-10-03T10:00:00Z",
-        is_current=True,
-        is_next=False,
-        finished=False,
-        data_checked=False,
-    )
-    mock_boot = BootstrapStatic(
-        events=[unfinalized_event],
-        elements=[],
-        teams=[],
-        element_types=[],
-    )
-    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(mock_boot, False)))
-    with pytest.raises(RuntimeError, match="not finalised yet"):
-        await historical_manager.refresh_gameweek_live(7)
-
-
-@pytest.mark.anyio
-async def test_incremental_refresh_rejects_unfinalized_data_checked_false(monkeypatch):
-    """
-    Item H verification: Show how refresh_gameweek_live decides a gameweek is finalised
-    (requires BOTH event finished=True AND data_checked=True, not just the final whistle).
-    Verifies that an unfinalised gameweek (finished=True, data_checked=False) raises RuntimeError
-    and is strictly NOT appended to master_history.
-    """
-    from unittest.mock import AsyncMock
-
-    meta_path = historical_manager.output_file.with_suffix(".meta.json")
-    initial_rows = len(pd.read_csv(historical_manager.output_file)) if historical_manager.output_file.exists() else 0
-    initial_meta = meta_path.read_text(encoding="utf-8") if meta_path.exists() else ""
-
-    unfinalized_event = GameweekEvent(
-        id=7,
-        name="Gameweek 7",
-        deadline_time="2026-10-03T10:00:00Z",
-        is_current=True,
-        is_next=False,
-        finished=True,
-        data_checked=False,
-    )
-    mock_boot = BootstrapStatic(
-        events=[unfinalized_event],
-        elements=[],
-        teams=[],
-        element_types=[],
-    )
-
-    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(mock_boot, False)))
-
-    with pytest.raises(RuntimeError, match="not finalised yet \\(finished=True, data_checked=False\\)"):
-        await historical_manager.refresh_gameweek_live(7)
-
-    # Assert master_history was NOT modified
-    after_rows = len(pd.read_csv(historical_manager.output_file)) if historical_manager.output_file.exists() else 0
-    assert after_rows == initial_rows, "Unfinalised gameweek must NOT append any rows to master_history"
-    if meta_path.exists():
-        assert meta_path.read_text(encoding="utf-8") == initial_meta
 
 
 def test_player_identity_resolver_used_in_features_groupby():

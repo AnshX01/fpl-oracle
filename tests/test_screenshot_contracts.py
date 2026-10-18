@@ -40,8 +40,8 @@ def test_empty_chat_provider_falls_back_and_persists_nonempty():
             patch("fpl_oracle.llm.agent.data_store.get_chat_history", return_value=[]),
             patch("fpl_oracle.llm.provider.OfflineExpertProvider.chat", new=AsyncMock(return_value="Captain Saka.")),
         ):
-            assert await ExpertAgent().answer("captain?") == "Captain Saka."
-            assert save.call_args.kwargs["content"] == "Captain Saka."
+            assert (await ExpertAgent().answer("captain?")).endswith("Captain Saka.")
+            assert save.call_args.kwargs["content"].endswith("Captain Saka.")
 
     asyncio.run(run())
 

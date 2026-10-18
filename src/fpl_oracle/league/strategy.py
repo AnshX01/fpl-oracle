@@ -2,7 +2,6 @@
 Mini-League Strategic Advisor.
 Adapts tactical recommendations based on league rank, points deficit/lead,
 and rival effective ownership profiles.
-Implements bounded tie-breaker (margin <= 0.5 xP) for tactical postures (R4).
 """
 
 from typing import Any
@@ -11,9 +10,6 @@ import pandas as pd
 
 
 class LeagueStrategyAdvisor:
-    def __init__(self):
-        self.tie_breaker_margin_xp = 0.5
-
     def determine_risk_posture(self, points_gap: float, win_probability_pct: float | None = None) -> str:
         """
         Determines risk posture:
@@ -27,95 +23,6 @@ class LeagueStrategyAdvisor:
             return "CHASING_PACK"
         else:
             return "BALANCED_ATTACK"
-
-    def apply_tie_breaker(
-        self,
-        candidate_plans: list[dict[str, Any]],
-        posture: str,
-        rival_eo_map: dict[int, float],
-        margin_xp: float = 0.5,
-    ) -> dict[str, Any]:
-        """
-        Applies tactical risk posture strictly as a bounded tie-breaker on high-xP candidates (R4).
-        If top plan beats runner-up by > margin_xp (0.5 xP), model prediction holds without alteration.
-        If plans are within margin_xp, posture selects the tactical tie-breaker:
-        - DEFENDING_LEAD: Maximizes template coverage (neutralizes rival threats).
-        - CHASING_PACK: Maximizes differential leverage (lower rival EO).
-        - BALANCED_ATTACK: Retains highest pure xP.
-        """
-        if not candidate_plans:
-            return {
-                "selected_plan": None,
-                "tie_breaker_applied": False,
-                "rationale": "No candidate plans provided.",
-            }
-
-        if len(candidate_plans) == 1:
-            return {
-                "selected_plan": candidate_plans[0],
-                "tie_breaker_applied": False,
-                "rationale": "Single candidate plan available.",
-            }
-
-        sorted_plans = sorted(candidate_plans, key=lambda p: p.get("expected_gain", 0.0), reverse=True)
-        top_plan = sorted_plans[0]
-        runner_up = sorted_plans[1]
-
-        xp_diff = round(top_plan.get("expected_gain", 0.0) - runner_up.get("expected_gain", 0.0), 2)
-
-        # If gap exceeds margin, model decision is final
-        if xp_diff > margin_xp:
-            return {
-                "selected_plan": top_plan,
-                "tie_breaker_applied": False,
-                "rationale": f"Pure ML model prediction stands. Gap (+{xp_diff} xP) exceeds the {margin_xp} xP tie-breaker bound.",
-            }
-
-        # Candidates within margin
-        close_candidates = [
-            p for p in sorted_plans if (top_plan.get("expected_gain", 0.0) - p.get("expected_gain", 0.0)) <= margin_xp
-        ]
-
-        if posture == "DEFENDING_LEAD":
-            # Score by template ownership (sum of rival EO of transfers in)
-            def _template_score(plan):
-                elems = [t.get("element", 0) for t in plan.get("transfers_in", [])]
-                return sum(rival_eo_map.get(e, 0.0) for e in elems)
-
-            chosen = max(close_candidates, key=_template_score)
-            tie_applied = chosen != top_plan
-            rationale = (
-                f"Defending Lead Tie-Breaker Applied: Selected candidate matching rival template coverage within {margin_xp} xP margin."
-                if tie_applied
-                else "Defending Lead: Top ML prediction already aligns with optimal template coverage."
-            )
-
-        elif posture == "CHASING_PACK":
-            # Score by differential leverage (lower rival EO of transfers in)
-            def _diff_score(plan):
-                elems = [t.get("element", 0) for t in plan.get("transfers_in", [])]
-                return sum(100.0 - rival_eo_map.get(e, 0.0) for e in elems)
-
-            chosen = max(close_candidates, key=_diff_score)
-            tie_applied = chosen != top_plan
-            rationale = (
-                f"Chasing Pack Tie-Breaker Applied: Selected high-differential candidate within {margin_xp} xP margin to exploit rival divergence."
-                if tie_applied
-                else "Chasing Pack: Top ML prediction already maximizes high-differential leverage."
-            )
-
-        else:  # BALANCED_ATTACK
-            chosen = top_plan
-            tie_applied = False
-            rationale = "Balanced Attack: Selected highest baseline expected points without risk bias."
-
-        return {
-            "selected_plan": chosen,
-            "tie_breaker_applied": tie_applied,
-            "posture": posture,
-            "margin_xp": margin_xp,
-            "rationale": rationale,
-        }
 
     def evaluate_strategy(
         self,
@@ -137,30 +44,41 @@ class LeagueStrategyAdvisor:
                 "tactical_recommendations": ["Maximize baseline expected points.", "Maintain core template."],
             }
 
-        leader = rival_squads[0]
-        leader_pts = leader["total_points"]
-        pts_gap = user_total_points - leader_pts
+        # Compare with the strongest analysed rival by points (rival_squads is ordered by rank; when the user leads,
+        # these are chasers, so the first entry is not necessarily the points leader).
+        top = max(rival_squads, key=lambda r: r["total_points"])
+        pts_gap = user_total_points - top["total_points"]
+        above = [r["total_points"] - user_total_points for r in rival_squads if r["total_points"] > user_total_points]
+        below = [user_total_points - r["total_points"] for r in rival_squads if r["total_points"] < user_total_points]
 
         user_elements = set(user_squad_df["element"].tolist())
         mode = self.determine_risk_posture(pts_gap, win_probability_pct=win_probability_pct)
 
+        if pts_gap > 0:
+            standing = f"You lead {top['player_name']} by {pts_gap} points."
+        elif pts_gap < 0:
+            standing = f"You trail {top['player_name']} by {abs(pts_gap)} points."
+        else:
+            standing = f"You are level on points with {top['player_name']}."
+        # Posture is informational: the plan maximises expected points, so none of the tactics below
+        # changes transfer or hit maths.
         if mode == "DEFENDING_LEAD":
             mode_title = "Defending the Crown (Risk-Minimizing Mode)"
             rationale = (
-                f"You are currently leading or well ahead in the mini-league (+{pts_gap} points ahead of 2nd place {leader['player_name']}). "
-                "Your objective is to minimize variance, neutralize rival threats, and protect your lead."
+                f"{standing} Win probability or the points lead puts you in front. "
+                "Between near-equal options, prefer lower variance and cover the players your chasers own."
             )
             tactics = [
                 "Template Protection: Mirror key players owned by your immediate chasers.",
                 "Safe Captaincy: Back the consensus high-floor premium captain to minimize variance.",
-                "Avoid Hits: Do not take -4 hits unless forced by severe injuries.",
+                "Hits: Take a -4 only when the expected-points model says it pays for itself.",
                 "Conserve Chips: Save your chips to deploy reactively or alongside rivals' double gameweeks.",
             ]
         elif mode == "BALANCED_ATTACK":
             mode_title = "Contender Attack (Controlled Variance)"
             rationale = (
-                f"You are within striking distance ({abs(pts_gap)} points behind leader {leader['player_name']}). "
-                "Keep 80% of your squad anchored in elite template players while exploiting 2 high-ceiling differentials."
+                f"{standing} You are within striking distance. "
+                "Between near-equal options, keep the template core and add a high-ceiling differential."
             )
             tactics = [
                 "Target Fixture Swings: Target clubs entering favorable 4-game runs that the leader doesn't own.",
@@ -170,8 +88,8 @@ class LeagueStrategyAdvisor:
         else:  # CHASING_PACK
             mode_title = "Chasing the Leader (High-Variance Differential Mode)"
             rationale = (
-                f"You are trailing the leader by {abs(pts_gap)} points. Standard template moves will not close this gap. "
-                "You must introduce high-ceiling differentials (P90) and diverge strategically on captaincy and chip timing."
+                f"{standing} Standard template moves will not close this gap. "
+                "Between near-equal options, prefer high-ceiling (P90) differentials and diverge on captaincy and chip timing."
             )
             tactics = [
                 "Differential Captaincy: Diverge from the leader's captain when a high-ceiling option presents itself.",
@@ -200,6 +118,8 @@ class LeagueStrategyAdvisor:
             "strategy_mode": mode,
             "mode_title": mode_title,
             "points_gap_to_leader": pts_gap,
+            "nearest_above_gap": min(above, default=None),
+            "nearest_below_gap": min(below, default=None),
             "rationale": rationale,
             "tactical_recommendations": tactics,
             "top_rivals_threat_summary": top_threats,

@@ -52,16 +52,16 @@ async def capture_forward(target_gw, directory=None, samples=512):
 
 async def _capture_forward(target_gw, directory=None, samples=512):
     from fpl_oracle.api.fpl_client import fpl_client
-    from fpl_oracle.config import BASE_DIR
+    from fpl_oracle.config import DATA_DIR
     from fpl_oracle.data.store import data_store
-    from fpl_oracle.league.montecarlo import monte_carlo_simulator
     from fpl_oracle.league.rivals import rival_analyzer
     from fpl_oracle.league.standings import league_standings_manager
     from fpl_oracle.ml.holdout import compute_manifest_sha256
     from fpl_oracle.ml.model_registry import model_registry
     from fpl_oracle.server.analysis import analysis_service
+    from fpl_oracle.sim.match_sim import match_simulator
 
-    directory = directory or BASE_DIR / "data" / "league_forward"
+    directory = directory or DATA_DIR / "league_forward"
     profile = copy.deepcopy(data_store.get_profile())
     if not profile.manager_id or not profile.target_league_id:
         return dict(status="unconfigured")
@@ -85,11 +85,18 @@ async def _capture_forward(target_gw, directory=None, samples=512):
     if not owner:
         raise ValueError("Owner absent from official league")
     analysis = await rival_analyzer.analyze_rivals(standings["standings"], profile.manager_id, target_gw, boot)
+    if analysis.get("rivals_failed"):
+        raise ValueError("Could not fetch every observed rival")
     rivals = analysis.get("rival_squads", [])
     if not rivals:
         raise ValueError("No observed rival picks")
-    observed = min(r["observed_gameweek"] for r in rivals)
+    # Owner is read at the latest observed GW (the eval GW unless every rival was on Free Hit);
+    # a Free Hit squad reverts, so the owner's carry-forward squad is the previous GW's.
+    observed = max(r["observed_gameweek"] for r in rivals)
     picks, ps = await fpl_client.get_manager_picks(profile.manager_id, observed, force_refresh=True)
+    if getattr(picks, "active_chip", None) == "freehit" and observed > 1:
+        observed -= 1
+        picks, ps = await fpl_client.get_manager_picks(profile.manager_id, observed, force_refresh=True)
     if ps:
         raise ValueError("Stale owner picks")
     rosters = [
@@ -101,7 +108,9 @@ async def _capture_forward(target_gw, directory=None, samples=512):
         )
     ]
     for rival in rivals:
-        verified, rival_stale = await fpl_client.get_manager_picks(rival["entry_id"], observed, force_refresh=True)
+        verified, rival_stale = await fpl_client.get_manager_picks(
+            rival["entry_id"], rival["observed_gameweek"], force_refresh=True
+        )
         if rival_stale:
             raise ValueError("Fresh observed rival picks required")
         rosters.append(
@@ -125,13 +134,16 @@ async def _capture_forward(target_gw, directory=None, samples=512):
         raise ValueError("Projection missing observed player")
 
     def simulate():
-        rng = np.random.default_rng(42)
-        wins = 0
-        for _ in range(samples):
-            draw = monte_carlo_simulator.draw_gameweek(pool, rng)
-            totals = [r["points"] + sum(draw[e] for e in r["starters"]) + draw[r["captain"]] for r in rosters]
-            wins += int(all(totals[0] > v for v in totals[1:]))
-        return wins / samples
+        # Same scoreline engine as the displayed win probability (shared goals, bonus and clean sheets)
+        sim = match_simulator.simulate_gameweek(frame, n_sims=samples, seed=42)
+        row_of = {int(pid): i for i, pid in enumerate(sim.player_ids)}
+        totals = np.array(
+            [
+                r["points"] + sum(sim.scores[row_of[e]] for e in r["starters"]) + sim.scores[row_of[r["captain"]]]
+                for r in rosters
+            ]
+        )
+        return float(np.mean(np.all(totals[0] > totals[1:], axis=0)))
 
     probability = await asyncio.to_thread(simulate)
     if model_registry.get_active_version() != model_version or compute_manifest_sha256() != manifest:
@@ -176,9 +188,9 @@ async def _capture_forward(target_gw, directory=None, samples=512):
 
 async def score_pending(directory=None):
     from fpl_oracle.api.fpl_client import fpl_client
-    from fpl_oracle.config import BASE_DIR
+    from fpl_oracle.config import DATA_DIR
 
-    directory = directory or BASE_DIR / "data" / "league_forward"
+    directory = directory or DATA_DIR / "league_forward"
     if not directory.exists():
         return validation_summary([])
     boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)

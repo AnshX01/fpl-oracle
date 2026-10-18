@@ -106,3 +106,17 @@ def test_availability_under_100_triggers_watch_and_reason():
     p10 = report.player_diagnoses[10]
     assert p10.status == "WATCH"
     assert any("AVAILABILITY_DOUBT" in r for r in p10.reasons)
+
+
+def test_missing_chance_uses_status_and_xi_is_availability_adjusted():
+    rows = [
+        {"element": 1, "position": "GKP", "expected_points": 4.0, "chance_of_playing": None, "status": "a"},
+        {"element": 2, "position": "DEF", "expected_points": 6.0, "chance_of_playing": None, "status": "i"},
+        {"element": 3, "position": "DEF", "expected_points": 5.0, "chance_of_playing": None, "status": "d"},
+    ]
+    report = SquadHealthDiagnosis().diagnose_squad(pd.DataFrame(rows))
+    assert report.player_diagnoses[2].status == "REPLACE"  # injured, no chance given -> 0%
+    assert report.player_diagnoses[2].functional_starter is False
+    assert report.player_diagnoses[3].chance_of_playing == 50.0
+    assert report.player_diagnoses[3].status == "WATCH"
+    assert report.player_diagnoses[1].functional_starter is True

@@ -11,6 +11,8 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from fpl_oracle.optimise.lineup import play_probability
+
 
 @dataclass
 class PlayerHealthStatus:
@@ -94,17 +96,14 @@ class SquadHealthDiagnosis:
                     if top_vals:
                         benchmarks[pos] = float(top_vals[0])
 
-        # 2. Diagnose individual players
-        for _, row in squad_df.iterrows():
+        # 2. Diagnose individual players (missing chance_of_playing falls back to FPL status: i/s/u/n -> 0, d -> 50)
+        play_pct = play_probability(squad_df) * 100.0
+        for n, (_, row) in enumerate(squad_df.iterrows()):
             eid = int(row["element"])
             pos = str(row.get("position", "MID"))
             xp = float(row.get("expected_points", 0.0))
 
-            chance = row.get("chance_of_playing")
-            if chance is None or pd.isna(chance):
-                chance_val = 100.0
-            else:
-                chance_val = float(chance)
+            chance_val = float(play_pct.iloc[n])
 
             news = str(row.get("news", "") or "").strip()
             reasons: list[str] = []
@@ -147,7 +146,7 @@ class SquadHealthDiagnosis:
 
             # Reason 4: Form / Fixture deficit
             pos_bench = benchmarks.get(pos, 5.0)
-            deficiency = max(0.0, pos_bench - xp)
+            deficiency = max(0.0, pos_bench - xp * chance_val / 100.0)  # availability-adjusted
             if deficiency > 2.5:
                 reasons.append(
                     f"FIXTURE_DEFICIT: {deficiency:.2f} xP gap to position elite benchmark ({pos_bench:.2f})"
@@ -175,10 +174,11 @@ class SquadHealthDiagnosis:
         mids = [d for d in diagnoses.values() if d.position == "MID"]
         fwds = [d for d in diagnoses.values() if d.position == "FWD"]
 
-        gkps.sort(key=lambda x: x.expected_points, reverse=True)
-        defs.sort(key=lambda x: x.expected_points, reverse=True)
-        mids.sort(key=lambda x: x.expected_points, reverse=True)
-        fwds.sort(key=lambda x: x.expected_points, reverse=True)
+        def avail_xp(d: PlayerHealthStatus) -> float:
+            return d.expected_points * d.chance_of_playing / 100.0
+
+        for group in (gkps, defs, mids, fwds):
+            group.sort(key=avail_xp, reverse=True)
 
         # Base formation 1-3-4-3 or best 11
         starters: list[PlayerHealthStatus] = []
@@ -190,7 +190,7 @@ class SquadHealthDiagnosis:
 
         # Remaining outfield spots (5 spots)
         pool = defs[3:5] + mids[2:5] + fwds[1:3]
-        pool.sort(key=lambda x: x.expected_points, reverse=True)
+        pool.sort(key=avail_xp, reverse=True)
         starters.extend(pool[:5])
 
         functional_count = sum(1 for s in starters if s.functional_starter)

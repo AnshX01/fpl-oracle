@@ -52,7 +52,7 @@ async def test_gemini_multiple_calls_and_grounded_followup(monkeypatch):
         [{"role": "user", "content": "captain?"}], "Use fetched data"
     )
     assert "8.2" in text
-    assert payloads[0]["tool_config"]["function_calling_config"]["mode"] == "ANY"
+    assert payloads[0]["tool_config"]["function_calling_config"]["mode"] == "AUTO"
     assert payloads[1]["contents"][-1]["role"] == "user"
     assert len(payloads[1]["contents"][-1]["parts"]) == 2
 
@@ -87,7 +87,6 @@ def test_chat_model_uses_env_preserves_default_and_explicit_override(monkeypatch
     monkeypatch.setenv("GEMINI_MODEL", " gemini-test-env ")
     provider = GeminiProvider("fake-test-key")
     assert provider.model == "gemini-test-env"
-    assert provider.base_url.endswith("gemini-test-env:generateContent")
     assert GeminiProvider("fake-test-key", model="explicit-model").model == "explicit-model"
     monkeypatch.delenv("GEMINI_MODEL")
     assert GeminiProvider("fake-test-key").model == "gemini-flash-lite-latest"

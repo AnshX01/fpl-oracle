@@ -65,24 +65,6 @@ class TeamConfirmation:
             row = session.get(TeamConfirmationRecord, "recommendation:" + self.identity(manager_id))
             return json.loads(row.payload) if row else None
 
-    def save_recommendation(self, state, plan):
-        record = dict(
-            gameweek=state.target_gw,
-            baseline=[p.element for p in state.squad],
-            ins=[p["element"] for p in plan["transfers_in"]],
-            outs=[p["element"] for p in plan["transfers_out"]],
-            hit_cost=plan["hit_cost"],
-            expected_gain=plan["trajectory"][0].get("expected_player_gain"),
-        )
-        key = "recommendation:" + self.identity(state.manager_id)
-        with data_store.get_session() as session:
-            row = session.get(TeamConfirmationRecord, key)
-            if row is None:
-                session.add(TeamConfirmationRecord(key=key, payload=json.dumps(record)))
-            else:
-                row.payload = json.dumps(record)
-            session.commit()
-
     def followed_payload(self, state, bootstrap, recommendation):
         if not recommendation or recommendation.get("gameweek") != state.target_gw:
             raise ValueError("No current published advice to confirm.")

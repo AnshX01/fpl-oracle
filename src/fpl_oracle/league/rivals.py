@@ -67,12 +67,13 @@ def get_rival_set(
         if s.get("entry") != user_manager_id and (user_pts - float(s.get("total", 0))) <= points_window
     ]
 
-    # If user is in 1st place, select ONLY chasers within points_window.
-    # If none in window, return status "leader, no close chasers", NEVER forced 10 chasers.
+    # If user is in 1st place, select ONLY chasers within points_window (plus any manager tied on rank 1,
+    # who is listed in `above`). If none, return status "leader, no close chasers", NEVER forced 10 chasers.
     if user_rank == 1:
-        if not below:
+        chasers = above + below
+        if not chasers:
             return [], "leader, no close chasers", user_rank
-        return below, "PROXIMITY_WINDOW", user_rank
+        return chasers, "PROXIMITY_WINDOW", user_rank
 
     selected = above + below
     if not selected:
@@ -127,31 +128,27 @@ class RivalAnalyzer:
 
     def calculate_chips_status(self, chips_used_list: list[dict[str, Any]], current_gw: int) -> dict[str, Any]:
         """
-        Computes remaining, used, and expired chips according to 2026/27 rules.
+        Remaining chips for the set currently in play (set 1: GW1-19, set 2: GW20-38). A chip burned in the
+        other set does not count, and an unused set 1 chip is gone after GW19.
         """
-        used_names = [c.get("name", "") for c in chips_used_list]
-
-        # 2026/27 rules
-        wc1_used = "wildcard" in used_names
-        wc1_expired = (not wc1_used) and (current_gw > 19)
+        in_set_1 = current_gw <= 19
+        aliases = {"bboost": "bench_boost", "3xc": "triple_captain"}
+        used_now = {
+            aliases.get(c.get("name", ""), c.get("name", ""))
+            for c in chips_used_list
+            if (int(c.get("event") or 0) <= 19) == in_set_1
+        }
+        wc_set1_used = any(c.get("name") == "wildcard" and int(c.get("event") or 0) <= 19 for c in chips_used_list)
 
         remaining = []
-        if not wc1_used and current_gw <= 19:
-            remaining.append("wildcard_set1")
-        if current_gw >= 20:
-            remaining.append("wildcard_set2")
-
-        if "freehit" not in used_names:
-            remaining.append("freehit")
-        if "bboost" not in used_names and "bench_boost" not in used_names:
-            remaining.append("bench_boost")
-        if "3xc" not in used_names and "triple_captain" not in used_names:
-            remaining.append("triple_captain")
+        for chip in ("wildcard", "freehit", "bench_boost", "triple_captain"):
+            if chip not in used_now:
+                remaining.append(f"wildcard_set{1 if in_set_1 else 2}" if chip == "wildcard" else chip)
 
         return {
             "chips_used": chips_used_list,
             "chips_remaining": remaining,
-            "set1_wildcard_expired": wc1_expired,
+            "set1_wildcard_expired": (not wc_set1_used) and (current_gw > 19),
         }
 
     async def analyze_rivals(
@@ -179,6 +176,7 @@ class RivalAnalyzer:
 
         rival_squads = []
         stale_flags = []
+        failed_entries: list[int] = []
         player_multipliers: dict[int, float] = defaultdict(float)
         player_started_counts: dict[int, int] = defaultdict(int)
         player_captained_counts: dict[int, int] = defaultdict(int)
@@ -208,6 +206,12 @@ class RivalAnalyzer:
             async with sem:
                 try:
                     picks_resp, picks_stale = await fpl_client.get_manager_picks(entry_id, eval_gw)
+                    observed_gw = eval_gw
+                    observed_chip = getattr(picks_resp, "active_chip", None)
+                    if observed_chip == "freehit" and eval_gw > 1:
+                        # A Free Hit squad reverts next week: the squad that carries forward is last week's.
+                        picks_resp, picks_stale = await fpl_client.get_manager_picks(entry_id, eval_gw - 1)
+                        observed_gw = eval_gw - 1
                     history_resp, history_stale = await fpl_client.get_manager_history(entry_id)
                     stale_flags.append(picks_stale or history_stale)
 
@@ -217,7 +221,7 @@ class RivalAnalyzer:
                         elem_id = p.element
                         mult = p.multiplier
                         is_cap = bool(p.is_captain)
-                        is_start = bool(mult > 0)
+                        is_start = mult > 0 and p.position <= 11  # Bench Boost gives bench players a multiplier
                         if is_cap:
                             cap_elem = elem_id
                             player_captained_counts[elem_id] += 1
@@ -255,17 +259,19 @@ class RivalAnalyzer:
                             "chips_remaining": chip_status["chips_remaining"],
                             "set1_wildcard_expired": chip_status["set1_wildcard_expired"],
                             "picks_status": "OBSERVED_PRIOR_GW",
-                            "observed_gameweek": eval_gw,
+                            "observed_gameweek": observed_gw,
+                            "released_gameweek_chip": observed_chip,
                             "upcoming_transfers_known": False,
                             "transfers_visibility_note": (
                                 f"Rival transfers for Gameweek {target_gw} are private until the deadline. "
-                                f"Picks reflect confirmed lineups from Gameweek {eval_gw}."
+                                f"Picks reflect confirmed lineups from Gameweek {observed_gw}."
                             ),
                             "squad": squad_elements,
                         }
                     )
                 except Exception as ex:
-                    logger.debug(f"Could not fetch rival {entry_id}: {ex}")
+                    failed_entries.append(entry_id)
+                    logger.warning("Could not fetch rival %s: %s", entry_id, ex)
 
         tasks = [fetch_rival_details(e) for e in selected_entries]
         if tasks:
@@ -275,6 +281,8 @@ class RivalAnalyzer:
         if n_rivals == 0:
             return {
                 "rivals_analyzed_count": 0,
+                "rivals_requested": len(selected_entries),
+                "rivals_failed": failed_entries,
                 "rival_selection_mode": selection_mode,
                 "rival_points_window": active_window,
                 "user_rank_in_league": user_rank,
@@ -340,8 +348,10 @@ class RivalAnalyzer:
 
         return {
             "rivals_analyzed_count": n_rivals,
+            "rivals_requested": len(selected_entries),
+            "rivals_failed": failed_entries,
             "rival_selection_mode": selection_mode,
-            "rival_points_window": RIVAL_POINTS_WINDOW,
+            "rival_points_window": active_window,
             "user_rank_in_league": user_rank,
             "rival_squads": rival_squads,
             "is_stale": any(stale_flags),
