@@ -29,6 +29,12 @@ def scenario(squad_xp=None, pool_xp=None, extra=50, gws=GWS, seed=3):
     return squad, pool, {g: pool.copy() for g in gws}
 
 
+def with_double(proj, gw=GWS[0]):
+    """Mark one club as playing twice in `gw`: a Free Hit is only planned in blank / double weeks."""
+    proj[gw] = proj[gw].assign(is_dgw=proj[gw]["team"] == proj[gw]["team"].iloc[0])
+    return proj
+
+
 def evaluate(squad, pool, proj, horizon, cfg=None, **kwargs):
     opt = MultiPeriodOptimizer(MultiPeriodConfig(time_limit_sec=30, **(cfg or {})))
     args = dict(
@@ -48,7 +54,7 @@ def evaluate(squad, pool, proj, horizon, cfg=None, **kwargs):
 def test_chip_without_transfers_is_a_candidate_and_can_be_recommended():
     # Free Hit and Triple Captain have no transfers: they used to collide with Roll and vanish
     squad, pool, proj = scenario(squad_xp=0.5, pool_xp=5.0)
-    res = evaluate(squad, pool, proj, 1, chips_available=["freehit"])
+    res = evaluate(squad, pool, with_double(proj), 1, chips_available=["freehit"])
     assert res["recommended_chip"] == "freehit"
     assert {c["chip"] for c in res["candidate_plans"]} >= {"freehit", None}
 
@@ -65,7 +71,7 @@ def test_chip_without_transfers_is_a_candidate_and_can_be_recommended():
 def test_free_hit_exposes_a_temporary_squad_and_reverts():
     squad, pool, proj = scenario(squad_xp=0.5, pool_xp=5.0)
     # FH now and FH next week tie here; the chip-now margin would keep it, this test is about FH mechanics
-    res = evaluate(squad, pool, proj, 2, stability_threshold=0.0, chips_available=["freehit"])
+    res = evaluate(squad, pool, with_double(proj), 2, stability_threshold=0.0, chips_available=["freehit"])
     plan = res["recommended_plan"]
     owned = set(squad.element)
     fh = plan["free_hit"]
@@ -87,7 +93,7 @@ def test_free_hit_budget_values_owned_players_at_selling_price():
     for frame in [pool, *proj.values()]:
         frame.loc[frame.element.isin(squad.element), "value"] += 10
     squad = pool[owned].reset_index(drop=True)
-    plan = evaluate(squad, pool, proj, 1, chips_available=["freehit"])["recommended_plan"]
+    plan = evaluate(squad, pool, with_double(proj), 1, chips_available=["freehit"])["recommended_plan"]
     sell = {int(r.element): r.purchase_price + (r.value - r.purchase_price) // 2 for r in squad.itertuples()}
     budget = sum(sell.values()) + 10
     cost = sum(sell.get(e, float(pool.set_index("element").value[e])) for e in plan["free_hit"]["squad"])
@@ -179,7 +185,7 @@ def test_active_chip_is_forced_and_hold_is_unavailable():
 
 def test_chip_table_compares_playing_each_chip_now_against_holding():
     squad, pool, proj = scenario(squad_xp=0.5, pool_xp=5.0)
-    res = evaluate(squad, pool, proj, 2, chips_available=["freehit", "3xc"])
+    res = evaluate(squad, pool, with_double(proj), 2, chips_available=["freehit", "3xc"])
     table = {r["chip"]: r for r in res["chip_comparison_table"]}
     assert set(table) == {"HOLD", "freehit", "3xc"}
     assert table["HOLD"]["net_gain_vs_hold"] == 0.0
