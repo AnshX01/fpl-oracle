@@ -68,17 +68,13 @@ def _comparison_sentences(rec_plan: dict[str, Any], chip_display: str | None) ->
             continue
         if versus == "keeping the chip":
             name = CHIP_DISPLAY_NAMES.get(check.get("chip"), chip_display or "The chip")
-            # The gain already allows for the injuries a later chip would see first (planner information check)
-            learned = (
-                f", allowing for the injuries you would see before a later {name}" if check.get("information") else ""
-            )
             if rejected:
                 chip_text = (
                     f"Keep your {name} for now: playing it this week is only {_better(gain)} "
-                    f"than waiting{learned}, too close to justify using it."
+                    f"than waiting, too close to justify using it."
                 )
             else:
-                chip_text = f"Playing it now is {_better(gain)} than keeping your {name} for later{learned}."
+                chip_text = f"Playing it now is {_better(gain)} than keeping your {name} for later."
         elif versus == "rolling":
             if rejected:
                 move_text = (
@@ -918,6 +914,9 @@ class DecisionCardGenerator:
         )
         if press_notes:
             what_changed += " " + " ".join(n["text"] for n in press_notes)
+        priced = int(target_df["goal_odds_used"].sum()) if "goal_odds_used" in target_df else 0
+        if priced:
+            what_changed += f" This week's goal chances use bookmaker goalscorer odds for {priced} players."
 
         deadline_seconds = game_state.seconds_to_deadline or 0.0
         active_ver = model_registry.get_active_version()

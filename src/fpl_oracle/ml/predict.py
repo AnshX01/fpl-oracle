@@ -175,7 +175,10 @@ class ProjectionEngine:
         if reconciled_availabilities:
             avail_str = str(sorted(reconciled_availabilities.items()))
         avail_hash = hashlib.sha256(avail_str.encode("utf-8")).hexdigest()[:8] if avail_str else "none"
-        cache_key = f"{model_version}:{season}:gw{target_gw}:{feature_hash}:{manifest_hash}:{avail_hash}"
+        from fpl_oracle.data.odds import SCORERS_FILE
+
+        scorers_ver = int(SCORERS_FILE.stat().st_mtime) if SCORERS_FILE.exists() else 0
+        cache_key = f"{model_version}:{season}:gw{target_gw}:{feature_hash}:{manifest_hash}:{avail_hash}:{scorers_ver}"
 
         max_age = float(SETTINGS.get("cache", {}).get("prediction_max_age_seconds", 3600))
         now_ts = time.time()
@@ -196,7 +199,20 @@ class ProjectionEngine:
         mins_pred = self.minutes_model.predict(X)
         team_vals = features_df["team"].values if "team" in features_df.columns else None
         fix_vals = features_df["fixture_id"].values if "fixture_id" in features_df.columns else None
-        att_pred = self.attacking_model.predict(X, mins_pred, team_ids=team_vals, fixture_ids=fix_vals)
+        from fpl_oracle.data.odds import scorer_probabilities
+
+        # Bookmaker goalscorer prices exist only for the next gameweek's fixtures (keyed by FPL fixture id)
+        rates = scorer_probabilities()
+        market = (
+            np.array(
+                [rates.get((int(f), int(e)), np.nan) for f, e in zip(fix_vals, features_df["element"], strict=True)]
+            )
+            if fix_vals is not None and rates
+            else None
+        )
+        att_pred = self.attacking_model.predict(
+            X, mins_pred, team_ids=team_vals, fixture_ids=fix_vals, market_scoring_chance=market
+        )
         def_pred = self.defending_model.predict(X)
         defcon_pred = self.defcon_model.predict(X)
         bonus_pred = self.bonus_model.predict(X, fixture_ids=fix_vals)
@@ -231,6 +247,7 @@ class ProjectionEngine:
         for col in meta_cols:
             if col in features_df.columns:
                 res_df[col] = features_df[col].values
+        res_df["goal_odds_used"] = np.isfinite(market) if market is not None else False
 
         fixture_records = {int(eid): group.to_dict("records") for eid, group in res_df.groupby("element")}
         # If a player has a Double Gameweek (2 fixtures in same GW), sum the expectations
@@ -273,6 +290,7 @@ class ProjectionEngine:
                 "exp_pen_miss_deduction": "sum",
                 "raw_expected_points": "sum",
                 "exp_blend_adj": "sum",
+                "goal_odds_used": "max",
             }
         )
 
