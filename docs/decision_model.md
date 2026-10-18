@@ -21,11 +21,19 @@ For each fixture f of player i in gameweek t (0 fixtures = blank, 2 = double):
             + 2 · P(play) · P(DefCon | play)                   (trained on labelled seasons, played rows only)
             + E[bonus] + E[saves pts] − E[GC deduction] − E[cards] − E[own goal] − E[pen miss]
 
-    E[G(i,f)] = λ_team(f) · share_G(i)       λ_team from the walk-forward Dixon-Coles team model
+    E[G(i,f)] = λ_team(f) · share_G(i)       λ_team: the fixture's bookmaker odds (margin removed, Poisson fit
+                                              to 1X2 and over/under 2.5), else team ratings fitted to recent
+                                              market prices, else the walk-forward Dixon-Coles model
     Σ_team availability · share = 1          goals of an absent player go to his team-mates
 
     xP(i,t) = Σ_f xP(i,f) · availability(i,t)   availability from official status/chance; a one-week doubt decays
                                                  by half per further gameweek
+
+Market ratings: log λ_home = μ + home + att[h] − def[a], log λ_away = μ + att[a] − def[h], ridge least squares
+on the last 240 days of market prices with a 60-day half-life. Held-out against each match's own later prices:
+correlation 0.95 one week ahead, 0.90 twelve weeks ahead (the Dixon-Coles model: 0.58–0.83 for the same week).
+Odds are free from football-data.co.uk (season files priced around the FPL deadline; fixtures.csv for upcoming
+games) and optionally The Odds API (ODDS_API_KEY). With odds in place, held-out RMSE improved 1.965 → 1.956.
 
 Scoring constants come from the live `game_config.scoring` (GKP goal 10, DEF 6, MID 5, FWD 4, DefCon 2).
 
