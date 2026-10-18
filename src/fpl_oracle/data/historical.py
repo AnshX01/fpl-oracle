@@ -8,7 +8,6 @@ import asyncio
 import io
 import logging
 import urllib.request
-from typing import Any
 
 import pandas as pd
 
@@ -183,213 +182,6 @@ class HistoricalDataManager:
         except Exception:
             return 0
 
-    @staticmethod
-    def _build_match_row(
-        curr_season: str,
-        full_name: str,
-        eid: int,
-        pos: str,
-        team_name: str,
-        gw: int,
-        f_id: int,
-        opp: int,
-        home: bool,
-        ko_time: str,
-        stats: dict[str, Any],
-        val: float,
-    ) -> dict[str, Any]:
-        return {
-            "season": curr_season,
-            "name": full_name,
-            "element": eid,
-            "position": pos,
-            "team": team_name,
-            "round": gw,
-            "fixture": float(f_id),
-            "opponent_team": opp,
-            "was_home": home,
-            "kickoff_time": ko_time,
-            "minutes": stats.get("minutes", 0),
-            "goals_scored": stats.get("goals_scored", 0),
-            "assists": stats.get("assists", 0),
-            "clean_sheets": stats.get("clean_sheets", 0),
-            "goals_conceded": stats.get("goals_conceded", 0),
-            "own_goals": stats.get("own_goals", 0),
-            "penalties_saved": stats.get("penalties_saved", 0),
-            "penalties_missed": stats.get("penalties_missed", 0),
-            "yellow_cards": stats.get("yellow_cards", 0),
-            "red_cards": stats.get("red_cards", 0),
-            "saves": stats.get("saves", 0),
-            "bonus": stats.get("bonus", 0),
-            "bps": stats.get("bps", 0),
-            "influence": float(stats.get("influence", 0.0) or 0.0),
-            "creativity": float(stats.get("creativity", 0.0) or 0.0),
-            "threat": float(stats.get("threat", 0.0) or 0.0),
-            "ict_index": float(stats.get("ict_index", 0.0) or 0.0),
-            "starts": stats.get("starts", 0),
-            "expected_goals": float(stats.get("expected_goals", 0.0) or 0.0),
-            "expected_assists": float(stats.get("expected_assists", 0.0) or 0.0),
-            "expected_goal_involvements": float(stats.get("expected_goal_involvements", 0.0) or 0.0),
-            "expected_goals_conceded": float(stats.get("expected_goals_conceded", 0.0) or 0.0),
-            "defensive_contribution": float(stats.get("defensive_contribution", 0.0) or 0.0),
-            "value": val,
-            "total_points": stats.get("total_points", 0),
-        }
-
-    async def refresh_gameweek_live(self, gw: int, force: bool = False) -> dict[str, Any]:
-        """
-        Incrementally append new match rows for a finalized gameweek from event/{gw}/live atomically.
-        Validates finalization status (finished=True and data_checked=True), schema, and row count.
-        Idempotent: replaces existing rows for (season, gw) and never double-appends.
-        """
-        import hashlib
-        import json
-        import os
-        from datetime import UTC, datetime
-
-        from fpl_oracle.utils.season import derive_season
-
-        boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
-        if stale and not force:
-            raise RuntimeError("Incremental refresh requires fresh official bootstrap context")
-
-        # Verify gameweek finalization
-        ev = next((e for e in boot.events if e.id == gw), None)
-        if ev is None:
-            raise ValueError(f"Gameweek {gw} not found in official events")
-        if not (ev.finished and ev.data_checked) and not force:
-            raise RuntimeError(
-                f"Gameweek {gw} is not finalised yet (finished={ev.finished}, data_checked={ev.data_checked}). "
-                "FPL finalises matches ~09:00 UK the following morning."
-            )
-
-        fixtures, fixture_stale = await fpl_client.get_fixtures(event=gw, force_refresh=True)
-        if fixture_stale and not force:
-            raise RuntimeError("Incremental refresh requires fresh fixture data")
-
-        live_data, live_stale = await fpl_client.get_live_gameweek(gw, force_refresh=True)
-        elements = live_data.get("elements", [])
-        if not elements:
-            raise RuntimeError(f"No element data returned from event/{gw}/live/")
-
-        curr_season = derive_season(format="hyphen")
-        team_id_to_name = {t.id: t.name for t in boot.teams}
-        pos_id_to_pos = {et.id: et.singular_name_short for et in boot.element_types}
-        elem_dict = {e.id: e for e in boot.elements}
-        fix_dict = {f.id: f for f in fixtures}
-        team_fixtures: dict[int, list[tuple[Any, bool, int]]] = {}
-        for f in fixtures:
-            team_fixtures.setdefault(f.team_h, []).append((f, True, f.team_a))
-            team_fixtures.setdefault(f.team_a, []).append((f, False, f.team_h))
-
-        records: list[dict[str, Any]] = []
-        for el in elements:
-            eid = int(el.get("id", 0))
-            elem = elem_dict.get(eid)
-            if not elem:
-                continue
-            stats = el.get("stats", {})
-            explain = el.get("explain", [])
-
-            pos = pos_id_to_pos.get(elem.element_type, "MID")
-            team_name = team_id_to_name.get(elem.team, str(elem.team))
-            full_name = f"{elem.first_name} {elem.second_name}".strip() or elem.web_name
-            val = float(elem.now_cost)
-
-            if explain:
-                for exp in explain:
-                    fid = int(exp.get("fixture", 0))
-                    f_obj = fix_dict.get(fid)
-                    if f_obj:
-                        was_home = elem.team == f_obj.team_h
-                        opp = f_obj.team_a if was_home else f_obj.team_h
-                        ko_val = getattr(f_obj, "kickoff_time", None)
-                        ko = (
-                            ko_val.isoformat()
-                            if (ko_val is not None and hasattr(ko_val, "isoformat"))
-                            else str(ko_val or "")
-                        )
-                    else:
-                        was_home = False
-                        opp = 0
-                        ko = ""
-                    records.append(
-                        self._build_match_row(
-                            curr_season, full_name, eid, pos, team_name, gw, fid, opp, was_home, ko, stats, val
-                        )
-                    )
-            else:
-                tf = team_fixtures.get(elem.team, [])
-                if tf:
-                    for f_obj, was_home, opp in tf:
-                        ko_val = getattr(f_obj, "kickoff_time", None)
-                        ko = (
-                            ko_val.isoformat()
-                            if (ko_val is not None and hasattr(ko_val, "isoformat"))
-                            else str(ko_val or "")
-                        )
-                        records.append(
-                            self._build_match_row(
-                                curr_season, full_name, eid, pos, team_name, gw, f_obj.id, opp, was_home, ko, stats, val
-                            )
-                        )
-                else:
-                    records.append(
-                        self._build_match_row(
-                            curr_season, full_name, eid, pos, team_name, gw, 0, 0, False, "", stats, val
-                        )
-                    )
-
-        fresh_df = pd.DataFrame(records)
-        # Validate schema & row counts
-        for col in STANDARD_COLUMNS:
-            if col not in fresh_df.columns:
-                raise ValueError(f"Missing column in incremental refresh: {col}")
-        if len(fresh_df) < 500:
-            raise ValueError(f"Insufficient rows generated for gameweek {gw}: got {len(fresh_df)}, expected >= 500")
-
-        # Atomic append and idempotency against master_history.csv
-        old = pd.read_csv(self.output_file, low_memory=False) if self.output_file.exists() else pd.DataFrame()
-        if not old.empty:
-            past_rows = old[old["season"] != curr_season].copy()
-            curr_rows = old[old["season"] == curr_season].copy()
-            # Drop any existing rows for (curr_season, gw) to ensure idempotency (no double-append)
-            curr_rows = curr_rows[curr_rows["round"] != gw]
-            fresh_cleaned = self._clean_and_standardize(fresh_df)
-            curr_merged = pd.concat([curr_rows, fresh_cleaned], ignore_index=True)
-            curr_merged = curr_merged.drop_duplicates(subset=["season", "element", "fixture", "round"], keep="last")
-            merged = pd.concat([past_rows, curr_merged], ignore_index=True)
-        else:
-            merged = self._clean_and_standardize(fresh_df)
-
-        self.output_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.output_file.with_suffix(".csv.tmp")
-        merged.to_csv(tmp, index=False)
-        os.replace(tmp, self.output_file)
-
-        sha = hashlib.sha256(self.output_file.read_bytes()).hexdigest()
-        meta = {
-            "status": "refreshed",
-            "gameweek": gw,
-            "rows_appended": len(fresh_df),
-            "total_rows": len(merged),
-            "refreshed_at": datetime.now(UTC).isoformat(),
-            "sha256": sha,
-        }
-        self.output_file.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-
-        # Invalidate projection engine cache
-        from fpl_oracle.ml.predict import projection_engine
-
-        projection_engine.invalidate_cache()
-
-        # Reload identity resolver
-        from fpl_oracle.data.player_identity import player_identity_resolver
-
-        player_identity_resolver.load(merged)
-
-        return meta
-
     def _fetch_vaastav_season(self, season: str) -> pd.DataFrame | None:
         cache_path = HISTORICAL_DIR / f"{season}_merged_gw.csv"
         if cache_path.exists():
@@ -504,10 +296,11 @@ class HistoricalDataManager:
         if "position" in df.columns:
             df["position"] = df["position"].map(lambda p: POSITION_MAP.get(p, "MID"))
 
-        # Ensure all standard columns exist
+        # Ensure all standard columns exist. Seasons published before the DefCon stat existed have no
+        # label: keep it NaN (unknown), never 0 ("no actions"), so training can exclude those rows.
         for col in STANDARD_COLUMNS:
             if col not in df.columns:
-                df[col] = 0.0
+                df[col] = float("nan") if col == "defensive_contribution" else 0.0
 
         # Numeric conversions
         numeric_cols = [
@@ -539,7 +332,9 @@ class HistoricalDataManager:
             "total_points",
         ]
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+            if col != "defensive_contribution":
+                df[col] = df[col].fillna(0.0)
 
         # Boolean conversion
         if "was_home" in df.columns:

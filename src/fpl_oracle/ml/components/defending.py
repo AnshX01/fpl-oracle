@@ -1,6 +1,8 @@
 """
 Defending component model.
-Predicts clean sheet probability P(CS) and expected goals conceded.
+Predicts clean sheet probability P(CS | player plays 60+ minutes) and expected goals conceded.
+The ensemble multiplies P(CS) by P(60+ minutes), so the label must be conditional on playing 60+ minutes
+(clean sheets only score for 60+ minute players): training on all rows would discount minutes twice.
 """
 
 import lightgbm as lgb
@@ -23,17 +25,20 @@ class DefendingModel(BaseComponent):
         self.calibrator_cs = Calibrator("isotonic")
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
-        y_cs = Y["target_clean_sheet"].values
         y_gc = Y["target_goals_conceded"].values
-
-        self.clf_cs.fit(X, y_cs)
         self.reg_gc.fit(X, y_gc)
 
-        if len(X) >= 6:
+        # Clean-sheet classifier + calibrator: only rows where the player completed 60+ minutes
+        played_60 = Y["target_min60"].to_numpy() > 0 if "target_min60" in Y.columns else np.ones(len(X), dtype=bool)
+        X_cs = X[played_60]
+        y_cs = Y["target_clean_sheet"].to_numpy()[played_60]
+        self.clf_cs.fit(X_cs, y_cs)
+
+        if len(X_cs) >= 6:
             from fpl_oracle.ml.temporal import temporal_folds
 
-            folds = list(temporal_folds(X))
-            prob_oof = np.zeros(len(X))
+            folds = list(temporal_folds(X_cs))
+            prob_oof = np.zeros(len(X_cs))
             for train_idx, val_idx in folds:
                 clf_fold = lgb.LGBMClassifier(
                     n_estimators=self.clf_cs.n_estimators,
@@ -43,8 +48,8 @@ class DefendingModel(BaseComponent):
                     verbosity=-1,
                     n_jobs=4,
                 )
-                clf_fold.fit(X.iloc[train_idx], y_cs[train_idx])
-                prob_oof[val_idx] = np.asarray(clf_fold.predict_proba(X.iloc[val_idx]))[:, 1]
+                clf_fold.fit(X_cs.iloc[train_idx], y_cs[train_idx])
+                prob_oof[val_idx] = np.asarray(clf_fold.predict_proba(X_cs.iloc[val_idx]))[:, 1]
             valid = np.concatenate([test for _, test in folds])
             self.calibrator_cs.fit(prob_oof[valid], y_cs[valid])
         else:

@@ -98,7 +98,7 @@ class ModelEvaluator:
         baseline_xp = form * fixture_factor * np.clip(starts_ratio, 0.2, 1.0)
         return np.clip(baseline_xp, 0.0, 20.0)
 
-    def compute_season_avg_baseline(self, X: pd.DataFrame, meta: pd.DataFrame | None = None) -> np.ndarray:
+    def compute_season_avg_baseline(self, X: pd.DataFrame) -> np.ndarray:
         """
         Transparent heuristic baseline 2:
         Season-to-date points per game (std_minutes_per_gw / 90 * 4.0 or roll_points_8).
@@ -285,7 +285,19 @@ class ModelEvaluator:
                     p_base_mae = float(np.round(mean_absolute_error(pos_actual, pos_base), 3))
                     p_ml_mae = float(np.round(mean_absolute_error(pos_actual, pos_ml), 3))
 
+                    # Decision slice: transfers and captaincy live in the high-xP bins, which the
+                    # zero-heavy aggregate hides. Mean predicted vs mean actual per predicted-xP bin.
+                    bins = pd.cut(
+                        pos_ml, [-np.inf, 1, 2, 3, 4, 5, np.inf], labels=["<1", "1-2", "2-3", "3-4", "4-5", "5+"]
+                    )
+                    by_bin = (
+                        pd.DataFrame({"bin": bins, "pred": pos_ml, "actual": pos_actual})
+                        .groupby("bin", observed=True)
+                        .agg(count=("pred", "size"), mean_pred=("pred", "mean"), mean_actual=("actual", "mean"))
+                        .round(3)
+                    )
                     pos_breakdown[pos] = {
+                        "calibration_by_xp_bin": by_bin.reset_index().to_dict(orient="records"),
                         "count": int(mask.sum()),
                         "ml_mae": p_ml_mae,
                         "ml_rmse": float(np.round(root_mean_squared_error(pos_actual, pos_ml), 3)),
@@ -295,6 +307,24 @@ class ModelEvaluator:
                             np.round((p_base_mae - p_ml_mae) / max(0.01, p_base_mae) * 100, 2)
                         ),
                     }
+
+        # Price slice: premiums drive captaincy and the big transfers, so check they are not compressed.
+        if "value" in X.columns:
+            bands = pd.cut(
+                X["value"].values,
+                [0, 60, 80, 100, 120, np.inf],
+                labels=["<6.0", "6.0-8.0", "8.0-10.0", "10.0-12.0", "12.0+"],
+            )
+            price_calibration = (
+                pd.DataFrame({"band": bands, "pred": ml_preds, "actual": actual_pts})
+                .groupby("band", observed=True)
+                .agg(count=("pred", "size"), mean_pred=("pred", "mean"), mean_actual=("actual", "mean"))
+                .round(3)
+                .reset_index()
+                .to_dict(orient="records")
+            )
+        else:
+            price_calibration = []
 
         # Uncertainty Calibration
         if p10 is None or p50 is None or p90 is None:
@@ -319,7 +349,7 @@ class ModelEvaluator:
             "ml_spearman": ml_spearman,
             "ml_pearson": ml_pearson,
             "base_mae": min(b1_mae, b2_mae, b3_mae),
-            "base_rmse": b1_rmse,
+            "base_rmse": min(b1_rmse, b2_rmse, b3_rmse),
             "base_spearman": b1_sp,
             "baselines": {
                 "weighted_recent_form": {"mae": b1_mae, "rmse": b1_rmse, "spearman": b1_sp},
@@ -330,6 +360,7 @@ class ModelEvaluator:
             "rmse_improvement_pct": rmse_improvement_pct,
             "verdict": verdict_summary,
             "positions": pos_breakdown,
+            "price_calibration": price_calibration,
             "calibration": calibration_metrics,
             "rolling_origins": rolling_origins or [],
             "ablation": ablation_metrics or {},

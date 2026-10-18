@@ -10,6 +10,7 @@ import time
 from datetime import UTC
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from fpl_oracle.api.models import BootstrapStatic, Fixture
@@ -42,7 +43,7 @@ class ProjectionEngine:
         self._cache: dict[str, pd.DataFrame] = {}
 
     @bundle_locked
-    def load_or_train(self, X: pd.DataFrame | None = None, Y: pd.DataFrame | None = None):
+    def load_or_train(self):
         """Load and verify existing weights; explicit training is a separate operation."""
         weights = [
             (self.minutes_model, self.models_dir / "minutes_model.pkl"),
@@ -279,6 +280,24 @@ class ProjectionEngine:
             }
         )
 
+        # A double gameweek is two (assumed independent) fixtures: means and variances add, but the interval
+        # half-widths combine in quadrature - summing the per-fixture quantiles would double the spread.
+        is_dgw_player = dgw_grouped["element"].map(lambda eid: len(fixture_records[int(eid)]) > 1).to_numpy()
+        if is_dgw_player.any():
+            gaps = pd.DataFrame(
+                {
+                    "element": res_df["element"],
+                    "p10": (res_df["expected_points"] - res_df["p10"]).clip(lower=0.0) ** 2,
+                    "p50": (res_df["expected_points"] - res_df["p50"]).clip(lower=0.0) ** 2,
+                    "p90": (res_df["p90"] - res_df["expected_points"]).clip(lower=0.0) ** 2,
+                }
+            )
+            widths = np.sqrt(gaps.groupby("element").sum()).reindex(dgw_grouped["element"])
+            xp_total = dgw_grouped["expected_points"].to_numpy()
+            for col, sign in (("p10", -1.0), ("p50", -1.0), ("p90", 1.0)):
+                combined = np.round(np.maximum(0.0, xp_total + sign * widths[col].to_numpy()), 2)
+                dgw_grouped.loc[is_dgw_player, col] = combined[is_dgw_player]
+
         # Blank gameweek zeroing
         bgw_zero_cols = [
             "expected_points",
@@ -308,11 +327,10 @@ class ProjectionEngine:
         dgw_grouped.loc[dgw_grouped["is_bgw"] == 1, [c for c in bgw_zero_cols if c in dgw_grouped.columns]] = 0.0
 
         dgw_grouped["fixture_components"] = dgw_grouped["element"].map(fixture_records)
-        # Summed quantiles are not joint DGW quantiles. Preserve historical
-        # model fields for compatibility, but carry their actual provenance.
+        # DGW quantiles assume independent fixtures (no covariance model): carry that provenance.
         dgw_grouped["uncertainty_status"] = dgw_grouped["element"].map(
             lambda eid: (
-                "dgw_marginal_sum_unvalidated"
+                "dgw_independent_fixture_quadrature"
                 if len(fixture_records[int(eid)]) > 1
                 else "single_fixture_model_interval"
             )

@@ -8,16 +8,17 @@ expected goals conceded, and 1X2 match outcome distributions.
 
 import logging
 import math
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
+from fpl_oracle.config import HISTORICAL_DIR
+
 logger = logging.getLogger(__name__)
 
-HISTORICAL_CSV_PATH = Path("data/historical/master_history.csv")
+HISTORICAL_CSV_PATH = HISTORICAL_DIR / "master_history.csv"
 
 
 class DixonColesModel:
@@ -64,8 +65,15 @@ class DixonColesModel:
 
         opp_map, _ = feature_engineering.build_team_id_maps(df)
         df_copy = df.copy()
+
+        def opponent_name(season: str, opponent: Any) -> str:
+            try:
+                return opp_map.get((season, int(opponent)), str(opponent))
+            except (ValueError, TypeError):  # already a team name
+                return str(opponent)
+
         df_copy["opp_name"] = [
-            opp_map.get((s, int(o)), str(o)) for s, o in zip(df_copy["season"], df_copy["opponent_team"], strict=False)
+            opponent_name(s, o) for s, o in zip(df_copy["season"], df_copy["opponent_team"], strict=False)
         ]
 
         home_records = (
@@ -310,92 +318,26 @@ class DixonColesModel:
         self._cache[cache_key] = res
         return res
 
-    def evaluate_scoreline_adjustment(
-        self, home_team: str, away_team: str, score: tuple[int, int] = (0, 0)
-    ) -> tuple[float, float]:
+    def predict_fixture(self, home_team: str, away_team: str, is_home: bool) -> dict[str, float]:
         """
-        Evaluate scoreline probability under Dixon-Coles vs independent Poisson.
-        Returns (prob_dc, prob_indep).
-        """
-        if not self.is_fitted:
-            self.fit()
-
-        alpha_h, delta_h = self.get_team_parameters(home_team)
-        alpha_a, delta_a = self.get_team_parameters(away_team)
-
-        log_lam = alpha_h - delta_a + self.gamma
-        log_mu = alpha_a - delta_h
-        lam = float(np.exp(np.clip(log_lam, -3.0, 2.0)))
-        mu = float(np.exp(np.clip(log_mu, -3.0, 2.0)))
-
-        x, y = score
-        px = math.exp(-lam) * (lam**x) / math.factorial(x)
-        py = math.exp(-mu) * (mu**y) / math.factorial(y)
-        prob_indep = px * py
-
-        tau = 1.0
-        if x == 0 and y == 0:
-            tau = max(1e-6, 1.0 - lam * mu * self.rho)
-        elif x == 0 and y == 1:
-            tau = max(1e-6, 1.0 + lam * self.rho)
-        elif x == 1 and y == 0:
-            tau = max(1e-6, 1.0 + mu * self.rho)
-        elif x == 1 and y == 1:
-            tau = max(1e-6, 1.0 - self.rho)
-
-        prob_dc = tau * prob_indep
-        return float(prob_dc), float(prob_indep)
-
-    def predict_fixture(
-        self,
-        home_team: str,
-        away_team: str,
-        is_home: bool,
-        season: str | None = None,
-        horizon_step: int = 1,
-    ) -> dict[str, float]:
-        """
-        Helper returning standard implied continuous features for a player's team in this fixture.
-        Blends with market closing odds via odds_provider when available (WI-3.2).
-        Falls back to pure structural Dixon-Coles when market odds are missing.
+        Helper returning the implied continuous features for a player's team in this fixture.
+        Purely structural: training features use the same recipe (fitted as-of each gameweek), and unplayed
+        fixtures have no market odds at serve time, so a market blend would break train/serve parity.
         """
         pred = self.predict_scoreline_matrix(home_team, away_team)
         if is_home:
-            structural = {
+            return {
                 "implied_team_xG": pred["lambda"],
                 "implied_team_cs_prob": pred["p_cs_home"],
                 "implied_opp_xG": pred["mu"],
                 "implied_opp_cs_prob": pred["p_cs_away"],
             }
-        else:
-            structural = {
-                "implied_team_xG": pred["mu"],
-                "implied_team_cs_prob": pred["p_cs_away"],
-                "implied_opp_xG": pred["lambda"],
-                "implied_opp_cs_prob": pred["p_cs_home"],
-            }
-
-        # Market odds blend (WI-3.2)
-        if season is not None:
-            try:
-                from fpl_oracle.data.odds import odds_provider
-
-                mkt = odds_provider.get_fixture_market_expectations(
-                    season=season,
-                    home_team=home_team,
-                    away_team=away_team,
-                    is_home=is_home,
-                )
-                if mkt is not None:
-                    return odds_provider.blend_market_and_structural(
-                        mkt_expectations=mkt,
-                        structural_expectations=structural,
-                        horizon_step=horizon_step,
-                    )
-            except Exception as e:
-                logger.debug(f"Market odds blend bypassed: {e}")
-
-        return structural
+        return {
+            "implied_team_xG": pred["mu"],
+            "implied_team_cs_prob": pred["p_cs_away"],
+            "implied_opp_xG": pred["lambda"],
+            "implied_opp_cs_prob": pred["p_cs_home"],
+        }
 
 
 # Singleton model instance

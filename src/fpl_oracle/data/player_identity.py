@@ -16,11 +16,11 @@ from typing import Any
 
 import pandas as pd
 
-from fpl_oracle.config import BASE_DIR
+from fpl_oracle.config import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-HISTORICAL_DIR = BASE_DIR / "data" / "historical"
+HISTORICAL_DIR = DATA_DIR / "historical"
 MASTER_HISTORY_CSV = HISTORICAL_DIR / "master_history.csv"
 
 

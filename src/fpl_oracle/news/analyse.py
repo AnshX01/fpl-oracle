@@ -23,7 +23,6 @@ class NewsAnalyzer:
     def __init__(self):
         self.reconciler = availability_reconciler
         self._last_candidate_evidences: list[PlayerEvidence] = []
-        self._last_reconciled_map: dict[int, float] = {}
 
     async def get_player_news_signals(
         self, bootstrap: BootstrapStatic, player_filter_id: int | None = None, target_gw: int = 6
@@ -74,7 +73,6 @@ class NewsAnalyzer:
                                     text=cleaned_text,
                                     player_name=str(p["web_name"]),
                                     player_id=int(str(p["id"])),
-                                    target_gw=target_gw,
                                 )
                                 for ev in p_evs:
                                     if ev.category != EvidenceCategory.UNKNOWN:
@@ -98,8 +96,8 @@ class NewsAnalyzer:
 
         # 2. Reconcile players through single AvailabilityReconciler
         elem_map = {int(e.id): e for e in bootstrap.elements}
+        first_gw = next((e.id for e in bootstrap.events if e.is_next), None)
         signals: list[dict[str, Any]] = []
-        reconciled_map: dict[int, float] = {}
 
         # Collect official FPL signals
         fpl_signals = news_ingestion.fetch_official_fpl_signals(bootstrap)
@@ -121,8 +119,8 @@ class NewsAnalyzer:
                 target_gw=target_gw,
                 candidate_evidence=candidate_evidences,
                 extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
+                first_gw=first_gw,
             )
-            reconciled_map[elem_id] = reconciled.effective_chance_of_playing
 
             status_code = getattr(elem, "status", "a")
             signal_type = (
@@ -153,51 +151,20 @@ class NewsAnalyzer:
                 }
             )
 
-        # Build comprehensive map for all players
-        for elem in bootstrap.elements:
-            eid = int(elem.id)
-            if eid not in reconciled_map:
-                rec = self.reconciler.reconcile_player_fixture(
-                    element=elem,
-                    target_gw=target_gw,
-                    candidate_evidence=candidate_evidences,
-                    extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
-                )
-                reconciled_map[eid] = rec.effective_chance_of_playing
-
-        self._last_reconciled_map = reconciled_map
         return signals
 
     def get_reconciled_inputs(self, bootstrap, target_gw):
+        first_gw = next((e.id for e in bootstrap.events if e.is_next), None)
         return {
             int(e.id): self.reconciler.reconcile_player_fixture(
                 e,
                 target_gw,
                 candidate_evidence=self._last_candidate_evidences,
                 extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
+                first_gw=first_gw,
             )
             for e in bootstrap.elements
         }
-
-    def get_reconciled_availabilities_map(
-        self,
-        bootstrap: BootstrapStatic,
-        target_gw: int = 6,
-        candidate_evidence: list[PlayerEvidence] | None = None,
-    ) -> dict[int, float]:
-        """Return map of element_id -> effective_chance_of_playing across all players (N1)."""
-        evidences = candidate_evidence if candidate_evidence is not None else self._last_candidate_evidences
-        avail_map: dict[int, float] = {}
-        for elem in bootstrap.elements:
-            eid = int(elem.id)
-            rec = self.reconciler.reconcile_player_fixture(
-                element=elem,
-                target_gw=target_gw,
-                candidate_evidence=evidences,
-                extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
-            )
-            avail_map[eid] = rec.effective_chance_of_playing
-        return avail_map
 
 
 news_analyzer = NewsAnalyzer()

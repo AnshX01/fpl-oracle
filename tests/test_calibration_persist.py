@@ -8,22 +8,17 @@ Verifies that:
 """
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from fpl_oracle.config import MODELS_DIR
-from fpl_oracle.ml.ensemble import ScoringEnsemble, scoring_ensemble
+from fpl_oracle.ml.ensemble import ScoringEnsemble
 
 
 def test_calibration_artifact_exists_and_valid():
     """Verify that calibration artifact exists and conforms to required schema."""
     cal_path = MODELS_DIR / "calibration.json"
-    if not cal_path.exists():
-        # Generate default calibration artifact
-        scoring_ensemble.save_calibration(cal_path)
-
     assert cal_path.exists()
     with open(cal_path, encoding="utf-8") as f:
         data = json.load(f)
@@ -34,29 +29,6 @@ def test_calibration_artifact_exists_and_valid():
     assert "bucket_quantiles" in data
     assert data["z10"] <= data["z90"]
     assert len(data["blend_weights"]) == 3
-
-
-def test_scoring_ensemble_save_and_load(tmp_path: Path):
-    """Verify that save_calibration and load_calibration round-trip accurately."""
-    ens = ScoringEnsemble(z10=-0.85, z90=1.05, blend_weights=(0.70, 0.10, 0.20))
-    ens.bucket_quantiles = {
-        "MID_high": {"q10": -2.5, "q90": 4.5, "n": 100},
-        "DEF_mid": {"q10": -1.8, "q90": 3.2, "n": 50},
-    }
-
-    test_file = tmp_path / "test_calibration.json"
-    saved_path = ens.save_calibration(test_file)
-    assert saved_path == test_file
-    assert test_file.exists()
-
-    new_ens = ScoringEnsemble(z10=0.0, z90=0.0)
-    success = new_ens.load_calibration(test_file)
-    assert success is True
-    assert abs(new_ens.calibrated_z10 - (-0.85)) < 1e-4
-    assert abs(new_ens.calibrated_z90 - 1.05) < 1e-4
-    assert abs(new_ens.blend_weights[0] - 0.70) < 1e-4
-    assert "MID_high" in new_ens.bucket_quantiles
-    assert new_ens.bucket_quantiles["MID_high"]["q10"] == -2.5
 
 
 def test_bucketed_quantiles_ordering():

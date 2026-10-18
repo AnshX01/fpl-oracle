@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from fpl_oracle.config import MODELS_DIR, REPORTS_DIR
+from fpl_oracle.config import HISTORICAL_DIR, MODELS_DIR, REPORTS_DIR
 from fpl_oracle.data.store import data_store
 from fpl_oracle.ml.bundle_lock import bundle_locked
 from fpl_oracle.ml.components.attacking import AttackingModel
@@ -32,6 +33,9 @@ from fpl_oracle.ml.eval import EVAL_METRICS_SCHEMA_KEYS, ROLLING_ORIGIN_SCHEMA_K
 logger = logging.getLogger("fpl_oracle.ml.registry")
 
 MANIFEST_PATH = MODELS_DIR / "manifest.json"
+# Bump when training targets or component semantics change: bundles from another recipe are never restored.
+# v2: clean sheets / DefCon trained conditional on minutes, DefCon only on labelled seasons, final refit on all rows.
+RECIPE_ID = "fpl_oracle_canonical_v2"
 VERSIONS_DIR = MODELS_DIR / "versions"
 REJECTED_DIR = MODELS_DIR / "rejected"
 
@@ -218,12 +222,17 @@ def check_promotion_gate(
         )
 
     assert cand_mae is not None and base_mae is not None
-    cand_mae, base_mae = float(cand_mae), float(base_mae)
+    # xP is a mean forecast, and MAE rewards under-predicting a zero-heavy target: when RMSE is reported for both
+    # the candidate and its best baseline it is the gating error; MAE gates only legacy MAE-only metric sets.
+    use_rmse = finite(candidate_metrics.get("ml_rmse")) and finite(candidate_metrics.get("base_rmse"))
+    err_name = "RMSE" if use_rmse else "MAE"
+    cand_err = float(candidate_metrics["ml_rmse"] if use_rmse else cand_mae)
+    base_err = float(candidate_metrics["base_rmse"] if use_rmse else base_mae)
     # 1. Baseline superiority check (global degradation tolerance is 0 against best baseline)
-    if cand_mae > (base_mae + tolerance):
+    if cand_err > (base_err + tolerance):
         return (
             False,
-            f"Candidate MAE ({cand_mae:.3f}) failed baseline gate vs baseline ({base_mae:.3f} + {tolerance:.2f}).",
+            f"Candidate {err_name} ({cand_err:.3f}) failed baseline gate vs baseline ({base_err:.3f} + {tolerance:.2f}).",
         )
 
     # 2. Active production degradation check
@@ -231,12 +240,15 @@ def check_promotion_gate(
         active_mae = active_metrics.get("ml_mae", active_metrics.get("mae"))
         if not finite(active_mae):
             return False, "Active MAE is missing/nonfinite"
-        assert active_mae is not None
-        active_mae = float(active_mae)
-        if cand_mae > (active_mae + tolerance):
+        # Same error on both sides: RMSE when the active bundle recorded it, otherwise MAE (older manifests).
+        active_rmse = use_rmse and finite(active_metrics.get("ml_rmse"))
+        cmp_name = "RMSE" if active_rmse else "MAE"
+        cand_cmp = cand_err if active_rmse else float(cand_mae)
+        active_err = float(active_metrics["ml_rmse"]) if active_rmse else float(active_mae or 0.0)
+        if cand_cmp > (active_err + tolerance):
             return (
                 False,
-                f"Candidate MAE ({cand_mae:.3f}) degraded vs active production MAE ({active_mae:.3f}) by > {tolerance:.2f}.",
+                f"Candidate {cmp_name} ({cand_cmp:.3f}) degraded vs active production {cmp_name} ({active_err:.3f}) by > {tolerance:.2f}.",
             )
 
     # 3. Rolling origins checks (or bootstrap gate if rolling origins omitted)
@@ -391,13 +403,6 @@ class ModelRegistry:
         cal_path = target_dir / "calibration.json"
         if cal_path.exists():
             hashes["calibration.json"] = self.calculate_file_hash(cal_path)
-        cqr_dir = target_dir / "cqr"
-        if cqr_dir.exists() and cqr_dir.is_dir():
-            for cqr_f in sorted(cqr_dir.glob("*.txt")):
-                hashes[f"cqr/{cqr_f.name}"] = self.calculate_file_hash(cqr_f)
-            meta_f = cqr_dir / "cqr_meta.json"
-            if meta_f.exists():
-                hashes["cqr/cqr_meta.json"] = self.calculate_file_hash(meta_f)
         return hashes
 
     @bundle_locked
@@ -448,7 +453,7 @@ class ModelRegistry:
         if cal_p.exists() and cal_p.is_file():
             shutil.move(str(cal_p), str(quarantine_dir / "calibration.json"))
             quarantined_files.append("calibration.json")
-        cqr_p = models_path / "cqr"
+        cqr_p = models_path / "cqr"  # bundles promoted before the CQR retirement still carry this directory
         if cqr_p.exists() and cqr_p.is_dir():
             shutil.move(str(cqr_p), str(quarantine_dir / "cqr"))
             quarantined_files.append("cqr")
@@ -465,7 +470,7 @@ class ModelRegistry:
         versions_list = manifest.get("versions", [])
         for v in reversed(versions_list):
             v_name = v.get("version")
-            if not v_name:
+            if not v_name or not self.is_compatible(v):
                 continue
             cand_dir = self.versions_dir / v_name
             if not cand_dir.exists() or not cand_dir.is_dir():
@@ -486,20 +491,6 @@ class ModelRegistry:
                 restored_ver_name = v_name
                 restored_dir = cand_dir
                 break
-
-        # 2. Disk scan fallback across versions_dir
-        if restored_dir is None and self.versions_dir.exists():
-            subdirs = sorted(
-                [d for d in self.versions_dir.iterdir() if d.is_dir()],
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            for sub in subdirs:
-                pkls = list(sub.glob("*.pkl"))
-                if pkls and all(f.stat().st_size > 0 for f in pkls):
-                    restored_ver_name = sub.name
-                    restored_dir = sub
-                    break
 
         if restored_dir is None:
             err_msg = (
@@ -683,6 +674,17 @@ class ModelRegistry:
         self, X_val: pd.DataFrame, Y_val: pd.DataFrame, rolling_origins: list[dict[str, Any]] | None = None
     ) -> dict[str, float] | None:
         """Evaluate current production weights in data/models on holdout split."""
+        active = self.get_active_version()
+        if active.get("metric_applies_to") == "held_out_candidate_before_final_refit":
+            # Served weights were refit on every finalized row, the holdout included: re-scoring them would be
+            # in-sample and block every future candidate. Use the held-out metrics recorded before the refit.
+            recorded = {
+                k: active[k]
+                for k in ("ml_mae", "ml_rmse", "ml_spearman", "base_mae", "base_rmse")
+                if active.get(k) is not None
+            }
+            logger.info("Active bundle was refit on the holdout; comparing against its recorded held-out metrics.")
+            return recorded or None
         models: dict[str, Any] = {}
         for name, filename, cls in COMPONENT_WEIGHTS:
             p = self.models_dir / filename
@@ -720,15 +722,16 @@ class ModelRegistry:
         rolling_origins: list[dict[str, Any]] | None = None,
         training_data_df: pd.DataFrame | None = None,
         training_provenance: dict[str, Any] | None = None,
-        recipe_id: str = "fpl_oracle_canonical_v1",
+        recipe_id: str = RECIPE_ID,
         new_version_tag: str | None = None,
         notes: str = "",
-        cqr: Any | Path | None = None,
+        metric_applies_to: str = "served_weights",
     ) -> dict[str, Any]:
         """
-        Builds a candidate staging directory with all 6 component models, calibration.json,
-        cqr/* files, and manifest.json, computes all hashes, verifies integrity, and atomically swaps
-        into production data/models/ using .tmp + os.replace (Requirement G1).
+        Builds a candidate staging directory with all 6 component models, calibration.json and manifest.json,
+        computes all hashes, verifies integrity, and atomically swaps into production data/models/
+        using .tmp + os.replace (Requirement G1).
+        `metric_applies_to` records which weights the manifest metrics describe.
         """
         cand_mae = float(candidate_metrics.get("ml_mae", candidate_metrics.get("mae", 1.0)))
         cand_sp = float(candidate_metrics.get("ml_spearman", 0.0))
@@ -760,17 +763,7 @@ class ModelRegistry:
             else:
                 raise ValueError("calibration_data must be a dict or a Path to calibration.json")
 
-            # 2b. Save CQR models and metadata into staging
-            staging_cqr = staging_dir / "cqr"
-            if cqr is not None:
-                if isinstance(cqr, Path) and cqr.exists():
-                    shutil.copytree(cqr, staging_cqr, dirs_exist_ok=True)
-                elif hasattr(cqr, "save"):
-                    cqr.save(staging_cqr)
-            elif (self.models_dir / "cqr").exists():
-                shutil.copytree(self.models_dir / "cqr", staging_cqr, dirs_exist_ok=True)
-
-            # 3. Calculate SHA256 hashes of all staged files (models, calibration, cqr/*)
+            # 3. Calculate SHA256 hashes of all staged files (models, calibration)
             file_hashes: dict[str, str] = self.calculate_weight_hashes(staging_dir)
 
             # 4. Read git commit at train/promotion time
@@ -790,9 +783,7 @@ class ModelRegistry:
                     training_data_hash = "unknown"
                 max_gw = int(training_data_df["round"].max()) if "round" in training_data_df.columns else 0
             else:
-                master_csv = (
-                    Path(__file__).resolve().parent.parent.parent.parent / "data" / "historical" / "master_history.csv"
-                )
+                master_csv = HISTORICAL_DIR / "master_history.csv"
                 if master_csv.exists():
                     training_data_hash = hashlib.sha256(master_csv.read_bytes()).hexdigest()
                     try:
@@ -804,12 +795,20 @@ class ModelRegistry:
                     training_data_hash = "unknown"
                     max_gw = 0
 
+            if not max_gw and training_provenance:
+                served = (training_provenance.get("served_fit") or training_provenance.get("corpus") or {}).get(
+                    "by_season", {}
+                )
+                max_gw = int(served[max(served)]["last_gw"]) if served else 0
+
             from fpl_oracle.data.features import FEATURE_SCHEMA_HASH
 
             improvement = (active_mae - cand_mae) if active_mae else 0.0
+            cand_rmse = candidate_metrics.get("ml_rmse")
+            rmse_note = f", RMSE: {cand_rmse:.3f}" if isinstance(cand_rmse, int | float) else ""
             success_note = (
-                f"Candidate model passed verification. MAE: {cand_mae:.3f} "
-                f"(improvement: {improvement:+.3f}). Promoted to production."
+                f"Candidate model passed verification. MAE: {cand_mae:.3f}{rmse_note} "
+                f"(MAE improvement: {improvement:+.3f}). Promoted to production."
             )
             if notes:
                 success_note += f" | {notes}"
@@ -829,11 +828,13 @@ class ModelRegistry:
                 "training_provenance": training_provenance,
                 "max_gw": max_gw,
                 "feature_list_hash": FEATURE_SCHEMA_HASH,
-                "metric_applies_to": "served_weights",
+                "metric_applies_to": metric_applies_to,
                 "file_hashes": file_hashes,
                 "ml_mae": round(cand_mae, 4),
                 "ml_spearman": round(cand_sp, 4),
                 "base_mae": round(cand_base, 4),
+                "ml_rmse": candidate_metrics.get("ml_rmse"),
+                "base_rmse": candidate_metrics.get("base_rmse"),
                 "rolling_origins": origins,
                 "bootstrap_promotion_gate": candidate_metrics.get("bootstrap_result"),
                 "status": "production",
@@ -862,8 +863,6 @@ class ModelRegistry:
                     shutil.copy2(src, archive_dir / fname)
             if (self.models_dir / "calibration.json").exists():
                 shutil.copy2(self.models_dir / "calibration.json", archive_dir / "calibration.json")
-            if (self.models_dir / "cqr").exists():
-                shutil.copytree(self.models_dir / "cqr", archive_dir / "cqr", dirs_exist_ok=True)
 
             # 9. Also save copy in versions_dir / ver_tag
             new_ver_dir = self.versions_dir / ver_tag
@@ -951,13 +950,15 @@ class ModelRegistry:
         rolling_origins: list[dict[str, Any]] | None = None,
         training_data_df: pd.DataFrame | None = None,
         training_provenance: dict[str, Any] | None = None,
-        recipe_id: str = "fpl_oracle_canonical_v1",
-        cqr: Any | Path | None = None,
+        recipe_id: str = RECIPE_ID,
+        refit_final: Callable[[], dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """
         Verify candidate models against active production metrics.
         If candidate MAE degrades by more than tolerance (> 0.05 pts), engages AUTOMATIC ROLLBACK.
-        Otherwise promotes candidate models to production via atomic swap.
+        Otherwise promotes to production via atomic swap. When `refit_final` is given, it is called only after
+        the gate has passed on the candidate's held-out metrics and returns the models actually promoted
+        (refit on more data); the manifest metrics stay the candidate's held-out ones and are labelled so.
         """
         cand_mae = candidate_metrics["ml_mae"]
         active = self.get_active_version()
@@ -1028,6 +1029,11 @@ class ModelRegistry:
 
             cal_data = scoring_ensemble.get_calibration_dict()
 
+        metric_applies_to = "served_weights"
+        if refit_final is not None:
+            candidate_models = refit_final()
+            metric_applies_to = "held_out_candidate_before_final_refit"
+
         return self.promote_candidate_bundle(
             candidate_models=candidate_models,
             calibration_data=cal_data,
@@ -1039,8 +1045,15 @@ class ModelRegistry:
             training_provenance=training_provenance,
             new_version_tag=new_version_tag,
             notes=notes,
-            cqr=cqr,
+            metric_applies_to=metric_applies_to,
         )
+
+    @staticmethod
+    def is_compatible(version: dict[str, Any]) -> bool:
+        """A bundle can serve this code only if it was trained by the same recipe on the same features."""
+        from fpl_oracle.data.features import FEATURE_SCHEMA_HASH
+
+        return version.get("recipe_id") == RECIPE_ID and version.get("feature_list_hash") == FEATURE_SCHEMA_HASH
 
     @bundle_locked
     def rollback_to_version(self, target_version: str) -> dict[str, Any]:
@@ -1048,6 +1061,11 @@ class ModelRegistry:
         target_dir = self.versions_dir / target_version
         if not target_dir.exists():
             return {"success": False, "error": f"Version checkpoint '{target_version}' not found."}
+        entry: dict[str, Any] = next(
+            (v for v in self.load_manifest().get("versions", []) if v.get("version") == target_version), {}
+        )
+        if not self.is_compatible(entry):
+            return {"success": False, "error": f"Version '{target_version}' was trained by another recipe."}
 
         # Copy files back to production root
         for item in target_dir.iterdir():

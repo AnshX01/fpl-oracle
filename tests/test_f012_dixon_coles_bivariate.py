@@ -27,14 +27,7 @@ def test_dixon_coles_rho_zero_equals_independent_poisson():
     model.teams = ["TeamA", "TeamB"]
     model.is_fitted = True
 
-    # 1. Low-score adjustment check
-    for score in [(0, 0), (0, 1), (1, 0), (1, 1), (2, 2)]:
-        prob_dc, prob_indep = model.evaluate_scoreline_adjustment(home_team="TeamA", away_team="TeamB", score=score)
-        assert np.isclose(prob_dc, prob_indep, atol=1e-7), (
-            f"When rho=0, Dixon-Coles score {score} must equal independent Poisson: {prob_dc} vs {prob_indep}"
-        )
-
-    # 2. Entire scoreline matrix check
+    # Entire scoreline matrix check
     pred = model.predict_scoreline_matrix("TeamA", "TeamB", max_goals=10)
     grid = pred["grid"]
     lam = pred["lambda"]

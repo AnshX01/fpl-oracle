@@ -14,7 +14,8 @@ import pandas as pd
 from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.config import HISTORICAL_DIR
 from fpl_oracle.data.player_identity import normalize_player_name, player_identity_resolver
-from fpl_oracle.ml.components.dixon_coles import dixon_coles_model
+from fpl_oracle.ml.components.dixon_coles import DixonColesModel, dixon_coles_model
+from fpl_oracle.news.reconcile import official_chance_of_playing
 
 logger = logging.getLogger("fpl_oracle.features")
 
@@ -105,6 +106,9 @@ PRIOR_TEAM_GOALS_CONCEDED = 1.35
 PRIOR_TEAM_POINTS = 1.25
 PRIOR_TEAM_CLEAN_SHEET = 0.25
 
+# Walk-forward Dixon-Coles refit cadence for training features (gameweeks per refit).
+DC_REFIT_EVERY_N_ROUNDS = 4
+
 
 def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", val_m: float = 6.0) -> dict[str, float]:
     """
@@ -148,8 +152,9 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         r_cs_5 = float(last_5["clean_sheets"].mean()) if not last_5.empty else 0.0
         r_saves_5 = float(last_5["saves"].mean()) if not last_5.empty else 0.0
         r_gc_5 = float(last_5["goals_conceded"].mean()) if not last_5.empty else 0.0
+        # Seasons before DefCon existed carry NaN (unknown): ignore them, fall back to 0 when nothing is known.
         r_defcon_5 = (
-            float(last_5["defensive_contribution"].mean())
+            float(np.nan_to_num(last_5["defensive_contribution"].mean()))
             if "defensive_contribution" in last_5.columns and not last_5.empty
             else 0.0
         )
@@ -513,6 +518,27 @@ class FeatureEngineering:
 
         return opp_id_to_name, name_to_opp_id
 
+    def _walk_forward_dixon_coles(self, df: pd.DataFrame) -> dict[tuple[str, int], DixonColesModel]:
+        """
+        Dixon-Coles strengths as they were known before each gameweek (no look-ahead): refit every
+        DC_REFIT_EVERY_N_ROUNDS gameweeks on matches that kicked off before the block's first match.
+        """
+        rounds = sorted({(str(s), int(r)) for s, r in zip(df["season"], df["round"], strict=True)})
+        match_columns = {"team", "opponent_team", "was_home", "kickoff_time", "goals_conceded"}
+        if not match_columns.issubset(df.columns):  # no match results to learn from: neutral priors
+            return dict.fromkeys(rounds, DixonColesModel().fit(pd.DataFrame()))
+        matches = DixonColesModel()._extract_matches_from_history(df)
+        first_kickoff = matches.groupby(["season", "round"])["kickoff_dt"].min()
+        models: dict[tuple[str, int], DixonColesModel] = {}
+        model = DixonColesModel().fit(matches.iloc[0:0])
+        for i in range(0, len(rounds), DC_REFIT_EVERY_N_ROUNDS):
+            block = rounds[i : i + DC_REFIT_EVERY_N_ROUNDS]
+            starts = [first_kickoff[b] for b in block if b in first_kickoff.index]
+            if starts:
+                model = DixonColesModel().fit(matches[matches["kickoff_dt"] < min(starts)])
+            models.update(dict.fromkeys(block, model))
+        return models
+
     @overload
     def build_historical_features(
         self, df: pd.DataFrame, return_meta: Literal[False] = False
@@ -533,6 +559,12 @@ class FeatureEngineering:
         Sorts output globally by time (season, round) for chronological evaluation.
         """
         df = df.copy()
+
+        # DefCon was introduced in 2025-26. Seasons without a single non-zero value never recorded it: their
+        # labels are unknown (NaN), not "zero actions" (legacy master_history.csv files stored 0.0 here).
+        if "defensive_contribution" in df.columns:
+            season_has_defcon = df["defensive_contribution"].fillna(0.0).groupby(df["season"]).transform("max") > 0
+            df.loc[~season_has_defcon, "defensive_contribution"] = np.nan
 
         # Positional Encoding
         for pos in ["GKP", "DEF", "MID", "FWD"]:
@@ -564,12 +596,6 @@ class FeatureEngineering:
         legacy_implied_team_cs_list = []
         legacy_implied_opp_xg_list = []
         legacy_implied_opp_cs_list = []
-
-        mkt_lam_list = []
-        mkt_mu_list = []
-        mkt_cs_list = []
-        mkt_win_list = []
-        mkt_tot_list = []
 
         t_roll_g3, t_roll_g5, t_roll_g8 = [], [], []
         t_roll_xg3, t_roll_xg5, t_roll_xg8 = [], [], []
@@ -642,6 +668,8 @@ class FeatureEngineering:
         else:
             df["days_rest"] = 7.0
 
+        dc_as_of = self._walk_forward_dixon_coles(df)
+
         for _, row in df.iterrows():
             s = str(row.get("season", "2025-26"))
             rnd = int(row.get("round", 1))
@@ -689,31 +717,16 @@ class FeatureEngineering:
             legacy_implied_opp_xg_list.append(leg_imp_opp_xg)
             legacy_implied_opp_cs_list.append(float(np.exp(-leg_imp_team_xg)))
 
-            # Bivariate Dixon-Coles match expectations with market odds blending (WI-3.1, WI-3.2)
+            # Structural Dixon-Coles match expectations fitted only on matches played before this gameweek.
+            # No market odds: unplayed fixtures have none at serve time (train/serve parity).
             h_team = t_name if was_h else opp_name
             a_team = opp_name if was_h else t_name
-            dc_fix = dixon_coles_model.predict_fixture(h_team, a_team, is_home=was_h, season=s)
+            dc_fix = dc_as_of[(s, rnd)].predict_fixture(h_team, a_team, is_home=was_h)
 
             implied_team_xg_list.append(dc_fix["implied_team_xG"])
             implied_team_cs_list.append(dc_fix["implied_team_cs_prob"])
             implied_opp_xg_list.append(dc_fix["implied_opp_xG"])
             implied_opp_cs_list.append(dc_fix["implied_opp_cs_prob"])
-
-            from fpl_oracle.data.odds import odds_provider
-
-            mkt_exp = odds_provider.get_fixture_market_expectations(s, h_team, a_team, is_home=was_h)
-            if mkt_exp is not None:
-                mkt_lam_list.append(mkt_exp["mkt_lambda"])
-                mkt_mu_list.append(mkt_exp["mkt_mu"])
-                mkt_cs_list.append(mkt_exp["mkt_cs_prob"])
-                mkt_win_list.append(mkt_exp["mkt_win_prob"])
-                mkt_tot_list.append(mkt_exp["mkt_total_goals"])
-            else:
-                mkt_lam_list.append(dc_fix["implied_team_xG"])
-                mkt_mu_list.append(dc_fix["implied_opp_xG"])
-                mkt_cs_list.append(dc_fix["implied_team_cs_prob"])
-                mkt_win_list.append(0.40)
-                mkt_tot_list.append(dc_fix["implied_team_xG"] + dc_fix["implied_opp_xG"])
 
             # Team attack form
             t_roll_g3.append(t_metrics["team_roll_goals_3"])
@@ -745,12 +758,6 @@ class FeatureEngineering:
         df["implied_opp_xG"] = implied_opp_xg_list
         df["implied_opp_cs_prob"] = implied_opp_cs_list
 
-        df["mkt_lambda"] = mkt_lam_list
-        df["mkt_mu"] = mkt_mu_list
-        df["mkt_cs_prob"] = mkt_cs_list
-        df["mkt_win_prob"] = mkt_win_list
-        df["mkt_total_goals"] = mkt_tot_list
-
         df["legacy_implied_team_xG"] = legacy_implied_team_xg_list
         df["legacy_implied_team_cs_prob"] = legacy_implied_team_cs_list
         df["legacy_implied_opp_xG"] = legacy_implied_opp_xg_list
@@ -774,8 +781,21 @@ class FeatureEngineering:
         df["opp_roll_xGC_8"] = opp_roll_xgc8
         df["opp_roll_clean_sheets_5"] = opp_roll_cs5
 
-        # Sort by name, season, round to compute player shifted rolling features
-        df_player = df.sort_values(by=["name", "season", "round"]).reset_index(drop=True)
+        # Player identity must be resolved BEFORE sorting: rolling history is grouped by canonical_id, so the
+        # chronological order has to be per canonical_id (raw spellings differ across seasons).
+        if "canonical_id" not in df.columns:
+            if "element" in df.columns and "season" in df.columns:
+                names = df["name"] if "name" in df.columns else [""] * len(df)
+                df["canonical_id"] = [
+                    player_identity_resolver.resolve_canonical_id(elem_id=e, season=s, full_name=n)
+                    for e, s, n in zip(df["element"], df["season"], names, strict=False)
+                ]
+            elif "norm_name" in df.columns:
+                df["canonical_id"] = df["norm_name"]
+            else:
+                df["canonical_id"] = df["name"].apply(normalize_player_name)
+        player_sort = [c for c in ["canonical_id", "season", "round", "kickoff_time"] if c in df.columns]
+        df_player = df.sort_values(by=player_sort).reset_index(drop=True)
 
         col_defaults = {
             "minutes": 0.0,
@@ -808,19 +828,6 @@ class FeatureEngineering:
                 else:
                     df_player[c] = def_val
 
-        if "canonical_id" not in df_player.columns:
-            if "element" in df_player.columns and "season" in df_player.columns:
-                from fpl_oracle.data.player_identity import player_identity_resolver
-
-                names = df_player["name"] if "name" in df_player.columns else [""] * len(df_player)
-                df_player["canonical_id"] = [
-                    player_identity_resolver.resolve_canonical_id(elem_id=e, season=s, full_name=n)
-                    for e, s, n in zip(df_player["element"], df_player["season"], names, strict=False)
-                ]
-            elif "norm_name" in df_player.columns:
-                df_player["canonical_id"] = df_player["norm_name"]
-            else:
-                df_player["canonical_id"] = df_player["name"].apply(normalize_player_name)
         grouped = df_player.groupby("canonical_id", group_keys=False)
 
         # Shifted rolling stats (Strictly pre-match!)
@@ -935,13 +942,31 @@ class FeatureEngineering:
         else:
             df_player["roll_penalties_saved_5"] = 0.0
 
+        # Cold start (a player's first row in the corpus): same documented priors as live serving.
+        is_cold_start = grouped.cumcount() == 0
+        for (pos_code, value_tenths), idx in (
+            df_player[is_cold_start]
+            .groupby(["position", df_player.loc[is_cold_start, "value"].astype(float) // 5.0 * 5.0])
+            .groups.items()
+        ):
+            priors = compute_player_rolling_stats(None, pos_code=str(pos_code), val_m=float(value_tenths) / 10.0)
+            for col, prior in priors.items():
+                df_player.loc[idx, col] = prior
+
+        # Pre-deadline state is per gameweek, not per fixture: both legs of a double gameweek share it
+        # (the second leg must not see the first leg's result).
+        pre_deadline_cols = ["prev_points", "season_points_mean"] + [
+            c for c in compute_player_rolling_stats(None) if c in df_player.columns
+        ]
+        df_player[pre_deadline_cols] = df_player.groupby(["canonical_id", "season", "round"])[
+            pre_deadline_cols
+        ].transform("first")
+
         df_player["was_home"] = df_player["was_home"].astype(float)
         df_player["value"] = df_player["value"].astype(float)
 
-        # Calculate actual ground truth card deduction (-1 for yellow, -3 for red, -2 for own goal, -2 for missed pen)
-        og_col = df_player.get("own_goals", pd.Series(0, index=df_player.index)).fillna(0)
-        pm_col = df_player.get("penalties_missed", pd.Series(0, index=df_player.index)).fillna(0)
-        df_player["target_card_deduction"] = (yc * 1.0 + rc * 3.0 + og_col * 2.0 + pm_col * 2.0).astype(float)
+        # Card deduction label: -1 yellow, -3 red only. Own goals and missed penalties are separate ensemble terms.
+        df_player["target_card_deduction"] = (yc * 1.0 + rc * 3.0).astype(float)
 
         # CRITICAL: Sort globally by true chronological time (season, round, name)
         sort_cols = [c for c in ["season", "round", "kickoff_time", "name"] if c in df_player.columns]
@@ -964,6 +989,7 @@ class FeatureEngineering:
                 "target_clean_sheet": df_sorted["clean_sheets"].astype(float),
                 "target_goals_conceded": df_sorted["goals_conceded"].astype(float),
                 "target_saves": df_sorted["saves"].astype(float),
+                # NaN where the season never recorded DefCon: DefConModel excludes those rows from fitting.
                 "target_defcon": (
                     (
                         df_sorted["defensive_contribution"]
@@ -974,8 +1000,10 @@ class FeatureEngineering:
                         )
                     )
                     & (df_sorted["position"] != "GKP")
-                ).astype(float),
-                "target_defcon_actions": df_sorted["defensive_contribution"].fillna(0).astype(float),
+                )
+                .astype(float)
+                .where(df_sorted["defensive_contribution"].notna()),
+                "target_defcon_actions": df_sorted["defensive_contribution"].astype(float),
                 "target_bonus": df_sorted["bonus"].astype(float),
                 "target_card_deduction": df_sorted["target_card_deduction"].astype(float),
                 "target_penalties_saved": df_sorted.get("penalties_saved", pd.Series(0, index=df_sorted.index))
@@ -1110,6 +1138,7 @@ class FeatureEngineering:
                             last_team_kickoff[found_tid] = max_ko
 
         tid_to_name = {t.id: t.name for t in bootstrap.teams}
+        first_gw = next((e.id for e in bootstrap.events if e.is_next), None)
         rows = []
         for elem in bootstrap.elements:
             pos_code = pos_map.get(elem.element_type, "MID")
@@ -1117,16 +1146,13 @@ class FeatureEngineering:
             val_m = float(elem.now_cost) / 10.0
 
             # Availability: reconciled override takes precedence in gated_active mode
-            cop = 100.0
             if reconciled_availabilities and elem.id in reconciled_availabilities:
                 val = float(reconciled_availabilities[elem.id])
                 if not np.isfinite(val) or not 0 <= val <= 100:
                     raise ValueError("Availability map requires percent in [0,100]")
                 cop = val
-            elif elem.status in ("i", "s"):
-                cop = 0.0
-            elif elem.chance_of_playing_next_round is not None:
-                cop = float(elem.chance_of_playing_next_round)
+            else:
+                cop = official_chance_of_playing(elem, target_gw, first_gw)
 
             # Rolling player history is identical across the forecast horizon.
             if reuse_context and elem.id in self._live_player_stats:
@@ -1166,11 +1192,6 @@ class FeatureEngineering:
                     "implied_team_cs_prob": 0.25,
                     "implied_opp_xG": 1.35,
                     "implied_opp_cs_prob": 0.25,
-                    "mkt_lambda": 1.30,
-                    "mkt_mu": 1.35,
-                    "mkt_cs_prob": 0.25,
-                    "mkt_win_prob": 0.38,
-                    "mkt_total_goals": 2.65,
                     "legacy_implied_team_xG": 1.30,
                     "legacy_implied_team_cs_prob": 0.25,
                     "legacy_implied_opp_xG": 1.35,
@@ -1310,35 +1331,17 @@ class FeatureEngineering:
                 leg_imp_team_cs = float(np.exp(-leg_imp_opp_xg))
                 leg_imp_opp_cs = float(np.exp(-leg_imp_team_xg))
 
-                # Bivariate Dixon-Coles match expectations with market odds blending (WI-3.1, WI-3.2)
+                # Structural Dixon-Coles match expectations (identical recipe to training, no market blend)
                 my_team_name = tid_to_name.get(elem.team, str(elem.team))
                 opp_team_name = tid_to_name.get(int(fix.get("opponent") or 0), str(fix.get("opponent") or 0))
                 h_team = my_team_name if was_h else opp_team_name
                 a_team = opp_team_name if was_h else my_team_name
-                dc_fix = dixon_coles_model.predict_fixture(
-                    h_team, a_team, is_home=was_h, season="2026-27", horizon_step=1
-                )
+                dc_fix = dixon_coles_model.predict_fixture(h_team, a_team, is_home=was_h)
 
                 imp_team_xg = dc_fix["implied_team_xG"]
                 imp_team_cs = dc_fix["implied_team_cs_prob"]
                 imp_opp_xg = dc_fix["implied_opp_xG"]
                 imp_opp_cs = dc_fix["implied_opp_cs_prob"]
-
-                from fpl_oracle.data.odds import odds_provider
-
-                mkt_exp = odds_provider.get_fixture_market_expectations("2026-27", h_team, a_team, is_home=was_h)
-                if mkt_exp is not None:
-                    mkt_lam = mkt_exp["mkt_lambda"]
-                    mkt_mu = mkt_exp["mkt_mu"]
-                    mkt_cs = mkt_exp["mkt_cs_prob"]
-                    mkt_win = mkt_exp["mkt_win_prob"]
-                    mkt_tot = mkt_exp["mkt_total_goals"]
-                else:
-                    mkt_lam = imp_team_xg
-                    mkt_mu = imp_opp_xg
-                    mkt_cs = imp_team_cs
-                    mkt_win = 0.40
-                    mkt_tot = imp_team_xg + imp_opp_xg
 
                 diff_val = 3.0 + (1.35 - opp_def) * 1.2
                 if not was_h:
@@ -1369,11 +1372,6 @@ class FeatureEngineering:
                     "implied_team_cs_prob": imp_team_cs,
                     "implied_opp_xG": imp_opp_xg,
                     "implied_opp_cs_prob": imp_opp_cs,
-                    "mkt_lambda": mkt_lam,
-                    "mkt_mu": mkt_mu,
-                    "mkt_cs_prob": mkt_cs,
-                    "mkt_win_prob": mkt_win,
-                    "mkt_total_goals": mkt_tot,
                     "legacy_implied_team_xG": leg_imp_team_xg,
                     "legacy_implied_team_cs_prob": leg_imp_team_cs,
                     "legacy_implied_opp_xG": leg_imp_opp_xg,

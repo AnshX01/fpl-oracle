@@ -10,7 +10,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error
 
 from fpl_oracle.config import MODELS_DIR
 from fpl_oracle.domain.scoring import expected_floor_div
@@ -38,7 +37,6 @@ class ScoringEnsemble:
         self.blend_weights: tuple[float, float, float] | None = blend_weights or (0.72, 0.04, 0.24)
         self.positional_blend_weights: dict[str, tuple[float, float, float]] | None = None
         self.bucket_quantiles: dict[str, dict[str, float]] = {}
-        self.cqr: Any | None = None
         if z10 is None and z90 is None and blend_weights is None:
             self._load_default_calibration()
 
@@ -46,17 +44,6 @@ class ScoringEnsemble:
         cal_path = MODELS_DIR / "calibration.json"
         if cal_path.exists():
             self.load_calibration(cal_path)
-        cqr_path = MODELS_DIR / "cqr"
-        if cqr_path.exists():
-            from fpl_oracle.ml.quantiles import ConformalQuantileRegressor
-
-            cqr = ConformalQuantileRegressor()
-            if cqr.load(cqr_path):
-                self.cqr = cqr
-
-    def set_cqr(self, cqr: Any) -> None:
-        """Set active ConformalQuantileRegressor instance."""
-        self.cqr = cqr
 
     def load_calibration(self, path: Path) -> bool:
         """Load persisted calibration parameters from JSON artifact."""
@@ -93,18 +80,6 @@ class ScoringEnsemble:
                 pos: [round(w, 4) for w in weights] for pos, weights in self.positional_blend_weights.items()
             }
         return res
-
-    def save_calibration(self, path: Path | None = None) -> Path:
-        """Persist calibration quantiles and blend weights to disk. Does NOT default to production path."""
-        if path is None:
-            target_path = Path("scratch") / "calibration.json"
-        else:
-            target_path = path
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        data = self.get_calibration_dict()
-        with open(target_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        return target_path
 
     def calibrate(
         self,
@@ -153,8 +128,8 @@ class ScoringEnsemble:
         Y_val: pd.DataFrame,
     ) -> tuple[float, float, float]:
         """
-        Fit optimal blending weights w = (w_ml, w_recent, w_season) on validation set.
-        Updates self.blend_weights in-place.
+        Fit optimal blending weights w = (w_ml, w_recent, w_season) on validation set by squared error:
+        xP is a mean, and MAE would pull it towards the (zero-heavy) median. Updates self.blend_weights in-place.
         """
         from scipy.optimize import minimize
 
@@ -169,12 +144,12 @@ class ScoringEnsemble:
         base_sea = model_evaluator.compute_season_avg_baseline(X_val)
         actual = Y_val["target_points"].values
 
-        def _mae_loss(w: np.ndarray) -> float:
+        def _mse_loss(w: np.ndarray) -> float:
             pred = w[0] * raw_preds + w[1] * base_rec + w[2] * base_sea
-            return float(mean_absolute_error(actual, pred))
+            return float(np.mean((actual - pred) ** 2))
 
         res = minimize(
-            _mae_loss,
+            _mse_loss,
             [0.72, 0.04, 0.24],
             bounds=[(0, 1), (0, 1), (0, 1)],
             constraints={"type": "eq", "fun": lambda w: sum(w) - 1.0},
@@ -203,10 +178,12 @@ class ScoringEnsemble:
             valid = np.isfinite(start)
             p_starts = np.where(valid, np.minimum(p_starts, start * cop_scale), p_starts)
             p_min60 = np.minimum(p_min60, p_starts)
+        limit_ratio: np.ndarray | float = 1.0
         if "news_minutes_limit" in X:
             limit = X["news_minutes_limit"].to_numpy(dtype=float)
             valid = np.isfinite(limit)
             ratio = np.where(valid, np.minimum(1.0, limit / np.maximum(exp_mins, 1e-9)), 1.0)
+            limit_ratio = ratio
             exp_mins = exp_mins * ratio
             p_min60 = np.where(valid & (limit < 60), 0.0, p_min60)
             # Scale unconditional point components once for explicit minutes restriction.
@@ -221,6 +198,7 @@ class ScoringEnsemble:
                 "expected_penalties_saved",
                 "expected_own_goals",
                 "expected_penalties_missed",
+                "p_defcon",
             ):
                 if key in components:
                     components[key] = components[key] * ratio
@@ -255,7 +233,7 @@ class ScoringEnsemble:
         # 3. Assists points
         exp_assist_pts = components["expected_assists"] * float(ASSIST_POINTS) * cop_scale
 
-        # 4. Clean sheet points (requires >= 60 mins)
+        # 4. Clean sheet points (requires >= 60 mins). p_clean_sheet is trained conditional on 60+ minutes.
         cs_pts_rate = (
             pos_gkp * float(CLEAN_SHEET_POINTS["GKP"])
             + pos_def * float(CLEAN_SHEET_POINTS["DEF"])
@@ -277,7 +255,7 @@ class ScoringEnsemble:
         exp_saves = components["expected_saves"]
         exp_saves_pts = np.array([expected_floor_div(float(s), 3) for s in exp_saves]) * pos_gkp * cop_scale
 
-        # 7. Defensive Contribution (DefCon +2 for DEF, MID, FWD)
+        # 7. Defensive Contribution (DefCon +2 for DEF, MID, FWD). p_defcon is trained conditional on playing.
         defcon_eligible = 1.0 - pos_gkp
         exp_defcon_pts = components["p_defcon"] * p_play * float(DEFCON_POINTS) * defcon_eligible
 
@@ -300,7 +278,7 @@ class ScoringEnsemble:
             exp_og = 0.5 * og_rate + 0.5 * pos_og_prior
         else:
             exp_og = pos_def * 0.008 + pos_gkp * 0.003 + pos_mid * 0.002 + pos_fwd * 0.001
-        exp_og_deduction = exp_og * float(abs(OWN_GOAL_POINTS)) * p_play * cop_scale
+        exp_og_deduction = exp_og * float(abs(OWN_GOAL_POINTS)) * p_play  # p_play already carries availability
 
         # 12. Penalties missed (-2 pts per penalty missed, WI-1.2)
         # Expectation = P(takes penalty) * P(penalty awarded) * miss_rate, shrunk to positional prior
@@ -313,8 +291,8 @@ class ScoringEnsemble:
             )
             exp_pm = np.where(pm_rate > 0, 0.6 * pm_rate + 0.4 * taker_prior, taker_prior * 0.5)
         else:
-            exp_pm = (pos_fwd * 0.005 + pos_mid * 0.003) * p_play
-        exp_pen_miss_deduction = exp_pm * float(abs(PENALTY_MISSED_POINTS)) * p_play * cop_scale
+            exp_pm = pos_fwd * 0.005 + pos_mid * 0.003
+        exp_pen_miss_deduction = exp_pm * float(abs(PENALTY_MISSED_POINTS)) * p_play
 
         # Zero out components when player does not participate
         zero_mask = (p_play <= 1e-4) | (exp_mins <= 1e-4)
@@ -359,8 +337,11 @@ class ScoringEnsemble:
         ):
             from fpl_oracle.ml.eval import model_evaluator
 
-            base_recent = np.asarray(model_evaluator.compute_baseline_projections(X))
-            base_season = np.asarray(model_evaluator.compute_season_avg_baseline(X))
+            # The baselines know nothing about this week's availability: scale them exactly like the components
+            # (chance of playing, then any news minutes limit), otherwise a doubtful player keeps full baseline xP.
+            availability = cop_scale * limit_ratio
+            base_recent = np.asarray(model_evaluator.compute_baseline_projections(X)) * availability
+            base_season = np.asarray(model_evaluator.compute_season_avg_baseline(X)) * availability
 
             if self.positional_blend_weights is not None:
                 blended_xP = np.copy(raw_xP)
@@ -392,50 +373,23 @@ class ScoringEnsemble:
         skew_adj = np.where(xP > 3.0, np.minimum(0.6, (exp_goal_pts + exp_assist_pts + exp_bonus_pts) * 0.25), 0.0)
         p50 = np.where(zero_mask, 0.0, np.maximum(0.0, xP - skew_adj))
 
-        # Check if caller explicitly injected custom bucketed quantiles (e.g. in synthetic tests)
-        if self.bucket_quantiles:
-            p10_vals = np.zeros(n)
-            p90_vals = np.zeros(n)
-            for i in range(n):
-                if zero_mask[i]:
-                    p10_vals[i] = 0.0
-                    p90_vals[i] = 0.0
-                    continue
-                pos = "GKP" if pos_gkp[i] > 0 else ("DEF" if pos_def[i] > 0 else ("MID" if pos_mid[i] > 0 else "FWD"))
-                m_val = exp_mins[i]
-                m_cat = "low" if m_val < 30 else ("mid" if m_val < 65 else "high")
-                b_key = f"{pos}_{m_cat}"
-                if b_key in self.bucket_quantiles:
-                    q10 = self.bucket_quantiles[b_key]["q10"]
-                    q90 = self.bucket_quantiles[b_key]["q90"]
-                    p10_vals[i] = max(0.0, xP[i] + q10)
-                    p90_vals[i] = max(p50[i] + 1.0, xP[i] + q90)
-                else:
-                    p10_vals[i] = max(0.0, xP[i] + self.calibrated_z10 * max(0.5, sigma[i]))
-                    p90_vals[i] = max(p50[i] + 1.0, xP[i] + self.calibrated_z90 * max(0.5, sigma[i]))
-            p10 = p10_vals
-            p90 = p90_vals
-        # Otherwise use calibrated CQR model
-        elif self.cqr is not None and getattr(self.cqr, "is_calibrated", False):
-            pos_labels = np.where(pos_gkp > 0, "GKP", np.where(pos_def > 0, "DEF", np.where(pos_mid > 0, "MID", "FWD")))
-            p10, p90, _ = self.cqr.predict_quantiles(
-                X=X,
-                pos_labels=pos_labels,
-                xp=xP,
-                p_play=p_play,
-            )
-        else:
-            # Fallback to standard calibrated empirical residual factors
-            p10 = np.where(
-                zero_mask,
-                0.0,
-                np.maximum(0.0, xP + self.calibrated_z10 * np.maximum(0.5, sigma)),
-            )
-            p90 = np.where(
-                zero_mask,
-                0.0,
-                np.maximum(p50 + 1.0, xP + self.calibrated_z90 * np.maximum(0.5, sigma)),
-            )
+        # Position x expected-minutes bucket residual quantiles (fitted in calibrate() and gated by the rolling
+        # origin coverage check); buckets without enough calibration rows use the standardized-residual factors.
+        z10_off = self.calibrated_z10 * np.maximum(0.5, sigma)
+        z90_off = self.calibrated_z90 * np.maximum(0.5, sigma)
+        pos_idx = np.select([pos_gkp > 0, pos_def > 0, pos_mid > 0], [0, 1, 2], 3)
+        mins_idx = np.select([exp_mins < 30, exp_mins < 65], [0, 1], 2)
+        q10_table = np.full((4, 3), np.nan)
+        q90_table = np.full((4, 3), np.nan)
+        for i, pos in enumerate(("GKP", "DEF", "MID", "FWD")):
+            for j, cat in enumerate(("low", "mid", "high")):
+                bucket = self.bucket_quantiles.get(f"{pos}_{cat}")
+                if bucket:
+                    q10_table[i, j], q90_table[i, j] = bucket["q10"], bucket["q90"]
+        q10_off = np.where(np.isnan(q10_table[pos_idx, mins_idx]), z10_off, q10_table[pos_idx, mins_idx])
+        q90_off = np.where(np.isnan(q90_table[pos_idx, mins_idx]), z90_off, q90_table[pos_idx, mins_idx])
+        p10 = np.where(zero_mask, 0.0, np.maximum(0.0, xP + q10_off))
+        p90 = np.where(zero_mask, 0.0, np.maximum(p50 + 1.0, xP + q90_off))
 
         variance = sigma**2
 
@@ -500,61 +454,6 @@ class ScoringEnsemble:
         )
 
         return res_df
-
-    @staticmethod
-    def verify_decomposition(df: pd.DataFrame) -> pd.Series:
-        """
-        Reconstructs unblended expected points from constituent additive and deductive components.
-        Matches raw_expected_points exactly (and expected_points when unblended).
-        """
-        return np.round(
-            df.get("exp_appearance", 0.0)
-            + df.get("exp_goals_pts", 0.0)
-            + df.get("exp_assists_pts", 0.0)
-            + df.get("exp_cs_pts", 0.0)
-            + df.get("exp_defcon_pts", 0.0)
-            + df.get("exp_bonus_pts", 0.0)
-            + df.get("exp_saves_pts", 0.0)
-            + df.get("exp_pen_saves_pts", 0.0)
-            - df.get("exp_gc_deduction", 0.0)
-            - df.get("exp_card_deduction", 0.0)
-            - df.get("exp_og_deduction", 0.0)
-            - df.get("exp_pen_miss_deduction", 0.0),
-            2,
-        )
-
-    def fit_positional_stacking_weights(
-        self,
-        raw_xp: np.ndarray,
-        base_recent: np.ndarray,
-        base_season: np.ndarray,
-        targets: np.ndarray,
-        positions: np.ndarray,
-    ) -> dict[str, tuple[float, float, float]]:
-        """
-        Fits non-negative least squares stacking weights per position (WI-3.10)
-        constrained to sum to 1 on out-of-fold predictions.
-        """
-        from scipy.optimize import nnls
-
-        weights: dict[str, tuple[float, float, float]] = {}
-        for pos in ("GKP", "DEF", "MID", "FWD"):
-            mask = positions == pos
-            if not np.any(mask) or len(targets[mask]) < 10:
-                weights[pos] = (0.72, 0.04, 0.24)
-                continue
-            A = np.column_stack([raw_xp[mask], base_recent[mask], base_season[mask]])
-            b = targets[mask]
-            w, _ = nnls(A, b)
-            s = float(np.sum(w))
-            if s > 0.0:
-                w_norm = w / s
-                weights[pos] = (float(round(w_norm[0], 4)), float(round(w_norm[1], 4)), float(round(w_norm[2], 4)))
-            else:
-                weights[pos] = (0.72, 0.04, 0.24)
-
-        self.positional_blend_weights = weights
-        return weights
 
 
 scoring_ensemble = ScoringEnsemble()

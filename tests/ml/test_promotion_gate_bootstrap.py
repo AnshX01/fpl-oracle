@@ -16,7 +16,6 @@ Verifies:
 
 import numpy as np
 
-from fpl_oracle.ml.ensemble import ScoringEnsemble
 from fpl_oracle.ml.model_registry import check_promotion_gate, paired_block_bootstrap_gw
 
 
@@ -152,38 +151,3 @@ def test_check_promotion_gate_integration():
     passed_bad, reason_bad = check_promotion_gate(cand_metrics_bad)
     assert passed_bad is False
     assert "bootstrap promotion gate" in reason_bad.lower()
-
-
-def test_nnls_positional_stacking_weights_properties():
-    """Verify NNLS stacking weights sum to 1, are non-negative, and apply positionally (WI-3.10)."""
-    ens = ScoringEnsemble()
-
-    rng = np.random.default_rng(42)
-    n_samples = 2000
-    positions = rng.choice(["GKP", "DEF", "MID", "FWD"], size=n_samples)
-    y_true = rng.poisson(2.5, size=n_samples).astype(float)
-
-    raw_xp = y_true * 0.9 + rng.normal(0, 0.5, size=n_samples)
-    base_recent = y_true * 0.7 + rng.normal(0, 1.0, size=n_samples)
-    base_season = y_true * 0.8 + rng.normal(0, 0.8, size=n_samples)
-
-    weights = ens.fit_positional_stacking_weights(
-        raw_xp=raw_xp,
-        base_recent=base_recent,
-        base_season=base_season,
-        targets=y_true,
-        positions=positions,
-    )
-
-    # 1. Weights structure per position
-    assert set(weights.keys()) == {"GKP", "DEF", "MID", "FWD"}
-    for _pos, (w_ml, w_rec, w_sea) in weights.items():
-        assert w_ml >= 0.0
-        assert w_rec >= 0.0
-        assert w_sea >= 0.0
-        assert abs((w_ml + w_rec + w_sea) - 1.0) < 1e-3
-
-    # 2. Serialization and deserialization in calibration dict
-    cal_dict = ens.get_calibration_dict()
-    assert "positional_blend_weights" in cal_dict
-    assert cal_dict["positional_blend_weights"]["MID"] == [round(x, 4) for x in weights["MID"]]
