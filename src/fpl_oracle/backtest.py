@@ -149,9 +149,13 @@ class BacktestHarness:
 
             # Select lineup and captain
             if "starters" in oracle_squad_res and len(oracle_squad_res["starters"]) == 11:
-                oracle_lineup = lineup_optimizer.select_lineup_and_captain(oracle_squad_res["squad"])
+                oracle_lineup = lineup_optimizer.select_lineup_and_captain(
+                    oracle_squad_res["squad"], simulate_captaincy=False
+                )
             else:
-                oracle_lineup = lineup_optimizer.select_lineup_and_captain(oracle_squad_res["squad"])
+                oracle_lineup = lineup_optimizer.select_lineup_and_captain(
+                    oracle_squad_res["squad"], simulate_captaincy=False
+                )
 
             oracle_starters = oracle_lineup["starters"]["element"].tolist()
             oracle_cap = oracle_lineup["captain"]["element"]
@@ -186,7 +190,7 @@ class BacktestHarness:
                     assert_no_future_data(user_squad_r, r)
                     user_squad_r["web_name"] = user_squad_r["name"]
                     # Lineup chosen strictly by pre-deadline expected_points
-                    user_lineup = lineup_optimizer.select_lineup_and_captain(user_squad_r)
+                    user_lineup = lineup_optimizer.select_lineup_and_captain(user_squad_r, simulate_captaincy=False)
                     u_starters = user_lineup["starters"]["element"].tolist()
                     u_cap = user_lineup["captain"]["element"]
                     for elem_id in u_starters:
@@ -199,7 +203,9 @@ class BacktestHarness:
             # Strategy 3: Naive Baseline (Picks using raw unweighted 3-match rolling form)
             actual_r["naive_form"] = X_r["roll_points_3"].values
             baseline_squad_res = squad_optimizer.solve_best_squad(actual_r, budget=budget, metric_col="naive_form")
-            baseline_lineup = lineup_optimizer.select_lineup_and_captain(baseline_squad_res["squad"])
+            baseline_lineup = lineup_optimizer.select_lineup_and_captain(
+                baseline_squad_res["squad"], simulate_captaincy=False
+            )
             base_starters = baseline_lineup["starters"]["element"].tolist()
             base_cap = baseline_lineup["captain"]["element"]
 
@@ -217,7 +223,9 @@ class BacktestHarness:
 
             # Strategy 5: Hindsight Optimal (Upper ceiling)
             hindsight_res = squad_optimizer.solve_best_squad(actual_r, budget=budget, metric_col="total_points")
-            hindsight_lineup = lineup_optimizer.select_lineup_and_captain(hindsight_res["squad"])
+            hindsight_lineup = lineup_optimizer.select_lineup_and_captain(
+                hindsight_res["squad"], simulate_captaincy=False
+            )
             hind_starters = hindsight_lineup["starters"]["element"].tolist()
             hind_cap = hindsight_lineup["captain"]["element"]
             actual_pts_hind = 0.0

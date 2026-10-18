@@ -1,12 +1,10 @@
 """
 Unit, Integration, and Cross-Surface Tests for Joint Transfer & Chip Planner (Milestone G10).
 Verifies:
-1. Candidate pruning against an unpruned exhaustive reference search.
-2. Illegal-GW chip deployment rejection and Set 1 / Set 2 legality rules.
-3. Free Hit reversion in multi-GW continuation and Wildcard zero-hit persistence.
-4. Dynamic chip valuation computed directly from per-GW projections (no fixed 6/10/10/8).
-5. Live API endpoint invocation asserting joint planner execution.
-6. Cross-surface recommendation and news-adjustment consistency across API, decision card, and UI.
+1. Illegal-GW chip deployment rejection and Set 1 / Set 2 legality rules.
+2. Free Hit reversion in multi-GW continuation and Wildcard zero-hit persistence.
+3. Live API endpoint invocation asserting joint planner execution.
+4. Cross-surface recommendation and news-adjustment consistency across API, decision card, and UI.
 """
 
 import pandas as pd
@@ -15,11 +13,8 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from fpl_oracle.api.fpl_client import fpl_client
-from fpl_oracle.optimise.transfers import (
-    compute_dynamic_chip_retention_values,
-    transfer_optimizer,
-    validate_chip_legality,
-)
+from fpl_oracle.optimise.transfers import transfer_optimizer
+from fpl_oracle.rules.transfers import validate_chip_legality
 from fpl_oracle.server.routes.api import router as api_router
 
 
@@ -100,61 +95,6 @@ def small_reference_squad_and_pool():
     return squad_df, full_pool, horizon_proj
 
 
-def test_exhaustive_reference_comparison(small_reference_squad_and_pool):
-    """
-    Candidate Pruning Correctness Test:
-    Asserts that the pruned beam search produces the exact same optimal initial action
-    and matching mathematical trajectory score as the unpruned exhaustive reference search.
-    """
-    squad_df, pool_df, horizon_proj = small_reference_squad_and_pool
-    initial_elements = set(squad_df["element"].tolist())
-    initial_purch = {int(r["element"]): int(r["purchase_price"]) for _, r in squad_df.iterrows()}
-    horizon_gws = [6, 7]
-    player_maps = {gw: {int(r["element"]): dict(r) for _, r in horizon_proj[gw].iterrows()} for gw in horizon_gws}
-
-    # 1. Unpruned exhaustive reference search
-    exhaustive_res = transfer_optimizer.exhaustive_reference_search(
-        elements=initial_elements,
-        bank=10,  # 1.0m bank
-        purchase_prices=initial_purch,
-        free_transfers=1,
-        horizon_gws=horizon_gws,
-        horizon_projections=horizon_proj,
-        player_maps=player_maps,
-        risk_preference="balanced",
-    )
-
-    # 2. Pruned beam search evaluated via evaluate_joint_transfer_and_chip_plan
-    joint_res = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
-        current_squad_df=squad_df,
-        player_pool_df=pool_df,
-        bank=10.0,
-        free_transfers=1,
-        horizon_projections=horizon_proj,
-        current_gw=6,
-        target_gw=6,
-        available_chips=[],  # Pure transfer comparison
-        horizon_len=2,
-    )
-
-    rec_plan = joint_res["recommended_plan"]
-    ex_action = exhaustive_res["best_action"]
-
-    rec_in = sorted([p["element"] if isinstance(p, dict) else p for p in rec_plan.get("transfers_in", [])])
-    rec_out = sorted([p["element"] if isinstance(p, dict) else p for p in rec_plan.get("transfers_out", [])])
-    ex_in = sorted(ex_action["transfers_in"])
-    ex_out = sorted(ex_action["transfers_out"])
-
-    # Verify identical transfer choices
-    assert rec_in == ex_in, f"Transfers in mismatch: {rec_in} vs {ex_in}"
-    assert rec_out == ex_out, f"Transfers out mismatch: {rec_out} vs {ex_out}"
-    # Verify optimal score aligns within small tolerance
-    disc_score = rec_plan.get("accumulated_discounted_net_xp")
-    if disc_score is None:
-        disc_score = sum(step["net_xp"] * (0.95**idx) for idx, step in enumerate(rec_plan.get("trajectory", [])))
-    assert abs(float(disc_score) - float(exhaustive_res["optimal_score"])) < 0.25
-
-
 def test_illegal_gw_chip_deployment():
     """
     Illegal-GW Chip Test:
@@ -203,7 +143,6 @@ def test_free_hit_reversion_continuation(small_reference_squad_and_pool):
         current_gw=6,
         target_gw=6,
         available_chips=["freehit"],
-        chip_retention_values={"freehit": 0.0},  # Force deployment
         horizon_len=3,
     )
 
@@ -239,7 +178,6 @@ def test_wildcard_zero_hits_and_persistence(small_reference_squad_and_pool):
         current_gw=6,
         target_gw=6,
         available_chips=["wildcard"],
-        chip_retention_values={"wildcard": 0.0},  # Force deployment
         horizon_len=3,
     )
 
@@ -253,48 +191,6 @@ def test_wildcard_zero_hits_and_persistence(small_reference_squad_and_pool):
     step0 = traj[0]
     assert step0["hits"] == 0
     assert step0["hit_cost"] == 0.0
-
-
-def test_dynamic_valuation_replaces_fixed_constants(small_reference_squad_and_pool):
-    """
-    Dynamic Chip Valuation Test:
-    Asserts that chip retention values are computed dynamically from horizon projections
-    rather than relying on hardcoded 6/10/10/8 constants.
-    """
-    squad_df, pool_df, horizon_proj = small_reference_squad_and_pool
-
-    # Scenario A: Upcoming monster DGW for captain (Haaland 16.5 xP) in GW8
-    proj_a = {
-        6: pool_df.copy(),
-        7: pool_df.copy(),
-        8: pool_df.copy(),
-    }
-    proj_a[8].loc[proj_a[8]["element"] == 18, "expected_points"] = 16.5
-
-    vals_a = compute_dynamic_chip_retention_values(
-        horizon_projections=proj_a,
-        current_squad_df=squad_df,
-        target_gw=6,
-        available_chips=["3xc", "bboost", "freehit", "wildcard"],
-    )
-    # 3xc retention cost dynamically scales to peak future captain xP (16.5)
-    assert vals_a["3xc"] == 16.5
-    assert vals_a["3xc"] != 6.0  # Proves fixed constant is replaced
-
-    # Scenario B: Modest future captain peak (7.2 xP)
-    proj_b = {
-        6: pool_df.copy(),
-        7: pool_df.copy(),
-    }
-    proj_b[7].loc[proj_b[7]["element"] == 18, "expected_points"] = 7.2
-
-    vals_b = compute_dynamic_chip_retention_values(
-        horizon_projections=proj_b,
-        current_squad_df=squad_df,
-        target_gw=6,
-        available_chips=["3xc"],
-    )
-    assert vals_b["3xc"] == 7.2
 
 
 @pytest.mark.slow

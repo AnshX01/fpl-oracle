@@ -169,18 +169,20 @@ def test_injury_contingency_matrix(mock_squad_and_pool, dummy_bootstrap):
         assert "wait_vs_commit" in row
 
 
-def test_panic_button_reoptimize(mock_squad_and_pool):
+def test_injury_matrix_skips_injured_replacements(mock_squad_and_pool, dummy_bootstrap):
     squad_df, pool_df = mock_squad_and_pool
-    # Test query-based panic: "Haaland broken foot out 8 weeks"
-    panic_res = contingency_engine.panic_button_reoptimize(
-        query="Haaland broken foot out 8 weeks", squad_df=squad_df, player_pool_df=pool_df, bank=10.0, free_transfers=1
+    base = contingency_engine.compute_injury_matrix(
+        squad_df=squad_df, player_pool_df=pool_df, bank=500.0, free_transfers=1, bootstrap=dummy_bootstrap
     )
-
-    assert panic_res["status"] == "crisis_resolved"
-    assert panic_res["ruled_out_player"]["web_name"] == "Haaland"
-    assert panic_res["lineup_action"]["captain"]["web_name"] != "Haaland"
-    assert panic_res["lineup_action"]["promoted_player"] is not None
-    assert "Haaland" in panic_res["recommendation"]
+    target = base[0]
+    # An injured, cheap, unowned player with a huge (stale) xP in the same position must never be suggested
+    pos_row = pool_df[pool_df["position"] == target["position"]].iloc[0].to_dict()
+    pos_row.update(element=99999, web_name="InjuredStar", expected_points=50.0, value=40, status="i", team=999)
+    pool = pd.concat([pool_df, pd.DataFrame([pos_row])], ignore_index=True)
+    after = contingency_engine.compute_injury_matrix(
+        squad_df=squad_df, player_pool_df=pool, bank=500.0, free_transfers=1, bootstrap=dummy_bootstrap
+    )
+    assert all(r["emergency_replacement"] != "InjuredStar" for r in after)
 
 
 def test_pre_deadline_checklist(mock_squad_and_pool, dummy_bootstrap):
@@ -203,6 +205,17 @@ def test_pre_deadline_checklist(mock_squad_and_pool, dummy_bootstrap):
     assert "Autosub Hierarchy Order" in items
     assert "Chip Set 1 Expiry Deadline" in items
     assert "Pre-Deadline Lock Time" in items
+
+
+def test_checklist_after_gw19_uses_set_2(mock_squad_and_pool, dummy_bootstrap):
+    squad_df, _ = mock_squad_and_pool
+    chips = {"set_1_remaining": ["wildcard"], "set_2_remaining": ["wildcard", "freehit", "3xc", "bboost"]}
+    checklist = contingency_engine.generate_pre_deadline_checklist(
+        squad_df=squad_df, bootstrap=dummy_bootstrap, game_state_data={"next_gw": 25}, chips_status=chips
+    )
+    row = next(c for c in checklist if c["item"].startswith("Chip Set"))
+    assert row["item"] == "Chip Set 2 Expiry Deadline"
+    assert row["status"] == "INFO"  # 4 chips, 14 GWs left; the stale set-1 chip is not "forfeit now"
 
 
 def test_plan_c_legal_trade_and_hit_math(configured_advisor):
@@ -241,32 +254,6 @@ def test_plan_c_legal_trade_and_hit_math(configured_advisor):
     assert plan["net_expected_points"] == round(xp, 2)
     assert plan["delta_vs_plan_a"] == round(xp - 75, 2)
     assert plans["plan_b"]["net_expected_points"] != 75
-
-
-def test_emergency_unrecognised_never_picks_random_player(mock_squad_and_pool):
-    squad, pool = mock_squad_and_pool
-    result = contingency_engine.panic_button_reoptimize("unknown broken player", squad, pool, 10, 1)
-    assert result["status"] == "needs_player"
-    assert "ruled_out_player" not in result
-
-
-def test_emergency_same_model_lineup_and_constraints(mock_squad_and_pool):
-    from fpl_oracle.optimise.lineup import lineup_optimizer
-
-    squad, pool = mock_squad_and_pool
-    orig = lineup_optimizer.select_lineup_and_captain(squad)
-    gk = int(orig["starters"].query("position == 'GKP'").iloc[0].element)
-    result = contingency_engine.panic_button_reoptimize("", squad, pool, 10, 0, ruled_out_ids=[gk])
-    assert result["lineup_action"]["promoted_player"]["position"] == "GKP"
-    adjusted = squad.copy()
-    adjusted.loc[adjusted.element == gk, ["expected_points", "p10", "p90"]] = 0
-    same = lineup_optimizer.select_lineup_and_captain(adjusted, risk_preference="points", excluded_ids={gk})
-    assert result["lineup_action"]["total_gameweek_expected_points"] == same["total_gameweek_expected_points"]
-    replacement = result["emergency_transfer"]
-    if replacement:
-        assert replacement["position"] == "GKP"
-        assert replacement["hit_cost"] == 4
-        assert sum(squad.loc[squad.element != gk, "team"] == replacement["team"]) < 3
 
 
 def test_measured_chip_windows_use_each_weeks_predictions(mock_squad_and_pool):

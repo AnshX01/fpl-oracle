@@ -24,11 +24,15 @@ class FixtureCalendar:
         team_gw_fixtures: dict[tuple[int, int], list[Fixture]] = defaultdict(list)
         gw_fixtures_count: dict[int, int] = defaultdict(int)
 
+        unscheduled_teams: set[int] = set()
         for f in fixtures:
             if f.event is not None:
                 team_gw_fixtures[(f.event, f.team_h)].append(f)
                 team_gw_fixtures[(f.event, f.team_a)].append(f)
                 gw_fixtures_count[f.event] += 1
+            else:
+                # Postponed / not yet rescheduled: that team's missing week may only be a placeholder
+                unscheduled_teams.update((f.team_h, f.team_a))
 
         blank_gameweeks = []
         double_gameweeks = []
@@ -37,6 +41,7 @@ class FixtureCalendar:
         for gw in range(1, 39):
             dgw_teams = []
             bgw_teams = []
+            uncertain_teams = []
 
             for t_id in team_names:
                 count = len(team_gw_fixtures[(gw, t_id)])
@@ -50,7 +55,14 @@ class FixtureCalendar:
                         }
                     )
                 elif count == 0:
-                    bgw_teams.append({"team_id": t_id, "team_name": team_names[t_id], "team_short": team_short[t_id]})
+                    # A team with an unscheduled fixture may only be waiting for its date, so it is
+                    # not counted as a blank for chip timing (planner reads blank_gameweeks)
+                    if t_id in unscheduled_teams:
+                        uncertain_teams.append(t_id)
+                    else:
+                        bgw_teams.append(
+                            {"team_id": t_id, "team_name": team_names[t_id], "team_short": team_short[t_id]}
+                        )
 
             if dgw_teams:
                 double_gameweeks.append(
@@ -67,6 +79,7 @@ class FixtureCalendar:
                         "gameweek": gw,
                         "type": "BLANK_GAMEWEEK",
                         "blanking_teams": bgw_teams,
+                        "uncertain_teams": uncertain_teams,
                         "description": f"Blank Gameweek {gw}: {len(bgw_teams)} teams have no fixture.",
                     }
                 )

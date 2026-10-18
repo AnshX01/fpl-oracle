@@ -4,7 +4,8 @@ import pandas as pd
 import pytest
 
 from fpl_oracle.optimise.sequential import search_sequences
-from fpl_oracle.optimise.transfers import TransferOptimizer, _fast_eval_squad_full
+from fpl_oracle.optimise.transfers import TransferOptimizer
+from fpl_oracle.optimise.transfers_beam import _fast_eval_squad_full
 
 
 def fixture_data():

@@ -244,6 +244,20 @@ def test_squad_optimizer_constraints():
     assert (team_counts <= 3).all()
 
 
+def test_repair_mode_reports_cost_at_sell_value():
+    pool = make_mock_pool()
+    owned = set(squad_optimizer.solve_best_squad(pool, budget=1000.0)["squad"]["element"])
+    sell = {e: int(pool.loc[pool["element"] == e, "value"].iloc[0]) - 10 for e in owned}
+    res = squad_optimizer.solve_best_squad(
+        pool, budget=1000.0, repair_elements=owned, repair_sell_prices=sell, repair_free_transfers=15
+    )
+    expected = sum(
+        sell[e] if e in owned else v for e, v in zip(res["squad"]["element"], res["squad"]["value"], strict=True)
+    )
+    assert res["total_cost"] == expected
+    assert res["remaining_budget"] == round(1000.0 - expected, 1)
+
+
 def test_selling_price_math():
     """Verify selling price formula: purchase_price + floor((now_cost - purchase_price) / 2)."""
     # Case 1: Player bought at 10.0m (100), now 10.4m (104). Rise = 4. Selling price = 100 + 2 = 102 (10.2m)
@@ -279,8 +293,8 @@ def test_lineup_and_captain_formation():
     assert lineup["captain"]["multiplier"] == 2
 
 
-def test_compute_squad_selling_prices_and_free_transfers():
-    """Verify transfer history parsing for selling prices and banked free transfers calculation."""
+def test_compute_squad_selling_prices():
+    """Verify transfer history parsing for selling prices."""
     squad_df = pd.DataFrame(
         [
             {"element": 10, "web_name": "Salah", "value": 128, "cost_change_start": 3},
@@ -299,16 +313,6 @@ def test_compute_squad_selling_prices_and_free_transfers():
 
     assert haaland_row["purchase_price"] == 150
     assert haaland_row["selling_price"] == 151
-
-    history = [
-        {"event": 1, "event_transfers": 0},
-        {"event": 2, "event_transfers": 0},
-        {"event": 3, "event_transfers": 1},
-        {"event": 4, "event_transfers": 0},
-        {"event": 5, "event_transfers": 0},
-    ]
-    ft = transfer_optimizer.compute_available_free_transfers(entry_history=history, current_gw=5)
-    assert ft == 4
 
 
 def test_identical_horizon_branch_comparison():

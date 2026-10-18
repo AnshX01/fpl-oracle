@@ -27,8 +27,8 @@ class SquadOptimizer:
         locked_out_ids: list[int] | None = None,
         excluded_team_ids: list[int] | None = None,
         bench_weight: float = 0.05,
-        captain_mean_only: bool = False,
-        require_talisman: bool = True,
+        captain_mean_only: bool = True,
+        require_talisman: bool = False,
         repair_elements: set[int] | None = None,
         repair_sell_prices: dict[int, int] | None = None,
         repair_free_transfers: int = 0,
@@ -180,7 +180,16 @@ class SquadOptimizer:
         selected_indices = [idx for idx in df.index if x[idx].varValue > 0.5]
         selected_df = df.loc[selected_indices].copy()
 
-        total_cost = float(selected_df["value"].sum())
+        if repair_elements is None:
+            total_cost = float(selected_df["value"].sum())
+        else:  # retained players cost their sell value, new ones their market price
+            costs = repair_sell_prices or {}
+            total_cost = float(
+                sum(
+                    costs[int(e)] if int(e) in repair_elements else v
+                    for e, v in zip(selected_df["element"], selected_df["value"], strict=True)
+                )
+            )
         total_xp = float(selected_df[metric_col].sum())
 
         result = {

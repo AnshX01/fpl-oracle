@@ -20,7 +20,7 @@ class PriceChangePredictor:
         Analyze all elements for price change likelihood tonight.
         Returns sorted list of players near price change thresholds.
         """
-        predictions = []
+        predictions: list[dict[str, Any]] = []
 
         for elem in bootstrap.elements:
             # 1. API native projections if available
@@ -84,7 +84,7 @@ class PriceChangePredictor:
             )
 
         # Sort by urgency
-        predictions.sort(key=lambda x: abs(float(str(x["urgency_score"]))), reverse=True)
+        predictions.sort(key=lambda x: abs(x["urgency_score"]), reverse=True)
         return predictions
 
 

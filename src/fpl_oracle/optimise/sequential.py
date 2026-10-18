@@ -30,7 +30,7 @@ def evaluate_lineup(elements, player_map, risk="balanced", chip=None):
 
 
 def _evaluate_lineup_uncached(elements, player_map, risk="balanced", chip=None):
-    from fpl_oracle.optimise.transfers import VALID_FORMATIONS
+    from fpl_oracle.optimise.transfers_beam import VALID_FORMATIONS
 
     players = [player_map[e] for e in sorted(elements)]
     groups = {
@@ -56,14 +56,12 @@ def _evaluate_lineup_uncached(elements, player_map, risk="balanced", chip=None):
             if len(chosen) != 11 or not any(r["element"] == cap["element"] for r in chosen):
                 continue
             xp = float(cap["expected_points"])
-            if risk == "points":
-                score = xp
-            elif risk == "conservative":
+            if risk == "conservative":
                 score = 0.6 * xp + 0.4 * float(cap.get("p10", xp * 0.4))
             elif risk == "aggressive":
                 score = 0.4 * xp + 0.6 * float(cap.get("p90", xp * 1.8))
-            else:
-                score = 0.7 * xp + 0.3 * float(cap.get("p90", xp * 1.8))
+            else:  # balanced == lineup.py pure-xP captain
+                score = xp
             starter_xp = sum(float(r["expected_points"]) for r in chosen)
             objective = (
                 sum(float(r["expected_points"]) for r in players) if chip == "bboost" else starter_xp
@@ -91,7 +89,6 @@ def search_sequences(
     locked_out,
     excluded,
     risk="balanced",
-    terminal_costs=None,
     beam_width=32,
     chips_by_set=None,
     previous_chip=None,
@@ -106,7 +103,6 @@ def search_sequences(
     forced_chip_schedule=None,
 ):
 
-    costs = terminal_costs or {}
     states = [
         dict(
             elements=set(elements),
@@ -405,7 +401,7 @@ def search_sequences(
                         remaining=remaining - {chip} if chip else remaining,
                         history=state["history"] + [record],
                         first_chip=first_chip,
-                        score=state["score"] + optimizer.discount_factor**step * (net - costs.get(chip, 0)),
+                        score=state["score"] + optimizer.discount_factor**step * net,
                     )
                 )
         # A future-ranked player must survive the current-week beam too.
@@ -421,7 +417,7 @@ def search_sequences(
             for j, later in enumerate(gameweeks[step + 1 :], start=step + 1):
                 try:
                     if risk == "points":
-                        from fpl_oracle.optimise.transfers import VALID_FORMATIONS
+                        from fpl_oracle.optimise.transfers_beam import VALID_FORMATIONS
 
                         groups = {
                             pos: sorted(
