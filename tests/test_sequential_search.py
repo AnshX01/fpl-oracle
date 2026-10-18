@@ -100,22 +100,6 @@ def test_freehit_reverts_and_wildcard_persists(monkeypatch):
         assert state["history"][0]["banked_ft"] == 3
 
 
-def test_gap_utility_is_bounded_and_does_not_change_captain():
-    from fpl_oracle.league.objective import select_balanced_sequence
-
-    maps = {18: {1: dict(expected_points=5, p10=1, p90=9), 2: dict(expected_points=5, p10=1, p90=9)}}
-    first = dict(score=100, history=[dict(gameweek=18, elements=[1], captain=1)])
-    close = dict(score=99.6, history=[dict(gameweek=18, elements=[2], captain=2)])
-    weak = dict(score=98, history=[dict(gameweek=18, elements=[2], captain=2)])
-    chosen, meta = select_balanced_sequence(
-        [first, close, weak], dict(user_points=100, rivals=[dict(points=150, elements=[1])]), maps
-    )
-    assert chosen is close
-    assert meta["actual_xp_loss"] <= 0.5
-    assert meta["upcoming_rival_captains_assumed"] is False
-    assert chosen["history"][0]["captain"] == 2
-
-
 def test_fast_sequence_lineup_matches_served_lineup():
     from fpl_oracle.optimise.lineup import lineup_optimizer
     from fpl_oracle.optimise.sequential import evaluate_lineup

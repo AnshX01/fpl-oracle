@@ -1387,6 +1387,7 @@ class MultiPeriodOptimizer:
         time_limit_sec: float | None = None,
         enforce_hit_gain: bool = True,
         xp_estimation_sd: float | None = None,
+        rival_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Comprehensive multi-period solver producing the required comparison set (WI-2.2):
@@ -1532,28 +1533,36 @@ class MultiPeriodOptimizer:
             final = self._polish(run, dict(forced_kw), plans[best_name], "opt", opt_bound)
             if final.total_objective > (plans["opt"].total_objective if "opt" in plans else -math.inf):
                 plans["opt"] = final
-        # --- chip now vs the same chip next week: the real alternative to playing it now. The best plan is
-        # shifted one week (no move this week, chip next week, clashing chips dropped) and polished as a
-        # no-chip-this-week plan, so the chip-now margin is measured against it, not a weaker search.
+        # --- chip now vs the same chip later: the real alternative to playing it now. The best plan is shifted
+        # to play its week-1 chip 1, 3 and 6 weeks later (squad kept until then, clashing chips dropped) and each
+        # seed is polished as a no-chip-this-week plan, so "keep the chip" is measured against its best timing.
         best = max(plans.values(), key=lambda p: p.total_objective)
         chip_w1 = (best.trajectory[0].active_chip or "").lower()
         gws_h = best.horizon_gws
-        if chip_w1 and not forced and "hold" in tasks and len(gws_h) > 1:
-            t0_, t1_ = gws_h[0], gws_h[1]
+        if chip_w1 and not forced and "hold" in tasks:
             owned_ids = set(current_squad_df["element"].astype(int))
-            shifted = dict(best.integer_solution)
-            for key in shifted:
-                if key[0] == "x" and key[2] == t0_:
-                    shifted[key] = int(key[1] in owned_ids)
-                elif key[0] != "x" and key[1] in gws_h[: 1 + self.config.min_gameweeks_between_chips]:
-                    shifted[key] = 0
-            shifted[(chip_w1, t1_)] = 1
-            tasks["hold_delay"] = {"no_chip_w1": True}
-            delayed = run("hold_delay", {"no_chip_w1": True, "warm_start": shifted}, wave2_limit)
-            if isinstance(delayed, MultiPeriodPlan):
-                hold_own = plans.get("hold")
-                bound = hold_own.total_objective * (1.0 + hold_own.solver_gap) if hold_own is not None else None
-                plans["hold_delay"] = self._polish(run, tasks["hold_delay"], delayed, "hold_delay", bound)
+            spacing = self.config.min_gameweeks_between_chips
+            hold_own = plans.get("hold")
+            bound = hold_own.total_objective * (1.0 + hold_own.solver_gap) if hold_own is not None else None
+
+            def delayed(k: int) -> MultiPeriodPlan | None:
+                t_k = gws_h[k]
+                seed = dict(best.integer_solution)
+                for key in seed:
+                    if key[0] == "x" and key[2] < t_k:
+                        seed[key] = int(key[1] in owned_ids)
+                    elif key[0] != "x" and key[1] < t_k + spacing:
+                        seed[key] = 0
+                seed[(chip_w1, t_k)] = 1
+                name = f"hold_delay{k}"
+                plan = run(name, {"no_chip_w1": True, "warm_start": seed}, wave2_limit)
+                return self._polish(run, tasks[name], plan, name, bound) if isinstance(plan, MultiPeriodPlan) else None
+
+            delays = [k for k in (1, 3, 6) if k < len(gws_h)]
+            for k in delays:
+                tasks[f"hold_delay{k}"] = {"no_chip_w1": True}
+            found = run_parallel({f"hold_delay{k}": (lambda k=k: delayed(k)) for k in delays})
+            plans.update({n: p for n, p in found.items() if isinstance(p, MultiPeriodPlan)})
 
         roll_plan = plans["roll"]
         opt_plan = plans.get("opt") or max(plans.values(), key=lambda p: p.total_objective)
@@ -1722,6 +1731,73 @@ class MultiPeriodOptimizer:
                     rec_plan.setdefault("decision_check", dict(check, versus="rolling"))
             if stability_note:
                 rec_plan["recommendation_summary"] = stability_note
+
+            # --- mini-league tie-break (decision_model.md section 4): among plans the forecasts cannot tell
+            # apart from the recommendation, take the one most likely to finish above every rival.
+            if rival_context and rival_context.get("rivals"):
+                from fpl_oracle.league.objective import SD_PER_P10_P90, rival_weeks, week_weights, win_probability
+
+                positions = {
+                    int(e): str(p) for e, p in zip(player_pool_df["element"], player_pool_df["position"], strict=True)
+                }
+                sd_maps = {}
+                for g in horizon_gws:
+                    frame = horizon_projections.get(g, player_pool_df)
+                    spread = (
+                        frame.get("p90", frame["expected_points"]) - frame.get("p10", frame["expected_points"])
+                    ).clip(lower=0)
+                    sd_maps[g] = dict(zip(frame["element"].astype(int), spread / SD_PER_P10_P90, strict=True))
+                rival_cache: dict[int, list[dict[int, float]]] = {}
+                held = rival_weeks(list(current_squad_df["element"].astype(int)), horizon_gws, maps, positions)
+
+                def plan_weeks(cand: dict[str, Any]) -> list[dict[int, float]]:
+                    return [
+                        week_weights(a["starters"], a.get("captain"), a.get("chip"), a["bench"])
+                        for a in cand["trajectory"]
+                    ]
+
+                def raw_points(weeks: list[dict[int, float]]) -> float:
+                    return sum(
+                        w * maps[g].get(p, 0.0) for g, wk in zip(horizon_gws, weeks, strict=True) for p, w in wk.items()
+                    )
+
+                best_points = max(raw_points(plan_weeks(c)) for c in unique.values())
+                for cand in unique.values():
+                    cand["league"] = win_probability(
+                        plan_weeks(cand),
+                        held,
+                        best_points,
+                        horizon_gws,
+                        rival_context,
+                        maps,
+                        sd_maps,
+                        positions,
+                        rival_cache,
+                    )
+                tied = [
+                    c
+                    for c in unique.values()
+                    if c["league"] is not None
+                    and c["hit_allowed"]
+                    and (c is rec_plan or not confident(rec_plan, c)["passed"])
+                ]
+                choice = max(tied, key=lambda c: (c["league"]["p_win"], c["total_objective"]), default=rec_plan)
+                if (
+                    choice is not rec_plan
+                    and rec_plan.get("league")
+                    and choice["league"]["p_win"] > rec_plan["league"]["p_win"] + 0.005
+                ):
+                    choice["league_tiebreak"] = {
+                        "replaced_points_plan": rec_plan["total_objective"],
+                        "points_given_up": round(rec_plan["total_objective"] - choice["total_objective"], 2),
+                        "p_win_before": rec_plan["league"]["p_win"],
+                        "p_win_after": choice["league"]["p_win"],
+                    }
+                    choice["recommendation_summary"] = (
+                        f"League tie-break: as good on predicted points (within forecast uncertainty) and raises the "
+                        f"chance of finishing first from {rec_plan['league']['p_win']:.0%} to {choice['league']['p_win']:.0%}."
+                    )
+                    rec_plan = choice
             rejected_hit = next((c for c in ranked if c["total_objective"] > top_cand["total_objective"]), None)
             rec_chip = rec_plan["chip"]
 

@@ -575,7 +575,7 @@ class AnalysisService:
 
 
 # Inputs the beam search honours but the MILP does not model. They are named in the result, never silently dropped.
-MILP_UNMODELLED_INPUTS = ("rival_context", "evaluate_rival_scenarios")
+MILP_UNMODELLED_INPUTS = ("evaluate_rival_scenarios",)
 # The MILP always measures chip values (it re-solves without each scheduled chip), so this flag is not an input to drop.
 MILP_ALWAYS_ON_INPUTS = ("measure_chip_values",)
 

@@ -70,12 +70,20 @@ margin smaller than its own uncertainty.
 
 ## 4. Mini-league layer
 
-    P(win) ≈ Φ( (E[Σ_remaining (mine − leader)] − gap) / σ_Δ )
+For each tracked rival r (managers above you, and within RIVAL_POINTS_WINDOW below):
 
-Over a long remaining season σ_Δ ≫ any one week's choice, so maximising expected points (section 2) is
-the dominant term. Rival ownership only changes σ_Δ: selling a rival-owned player raises variance (helps
-a chaser slightly, hurts a leader). Current status: the live plan maximises expected points; rival exposure
-and league win probability are shown alongside it (Monte Carlo) but do not yet change the recommended move.
+    mu_r  = (my points − r's points today) + Σ_horizon (my held XI xP − r's held XI xP) + (J_plan − J_best)
+    var_r = Σ_weeks Σ_players (w_plan − w_r)² · sd², scaled for the weeks after the horizon
+    P(finish above r) = Φ(mu_r / √var_r),   P(win) ≈ Π_r P(finish above r)
+
+Symmetric assumption: rivals improve their squads as well as our planner improves ours, so only today's
+squad quality, today's gap, how far a plan falls below our best plan, and how many players we share enter.
+Shared players cancel. sd per player-gameweek = (p90 − p10) / 2.563.
+
+Use: expected points decide (sections 2–3). Among plans the forecasts cannot tell apart from the
+recommendation (it does not beat them by its own confidence margin), the tool picks the one with the higher
+P(win) and says so on the card. Over many remaining weeks var is large and this rarely changes the move;
+near the end of the season it matters more, as it should. GW8 2026-27: P(finish above leader) ≈ 41%.
 
 ## 5. Captaincy and bench
 
