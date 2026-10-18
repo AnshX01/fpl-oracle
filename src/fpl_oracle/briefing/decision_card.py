@@ -117,6 +117,18 @@ def _ordinal(n: Any) -> str:
     return f"{n}{suffix}"
 
 
+def _your_choices(boot: Any) -> dict[str, list[dict[str, Any]]]:
+    """The manager's 'keep' / "don't buy" calls the plan was built around, by name."""
+    from fpl_oracle.data.store import data_store
+
+    profile = data_store.get_profile()
+    names = {e.id: e.web_name for e in boot.elements}
+    return {
+        kind: [{"element": i, "web_name": names.get(i, f"Player {i}")} for i in ids]
+        for kind, ids in (("keep", profile.keep_ids), ("avoid", profile.avoid_ids))
+    }
+
+
 def standing_summary(standings_data: dict[str, Any], manager_id: int | None) -> dict[str, Any] | None:
     """Where the manager stands in the mini-league: position, gap to the leader and to the next rival."""
     rows = sorted(standings_data.get("standings") or [], key=lambda r: r.get("rank") or 10**9)
@@ -888,6 +900,7 @@ class DecisionCardGenerator:
             "two_line_reasoning": two_line,
             "caveats": caveats,
             "caution": caution,
+            "your_choices": _your_choices(boot),
             "what_changed": what_changed,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
             "is_stale": is_stale,

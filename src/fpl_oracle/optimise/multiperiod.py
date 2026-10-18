@@ -405,7 +405,7 @@ class MultiPeriodOptimizer:
         wc_limits = {"DEF": 25, "MID": 25, "FWD": 15, "GKP": 10} if is_wc else None
         pruned_pool = self.prune_candidates(
             player_pool_df,
-            squad_ids=squad_ids,
+            squad_ids=squad_ids | {int(p) for p in (locked_in_ids or [])},  # a player to keep is always a candidate
             horizon_gws=horizon_gws,
             horizon_projections=horizon_projections,
             limits=wc_limits or self.config.pruning_limits,
@@ -745,7 +745,8 @@ class MultiPeriodOptimizer:
         # (a Free Hit at t0 honours them inside the FH squad solve instead)
         for p in locked_in:
             if p in players:
-                prob += s[p, t0] + fh[t0] >= 1
+                # Kept / brought in this week (a Free Hit week honours it inside the FH squad)
+                prob += x[p, t0] + fh[t0] >= 1
         for p in locked_out:
             if p in players:
                 prob += x[p, t0] == 0
@@ -1479,7 +1480,8 @@ class MultiPeriodOptimizer:
         # --- wave 1
         report_search_progress(f"Comparing transfers and chips from Gameweek {target_gw}")
         # "Roll" is the fewest moves possible: players the manager has ruled out must still be sold.
-        min_moves = len(set(locked_out_ids or ()) & set(current_squad_df["element"].astype(int)))
+        owned_now = set(current_squad_df["element"].astype(int))
+        min_moves = len(set(locked_out_ids or ()) & owned_now) + len(set(locked_in_ids or ()) - owned_now)
         tasks: dict[str, dict[str, Any]] = {
             "roll": dict(forced_kw, forced_w1_transfers=min_moves),
             "plan_1": dict(forced_kw, forced_w1_transfers=min_moves + 1),
