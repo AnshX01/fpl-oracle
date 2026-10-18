@@ -119,6 +119,34 @@ def test_two_step_plan_found_when_direct_swap_insufficient():
     assert len(two_step.moves) == 2
 
 
+def test_two_step_enabler_skips_injured_and_club_capped():
+    squad_rows = [
+        {"element": i + 1, "position": pos, "team": i + 1, "value": v, "purchase_price": v}
+        for i, (pos, v) in enumerate(
+            [("GKP", 45), ("GKP", 40), ("DEF", 60), ("DEF", 45), ("DEF", 45), ("DEF", 40), ("DEF", 40)]
+            + [("MID", 50)] * 3
+            + [("MID", 45)] * 2
+            + [("FWD", 75), ("FWD", 55), ("FWD", 45)]
+        )
+    ]
+    # club 20 already has 2 squad players (elements 4, 5 moved there) -> a third enabler from club 20 is fine,
+    # but the target is also club 20, so an enabler from club 20 would make four.
+    for e in (4, 5):
+        squad_rows[e - 1]["team"] = 20
+    pool_rows = list(squad_rows)
+    pool_rows.append({"element": 100, "position": "MID", "team": 20, "value": 65})
+    pool_rows += [
+        {"element": 101, "position": "DEF", "team": 17, "value": 36, "status": "i"},  # injured: skip
+        {"element": 102, "position": "DEF", "team": 20, "value": 37},  # club cap: skip
+        {"element": 103, "position": "DEF", "team": 18, "value": 40},
+    ]
+    paths = AffordabilityPathFinder().find_cheapest_paths(
+        pd.DataFrame(squad_rows), pd.DataFrame(pool_rows), bank_tenths=0, target_element=100, top_k=1
+    )
+    assert paths[0].path_type == "TWO_STEP_PLAN"
+    assert paths[0].intermediate_enabler == 103
+
+
 def test_no_hardcoded_player_names_in_funding():
     """Principle: zero hardcoded player names allowed in production code."""
     path = Path(__file__).parents[2] / "src" / "fpl_oracle" / "advisor" / "funding.py"

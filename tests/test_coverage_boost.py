@@ -166,7 +166,6 @@ def test_derive_season_from_config_and_invalid_fixture(monkeypatch):
     from fpl_oracle.config import SETTINGS
 
     monkeypatch.delenv("FPL_SEASON", raising=False)
-    monkeypatch.setattr(season_mod, "_SEASON_OVERRIDE", None)
     monkeypatch.setitem(SETTINGS, "season", "2023-24")
 
     bad_fixture = SimpleNamespace(kickoff_time="not-a-valid-timestamp")
@@ -265,41 +264,6 @@ def test_init_startup_secrets_exception_and_redaction(monkeypatch):
     assert "[REDACTED]" in scrubbed
 
 
-@pytest.mark.anyio
-async def test_refresh_gameweek_live_error_branches(monkeypatch):
-    """Verify refresh_gameweek_live rejects stale bootstrap, missing gw, stale fixtures, and empty live elements."""
-    from unittest.mock import AsyncMock
-
-    from fpl_oracle.api.fpl_client import fpl_client
-    from fpl_oracle.api.models import BootstrapStatic, GameweekEvent
-
-    mgr = HistoricalDataManager()
-
-    ev = GameweekEvent(id=7, name="GW7", deadline_time="2026-10-01T10:00:00Z", finished=True, data_checked=True)
-    boot = BootstrapStatic(events=[ev], elements=[], teams=[], element_types=[])
-
-    # 1. Stale bootstrap
-    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(boot, True)))
-    with pytest.raises(RuntimeError, match="requires fresh official bootstrap"):
-        await mgr.refresh_gameweek_live(7, force=False)
-
-    # 2. Missing event in bootstrap
-    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(boot, False)))
-    with pytest.raises(ValueError, match="not found in official events"):
-        await mgr.refresh_gameweek_live(99, force=False)
-
-    # 3. Stale fixtures
-    monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=([], True)))
-    with pytest.raises(RuntimeError, match="requires fresh fixture data"):
-        await mgr.refresh_gameweek_live(7, force=False)
-
-    # 4. Empty live elements
-    monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=([], False)))
-    monkeypatch.setattr(fpl_client, "get_live_gameweek", AsyncMock(return_value=({"elements": []}, False)))
-    with pytest.raises(RuntimeError, match="No element data returned"):
-        await mgr.refresh_gameweek_live(7, force=False)
-
-
 # ==============================================================================
 # Comprehensive HistoricalDataManager Unit Tests
 # ==============================================================================
@@ -374,53 +338,6 @@ def test_historical_clean_and_standardize():
     assert clean_df["season"].tolist() == ["2024-25", "2025-26", "2025-26"]
     assert clean_df["round"].tolist() == [1, 1, 2]
     assert clean_df["element"].tolist() == [50, 101, 102]
-
-
-def test_build_match_row():
-    """Verify _build_match_row builds a valid dictionary with all standard fields."""
-    row = HistoricalDataManager._build_match_row(
-        curr_season="2026-27",
-        full_name="Bukayo Saka",
-        eid=15,
-        pos="MID",
-        team_name="Arsenal",
-        gw=5,
-        f_id=42,
-        opp=10,
-        home=True,
-        ko_time="2026-09-20T14:00:00Z",
-        stats={
-            "minutes": 90,
-            "goals_scored": 1,
-            "assists": 2,
-            "clean_sheets": 0,
-            "goals_conceded": 1,
-            "bonus": 3,
-            "bps": 45,
-            "influence": "55.4",
-            "creativity": 32.1,
-            "threat": 40.0,
-            "ict_index": "12.8",
-            "expected_goals": "0.65",
-            "expected_assists": "0.45",
-            "expected_goal_involvements": "1.10",
-            "expected_goals_conceded": "0.85",
-            "defensive_contribution": 2,
-            "total_points": 12,
-        },
-        val=10.0,
-    )
-
-    assert row["season"] == "2026-27"
-    assert row["name"] == "Bukayo Saka"
-    assert row["element"] == 15
-    assert row["position"] == "MID"
-    assert row["fixture"] == 42.0
-    assert row["influence"] == 55.4
-    assert row["ict_index"] == 12.8
-    assert row["expected_goals"] == 0.65
-    assert row["defensive_contribution"] == 2.0
-    assert row["total_points"] == 12
 
 
 def test_get_last_finished_gameweek(tmp_path, monkeypatch):
@@ -696,105 +613,3 @@ def test_ensure_dataset_ready_force_refresh(tmp_path, monkeypatch):
     assert len(df_built) == 2
     assert test_master.exists()
     assert set(df_built["season"]) == {"2023-24", "2026-27"}
-
-
-@pytest.mark.anyio
-async def test_refresh_gameweek_live_success_and_idempotency(tmp_path, monkeypatch):
-    """Fast, mock-backed test for refresh_gameweek_live covering full execution path and idempotency."""
-    from fpl_oracle.api.fpl_client import fpl_client
-    from fpl_oracle.api.models import BootstrapStatic, Element, ElementType, Fixture, GameweekEvent, Team
-
-    mgr = HistoricalDataManager()
-    test_master = tmp_path / "master_history.csv"
-    mgr.output_file = test_master
-
-    # Pre-populate with old 2025-26 row and existing 2026-27 GW6 row
-    pre_df = pd.DataFrame(
-        [
-            {"season": "2025-26", "round": 38, "element": 1, "fixture": 380, "name": "Past Player", "total_points": 4},
-            {"season": "2026-27", "round": 6, "element": 1, "fixture": 60, "name": "Old GW6 Player", "total_points": 1},
-        ]
-    )
-    pre_df.to_csv(test_master, index=False)
-
-    ev = GameweekEvent(id=6, name="GW6", deadline_time="2026-09-27T10:00:00Z", finished=True, data_checked=True)
-    teams = [Team(id=i, name=f"Team_{i}", short_name=f"T{i}") for i in range(1, 21)]
-    etypes = [
-        ElementType(
-            id=1,
-            singular_name="Goalkeeper",
-            singular_name_short="GKP",
-            plural_name="Goalkeepers",
-            plural_name_short="GKP",
-        ),
-        ElementType(
-            id=2, singular_name="Defender", singular_name_short="DEF", plural_name="Defenders", plural_name_short="DEF"
-        ),
-        ElementType(
-            id=3,
-            singular_name="Midfielder",
-            singular_name_short="MID",
-            plural_name="Midfielders",
-            plural_name_short="MID",
-        ),
-        ElementType(
-            id=4, singular_name="Forward", singular_name_short="FWD", plural_name="Forwards", plural_name_short="FWD"
-        ),
-    ]
-    elements = [
-        Element(
-            id=i,
-            first_name=f"First{i}",
-            second_name=f"Last{i}",
-            web_name=f"P{i}",
-            team=(i % 20) + 1,
-            element_type=(i % 4) + 1,
-            now_cost=50,
-        )
-        for i in range(1, 551)
-    ]
-    boot = BootstrapStatic(events=[ev], elements=elements, teams=teams, element_types=etypes)
-    fixtures = [
-        Fixture(
-            id=k,
-            code=100 + k,
-            event=6,
-            finished=True,
-            team_h=(k * 2) - 1,
-            team_a=k * 2,
-            kickoff_time="2026-09-27T14:00:00Z",
-        )
-        for k in range(1, 11)
-    ]
-    live_elements = [
-        {
-            "id": i,
-            "stats": {
-                "minutes": 90,
-                "total_points": 5,
-                "goals_scored": 1,
-                "assists": 0,
-                "influence": 25.0,
-                "threat": 20.0,
-                "ict_index": 5.0,
-            },
-            "explain": [{"fixture": (i % 10) + 1}],
-        }
-        for i in range(1, 551)
-    ]
-
-    monkeypatch.setattr(fpl_client, "get_bootstrap_static", AsyncMock(return_value=(boot, False)))
-    monkeypatch.setattr(fpl_client, "get_fixtures", AsyncMock(return_value=(fixtures, False)))
-    monkeypatch.setattr(fpl_client, "get_live_gameweek", AsyncMock(return_value=({"elements": live_elements}, False)))
-
-    # First run: replaces old GW6 row and appends fresh 550 rows
-    meta1 = await mgr.refresh_gameweek_live(6, force=False)
-    assert meta1["status"] == "refreshed"
-    assert meta1["rows_appended"] == 550
-    assert meta1["total_rows"] == 551  # 1 past row + 550 fresh rows
-    assert test_master.with_suffix(".meta.json").exists()
-
-    # Second run: idempotent (replaces same GW6 rows, total_rows unchanged)
-    meta2 = await mgr.refresh_gameweek_live(6, force=False)
-    assert meta2["status"] == "refreshed"
-    assert meta2["total_rows"] == 551

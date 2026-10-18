@@ -31,7 +31,7 @@ Public FPL picks can lag changes before a deadline, so the local confirmation is
 ## Planning
 
 - Legal XI, goalkeeper-only bench cover, valid formation and no reused reserve.
-- Ordinary plans use at most two transfers and one four-point hit. Saving free transfers is a candidate too.
+- Plans come from one season-long multi-period MILP over every legal move: any number of transfers, four-point hits, banked free transfers (max 5) and all chips. Rolling the free transfer is a candidate too.
 - Hits must cover their cost in projected incoming-minus-outgoing points. A settled failed hit blocks another hit for six following gameweeks. Unsettled results block repeats.
 - Search keeps current-week and future-value transfer candidates. It tracks squad, bank, buying/selling prices, FTs and chips week by week through the current chip-set expiry.
 - Wildcard and Free Hit dates are compared with replanned ordinary transfers. Free Hit restores the permanent squad next week.

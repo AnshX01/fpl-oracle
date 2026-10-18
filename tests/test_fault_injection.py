@@ -22,6 +22,31 @@ from fpl_oracle.api.fpl_client import fpl_client
 from fpl_oracle.server.main import app
 
 
+def _stale(key: str):
+    from fpl_oracle.api.cache import cache_manager
+
+    res = cache_manager.get_stale_with_meta(key)
+    return res[0] if res else None
+
+
+def _force_expire(key: str) -> None:
+    """Expire a cache entry so get() misses but the stale fallback still serves it."""
+    from datetime import UTC, datetime
+
+    from fpl_oracle.api.cache import cache_manager
+    from fpl_oracle.data.store import APICacheEntry, data_store
+
+    keys = cache_manager._candidate_keys(key)
+    for k in keys:
+        cache_manager._mem_cache.pop(k, None)
+    with data_store.get_session() as session:
+        for k in keys:
+            entry = session.query(APICacheEntry).filter(APICacheEntry.key == k).first()
+            if entry:
+                entry.expires_at = datetime.fromtimestamp(0, tz=UTC)
+        session.commit()
+
+
 @pytest.fixture(autouse=True)
 def seeded_upstream(monkeypatch):
     """Fault tests exercise transport/cache fallbacks, not live-network warmup."""
@@ -80,9 +105,8 @@ class FaultInjectingTransport(httpx.AsyncBaseTransport):
         elif self.mode == "drift":
             # Return valid bootstrap JSON structure with extra unexpected schema fields
             # Retrieve cached bootstrap and inject unexpected fields
-            from fpl_oracle.api.cache import cache_manager
 
-            cached = cache_manager.get_stale("bootstrap-static")
+            cached = _stale("bootstrap-static")
             if cached:
                 drifted = dict(cached)
                 drifted["new_unexpected_2026_rule"] = {"active": True, "token": "xyz"}
@@ -119,9 +143,8 @@ def test_fault_injection_503_service_unavailable():
     """Verify that when FPL API returns 503, server routes still succeed with stale=True."""
 
     async def _run():
-        from fpl_oracle.api.cache import cache_manager
 
-        cache_manager.force_expire("bootstrap-static")
+        _force_expire("bootstrap-static")
         faulty_transport = FaultInjectingTransport(mode="503")
         fpl_client.set_transport(faulty_transport)
         try:
@@ -143,10 +166,9 @@ def test_fault_injection_read_timeout():
     """Verify that read timeouts do not crash endpoints and trigger stale fallback."""
 
     async def _run():
-        from fpl_oracle.api.cache import cache_manager
 
-        cache_manager.force_expire("bootstrap-static")
-        cache_manager.force_expire("fixtures:all")
+        _force_expire("bootstrap-static")
+        _force_expire("fixtures:all")
         faulty_transport = FaultInjectingTransport(mode="timeout")
         fpl_client.set_transport(faulty_transport)
         try:
@@ -166,7 +188,7 @@ def test_fault_injection_schema_drift():
     async def _run():
         from fpl_oracle.api.cache import cache_manager
 
-        orig_cached = cache_manager.get_stale("bootstrap-static")
+        orig_cached = _stale("bootstrap-static")
         faulty_transport = FaultInjectingTransport(mode="drift")
         fpl_client.set_transport(faulty_transport)
         try:

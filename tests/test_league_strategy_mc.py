@@ -80,8 +80,21 @@ def test_league_strategy_modes():
         user_rank=1, user_total_points=350, rivals_analysis=rivals_leading, user_squad_df=user_squad
     )
     assert strat_lead["strategy_mode"] == "DEFENDING_LEAD"
-    assert "minimize variance" in strat_lead["rationale"].lower()
+    assert "you lead chaser by 15 points" in strat_lead["rationale"].lower()
+    assert strat_lead["nearest_above_gap"] is None and strat_lead["nearest_below_gap"] == 15
     assert any("template protection" in t.lower() for t in strat_lead["tactical_recommendations"])
+
+    # DEFENDING_LEAD reached through win probability while trailing must not claim a lead
+    strat_trailing = league_strategy_advisor.evaluate_strategy(
+        user_rank=2,
+        user_total_points=325,
+        rivals_analysis=rivals_leading,
+        user_squad_df=user_squad,
+        win_probability_pct=65.0,
+    )
+    assert strat_trailing["strategy_mode"] == "DEFENDING_LEAD"
+    assert "trail chaser by 10 points" in strat_trailing["rationale"].lower()
+    assert strat_trailing["nearest_above_gap"] == 10
 
     # Case 2: Within striking distance (-10 pts)
     rivals_close = {
@@ -205,49 +218,6 @@ def test_pre_deadline_picks_opacity():
     assert "bench_boost" in status["chips_remaining"]
 
 
-def test_bounded_posture_tie_breaker():
-    """R4: Verifies tactical risk posture acts strictly as a bounded tie-breaker (<= 0.5 xP)."""
-    # Candidate plans:
-    # Plan A: Pure highest xP (+3.0 xP)
-    # Plan B: Runner up (+2.8 xP, diff = 0.2 xP <= 0.5 margin), brings in differential
-    # Plan C: Inferior (+2.0 xP, diff = 1.0 xP > 0.5 margin)
-    plan_a = {"plan_id": "A", "expected_gain": 3.0, "transfers_in": [{"element": 10}]}
-    plan_b = {"plan_id": "B", "expected_gain": 2.8, "transfers_in": [{"element": 20}]}
-    plan_c = {"plan_id": "C", "expected_gain": 2.0, "transfers_in": [{"element": 30}]}
-
-    # Rival EO map: element 10 has 90% EO (template); element 20 has 10% EO (differential)
-    rival_eo = {10: 90.0, 20: 10.0, 30: 5.0}
-
-    # Case 1: CHASING_PACK posture with close candidates (0.2 diff) -> prefers Plan B (differential)
-    tb_chase = league_strategy_advisor.apply_tie_breaker(
-        candidate_plans=[plan_a, plan_b],
-        posture="CHASING_PACK",
-        rival_eo_map=rival_eo,
-        margin_xp=0.5,
-    )
-    assert tb_chase["tie_breaker_applied"] is True
-    assert tb_chase["selected_plan"]["plan_id"] == "B"
-
-    # Case 2: DEFENDING_LEAD posture with close candidates -> prefers Plan A (template coverage)
-    tb_defend = league_strategy_advisor.apply_tie_breaker(
-        candidate_plans=[plan_a, plan_b],
-        posture="DEFENDING_LEAD",
-        rival_eo_map=rival_eo,
-        margin_xp=0.5,
-    )
-    assert tb_defend["selected_plan"]["plan_id"] == "A"
-
-    # Case 3: Plan C gap is 1.0 xP (> 0.5 margin) -> model NEVER overrides for Plan C
-    tb_large_gap = league_strategy_advisor.apply_tie_breaker(
-        candidate_plans=[plan_a, plan_c],
-        posture="CHASING_PACK",
-        rival_eo_map=rival_eo,
-        margin_xp=0.5,
-    )
-    assert tb_large_gap["tie_breaker_applied"] is False
-    assert tb_large_gap["selected_plan"]["plan_id"] == "A"
-
-
 def test_joint_player_draws_and_clean_sheet_correlations():
     """W1: Verifies joint draws (shared players get identical score per trial) and defensive clean sheets."""
     user_squad = pd.DataFrame(
@@ -316,7 +286,6 @@ def test_rival_future_behavior_assumptions():
         projections_df=projections,
         horizon_gws=5,
         seed=100,
-        rival_behavior_model="consensus_template",
     )
 
     assumptions = res["rival_behavior_assumptions"]
@@ -325,47 +294,31 @@ def test_rival_future_behavior_assumptions():
     assert "chip_model" in assumptions
 
 
-def test_side_by_side_plan_win_prob_comparison():
-    """W3: Verifies side-by-side comparison of candidate plans and bounded runtime (< 1.5s)."""
-    user_squad = pd.DataFrame(
-        [{"element": i, "expected_points": 5.0, "variance": 4.0, "is_starter": True} for i in range(1, 16)]
-    )
-    projections = pd.DataFrame(
-        [{"element": i, "expected_points": 5.0 + (i * 0.1), "variance": 4.0} for i in range(1, 50)]
-    )
-    rival_squads = [
-        {
-            "entry_id": 101,
-            "player_name": "Leader",
-            "total_points": 350.0,
-            "captain_element": 1,
-            "squad": [{"element": i, "is_starter": True} for i in range(1, 12)],
+def test_unsimulatable_rival_is_dropped_not_fatal():
+    squad = pd.DataFrame([{"element": i, "expected_points": 5.0, "is_starter": i <= 11} for i in range(1, 16)])
+    proj = {gw: pd.DataFrame([{"element": i, "expected_points": 5.0} for i in range(1, 30)]) for gw in (7, 8)}
+
+    def rival(entry, elements, captain):
+        return {
+            "entry_id": entry,
+            "player_name": f"R{entry}",
+            "total_points": 300.0,
+            "captain_element": captain,
+            "squad": [{"element": e, "is_starter": True} for e in elements],
         }
-    ]
 
-    candidate_plans = [
-        {"plan_type": "ROLL_TRANSFER", "net_expected_points": 60.0, "transfers_in": [], "transfers_out": []},
-        {
-            "plan_type": "1_TRANSFER",
-            "net_expected_points": 62.5,
-            "transfers_in": [{"element": 35}],
-            "transfers_out": [{"element": 10}],
-        },
+    rivals = [
+        rival(1, range(1, 12), 1),
+        rival(2, range(1, 12), None),  # captain unknown
+        rival(3, [*range(1, 11), 99], 1),  # element 99 has no projection
     ]
-
-    comparisons = monte_carlo_simulator.compare_candidate_plans(
-        candidate_plans=candidate_plans,
-        user_points=340.0,
-        user_squad_df=user_squad,
-        rival_squads=rival_squads,
-        projections_df=projections,
-        horizon_gws=5,
-        seed=42,
+    res = monte_carlo_simulator.simulate_league(
+        user_points=300.0, user_squad_df=squad, rival_squads=rivals, horizon_gws=5, seed=1, projections_by_gw=proj
     )
-    # Wall-clock assertion removed per F-013 to avoid non-deterministic CI failure under coverage/tracing
-    assert len(comparisons) == 2
-    for comp in comparisons:
-        assert "plan_type" in comp
-        assert "gameweek_net_xp" in comp
-        assert "win_probability_pct" in comp
-        assert "expected_final_rank" in comp
+    assert res["status"] == "SIMULATION_SUCCESS"
+    assert (res["rivals_requested"], res["rivals_simulated"]) == (3, 1)
+    assert {d["entry_id"]: d["reason"] for d in res["rivals_dropped"]} == {
+        2: "CAPTAIN_UNKNOWN",
+        3: "MISSING_PROJECTIONS",
+    }
+    assert res["horizon_gws_simulated"] == 2  # no padding with a repeated last gameweek

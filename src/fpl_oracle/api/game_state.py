@@ -10,7 +10,7 @@ Derives live gameweek status:
 Also detects Blank Gameweeks (BGW), Double Gameweeks (DGW), and postponed fixtures.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -43,6 +43,22 @@ class GameState(BaseModel):
     data_as_of: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     stale: bool = False
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+def _may_be_live(fixtures: list[Any], curr_gw: int | None, now: datetime) -> bool:
+    """True if a current-GW fixture is in progress or kicked off recently (cached fixtures could still say not started)."""
+    for f in fixtures:
+        if f.event != curr_gw or f.finished:
+            continue
+        if f.started:
+            return True
+        try:
+            kickoff = datetime.fromisoformat(f.kickoff_time.replace("Z", "+00:00"))
+        except (AttributeError, ValueError):
+            continue
+        if timedelta(0) <= now - kickoff <= timedelta(hours=4):
+            return True
+    return False
 
 
 class GameStateManager:
@@ -91,6 +107,10 @@ class GameStateManager:
                     break
 
         now_utc = datetime.now(UTC)
+        # The fixtures cache outlives the state cache (minutes vs. a minute), so while a match could be on,
+        # re-read fixtures: live/finished flags drive the phase.
+        if not force_refresh and _may_be_live(fixtures, curr_gw, now_utc):
+            fixtures, fix_stale = await fpl_client.get_fixtures(force_refresh=True)
         deadline_iso = None
         seconds_to_deadline = None
 

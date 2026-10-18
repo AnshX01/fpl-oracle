@@ -39,10 +39,6 @@ class CacheManager:
             return data, upd
         return None
 
-    def get_stale(self, key: str) -> Any | None:
-        res = self.get_stale_with_meta(key)
-        return res[0] if res else None
-
     def get_stale_with_meta(self, key: str) -> tuple[Any, datetime] | None:
         """Return (data, updated_at) for stale cached data if API is currently down."""
         if key in self._mem_cache:
@@ -67,21 +63,6 @@ class CacheManager:
         for k in self._candidate_keys(key):
             if k in self._mem_cache:
                 del self._mem_cache[k]
-
-    def force_expire(self, key: str):
-        """Force cache entry to be expired so get() misses but get_stale() succeeds."""
-        keys = self._candidate_keys(key)
-        for k in keys:
-            if k in self._mem_cache:
-                del self._mem_cache[k]
-        from fpl_oracle.data.store import APICacheEntry
-
-        with data_store.get_session() as session:
-            for k in keys:
-                entry = session.query(APICacheEntry).filter(APICacheEntry.key == k).first()
-                if entry:
-                    entry.expires_at = datetime.fromtimestamp(0, tz=UTC)  # type: ignore[assignment]
-            session.commit()
 
     def get_cache_age_seconds(self, key: str) -> float | None:
         """Return age of cached entry in seconds, or None if not cached."""

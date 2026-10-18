@@ -16,7 +16,7 @@ from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.server.analysis import analysis_service
+from fpl_oracle.server.analysis import analysis_service, target_gameweek
 from fpl_oracle.server.safe_json import safe_json_serialize
 
 
@@ -46,7 +46,7 @@ class WeeklyBriefingGenerator:
         fixtures, fixtures_stale = await fpl_client.get_fixtures()
         is_stale = is_stale or fixtures_stale
         curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+        target_gw = target_gameweek(curr_gw, next_gw)
         effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
         # Deadline time for next gameweek
@@ -131,16 +131,14 @@ class WeeklyBriefingGenerator:
                     user_manager_id=m_id,
                     current_gw=effective_curr_gw,
                     bootstrap=boot,
+                    user_squad_df=user_squad_df,
                 )
                 user_total = 0
-                if m_id:
-                    user_entry, _ = await fpl_client.get_manager_entry(m_id)
-                    user_total = user_entry.summary_overall_points or 0
-
                 user_rank = None
                 for row in standings.get("standings", []):
                     if row.get("entry") == m_id:
                         user_rank = row.get("rank")
+                        user_total = row.get("total") or 0  # same source as the other league surfaces
                         break
 
                 if user_rank is not None:

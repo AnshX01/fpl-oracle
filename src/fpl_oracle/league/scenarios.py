@@ -56,19 +56,16 @@ def compare_plan_scenarios(states, rival_context, maps, samples=512):
     if not rivals:
         return dict(status="unavailable", reason="No current relevant rival observations", scenarios=[])
     scenario_rows = []
-    rng = np.random.default_rng(42)
-    from fpl_oracle.league.montecarlo import monte_carlo_simulator
+    import pandas as pd
+
+    from fpl_oracle.sim.match_sim import match_simulator
 
     draws = {}
     for gw, pool in sorted(maps.items()):
-        # One shared player score and fixture/team clean-sheet event per trial.
-        # This fixes independent-Normal stress draws, but is still not empirical
-        # calibration of future manager decisions or season championship odds.
-        draws[gw] = {e: np.empty(samples) for e in pool}
-        for trial in range(samples):
-            outcome = monte_carlo_simulator.draw_gameweek(pool, rng)
-            for e, points in outcome.items():
-                draws[gw][e][trial] = points
+        # One joint scoreline simulation per gameweek (shared goals, bonus and clean sheets), the same engine as
+        # the displayed win probability. Still not empirical calibration of future manager decisions.
+        sim = match_simulator.simulate_gameweek(pd.DataFrame(list(pool.values())), n_sims=samples, seed=42 + gw)
+        draws[gw] = {int(e): sim.scores[i].astype(float) for i, e in enumerate(sim.player_ids)}
 
     path_cache = {}
 
@@ -82,8 +79,6 @@ def compare_plan_scenarios(states, rival_context, maps, samples=512):
             pool = maps[gw]
             elements = row["elements"]
             # Reconstruct the selected legal XI rather than counting all 15.
-            import pandas as pd
-
             from fpl_oracle.optimise.lineup import lineup_optimizer
 
             line = lineup_optimizer.select_lineup_and_captain(
