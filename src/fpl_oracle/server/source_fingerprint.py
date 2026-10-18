@@ -50,7 +50,18 @@ def rows(values, fields=None):
     return sorted(result, key=lambda row: json.dumps(row, sort_keys=True, default=str))
 
 
+def base_key(key):
+    """Cache keys carry a season prefix ('2026-27:bootstrap-static'); compare on the source name."""
+    head, _, rest = str(key).partition(":")
+    return rest if rest and len(head) == 7 and head[4] == "-" else str(key)
+
+
 def decision_source(key, value):
+    key = base_key(key)
+    if key.startswith("league-classic:") and isinstance(value, dict):
+        # Live point totals tick during matches; the advice depends on who is in the league, not the live score.
+        standings = (value.get("standings") or {}).get("results") or []
+        return sorted(row.get("entry") for row in standings)
     if key == "bootstrap-static":
         return {
             "players": rows(value.get("elements"), PLAYER_FIELDS),
@@ -87,6 +98,7 @@ def changes(key, before, after):
     old, new = decision_source(key, before), decision_source(key, after)
     if old == new:
         return []
+    key = base_key(key)
     if key == "bootstrap-static":
         categories = [name for name in old if old[name] != new[name]]
         old_players = {r["id"]: r for r in old["players"]}
