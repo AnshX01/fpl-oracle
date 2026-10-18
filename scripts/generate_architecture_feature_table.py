@@ -29,6 +29,7 @@ CLUSTERS = [
                 or c.startswith("roll_xG_")
                 or c.startswith("roll_xA_")
                 or c == "roll_xGI_5"
+                or c in ("xg90_30", "xa90_30", "xg_share_30", "xa_share_30", "finishing_30", "assist_conversion_30")
                 or c == "roll_goals_5"
                 or c == "roll_assists_5"
             )

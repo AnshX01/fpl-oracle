@@ -21,10 +21,21 @@ For each fixture f of player i in gameweek t (0 fixtures = blank, 2 = double):
             + 2 · P(play) · P(DefCon | play)                   (trained on labelled seasons, played rows only)
             + E[bonus] + E[saves pts] − E[GC deduction] − E[cards] − E[own goal] − E[pen miss]
 
-    E[G(i,f)] = λ_team(f) · share_G(i)       λ_team: the fixture's bookmaker odds (margin removed, Poisson fit
+    E[G(i,f)] = P(play) · E[G | plays]      λ_team: the fixture's bookmaker odds (margin removed, Poisson fit
+    E[G | plays] = λ_team(f) · s_G(i) · g(pos) · c(i)^0.5 · (E[min | plays] / 90) · exp(tree correction)
                                               to 1X2 and over/under 2.5), else team ratings fitted to recent
                                               market prices, else the walk-forward Dixon-Coles model
-    Σ_team availability · share = 1          goals of an absent player go to his team-mates
+    s_G(i)  = player's share of his team's xG while on the pitch, last 30 matches, shrunk to the position
+              (FWD 0.29, MID 0.11, DEF 0.037) with 1.5 team-xG of prior
+    g(pos)  = goals per xG by position (DEF 0.85, MID 1.00, FWD 0.98: xG over-rates defenders' headers)
+    c(i)    = his own goals per xG (last 30 matches, 3 xG of league-average prior); half of it carries forward
+    tree    = Poisson LightGBM on the log of the above as offset, early-stopped on the latest 15% of matches:
+              it corrects the formula and shrinks towards "no correction", not towards the average player
+    Assists: same with s_A (share of team xG as xA) and 1.35 FPL assists per xA.
+    Team totals: per match, Σ availability · E[G] = 0.963 · λ_team (own goals, 3.7% of goals, score for
+    nobody) and Σ availability · E[A] = 0.879 · λ_team; goals of an absent player go to his team-mates.
+    Cards: recent seasons weigh more (half per season back), since cards per appearance fall each season.
+    Training data excludes 2024-25 managers (Assistant Manager chip), who scored with zero minutes.
 
     xP(i,t) = Σ_f xP(i,f) · availability(i,t)   availability from official status/chance; a one-week doubt decays
                                                  by half per further gameweek
@@ -37,9 +48,13 @@ games) and optionally The Odds API (ODDS_API_KEY). With odds in place, held-out 
 
 Scoring constants come from the live `game_config.scoring` (GKP goal 10, DEF 6, MID 5, FWD 4, DefCon 2).
 
-**Evidence (held-out 2025-26 GW27–38 + 2026-27 GW1–6):** mean xP 1.183 vs actual 1.182; calibration within
-±0.2 pts in every position × predicted-xP bin with n ≥ 100; by price band 12.0m+ 4.62 vs 4.60; attacking share
-player-level slope 1.03 (no elite compression); DefCon calibrated per bin up to p ≈ 0.45.
+**Evidence (rolling-origin holdouts 2024-25, 2025-26, 2026-27 GW1–7; each season predicted by models trained
+only on earlier seasons):** actual / predicted goals and assists checked in 31 groups (position, the player's
+xG rate, the size of the forecast, named players); 2 groups differ by more than chance (|z| > 2; about 1.4
+expected by luck alone): assists forecast at 0.2–0.35 run 16% high, and Mbeumo out-scores his chances (34 goals
+from 21.6 expected). Haaland 1.07, B.Fernandes 0.97, defenders' goals within chance. Goal deviance 0.1680 vs
+0.1723 for the previous model, assist deviance 0.1789 vs 0.1853. Points: forecasts of 4–6 points are right on
+average (0.99–1.00; the previous model was 10–14% high there).
 DefCon uses logit-Platt calibration (held-out Brier 0.1088; the isotonic version plateaued at 0.80 live).
 
 ## 2. Plan objective (multi-period MILP, horizon H = clamp(weeks to chip expiry, 6, 12))

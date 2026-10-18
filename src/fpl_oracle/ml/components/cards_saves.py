@@ -41,7 +41,14 @@ class CardsSavesModel(BaseComponent):
             y_pen_saves = np.zeros(len(X))
 
         self.reg_saves.fit(X, y_saves)
-        self.reg_cards.fit(X, y_cards)
+        # Cards per appearance fall season on season (yellows 0.140 -> 0.123, 2023-24 to 2026-27): each season
+        # back counts half as much, so the model follows the current refereeing level.
+        meta = X.attrs.get("meta")
+        weights = None
+        if isinstance(meta, pd.DataFrame) and "season" in meta and set(X.index) <= set(meta.index):
+            age = meta.loc[X.index, "season"].rank(method="dense", ascending=False).to_numpy(float) - 1.0
+            weights = 0.5**age
+        self.reg_cards.fit(X, y_cards, sample_weight=weights)
         self.reg_pen_saves.fit(X, y_pen_saves)
         self.is_fitted = True
 

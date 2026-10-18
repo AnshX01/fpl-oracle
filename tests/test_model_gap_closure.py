@@ -147,6 +147,12 @@ def test_no_hard_rules_or_caps_on_elite_projections():
                 "start_last1": 1.0,
                 "subbed_early_last1": 0.0,
                 "games_since_start": 1.0,
+                "xg90_30": 0.95,
+                "xa90_30": 0.20,
+                "xg_share_30": 0.40,
+                "xa_share_30": 0.06,
+                "finishing_30": 1.1,
+                "assist_conversion_30": 1.3,
                 "roll_points_3": 9.5,
                 "roll_points_5": 8.8,
                 "roll_points_8": 8.0,
@@ -209,7 +215,7 @@ def test_no_hard_rules_or_caps_on_elite_projections():
 
     projection_engine.load_or_train()
     mins_pred = projection_engine.minutes_model.predict(star_features)
-    att_pred = projection_engine.attacking_model.predict(star_features)
+    att_pred = projection_engine.attacking_model.predict(star_features, mins_pred)
     def_pred = projection_engine.defending_model.predict(star_features)
     defcon_pred = projection_engine.defcon_model.predict(star_features)
     bonus_pred = projection_engine.bonus_model.predict(star_features)
@@ -419,13 +425,13 @@ def test_opponent_numeric_id_resolution_in_master_history():
         assert len(season_mapped) == 20, f"Season {s} mapped {len(season_mapped)} teams, expected 20"
 
 
-def test_train_serve_parity_all_66_columns():
+def test_train_serve_parity_all_72_columns():
     """
     M5 AUDIT FIX VERIFICATION:
-    Verify train/serve parity across all 66 canonical FEATURE_COLUMNS.
+    Verify train/serve parity across all 72 canonical FEATURE_COLUMNS.
     """
     fe = FeatureEngineering()
-    assert len(FEATURE_COLUMNS) == 66, f"Expected 66 FEATURE_COLUMNS, found {len(FEATURE_COLUMNS)}"
+    assert len(FEATURE_COLUMNS) == 72, f"Expected 72 FEATURE_COLUMNS, found {len(FEATURE_COLUMNS)}"
 
     # Generate sample player history and verify column set
     sample_hist = pd.DataFrame(
