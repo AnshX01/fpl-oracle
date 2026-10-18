@@ -143,6 +143,10 @@ def test_no_hard_rules_or_caps_on_elite_projections():
                 "roll_starts_ratio_5": 1.0,
                 "roll_min60_ratio_5": 1.0,
                 "std_minutes_per_gw": 88.0,
+                "min_last1": 90.0,
+                "start_last1": 1.0,
+                "subbed_early_last1": 0.0,
+                "games_since_start": 1.0,
                 "roll_points_3": 9.5,
                 "roll_points_5": 8.8,
                 "roll_points_8": 8.0,
@@ -415,13 +419,13 @@ def test_opponent_numeric_id_resolution_in_master_history():
         assert len(season_mapped) == 20, f"Season {s} mapped {len(season_mapped)} teams, expected 20"
 
 
-def test_train_serve_parity_all_62_columns():
+def test_train_serve_parity_all_66_columns():
     """
     M5 AUDIT FIX VERIFICATION:
-    Verify train/serve parity across all 62 canonical FEATURE_COLUMNS.
+    Verify train/serve parity across all 66 canonical FEATURE_COLUMNS.
     """
     fe = FeatureEngineering()
-    assert len(FEATURE_COLUMNS) == 62, f"Expected 62 FEATURE_COLUMNS, found {len(FEATURE_COLUMNS)}"
+    assert len(FEATURE_COLUMNS) == 66, f"Expected 66 FEATURE_COLUMNS, found {len(FEATURE_COLUMNS)}"
 
     # Generate sample player history and verify column set
     sample_hist = pd.DataFrame(

@@ -159,6 +159,7 @@
             <span class="pos">{{ p.label }}</span>
             <span class="xi-players"><span class="xi-p">{{ p.web_name }} <span v-if="p.position !== 'GKP'" class="subtle">{{ p.position }}</span> <span class="subtle num">{{ p.expected_points }}</span></span></span>
           </div>
+          <p v-if="card.minutes_note" class="subtle" data-testid="minutes-note">{{ card.minutes_note }}</p>
         </section>
 
         <!-- 5. Chip -->

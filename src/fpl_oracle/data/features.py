@@ -27,6 +27,10 @@ FEATURE_COLUMNS = [
     "roll_starts_ratio_5",
     "roll_min60_ratio_5",
     "std_minutes_per_gw",
+    "min_last1",
+    "start_last1",
+    "subbed_early_last1",
+    "games_since_start",
     # Attacking Form
     "roll_points_3",
     "roll_points_5",
@@ -141,6 +145,13 @@ PRIOR_TEAM_CLEAN_SHEET = 0.25
 DC_REFIT_EVERY_N_ROUNDS = 4
 
 
+def _games_since_start(starts: pd.Series) -> pd.Series:
+    """Matches since the player last started, before each match (capped at 10; 10 if never started)."""
+    pos = np.arange(len(starts), dtype=float)
+    last = pd.Series(np.where(starts.to_numpy() >= 1, pos, np.nan), index=starts.index).ffill().shift(1)
+    return (pos - last).clip(upper=10).fillna(10.0)
+
+
 def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", val_m: float = 6.0) -> dict[str, float]:
     """
     Shared canonical feature transformer for a player's pre-deadline match history.
@@ -170,6 +181,11 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         r_starts_5 = float((last_5["starts"] >= 1).mean()) if not last_5.empty else 0.0
         r_min60_5 = float((last_5["minutes"] >= 60).mean()) if not last_5.empty else 0.0
         std_mins = float(p_hist["minutes"].mean())
+        min_last1 = float(p_hist["minutes"].iloc[-1])
+        start_last1 = float(p_hist["starts"].iloc[-1] >= 1)
+        subbed_early = float(start_last1 and min_last1 < 60)
+        started = np.flatnonzero(p_hist["starts"].to_numpy() >= 1)
+        since_start = float(min(len(p_hist) - started[-1], 10)) if len(started) else 10.0
 
         r_xgi_5 = (
             float(last_5["expected_goal_involvements"].mean())
@@ -240,6 +256,10 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         r_starts_5 = prior_starts
         r_min60_5 = prior_starts * 0.9
         std_mins = prior_mins
+        min_last1 = prior_mins
+        start_last1 = prior_starts
+        subbed_early = 0.0
+        since_start = 1.0 if prior_starts >= 0.65 else 10.0
 
         r_xgi_5 = r_xg_5 + r_xa_5
         r_goals_5 = r_xg_5
@@ -264,6 +284,10 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         "roll_starts_ratio_5": r_starts_5,
         "roll_min60_ratio_5": r_min60_5,
         "std_minutes_per_gw": std_mins,
+        "min_last1": min_last1,
+        "start_last1": start_last1,
+        "subbed_early_last1": subbed_early,
+        "games_since_start": since_start,
         "roll_points_3": r_pts_3,
         "roll_points_5": r_pts_5,
         "roll_points_8": r_pts_8,
@@ -905,6 +929,14 @@ class FeatureEngineering:
         df_player["std_minutes_per_gw"] = (
             grouped["minutes"].apply(lambda s: s.shift(1).expanding(min_periods=1).mean()).fillna(0.0)
         )
+
+        # Last match: a benching or early substitution is the strongest single signal for next week's minutes.
+        df_player["min_last1"] = grouped["minutes"].apply(lambda s: s.shift(1)).fillna(0.0)
+        df_player["start_last1"] = grouped["starts"].apply(lambda s: (s.shift(1) >= 1).astype(float))
+        df_player["subbed_early_last1"] = ((df_player["start_last1"] >= 1) & (df_player["min_last1"] < 60)).astype(
+            float
+        )
+        df_player["games_since_start"] = grouped["starts"].apply(_games_since_start)
 
         # Shrinkage prior for Round 1
         is_gw1 = df_player["round"] == 1

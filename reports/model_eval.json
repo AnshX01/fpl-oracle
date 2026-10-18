@@ -1,10 +1,10 @@
 {
-  "evaluated_at": "2026-10-18T13:04:38.741882+00:00",
+  "evaluated_at": "2026-10-18T13:52:21.767610+00:00",
   "sample_count": 13744,
-  "ml_mae": 1.019,
-  "ml_rmse": 1.956,
-  "ml_spearman": 0.698,
-  "ml_pearson": 0.566,
+  "ml_mae": 1.0,
+  "ml_rmse": 1.934,
+  "ml_spearman": 0.712,
+  "ml_pearson": 0.579,
   "base_mae": 1.022,
   "base_rmse": 2.131,
   "base_spearman": 0.694,
@@ -25,332 +25,332 @@
       "spearman": 0.706
     }
   },
-  "mae_improvement_pct": 0.68,
-  "rmse_improvement_pct": 9.07,
-  "verdict": "The ML Projection Engine achieves an MAE of 1.019 and RMSE of 1.956 with a Spearman rank correlation of 0.698 (vs 0.694 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
+  "mae_improvement_pct": 2.53,
+  "rmse_improvement_pct": 10.09,
+  "verdict": "The ML Projection Engine achieves an MAE of 1.0 and RMSE of 1.934 with a Spearman rank correlation of 0.712 (vs 0.694 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
   "positions": {
     "GKP": {
       "calibration_by_xp_bin": [
         {
           "bin": "<1",
-          "count": 1150,
-          "mean_pred": 0.064,
+          "count": 1179,
+          "mean_pred": 0.07,
           "mean_actual": 0.07
         },
         {
           "bin": "1-2",
-          "count": 74,
-          "mean_pred": 1.503,
-          "mean_actual": 1.122
+          "count": 42,
+          "mean_pred": 1.538,
+          "mean_actual": 1.119
         },
         {
           "bin": "2-3",
-          "count": 120,
-          "mean_pred": 2.587,
-          "mean_actual": 2.558
+          "count": 112,
+          "mean_pred": 2.631,
+          "mean_actual": 2.804
         },
         {
           "bin": "3-4",
-          "count": 217,
-          "mean_pred": 3.394,
-          "mean_actual": 3.53
+          "count": 226,
+          "mean_pred": 3.411,
+          "mean_actual": 3.496
         },
         {
           "bin": "4-5",
-          "count": 3,
-          "mean_pred": 4.063,
-          "mean_actual": 3.0
+          "count": 5,
+          "mean_pred": 4.098,
+          "mean_actual": 2.4
         }
       ],
       "count": 1564,
-      "ml_mae": 0.649,
-      "ml_rmse": 1.487,
+      "ml_mae": 0.631,
+      "ml_rmse": 1.464,
       "base_mae": 0.637,
       "base_rmse": 1.589,
-      "improvement_mae_pct": -1.88
+      "improvement_mae_pct": 0.94
     },
     "DEF": {
       "calibration_by_xp_bin": [
         {
           "bin": "<1",
-          "count": 2399,
-          "mean_pred": 0.166,
-          "mean_actual": 0.221
+          "count": 2547,
+          "mean_pred": 0.192,
+          "mean_actual": 0.266
         },
         {
           "bin": "1-2",
-          "count": 729,
-          "mean_pred": 1.522,
-          "mean_actual": 1.521
+          "count": 523,
+          "mean_pred": 1.475,
+          "mean_actual": 1.516
         },
         {
           "bin": "2-3",
-          "count": 661,
-          "mean_pred": 2.52,
-          "mean_actual": 2.357
+          "count": 586,
+          "mean_pred": 2.549,
+          "mean_actual": 2.235
         },
         {
           "bin": "3-4",
-          "count": 535,
-          "mean_pred": 3.446,
-          "mean_actual": 3.503
+          "count": 647,
+          "mean_pred": 3.436,
+          "mean_actual": 3.4
         },
         {
           "bin": "4-5",
-          "count": 130,
-          "mean_pred": 4.34,
-          "mean_actual": 4.685
+          "count": 148,
+          "mean_pred": 4.336,
+          "mean_actual": 4.676
         },
         {
           "bin": "5+",
-          "count": 4,
-          "mean_pred": 5.092,
-          "mean_actual": 3.75
+          "count": 7,
+          "mean_pred": 5.127,
+          "mean_actual": 3.429
         }
       ],
       "count": 4458,
-      "ml_mae": 1.182,
-      "ml_rmse": 2.141,
+      "ml_mae": 1.165,
+      "ml_rmse": 2.132,
       "base_mae": 1.186,
       "base_rmse": 2.347,
-      "improvement_mae_pct": 0.34
+      "improvement_mae_pct": 1.77
     },
     "MID": {
       "calibration_by_xp_bin": [
         {
           "bin": "<1",
-          "count": 3519,
-          "mean_pred": 0.155,
+          "count": 3623,
+          "mean_pred": 0.162,
           "mean_actual": 0.18
         },
         {
           "bin": "1-2",
-          "count": 936,
-          "mean_pred": 1.487,
-          "mean_actual": 1.5
+          "count": 815,
+          "mean_pred": 1.504,
+          "mean_actual": 1.475
         },
         {
           "bin": "2-3",
-          "count": 822,
-          "mean_pred": 2.494,
-          "mean_actual": 2.38
+          "count": 782,
+          "mean_pred": 2.498,
+          "mean_actual": 2.428
         },
         {
           "bin": "3-4",
-          "count": 611,
-          "mean_pred": 3.445,
-          "mean_actual": 3.336
+          "count": 638,
+          "mean_pred": 3.443,
+          "mean_actual": 3.339
         },
         {
           "bin": "4-5",
-          "count": 213,
-          "mean_pred": 4.386,
-          "mean_actual": 4.286
+          "count": 245,
+          "mean_pred": 4.382,
+          "mean_actual": 4.441
         },
         {
           "bin": "5+",
-          "count": 59,
-          "mean_pred": 5.678,
-          "mean_actual": 4.881
+          "count": 57,
+          "mean_pred": 5.689,
+          "mean_actual": 4.596
         }
       ],
       "count": 6160,
-      "ml_mae": 0.964,
-      "ml_rmse": 1.87,
+      "ml_mae": 0.944,
+      "ml_rmse": 1.841,
       "base_mae": 0.982,
       "base_rmse": 2.069,
-      "improvement_mae_pct": 1.83
+      "improvement_mae_pct": 3.87
     },
     "FWD": {
       "calibration_by_xp_bin": [
         {
           "bin": "<1",
-          "count": 814,
-          "mean_pred": 0.144,
-          "mean_actual": 0.147
+          "count": 869,
+          "mean_pred": 0.174,
+          "mean_actual": 0.194
         },
         {
           "bin": "1-2",
-          "count": 245,
-          "mean_pred": 1.535,
-          "mean_actual": 1.535
+          "count": 191,
+          "mean_pred": 1.568,
+          "mean_actual": 1.382
         },
         {
           "bin": "2-3",
-          "count": 227,
-          "mean_pred": 2.451,
-          "mean_actual": 2.537
+          "count": 214,
+          "mean_pred": 2.481,
+          "mean_actual": 2.579
         },
         {
           "bin": "3-4",
-          "count": 188,
-          "mean_pred": 3.445,
-          "mean_actual": 3.138
+          "count": 185,
+          "mean_pred": 3.459,
+          "mean_actual": 3.276
         },
         {
           "bin": "4-5",
-          "count": 70,
-          "mean_pred": 4.397,
-          "mean_actual": 4.4
+          "count": 82,
+          "mean_pred": 4.373,
+          "mean_actual": 4.585
         },
         {
           "bin": "5+",
-          "count": 18,
-          "mean_pred": 5.464,
-          "mean_actual": 5.778
+          "count": 21,
+          "mean_pred": 5.483,
+          "mean_actual": 5.095
         }
       ],
       "count": 1562,
-      "ml_mae": 1.142,
-      "ml_rmse": 2.141,
+      "ml_mae": 1.117,
+      "ml_rmse": 2.104,
       "base_mae": 1.132,
       "base_rmse": 2.362,
-      "improvement_mae_pct": -0.88
+      "improvement_mae_pct": 1.33
     }
   },
   "price_calibration": [
     {
       "band": "<6.0",
       "count": 12403,
-      "mean_pred": 1.025,
+      "mean_pred": 1.028,
       "mean_actual": 1.027
     },
     {
       "band": "6.0-8.0",
       "count": 1132,
-      "mean_pred": 2.519,
+      "mean_pred": 2.507,
       "mean_actual": 2.399
     },
     {
       "band": "8.0-10.0",
       "count": 140,
-      "mean_pred": 3.235,
+      "mean_pred": 3.306,
       "mean_actual": 3.586
     },
     {
       "band": "10.0-12.0",
       "count": 39,
-      "mean_pred": 3.955,
+      "mean_pred": 3.908,
       "mean_actual": 3.795
     },
     {
       "band": "12.0+",
       "count": 30,
-      "mean_pred": 4.526,
+      "mean_pred": 4.614,
       "mean_actual": 4.6
     }
   ],
   "calibration": {
-    "interval_80_coverage_pct": 83.56,
-    "below_p10_pct": 10.76,
-    "above_p90_pct": 5.68,
-    "pinball_loss_p10": 0.1511,
-    "pinball_loss_p50": 0.5031,
-    "pinball_loss_p90": 0.3768,
-    "avg_interval_width": 3.19,
-    "calibration_verdict": "CONSERVATIVE INTERVAL (83.56% vs 80% nominal)"
+    "interval_80_coverage_pct": 83.0,
+    "below_p10_pct": 11.25,
+    "above_p90_pct": 5.75,
+    "pinball_loss_p10": 0.1485,
+    "pinball_loss_p50": 0.4933,
+    "pinball_loss_p90": 0.3694,
+    "avg_interval_width": 3.09,
+    "calibration_verdict": "WELL-CALIBRATED (\u00b13.0%)"
   },
   "rolling_origins": [
     {
       "season": "Holdout 2024-25 (trained on 2023-24)",
       "train_size": 21427,
       "test_size": 27605,
-      "mae": 1.042,
-      "rmse": 2.086,
-      "spearman": 0.679,
+      "mae": 1.026,
+      "rmse": 2.07,
+      "spearman": 0.693,
       "base_recent_mae": 1.049,
       "base_season_mae": 1.045,
       "base_fixture_mae": 1.151,
       "best_baseline_mae": 1.045,
-      "gain_vs_baseline": 0.003,
-      "interval_80_coverage_pct": 81.33,
+      "gain_vs_baseline": 0.019,
+      "interval_80_coverage_pct": 81.29,
       "position_coverage": {
-        "GKP": 82.01,
-        "DEF": 83.06,
-        "MID": 80.29,
-        "FWD": 79.72
+        "GKP": 82.75,
+        "DEF": 83.28,
+        "MID": 79.85,
+        "FWD": 79.85
       },
       "minutes_bucket_coverage": {
-        "low": 82.43,
-        "mid": 80.8,
-        "high": 78.25
+        "low": 82.13,
+        "mid": 79.94,
+        "high": 79.82
       }
     },
     {
       "season": "Holdout 2025-26 (trained on 2023-24, 2024-25)",
       "train_size": 29725,
       "test_size": 29757,
-      "mae": 0.957,
-      "rmse": 1.954,
-      "spearman": 0.709,
+      "mae": 0.941,
+      "rmse": 1.936,
+      "spearman": 0.719,
       "base_recent_mae": 0.999,
       "base_season_mae": 0.995,
       "base_fixture_mae": 1.056,
       "best_baseline_mae": 0.995,
-      "gain_vs_baseline": 0.038,
-      "interval_80_coverage_pct": 84.98,
+      "gain_vs_baseline": 0.054,
+      "interval_80_coverage_pct": 84.58,
       "position_coverage": {
-        "GKP": 89.52,
-        "DEF": 82.88,
-        "MID": 84.91,
-        "FWD": 86.71
+        "GKP": 89.41,
+        "DEF": 82.49,
+        "MID": 84.37,
+        "FWD": 86.58
       },
       "minutes_bucket_coverage": {
-        "low": 88.33,
-        "mid": 79.24,
-        "high": 79.49
+        "low": 87.23,
+        "mid": 79.92,
+        "high": 79.2
       }
     },
     {
       "season": "Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)",
       "train_size": 57330,
       "test_size": 3883,
-      "mae": 1.253,
-      "rmse": 2.215,
-      "spearman": 0.641,
+      "mae": 1.223,
+      "rmse": 2.174,
+      "spearman": 0.666,
       "base_recent_mae": 1.293,
       "base_season_mae": 1.287,
       "base_fixture_mae": 1.333,
       "best_baseline_mae": 1.287,
-      "gain_vs_baseline": 0.034,
-      "interval_80_coverage_pct": 78.06,
+      "gain_vs_baseline": 0.064,
+      "interval_80_coverage_pct": 77.54,
       "position_coverage": {
-        "GKP": 77.41,
-        "DEF": 80.27,
-        "MID": 76.77,
-        "FWD": 77.39
+        "GKP": 77.18,
+        "DEF": 79.17,
+        "MID": 76.88,
+        "FWD": 75.87
       },
       "minutes_bucket_coverage": {
-        "low": 77.28,
-        "mid": 79.85,
-        "high": 77.58
+        "low": 77.18,
+        "mid": 77.63,
+        "high": 78.41
       }
     }
   ],
   "ablation": {
     "probe_type": "inference_neutral_prior_replacement_sensitivity_probe",
     "description": "Inference-time sensitivity probe measuring model responsiveness to neutral priors without retraining. True ablation is in reports/ablation.json.",
-    "full_mae": 1.019,
-    "full_rmse": 1.956,
-    "full_spearman": 0.698,
-    "ablated_mae": 1.024,
-    "ablated_rmse": 1.972,
-    "ablated_spearman": 0.697,
-    "mae_gain_pct": 0.49,
+    "full_mae": 1.0,
+    "full_rmse": 1.934,
+    "full_spearman": 0.712,
+    "ablated_mae": 0.995,
+    "ablated_rmse": 1.947,
+    "ablated_spearman": 0.711,
+    "mae_gain_pct": -0.5,
     "odds_candidate_mae": "N/A (External odds omitted to preserve Rule 0.4 zero-cost API guarantee)",
     "odds_candidate_rmse": "N/A",
     "odds_candidate_spearman": "N/A",
     "odds_verdict": "Candidate evaluated: Implied continuous team ratings provide honest match strength without external betting odds; external odds API kept out of production to maintain zero-cost API guarantee."
   },
   "partial_dependence": {
-    "star_player_vs_tough_defence": 3.66,
-    "star_player_vs_avg_defence": 4.07,
-    "star_player_vs_weak_defence": 4.0,
-    "mid_player_vs_tough_defence": 2.94,
-    "mid_player_vs_avg_defence": 3.43,
+    "star_player_vs_tough_defence": 3.64,
+    "star_player_vs_avg_defence": 4.05,
+    "star_player_vs_weak_defence": 3.97,
+    "mid_player_vs_tough_defence": 3.01,
+    "mid_player_vs_avg_defence": 3.42,
     "mid_player_vs_weak_defence": 3.53,
-    "low_player_vs_tough_defence": 0.94,
-    "low_player_vs_avg_defence": 1.05,
+    "low_player_vs_tough_defence": 0.93,
+    "low_player_vs_avg_defence": 1.06,
     "low_player_vs_weak_defence": 1.09,
     "home_advantage_premium_pts": 0.09
   },
@@ -361,8 +361,8 @@
       "team": "Man Utd",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 7.46,
-      "drivers": "Form projection 7.46 xP, position role MID"
+      "xp": 7.07,
+      "drivers": "Form projection 7.07 xP, position role MID"
     },
     {
       "position": "MID",
@@ -370,44 +370,8 @@
       "team": "Chelsea",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 7.08,
-      "drivers": "Form projection 7.08 xP, position role MID"
-    },
-    {
-      "position": "MID",
-      "name": "Enzo Fern\u00e1ndez",
-      "team": "Chelsea",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.66,
-      "drivers": "Form projection 6.66 xP, position role MID"
-    },
-    {
-      "position": "MID",
-      "name": "Dominik Szoboszlai",
-      "team": "Liverpool",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.3,
-      "drivers": "Form projection 6.30 xP, position role MID"
-    },
-    {
-      "position": "MID",
-      "name": "Mohamed Salah",
-      "team": "Liverpool",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.24,
-      "drivers": "Form projection 6.24 xP, position role MID"
-    },
-    {
-      "position": "MID",
-      "name": "Bukayo Saka",
-      "team": "Arsenal",
-      "opponent": "Scheduled Opponent",
-      "venue": "H",
-      "xp": 6.22,
-      "drivers": "Form projection 6.22 xP, position role MID"
+      "xp": 6.87,
+      "drivers": "Form projection 6.87 xP, position role MID"
     },
     {
       "position": "FWD",
@@ -415,17 +379,53 @@
       "team": "Man City",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.05,
-      "drivers": "Form projection 6.05 xP, position role FWD"
+      "xp": 6.81,
+      "drivers": "Form projection 6.81 xP, position role FWD"
     },
     {
-      "position": "FWD",
-      "name": "Jo\u00e3o Pedro Junqueira de Jesus",
+      "position": "MID",
+      "name": "Enzo Fern\u00e1ndez",
       "team": "Chelsea",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 5.99,
-      "drivers": "Form projection 5.99 xP, position role FWD"
+      "xp": 6.56,
+      "drivers": "Form projection 6.56 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Bukayo Saka",
+      "team": "Arsenal",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.55,
+      "drivers": "Form projection 6.55 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Mohamed Salah",
+      "team": "Liverpool",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.34,
+      "drivers": "Form projection 6.34 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Dominik Szoboszlai",
+      "team": "Liverpool",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.26,
+      "drivers": "Form projection 6.26 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Morgan Rogers",
+      "team": "Chelsea",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.15,
+      "drivers": "Form projection 6.15 xP, position role MID"
     }
   ],
   "gate_verdict": {}

@@ -11,12 +11,13 @@ from pathlib import Path
 from fpl_oracle.data.features import FEATURE_COLUMNS, FEATURE_SCHEMA_HASH
 
 DOC_PATH = Path("fpl_oracle_system_architecture.md")
+N = len(FEATURE_COLUMNS)
 
 CLUSTERS = [
     (
         "Minutes & Starts",
-        [c for c in FEATURE_COLUMNS if "minute" in c or "start" in c or "min60" in c],
-        "Rolling average minutes, start rates, and appearance consistency across 3, 5, and 8 gameweeks.",
+        [c for c in FEATURE_COLUMNS if "minute" in c or "start" in c or "min60" in c or c.endswith("_last1")],
+        "Rolling average minutes, start rates and appearance consistency across 3, 5 and 8 gameweeks, plus the last match (minutes, started, subbed early) and matches since the last start.",
     ),
     (
         "Attacking Form",
@@ -100,8 +101,6 @@ CLUSTERS = [
 
 def generate_markdown_table() -> str:
     total_features = len(FEATURE_COLUMNS)
-    assert total_features == 62, f"Expected 62 features, got {total_features}"
-
     # Verify all columns accounted for
     clustered_cols = []
     for _, cols, _ in CLUSTERS:
@@ -142,8 +141,8 @@ def sync_architecture_doc(check_only: bool = False) -> bool:
             errors.append("Doc still references 57-column schema")
         if "57 model features" in content:
             errors.append("Doc still references 57 model features")
-        if "62 model features" not in content or "62-column feature schema" not in content:
-            errors.append("Doc missing 62 feature count references")
+        if f"{N} model features" not in content or f"{N}-column feature schema" not in content:
+            errors.append(f"Doc missing {N} feature count references")
         for name, _, _ in CLUSTERS:
             if name not in content:
                 errors.append(f"Cluster '{name}' missing from doc table")
@@ -187,7 +186,7 @@ def sync_architecture_doc(check_only: bool = False) -> bool:
     )
 
     # 4. Feature counts and table
-    new_text = new_text.replace("57-column feature schema", "62-column feature schema")
+    new_text = re.sub(r"\d+-column feature schema", f"{N}-column feature schema", new_text)
 
     new_table = generate_markdown_table()
     table_pattern = re.compile(
@@ -196,7 +195,7 @@ def sync_architecture_doc(check_only: bool = False) -> bool:
     new_text = table_pattern.sub(new_table + "\n", new_text)
 
     DOC_PATH.write_text(new_text, encoding="utf-8")
-    print(f"Updated {DOC_PATH} with 62-column feature table, clean links, and verified wording.")
+    print(f"Updated {DOC_PATH} with {N}-column feature table, clean links, and verified wording.")
     return True
 
 
