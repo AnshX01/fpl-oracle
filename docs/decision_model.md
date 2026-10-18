@@ -86,7 +86,15 @@ For each tracked rival r (managers above you, and within RIVAL_POINTS_WINDOW bel
 
 Symmetric assumption: rivals improve their squads as well as our planner improves ours, so only today's
 squad quality, today's gap, how far a plan falls below our best plan, and how many players we share enter.
-Shared players cancel. sd per player-gameweek = (p90 − p10) / 2.563.
+Shared players cancel. sd per player-gameweek = (p90 − p10) / 2.563. Each rival's squad is their real one
+(last released gameweek); a rival's first week keeps last week's captain if he is still in their XI, later
+weeks use their top-xP captain.
+
+League cover candidates: the three players we do not own who score most for the tracked rivals,
+Σ_r Σ_t w_r,t(p) · xP_t(p), are each locked into week 1 of an extra solve with this week's chip unchanged.
+They enter the same comparison as every other plan. Owning a rival's player lowers var_r; that helps
+against a rival you lead (mu_r > 0) and hurts against one you chase (mu_r < 0), so the formula, not a
+rule of thumb, decides whether covering is worth it. The card lists each cover checked with its P(win).
 
 Use: expected points decide (sections 2–3). Among plans the forecasts cannot tell apart from the
 recommendation (it does not beat them by its own confidence margin), the tool picks the one with the higher

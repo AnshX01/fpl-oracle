@@ -9,7 +9,9 @@ our best plan:
           left after the horizon at the same per-week rate
 P(finish above r) = Phi(mu_r / sqrt(var_r)); P(win) ~ product over the tracked rivals.
 Weights: 1 per starter, +1 for the captain (+2 with Triple Captain), 1 per bench player with Bench Boost.
-A held squad fields its best XI with the top-xP captain. Shared players cancel in both mean and variance.
+A held squad fields its best XI with the top-xP captain, except that a rival's first week keeps the captain
+they picked last week while he is still in their XI (managers rarely switch a premium captain).
+Shared players cancel in both mean and variance.
 """
 
 from math import sqrt
@@ -29,18 +31,48 @@ def week_weights(starters: list[int], captain: int | None, chip: str | None, ben
     return weights
 
 
-def rival_weeks(elements: list[int], gws: list[int], xp: dict[int, dict[int, float]], position: dict[int, str]):
+def rival_weeks(
+    elements: list[int],
+    gws: list[int],
+    xp: dict[int, dict[int, float]],
+    position: dict[int, str],
+    last_captain: int | None = None,
+):
     from fpl_oracle.optimise.multiperiod import best_lineup
 
     squad = [int(e) for e in elements if int(e) in position]
     weeks = []
-    for gw in gws:
+    for index, gw in enumerate(gws):
         if len(squad) != 15:
             weeks.append({e: 1.0 for e in squad})
             continue
         starters, bench, captain, _ = best_lineup(squad, position, xp[gw], 0.0)
+        if index == 0 and last_captain in starters:
+            captain = last_captain
         weeks.append(week_weights(starters, captain, None, bench))
     return weeks
+
+
+def league_threats(
+    rivals: list[dict[str, Any]],
+    gws: list[int],
+    xp: dict[int, dict[int, float]],
+    position: dict[int, str],
+    mine: set[int],
+    cache: dict[int, list[dict[int, float]]],
+    top: int = 3,
+) -> list[int]:
+    """Players we do not own that score the most for our tracked rivals over the horizon (their weight x xP),
+    i.e. the players whose good weeks would widen the gap most. Fills `cache` with each rival's weeks."""
+    threat: dict[int, float] = {}
+    for index, rival in enumerate(rivals):
+        if index not in cache:
+            cache[index] = rival_weeks(rival["elements"], gws, xp, position, rival.get("captain"))
+        for gw, week in zip(gws, cache[index], strict=True):
+            for p, w in week.items():
+                if p not in mine:
+                    threat[p] = threat.get(p, 0.0) + w * xp[gw].get(p, 0.0)
+    return sorted((p for p in threat if threat[p] > 0), key=lambda p: -threat[p])[:top]
 
 
 def win_probability(
@@ -65,7 +97,7 @@ def win_probability(
     p_all = 1.0
     for index, rival in enumerate(rivals):
         if index not in cache:
-            cache[index] = rival_weeks(rival["elements"], gws, xp, position)
+            cache[index] = rival_weeks(rival["elements"], gws, xp, position, rival.get("captain"))
         mean = float(rival_context["user_points"]) - float(rival["points"]) + plan_points - best_plan_points
         var = 0.0
         for gw, mine, held, theirs in zip(gws, my_weeks, held_weeks, cache[index], strict=True):

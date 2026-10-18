@@ -142,6 +142,16 @@ def track_record_summary() -> str | None:
     return text + " (lower error and higher points are better)."
 
 
+def _cover_text(cover: dict[str, Any]) -> str:
+    """One plain clause for a league cover the planner checked but did not choose."""
+    owners = "your rival owns him" if cover["owners"] == 1 else f"{cover['owners']} rivals own him"
+    diff = cover["points_vs_plan"]
+    return (
+        f"owning {cover['player']} ({owners}) gives {cover['p_win']:.0%}, "
+        f"{abs(diff):.1f} points {'more' if diff > 0 else 'fewer'}"
+    )
+
+
 def _minutes_note(target_df: pd.DataFrame, players: list[dict[str, Any]]) -> str | None:
     """Plain line naming chosen players whose starting place this week is a genuine coin-flip (35-75% to start)."""
     if target_df.empty or "p_starts" not in target_df:
@@ -784,6 +794,11 @@ class DecisionCardGenerator:
             # From the planner's win-probability model (docs/decision_model.md section 4), same plan as the card
             summary["win_chance"] = league_odds["p_win"]
             summary["text"] += f" Chance of finishing first with this plan: about {league_odds['p_win']:.0%}."
+            covers = [c for c in rec_plan.get("league_cover_checks") or [] if not c["chosen"]]
+            if rec_plan.get("league_tiebreak"):
+                summary["text"] += " " + str(rec_plan.get("recommendation_summary", ""))
+            elif covers:
+                summary["text"] += " Also checked: " + "; ".join(_cover_text(c) for c in covers) + "."
         if summary:
             finished = [e.id for e in boot.events if e.finished]
             rivals_dict.update(
