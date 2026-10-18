@@ -142,6 +142,22 @@ def track_record_summary() -> str | None:
     return text + " (lower error and higher points are better)."
 
 
+def _close_calls(rec_plan: dict[str, Any]) -> list[str]:
+    """Plain lines for players the plan sells (or skips) only narrowly: inside the forecast's uncertainty."""
+    weeks = len(rec_plan.get("trajectory") or [])
+    lines = []
+    for c in rec_plan.get("league_cover_checks") or []:
+        if c["chosen"] or not c["close"] or c["points_vs_plan"] > 0:
+            continue
+        verb, keep = ("Selling", "Keeping him") if c["owned"] else ("Not buying", "Buying him")
+        lines.append(
+            f"{verb} {c['player']} is only slightly better: {abs(c['points_vs_plan']):.1f} points over the next "
+            f"{weeks} gameweeks, inside the forecast's uncertainty. {keep} is a fair choice; your chance of "
+            f"finishing first would be about {c['p_win']:.0%} instead of {rec_plan['league']['p_win']:.0%}."
+        )
+    return lines
+
+
 def _cover_text(cover: dict[str, Any]) -> str:
     """One plain clause for a league cover the planner checked but did not choose."""
     owners = "your rival owns him" if cover["owners"] == 1 else f"{cover['owners']} rivals own him"
@@ -794,7 +810,7 @@ class DecisionCardGenerator:
             # From the planner's win-probability model (docs/decision_model.md section 4), same plan as the card
             summary["win_chance"] = league_odds["p_win"]
             summary["text"] += f" Chance of finishing first with this plan: about {league_odds['p_win']:.0%}."
-            covers = [c for c in rec_plan.get("league_cover_checks") or [] if not c["chosen"]]
+            covers = [c for c in rec_plan.get("league_cover_checks") or [] if not c["chosen"] and not c["close"]]
             if rec_plan.get("league_tiebreak"):
                 summary["text"] += " " + str(rec_plan.get("recommendation_summary", ""))
             elif covers:
@@ -970,6 +986,7 @@ class DecisionCardGenerator:
             "track_record": track_record_summary(),
             "what_changed": what_changed,
             "minutes_note": minutes_note,
+            "close_calls": _close_calls(rec_plan),
             "press_signals": press_notes,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
             "is_stale": is_stale,
