@@ -254,12 +254,12 @@ def test_expired_source_is_revalidated_not_treated_as_changed(monkeypatch):
             assert read_context.get() is None
             assert force_refresh
             calls.append(key)
-            return {"facts": 2 if changed else 1}, False
+            return {"current": [{"event": 7, "bank": 2 if changed else 1}], "chips": []}, False
 
         monkeypatch.setattr(fpl_client, "_fetch_json", fresh)
 
         async def squad():
-            remember("entry:1:history", {"facts": 1}, False, None)
+            remember("entry:1:history", {"current": [{"event": 7, "bank": 1}], "chips": []}, False, None)
             return dict(captain=dict(element=12))
 
         monkeypatch.setattr(api, "get_squad", squad)
