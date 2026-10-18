@@ -119,7 +119,7 @@ def test_fast_sequence_lineup_matches_served_lineup():
         assert cap == served["captain"]["element"]
 
 
-def test_league_context_uses_roster_not_captain(monkeypatch):
+def test_league_context_carries_roster_and_last_captain(monkeypatch):
     from types import SimpleNamespace
 
     from fpl_oracle.api.fpl_client import fpl_client
@@ -146,7 +146,10 @@ def test_league_context_uses_roster_not_captain(monkeypatch):
 
     context = asyncio.run(AnalysisService().league_context(6))
     assert context == dict(
-        user_points=100, user_rank=2, standings=[dict(rank=2, points=100)], rivals=[dict(points=150, elements=[1])]
+        user_points=100,
+        user_rank=2,
+        standings=[dict(rank=2, points=100)],
+        rivals=[dict(points=150, elements=[1], captain=99)],
     )
 
 
