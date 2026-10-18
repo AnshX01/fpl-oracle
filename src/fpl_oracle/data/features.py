@@ -42,6 +42,12 @@ FEATURE_COLUMNS = [
     "roll_xA_5",
     "roll_xA_8",
     "roll_xGI_5",
+    "xg90_30",
+    "xa90_30",
+    "xg_share_30",
+    "xa_share_30",
+    "finishing_30",
+    "assist_conversion_30",
     "roll_goals_5",
     "roll_assists_5",
     # Defensive & Goalkeeping Form
@@ -145,6 +151,36 @@ PRIOR_TEAM_CLEAN_SHEET = 0.25
 DC_REFIT_EVERY_N_ROUNDS = 4
 
 
+LONG_RATE_WINDOW = 30  # matches behind the long-run per-90 attacking rates
+LONG_RATE_PRIOR_90S = 3.0  # shrinks a rate built on few minutes towards zero
+
+
+# Share of the team's expected goals (xG, xA) a position takes while on the pitch, 2023-24 to 2026-27
+SHARE_PRIOR = {"GKP": (0.0001, 0.0012), "DEF": (0.037, 0.039), "MID": (0.112, 0.087), "FWD": (0.290, 0.051)}
+SHARE_PRIOR_WEIGHT = 1.5  # team xG on the pitch (about one match) behind the position prior
+
+
+def _team_shares(rows: pd.DataFrame, pos_code: str) -> tuple[float, float]:
+    """(xG share, xA share) of the team's expected goals while on the pitch over `rows`, shrunk to the prior."""
+    prior = SHARE_PRIOR.get(pos_code, SHARE_PRIOR["MID"])
+    team = rows["team_xG_match"].fillna(0.0) if "team_xG_match" in rows else pd.Series(0.0, index=rows.index)
+    pitch = float((team * rows["minutes"] / 90.0).sum()) + SHARE_PRIOR_WEIGHT
+    return (
+        (float(rows["expected_goals"].sum()) + SHARE_PRIOR_WEIGHT * prior[0]) / pitch,
+        (float(rows["expected_assists"].sum()) + SHARE_PRIOR_WEIGHT * prior[1]) / pitch,
+    )
+
+
+CONVERSION_PRIOR_CHANCES = 3.0  # xG (or xA) of league-average conversion behind a player's own record
+LEAGUE_ASSISTS_PER_XA = 1.35  # FPL counts more assists than Opta xA (2023-24 to 2026-27)
+
+
+def _conversion(goals: Any, xg: Any, assists: Any, xa: Any) -> tuple[Any, Any]:
+    """(goals per xG, assists per xA) over a window, shrunk to the league rates; floats or Series."""
+    k = CONVERSION_PRIOR_CHANCES
+    return (goals + k) / (xg + k), (assists + k * LEAGUE_ASSISTS_PER_XA) / (xa + k)
+
+
 def _games_since_start(starts: pd.Series) -> pd.Series:
     """Matches since the player last started, before each match (capped at 10; 10 if never started)."""
     pos = np.arange(len(starts), dtype=float)
@@ -182,6 +218,17 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         r_min60_5 = float((last_5["minutes"] >= 60).mean()) if not last_5.empty else 0.0
         std_mins = float(p_hist["minutes"].mean())
         min_last1 = float(p_hist["minutes"].iloc[-1])
+        last_30 = p_hist.tail(LONG_RATE_WINDOW)
+        nineties = float(last_30["minutes"].sum()) / 90.0 + LONG_RATE_PRIOR_90S
+        xg90_30 = float(last_30["expected_goals"].sum()) / nineties
+        xa90_30 = float(last_30["expected_assists"].sum()) / nineties
+        xg_share_30, xa_share_30 = _team_shares(last_30, pos_code)
+        finishing_30, assist_conversion_30 = _conversion(
+            float(last_30["goals_scored"].sum()),
+            float(last_30["expected_goals"].sum()),
+            float(last_30["assists"].sum()),
+            float(last_30["expected_assists"].sum()),
+        )
         start_last1 = float(p_hist["starts"].iloc[-1] >= 1)
         subbed_early = float(start_last1 and min_last1 < 60)
         started = np.flatnonzero(p_hist["starts"].to_numpy() >= 1)
@@ -257,6 +304,10 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         r_min60_5 = prior_starts * 0.9
         std_mins = prior_mins
         min_last1 = prior_mins
+        xg90_30 = r_xg_5
+        xa90_30 = r_xa_5
+        xg_share_30, xa_share_30 = SHARE_PRIOR.get(pos_code, SHARE_PRIOR["MID"])
+        finishing_30, assist_conversion_30 = _conversion(0.0, 0.0, 0.0, 0.0)
         start_last1 = prior_starts
         subbed_early = 0.0
         since_start = 1.0 if prior_starts >= 0.65 else 10.0
@@ -288,6 +339,12 @@ def compute_player_rolling_stats(p_hist: pd.DataFrame, pos_code: str = "MID", va
         "start_last1": start_last1,
         "subbed_early_last1": subbed_early,
         "games_since_start": since_start,
+        "xg90_30": xg90_30,
+        "xa90_30": xa90_30,
+        "xg_share_30": xg_share_30,
+        "xa_share_30": xa_share_30,
+        "finishing_30": finishing_30,
+        "assist_conversion_30": assist_conversion_30,
         "roll_points_3": r_pts_3,
         "roll_points_5": r_pts_5,
         "roll_points_8": r_pts_8,
@@ -613,7 +670,9 @@ class FeatureEngineering:
         Guarantees zero data leakage by strictly shifting by 1 within each player group.
         Sorts output globally by time (season, round) for chronological evaluation.
         """
-        df = df.copy()
+        from fpl_oracle.data.historical import with_team_match_xg
+
+        df = with_team_match_xg(df)
 
         # DefCon was introduced in 2025-26. Seasons without a single non-zero value never recorded it: their
         # labels are unknown (NaN), not "zero actions" (legacy master_history.csv files stored 0.0 here).
@@ -937,6 +996,39 @@ class FeatureEngineering:
             float
         )
         df_player["games_since_start"] = grouped["starts"].apply(_games_since_start)
+        # Long-run attacking rate per 90: the last 8 matches cannot tell an elite finisher from a hot streak.
+        nineties = (
+            grouped["minutes"].apply(lambda s: s.shift(1).rolling(LONG_RATE_WINDOW, min_periods=1).sum()).fillna(0.0)
+            / 90.0
+            + LONG_RATE_PRIOR_90S
+        )
+        for col, src in (("xg90_30", "expected_goals"), ("xa90_30", "expected_assists")):
+            total = grouped[src].apply(lambda s: s.shift(1).rolling(LONG_RATE_WINDOW, min_periods=1).sum()).fillna(0.0)
+            df_player[col] = total / nineties
+        # Share of the team's expected goals while on the pitch, shrunk to the position's share
+        if "team_xG_match" in df_player.columns:
+            on_pitch = df_player["team_xG_match"].fillna(0.0) * df_player["minutes"] / 90.0
+        else:
+            on_pitch = pd.Series(0.0, index=df_player.index)
+        pitch = (
+            on_pitch.groupby(df_player["canonical_id"])
+            .transform(lambda s: s.shift(1).rolling(LONG_RATE_WINDOW, min_periods=1).sum())
+            .fillna(0.0)
+        )
+        priors = df_player["position"].map(lambda p: SHARE_PRIOR.get(str(p), SHARE_PRIOR["MID"]))
+        for i, (col, src) in enumerate((("xg_share_30", "expected_goals"), ("xa_share_30", "expected_assists"))):
+            total = grouped[src].apply(lambda s: s.shift(1).rolling(LONG_RATE_WINDOW, min_periods=1).sum()).fillna(0.0)
+            df_player[col] = (total + SHARE_PRIOR_WEIGHT * priors.map(lambda pr, i=i: pr[i])) / (
+                pitch + SHARE_PRIOR_WEIGHT
+            )
+        # Long-run conversion of chances: goals per xG and assists per xA, shrunk to the league rate
+        sums = {
+            src: grouped[src].apply(lambda s: s.shift(1).rolling(LONG_RATE_WINDOW, min_periods=1).sum()).fillna(0.0)
+            for src in ("goals_scored", "expected_goals", "assists", "expected_assists")
+        }
+        df_player["finishing_30"], df_player["assist_conversion_30"] = _conversion(
+            sums["goals_scored"], sums["expected_goals"], sums["assists"], sums["expected_assists"]
+        )
 
         # Shrinkage prior for Round 1
         is_gw1 = df_player["round"] == 1
@@ -1099,6 +1191,17 @@ class FeatureEngineering:
             if c in df_sorted.columns
         ]
         meta = df_sorted[meta_cols].copy()
+        if {"team", "opponent_team"} <= set(df_sorted.columns):
+            # One match id, the same for both sides: team goals and the 6 bonus points are per match, and a
+            # double gameweek is two matches. Past seasons carry no fixture id; two teams meet once per round.
+            pair = np.sort(df_sorted[["team", "opponent_team"]].astype(str).to_numpy(), axis=1)
+            meta["fixture_id"] = (
+                df_sorted["season"].astype(str)
+                + ":"
+                + df_sorted["round"].astype(str)
+                + ":"
+                + pd.Series([f"{a}-{b}" for a, b in pair], index=df_sorted.index)
+            )
         X.attrs["meta"] = meta
         X.attrs["schema_hash"] = self._schema_hash
 
@@ -1476,9 +1579,6 @@ class FeatureEngineering:
                     "value": float(elem.now_cost),
                     "is_2026_27": 1.0,
                     "chance_of_playing": cop,
-                    "penalties_order": getattr(elem, "penalties_order", None),
-                    "direct_freekicks_order": getattr(elem, "direct_freekicks_order", None),
-                    "corners_and_indirect_freekicks_order": getattr(elem, "corners_and_indirect_freekicks_order", None),
                 }
                 rows.append(row)
 

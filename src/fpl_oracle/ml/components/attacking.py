@@ -1,8 +1,7 @@
 """
 Attacking component model and player share reconciliation engine (WI-3.3).
-Predicts expected goals (xG) and expected assists (xA), models player share
-of team attacking output conditional on playing, incorporates set-piece hierarchy,
-and strictly reconciles player expectations to match Dixon-Coles/market team lambda.
+Predicts expected goals and assists from each player's share of his team's chances given he plays, and
+reconciles them so every team's players add up to the market (or Dixon-Coles) team goals.
 """
 
 import logging
@@ -11,47 +10,101 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from fpl_oracle.data.features import FEATURE_COLUMNS
+from fpl_oracle.data.features import FEATURE_COLUMNS, LEAGUE_ASSISTS_PER_XA, SHARE_PRIOR
 from fpl_oracle.ml.components.base import BaseComponent
 
 logger = logging.getLogger("fpl_oracle.ml.components.attacking")
+
+# Of every team goal, the share credited to one of its players and the assists recorded with it
+# (2023-24 to 2026-27: own goals are 3.7% of goals and score for nobody; 0.88 assists per team goal).
+PLAYER_GOALS_PER_TEAM_GOAL = 0.963
+ASSISTS_PER_TEAM_GOAL = 0.879
+
+
+# Goals per xG by position (2023-24 to 2026-27): xG over-rates defenders' set-piece headers
+GOALS_PER_XG = {"GKP": 0.01, "DEF": 0.849, "MID": 1.005, "FWD": 0.978}
+FINISHING_WEIGHT = 0.5  # how much of a player's own shrunk conversion record carries forward (held-out fit)
+
+
+def _position(X: pd.DataFrame) -> np.ndarray:
+    cols = [f"pos_{p}" for p in ("GKP", "DEF", "MID", "FWD")]
+    if not set(cols) <= set(X.columns):
+        return np.full(len(X), "MID")
+    return np.array(["GKP", "DEF", "MID", "FWD"])[X[cols].to_numpy(dtype=float).argmax(axis=1)]
+
+
+def share_offset(X: pd.DataFrame, minutes: np.ndarray, target: str) -> np.ndarray:
+    """log E[goals (or assists) | plays] before learned corrections:
+    team expected goals x the player's shrunk share of his team's xG (xA) on the pitch x minutes / 90,
+    times the position's goals-per-xG and part of his own conversion record."""
+    lam = np.clip(pd.to_numeric(X["implied_team_xG"], errors="coerce").fillna(1.35).to_numpy(float), 0.05, None)
+    share_col, conv_col, norm = (
+        ("xg_share_30", "finishing_30", 1.0)
+        if target == "goals"
+        else ("xa_share_30", "assist_conversion_30", LEAGUE_ASSISTS_PER_XA)
+    )
+    position = _position(X)
+    prior = np.array([SHARE_PRIOR[p][0 if target == "goals" else 1] for p in position])
+    share = pd.to_numeric(X[share_col], errors="coerce").to_numpy(float) if share_col in X else prior
+    share = np.clip(np.where(np.isfinite(share), share, prior), 1e-4, None)
+    conv = pd.to_numeric(X[conv_col], errors="coerce").to_numpy(float) if conv_col in X else np.full(len(X), norm)
+    conv = np.clip(np.where(np.isfinite(conv), conv, norm) / norm, 0.2, 5.0)
+    pos_rate = np.array([GOALS_PER_XG[p] for p in position]) if target == "goals" else 1.0
+    return (
+        np.log(lam * share * pos_rate)
+        + FINISHING_WEIGHT * np.log(conv)
+        + np.log(np.clip(np.asarray(minutes, dtype=float), 1.0, 90.0) / 90.0)
+    )
 
 
 class AttackingModel(BaseComponent):
     """
     Player attacking expectation component with coherent team-goal reconciliation (WI-3.3).
+    E[goals | plays] is an explicit share model (share_offset) with LightGBM learning a multiplicative
+    correction on top, so a correction shrinks towards "no change" rather than towards the average player.
     """
 
     def __init__(self):
         super().__init__("attacking_model")
-        self.reg_goals = lgb.LGBMRegressor(
-            objective="tweedie",
-            tweedie_variance_power=1.5,
-            n_estimators=120,
-            learning_rate=0.05,
-            num_leaves=31,
+        params = dict(
+            objective="poisson",
+            learning_rate=0.03,
+            num_leaves=15,
+            min_child_samples=100,
+            subsample=0.8,
+            subsample_freq=1,
+            colsample_bytree=0.8,
+            n_estimators=4000,
             random_state=42,
             verbosity=-1,
             n_jobs=4,
         )
-        self.reg_assists = lgb.LGBMRegressor(
-            objective="tweedie",
-            tweedie_variance_power=1.5,
-            n_estimators=120,
-            learning_rate=0.05,
-            num_leaves=31,
-            random_state=42,
-            verbosity=-1,
-            n_jobs=4,
-        )
+        self.reg_goals = lgb.LGBMRegressor(**params)
+        self.reg_assists = lgb.LGBMRegressor(**params)
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
+        # Fitted on matches the player played, with the minutes he played as exposure; the minutes model owns
+        # whether and how long he plays. Trees stop when the latest 15% of matches stop improving.
+        played = Y["target_minutes"].to_numpy() > 0
         feat_cols = [c for c in FEATURE_COLUMNS if c in X.columns]
-        X_train = X[feat_cols].copy()
-        for c in X_train.columns:
-            X_train[c] = pd.to_numeric(X_train[c], errors="coerce").fillna(0.0)
-        self.reg_goals.fit(X_train, Y["target_goals"].values)
-        self.reg_assists.fit(X_train, Y["target_assists"].values)
+        X_p = X.loc[played, feat_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+        Y_p = Y.loc[played]
+        mins = Y_p["target_minutes"].to_numpy(float)
+        cut = int(len(X_p) * 0.85)
+        for reg, target, label in (
+            (self.reg_goals, "goals", "target_goals"),
+            (self.reg_assists, "assists", "target_assists"),
+        ):
+            offset = share_offset(X_p, mins, target)
+            reg.fit(
+                X_p.iloc[:cut],
+                Y_p[label].iloc[:cut],
+                init_score=offset[:cut],
+                eval_X=(X_p.iloc[cut:],),
+                eval_y=(Y_p[label].iloc[cut:],),
+                eval_init_score=[offset[cut:]],
+                callbacks=[lgb.early_stopping(100, verbose=False)],
+            )
         self.is_fitted = True
 
     def reconcile_team_goals_and_assists(
@@ -61,14 +114,14 @@ class AttackingModel(BaseComponent):
         X: pd.DataFrame,
         team_ids: pd.Series | np.ndarray | None = None,
         fixture_ids: pd.Series | np.ndarray | None = None,
-        assist_rate: float = 0.85,
+        assist_rate: float = ASSISTS_PER_TEAM_GOAL,
         availability: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         WI-3.3: Reconcile player-level expectations with team-level expectations.
 
         Rescales player goals and assists within each team-fixture so that:
-            sum_{p in team} availability_p * E[goals_p] == implied_team_xG (within 5% tolerance)
+            sum_{p in team} availability_p * E[goals_p] == PLAYER_GOALS_PER_TEAM_GOAL * implied_team_xG
             sum_{p in team} availability_p * E[assists_p] == assist_rate * implied_team_xG
         `availability` (chance of playing in [0, 1]) is applied later by the ensemble, so the team total only
         holds after that step; weighting by it here hands the goals of an absent player to his teammates
@@ -149,14 +202,15 @@ class AttackingModel(BaseComponent):
 
             if lambda_team <= 0.01:
                 continue
+            lambda_goals = lambda_team * PLAYER_GOALS_PER_TEAM_GOAL
 
             # Goals reconciliation
             s_goals = float(np.sum(reconciled_goals[idx] * avail[idx]))
             if s_goals > 1e-6:
-                kappa_g = float(lambda_team / s_goals)
+                kappa_g = float(lambda_goals / s_goals)
                 reconciled_goals[idx] = reconciled_goals[idx] * kappa_g
                 new_s_goals = float(np.sum(reconciled_goals[idx] * avail[idx]))
-                goal_shares[idx] = reconciled_goals[idx] * avail[idx] / lambda_team
+                goal_shares[idx] = reconciled_goals[idx] * avail[idx] / lambda_goals
                 logger.debug(
                     "WI-3.3: Reconciled goals for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
                     key,
@@ -189,17 +243,19 @@ class AttackingModel(BaseComponent):
 
         return reconciled_goals, reconciled_assists, goal_shares, assist_shares
 
-    def predict(
+    def predict(  # type: ignore[override]  # also needs the minutes model's chance of playing
         self,
         X: pd.DataFrame,
+        minutes: dict[str, np.ndarray],
         team_ids: pd.Series | np.ndarray | None = None,
         fixture_ids: pd.Series | np.ndarray | None = None,
         reconcile: bool = True,
-        assist_rate: float = 0.85,
+        assist_rate: float = ASSISTS_PER_TEAM_GOAL,
     ) -> dict[str, np.ndarray]:
         """
-        Produce expected goals and assists, incorporating set-piece hierarchy and
-        reconciling with team fixture expected goals (WI-3.3).
+        Produce expected goals and assists, reconciling with team fixture expected goals (WI-3.3).
+        `minutes` is the minutes model's output: E[goals] = P(plays) * E[goals | plays], with E[goals | plays]
+        from the share model at the minutes he is expected to play when he plays.
         """
         if not self.is_fitted:
             raise RuntimeError("AttackingModel is not fitted.")
@@ -225,8 +281,14 @@ class AttackingModel(BaseComponent):
         for c in X_feat.columns:
             X_feat[c] = pd.to_numeric(X_feat[c], errors="coerce").fillna(0.0)
 
-        exp_goals = np.clip(self.reg_goals.predict(X_feat), 0.0, 3.5)
-        exp_assists = np.clip(self.reg_assists.predict(X_feat), 0.0, 3.0)
+        p_play = np.clip(np.asarray(minutes["p_play"], dtype=float), 0.0, 1.0)
+        mins_if_plays = np.asarray(minutes["expected_minutes"], dtype=float) / np.maximum(p_play, 1e-3)
+        raw = {}
+        for reg, target in ((self.reg_goals, "goals"), (self.reg_assists, "assists")):
+            score = reg.predict(X_feat, raw_score=True, num_iteration=reg.best_iteration_)
+            raw[target] = np.exp(score + share_offset(X, mins_if_plays, target)) * p_play
+        exp_goals = np.clip(raw["goals"], 0.0, 3.5)
+        exp_assists = np.clip(raw["assists"], 0.0, 3.0)
 
         # 2. Suppress attacking expectations for GKP
         if "pos_GKP" in X.columns:
@@ -234,23 +296,9 @@ class AttackingModel(BaseComponent):
             exp_goals = exp_goals * (1.0 - is_gkp * 0.98)
             exp_assists = exp_assists * (1.0 - is_gkp * 0.95)
 
-        # 3. Set-piece hierarchy adjustments (WI-3.3). Availability is applied once, by the ensemble.
-        # Penalty taker boost: ~0.12 goals/match for primary, ~0.03 for secondary
-        if "penalties_order" in X.columns:
-            p_ord = pd.to_numeric(X["penalties_order"], errors="coerce").fillna(99).values
-            exp_goals = exp_goals + np.where(p_ord == 1, 0.12, np.where(p_ord == 2, 0.03, 0.0))
-
-        # Direct free-kick boost: ~0.03 goals/match
-        if "direct_freekicks_order" in X.columns:
-            fk_ord = pd.to_numeric(X["direct_freekicks_order"], errors="coerce").fillna(99).values
-            exp_goals = exp_goals + np.where(fk_ord == 1, 0.03, np.where(fk_ord == 2, 0.01, 0.0))
-
-        # Corner / indirect free-kick boost: ~0.08 assists/match for primary
-        if "corners_and_indirect_freekicks_order" in X.columns:
-            cn_ord = pd.to_numeric(X["corners_and_indirect_freekicks_order"], errors="coerce").fillna(99).values
-            exp_assists = exp_assists + np.where(cn_ord == 1, 0.08, np.where(cn_ord == 2, 0.03, 0.0))
-
-        # 4. Team-level reconciliation (WI-3.3)
+        # Set pieces need no extra term: FPL xG / xA already count penalties and set-piece chances, so a
+        # taker's rolling rates carry them (a flat boost on top double-counted them at serving time only).
+        # 3. Team-level reconciliation (WI-3.3)
         if reconcile:
             availability = (
                 np.clip(pd.to_numeric(X["chance_of_playing"], errors="coerce").fillna(100.0).values / 100.0, 0.0, 1.0)

@@ -212,7 +212,7 @@ In [`predict.py`](src/fpl_oracle/ml/predict.py):
 Implemented in [`src/fpl_oracle/data/features.py`](src/fpl_oracle/data/features.py), the feature generator enforces strict train/serve parity:
 1. **Training Mode:** All rolling windows for player statistics are strictly shifted by 1 match (`shift(1)` within player groups). A match's outcome never enters the features predicting that match.
 2. **Serving Mode:** Features for upcoming fixtures use unshifted rolling statistics computed through the most recently completed match.
-3. **Schema Verification:** A canonical SHA-256 hash `FEATURE_SCHEMA_HASH` locks the 66-column feature schema.
+3. **Schema Verification:** A canonical SHA-256 hash `FEATURE_SCHEMA_HASH` locks the 72-column feature schema.
 
 ---
 
@@ -241,12 +241,12 @@ $$P(\text{Clean Sheet}) = P(Y = 0) = \frac{\mu_{\text{opp}}^0 e^{-\mu_{\text{opp
 
 ### Feature Dictionary & Schema Parity
 
-The 66 model features are grouped into 11 functional clusters:
+The 72 model features are grouped into 11 functional clusters:
 
 | Feature Group | Features | Count | Description |
 |---|---|:---:|---|
 | **Minutes & Starts** | `roll_minutes_3`, `roll_minutes_5`, `roll_minutes_8`, `roll_starts_ratio_5`, `roll_min60_ratio_5`, `std_minutes_per_gw`, `min_last1`, `start_last1`, `subbed_early_last1`, `games_since_start` | 10 | Rolling average minutes, start rates and appearance consistency across 3, 5 and 8 gameweeks, plus the last match (minutes, started, subbed early) and matches since the last start. |
-| **Attacking Form** | `roll_points_3`, `roll_points_5`, `roll_points_8`, `roll_xG_3`, `roll_xG_5`, `roll_xG_8`, `roll_xA_3`, `roll_xA_5`, `roll_xA_8`, `roll_xGI_5`, `roll_goals_5`, `roll_assists_5` | 12 | Underlying shot quality (xG), playmaking volume (xA/xGI), and attacking returns across 3, 5, and 8 matches. |
+| **Attacking Form** | `roll_points_3`, `roll_points_5`, `roll_points_8`, `roll_xG_3`, `roll_xG_5`, `roll_xG_8`, `roll_xA_3`, `roll_xA_5`, `roll_xA_8`, `roll_xGI_5`, `xg90_30`, `xa90_30`, `xg_share_30`, `xa_share_30`, `finishing_30`, `assist_conversion_30`, `roll_goals_5`, `roll_assists_5` | 18 | Underlying shot quality (xG), playmaking volume (xA/xGI), and attacking returns across 3, 5, and 8 matches. |
 | **Defensive & Goalkeeping Form** | `roll_xGC_5`, `roll_clean_sheets_5`, `roll_saves_5`, `roll_goals_conceded_5`, `roll_defcon_5` | 5 | Expected goals conceded, clean sheets, goalkeeper saves, and DefCon defensive contribution actions. |
 | **ICT & BPS** | `roll_ict_5`, `roll_bps_5` | 2 | FPL ICT index form and underlying Bonus Point System performance metrics. |
 | **Disciplinary & Rare Events** | `roll_cards_5`, `roll_own_goals_5`, `roll_penalties_missed_5`, `roll_penalties_saved_5` | 4 | Deduction risks including card frequency, own goals, penalty misses, and penalty save capability. |
@@ -256,7 +256,7 @@ The 66 model features are grouped into 11 functional clusters:
 | **Opponent Defensive Form** | `opp_roll_points_3`, `opp_roll_points_5`, `opp_roll_points_8`, `opp_roll_goals_conceded_3`, `opp_roll_goals_conceded_5`, `opp_roll_goals_conceded_8`, `opp_roll_xGC_3`, `opp_roll_xGC_5`, `opp_roll_xGC_8`, `opp_roll_clean_sheets_5` | 10 | Trailing opponent defensive vulnerability: conceded points, actual goals, and xGC across 3, 5, and 8 matches. |
 | **Positional One-Hot** | `pos_GKP`, `pos_DEF`, `pos_MID`, `pos_FWD` | 4 | One-hot position indicators (pos_GKP, pos_DEF, pos_MID, pos_FWD) for role-conditioned scoring rates. |
 | **Market & Status** | `value`, `is_2026_27`, `chance_of_playing` | 3 | Current player price, active season indicator, and official availability probability percentage. |
-| **Total** | *All 66 Canonical Feature Columns* | **66** | *Schema hash: `3bf893a7efc5aa16...`* |
+| **Total** | *All 72 Canonical Feature Columns* | **72** | *Schema hash: `c128fe2a81f48154...`* |
 
 ---
 

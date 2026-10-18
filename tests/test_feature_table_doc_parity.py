@@ -2,11 +2,11 @@ from fpl_oracle.data.features import FEATURE_COLUMNS
 from scripts.generate_architecture_feature_table import sync_architecture_doc
 
 
-def test_feature_count_is_66():
+def test_feature_count_is_72():
     """
-    F-016: FEATURE_COLUMNS must have exactly 66 features.
+    F-016: FEATURE_COLUMNS must have exactly 72 features.
     """
-    assert len(FEATURE_COLUMNS) == 66
+    assert len(FEATURE_COLUMNS) == 72
 
 
 def test_architecture_doc_feature_table_and_wording_parity():
