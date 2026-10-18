@@ -111,28 +111,31 @@
               <div v-for="p in g.players" :key="p.element" class="item-row is-new">
                 <span>In: {{ p.web_name }}<span class="meta">{{ p.team_short }}</span></span>
                 <span class="num">{{ priceText(p) }}<span class="meta">{{ p.expected_points }} pts</span></span>
-                <ui-button size="sm" variant="ghost" :disabled="adviceBusy" @click="setChoice(p, 'avoid')">Don't buy</ui-button>
+                <ui-button size="sm" :variant="choiceOf(p) === 'avoid' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(p) === 'avoid'" @click="toggleChoice(p, 'avoid')">{{ choiceOf(p) === 'avoid' ? 'Not buying ✓' : "Don't buy" }}</ui-button>
               </div>
               <div v-if="g.out.length" class="item-row is-out">
                 <span>Out:</span>
-                <span v-for="p in g.out" :key="p.element" class="row">{{ p.web_name }}<ui-button size="sm" variant="ghost" :disabled="adviceBusy" @click="setChoice(p, 'keep')">Keep</ui-button></span>
+                <span v-for="p in g.out" :key="p.element" class="row">{{ p.web_name }}<ui-button size="sm" :variant="choiceOf(p) === 'keep' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(p) === 'keep'" @click="toggleChoice(p, 'keep')">{{ choiceOf(p) === 'keep' ? 'Keeping ✓' : 'Keep' }}</ui-button></span>
               </div>
             </div>
           </template>
           <div v-else-if="card.transfers.in.length" class="stack-sm">
             <div v-for="(pair, idx) in card.transfers.pairs" :key="idx" class="move">
-              <div class="item-row is-out"><span>Out: {{ pair.out ? pair.out.web_name : 'None' }}<span v-if="pair.out" class="meta">{{ pair.out.position }} · {{ pair.out.team_short }}</span></span><span v-if="pair.out" class="num">£{{ pair.out.cost.toFixed(1) }}m</span><ui-button v-if="pair.out" size="sm" variant="ghost" :disabled="adviceBusy" @click="setChoice(pair.out, 'keep')">Keep</ui-button></div>
+              <div class="item-row is-out"><span>Out: {{ pair.out ? pair.out.web_name : 'None' }}<span v-if="pair.out" class="meta">{{ pair.out.position }} · {{ pair.out.team_short }}</span></span><span v-if="pair.out" class="num">£{{ pair.out.cost.toFixed(1) }}m</span><ui-button v-if="pair.out" size="sm" :variant="choiceOf(pair.out) === 'keep' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(pair.out) === 'keep'" @click="toggleChoice(pair.out, 'keep')">{{ choiceOf(pair.out) === 'keep' ? 'Keeping ✓' : 'Keep' }}</ui-button></div>
               <ui-icon name="arrow-right"></ui-icon>
-              <div class="item-row is-new"><span>In: {{ pair.in ? pair.in.web_name : 'None' }}<span v-if="pair.in" class="meta">{{ pair.in.position }} · {{ pair.in.team_short }} · {{ pair.in.expected_points }} pts</span></span><span v-if="pair.in" class="num">£{{ pair.in.cost.toFixed(1) }}m</span><ui-button v-if="pair.in" size="sm" variant="ghost" :disabled="adviceBusy" @click="setChoice(pair.in, 'avoid')">Don't buy</ui-button></div>
+              <div class="item-row is-new"><span>In: {{ pair.in ? pair.in.web_name : 'None' }}<span v-if="pair.in" class="meta">{{ pair.in.position }} · {{ pair.in.team_short }} · {{ pair.in.expected_points }} pts</span></span><span v-if="pair.in" class="num">£{{ pair.in.cost.toFixed(1) }}m</span><ui-button v-if="pair.in" size="sm" :variant="choiceOf(pair.in) === 'avoid' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(pair.in) === 'avoid'" @click="toggleChoice(pair.in, 'avoid')">{{ choiceOf(pair.in) === 'avoid' ? 'Not buying ✓' : "Don't buy" }}</ui-button></div>
             </div>
           </div>
           <p v-else class="muted">No transfers this week.</p>
           <p v-if="card.transfers.comparison" class="subtle">{{ card.transfers.comparison }}</p>
-          <div v-if="choiceCount" class="stack-sm" data-testid="your-choices">
-            <p class="muted">Built around your choices. The planner finds the best plan that respects them.</p>
+          <div v-if="draftChoices.length || savedChoices.length" class="stack-sm" data-testid="your-choices">
+            <p class="muted">{{ choicesChanged ? 'Your choices (not applied yet). Mark as many players as you like, then apply.' : 'Built around your choices. The planner finds the best plan that respects them.' }}</p>
             <div class="row">
-              <span v-for="p in card.your_choices.keep" :key="'k' + p.element" class="row">Keep {{ p.web_name }}<ui-button size="sm" variant="ghost" :aria-label="'Stop keeping ' + p.web_name" :disabled="adviceBusy" @click="clearChoice(p)">✕</ui-button></span>
-              <span v-for="p in card.your_choices.avoid" :key="'a' + p.element" class="row">Don't buy {{ p.web_name }}<ui-button size="sm" variant="ghost" :aria-label="'Allow ' + p.web_name" :disabled="adviceBusy" @click="clearChoice(p)">✕</ui-button></span>
+              <span v-for="p in draftChoices" :key="p.kind + p.element" class="row">{{ p.kind === 'keep' ? 'Keep' : "Don't buy" }} {{ p.web_name }}<ui-button size="sm" variant="ghost" :aria-label="'Remove ' + p.web_name" @click="toggleChoice(p, p.kind)">✕</ui-button></span>
+            </div>
+            <div v-if="choicesChanged" class="row">
+              <ui-button variant="primary" :disabled="adviceBusy" @click="applyChoices">Apply choices and update advice</ui-button>
+              <ui-button variant="ghost" @click="discardChoices">Discard changes</ui-button>
             </div>
           </div>
         </section>
