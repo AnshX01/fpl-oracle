@@ -10,7 +10,9 @@ import pytest
 
 from fpl_oracle.api.models import BootstrapStatic, Element, ElementType, Fixture, Team
 from fpl_oracle.config import HISTORICAL_DIR
+from fpl_oracle.data import features as features_module
 from fpl_oracle.data.features import FEATURE_COLUMNS, FeatureEngineering
+from fpl_oracle.ml.components.dixon_coles import DixonColesModel
 
 
 @pytest.fixture
@@ -212,12 +214,16 @@ def synthetic_history_and_upcoming():
     return fe, hist_df, train_full_df, boot, fixtures, players_meta
 
 
-def test_feature_parity_all_62_features_exact_values(synthetic_history_and_upcoming):
+def test_feature_parity_all_62_features_exact_values(synthetic_history_and_upcoming, monkeypatch):
     """
     Assert that all 62 feature values produced by the live serving kernel
     match the values produced by the training kernel with absolute error < 1e-4.
     """
     fe, hist_df, train_full_df, boot, fixtures, players_meta = synthetic_history_and_upcoming
+
+    # Serving uses the Dixon-Coles fitted on the shared master history; training refits it as-of each gameweek.
+    # This synthetic history has no complete matches, so both sides start from the same neutral model.
+    monkeypatch.setattr(features_module, "dixon_coles_model", DixonColesModel().fit(pd.DataFrame()))
 
     # 1. Training kernel output
     X_train, Y_train = fe.build_historical_features(train_full_df)
@@ -304,6 +310,12 @@ PARITY_DGW_ALLOW_LIST: dict[str, str] = {
     "roll_ict_5": "Intra-gameweek isolation: serving operates strictly pre-deadline where fixture 1 results are unobserved, whereas historical training log sequences matches chronologically.",
     "std_minutes_per_gw": "Intra-gameweek isolation: serving operates strictly pre-deadline where fixture 1 results are unobserved, whereas historical training log sequences matches chronologically.",
 }
+
+
+def _serve_with_training_dixon_coles(monkeypatch, fe, train_df, rnd, season="2026-27"):
+    """Serving normally uses the Dixon-Coles fitted on the shared master history; training refits it as-of each
+    gameweek. Parity compares like with like, so serving gets the as-of model for the target gameweek."""
+    monkeypatch.setattr(features_module, "dixon_coles_model", fe._walk_forward_dixon_coles(train_df)[(season, rnd)])
 
 
 @pytest.fixture
@@ -517,13 +529,14 @@ def real_multiseason_history_and_upcoming():
 
 
 @pytest.mark.slow
-def test_real_multi_season_parity_colliding_ids(real_multiseason_history_and_upcoming):
+def test_real_multi_season_parity_colliding_ids(real_multiseason_history_and_upcoming, monkeypatch):
     """
     Assert 100% numerical parity across all 62 features for David Raya (element 1 in 2026-27),
     verifying complete isolation from historical element 1 collision (Fabio Vieira in 2024-25).
     """
     fe, history_df, train_full_df, boot, fixtures, _ = real_multiseason_history_and_upcoming
 
+    _serve_with_training_dixon_coles(monkeypatch, fe, train_full_df, 6)
     X_train, _ = fe.build_historical_features(train_full_df)
     meta = X_train.attrs["meta"]
     df_serve = fe.extract_live_features_for_upcoming(boot, fixtures, target_gw=6, history_df=history_df)
@@ -545,13 +558,14 @@ def test_real_multi_season_parity_colliding_ids(real_multiseason_history_and_upc
 
 
 @pytest.mark.slow
-def test_real_multi_season_parity_transferred_player(real_multiseason_history_and_upcoming):
+def test_real_multi_season_parity_transferred_player(real_multiseason_history_and_upcoming, monkeypatch):
     """
     Assert 100% numerical parity across all 62 features for Cole Palmer (transferred Man City -> Chelsea),
     verifying that personal form follows the player while club stats reflect Chelsea.
     """
     fe, history_df, train_full_df, boot, fixtures, _ = real_multiseason_history_and_upcoming
 
+    _serve_with_training_dixon_coles(monkeypatch, fe, train_full_df, 6)
     X_train, _ = fe.build_historical_features(train_full_df)
     meta = X_train.attrs["meta"]
     df_serve = fe.extract_live_features_for_upcoming(boot, fixtures, target_gw=6, history_df=history_df)
@@ -573,12 +587,13 @@ def test_real_multi_season_parity_transferred_player(real_multiseason_history_an
 
 
 @pytest.mark.slow
-def test_real_multi_season_parity_new_player(real_multiseason_history_and_upcoming):
+def test_real_multi_season_parity_new_player(real_multiseason_history_and_upcoming, monkeypatch):
     """
     Assert 100% numerical parity across all 62 features for Christos Tzolis (new player in 2026-27).
     """
     fe, history_df, train_full_df, boot, fixtures, tzolis_id = real_multiseason_history_and_upcoming
 
+    _serve_with_training_dixon_coles(monkeypatch, fe, train_full_df, 6)
     X_train, _ = fe.build_historical_features(train_full_df)
     meta = X_train.attrs["meta"]
     df_serve = fe.extract_live_features_for_upcoming(boot, fixtures, target_gw=6, history_df=history_df)
@@ -620,7 +635,7 @@ def test_real_parity_blank_gameweek(real_multiseason_history_and_upcoming):
 
 
 @pytest.mark.slow
-def test_real_parity_double_gameweek(real_multiseason_history_and_upcoming):
+def test_real_parity_double_gameweek(real_multiseason_history_and_upcoming, monkeypatch):
     """
     Verify parity for Double Gameweek:
     - Match 1 has 100% exact parity across all 62 features.
@@ -768,6 +783,7 @@ def test_real_parity_double_gameweek(real_multiseason_history_and_upcoming):
     ]
 
     train_full_df = pd.concat([history_df, pd.DataFrame(gw6_matches_dgw)], ignore_index=True)
+    _serve_with_training_dixon_coles(monkeypatch, fe, train_full_df, 6)
     X_train, _ = fe.build_historical_features(train_full_df)
     meta = X_train.attrs["meta"]
 
@@ -824,7 +840,7 @@ def test_real_parity_double_gameweek(real_multiseason_history_and_upcoming):
 
 
 @pytest.mark.slow
-def test_real_parity_refreshed_live_snapshot(real_multiseason_history_and_upcoming):
+def test_real_parity_refreshed_live_snapshot(real_multiseason_history_and_upcoming, monkeypatch):
     """
     Verify that incrementally refreshing master history with newly completed gameweeks
     updates serving and training features identically for the next gameweek (GW7).
@@ -918,6 +934,7 @@ def test_real_parity_refreshed_live_snapshot(real_multiseason_history_and_upcomi
         ),
     ]
 
+    _serve_with_training_dixon_coles(monkeypatch, fe, gw7_train_full, 7)
     df_serve_gw7 = fe.extract_live_features_for_upcoming(boot, gw7_fixtures, target_gw=7, history_df=train_full_df)
 
     for eid in [1, 154]:

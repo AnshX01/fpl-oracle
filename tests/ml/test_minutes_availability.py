@@ -128,7 +128,8 @@ def test_single_reconciler_invariant():
     assert pts_zero == 0.0, f"Expected 0.0 points for 0% COP, got {pts_zero}"
 
     # Invariant 2: 50% availability yields exactly 50% of the full expected points (linear scaling)
-    assert np.isclose(pts_half, pts_full * 0.5, atol=1e-4), (
+    # components are rounded to the penny individually, so linearity holds to within one penny
+    assert np.isclose(pts_half, pts_full * 0.5, atol=0.01), (
         f"Non-linear availability discount detected! 50% COP gave {pts_half:.4f} vs expected {pts_full * 0.5:.4f}"
     )
 

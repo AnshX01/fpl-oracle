@@ -96,7 +96,7 @@ def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
         ev_list = (
             evidence_by_case[cid]
             if evidence_by_case is not None
-            else text_extractor.extract_evidence_from_text(raw_text, player_name=p_name, player_id=p_id, target_gw=10)
+            else text_extractor.extract_evidence_from_text(raw_text, player_name=p_name, player_id=p_id)
         )
         ev = ev_list[0] if ev_list else None
 
