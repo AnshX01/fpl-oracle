@@ -69,8 +69,8 @@ class FPLSettings(BaseModel):
     )
     gemini_model: str = Field(default="gemini-flash-lite-latest", description="Supported Gemini free model")
 
-    # Recommendation Mode (api_only, shadow, gated_active)
-    news_recommendation_mode: str = Field(default="shadow", description="Application mode for candidate news evidence")
+    # Recommendation Mode (press, shadow, api_only, gated_active)
+    news_recommendation_mode: str = Field(default="press", description="Application mode for candidate news evidence")
     gated_active_opt_in: bool = Field(
         default=False, description="Explicit opt-in to apply candidate news to production"
     )
@@ -116,7 +116,9 @@ class FPLSettings(BaseModel):
 
         status_msg = "Awaiting Gemini key & Free-tier confirmation; Official API baseline active"
         if gem_key_set and self.gemini_free_tier_confirmed:
-            if self.news_recommendation_mode == "gated_active" and self.gated_active_opt_in:
+            if self.news_recommendation_mode == "press":
+                status_msg = "Press evidence applied under safety rules (can only lower official availability)"
+            elif self.news_recommendation_mode == "gated_active" and self.gated_active_opt_in:
                 status_msg = "Active in Production (Candidate news overrides applied)"
             else:
                 status_msg = "Running in Shadow Mode (Candidate evidence logged; official baseline in production)"
@@ -160,7 +162,7 @@ def _load_settings_from_env() -> FPLSettings:
         gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
         gemini_free_tier_confirmed=_parse_bool(os.getenv("GEMINI_FREE_TIER_CONFIRMED")),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip(),
-        news_recommendation_mode=os.getenv("NEWS_RECOMMENDATION_MODE", "shadow").strip(),
+        news_recommendation_mode=os.getenv("NEWS_RECOMMENDATION_MODE", "press").strip(),
         gated_active_opt_in=_parse_bool(os.getenv("GATED_ACTIVE_OPT_IN")),
         llm_provider=os.getenv("LLM_PROVIDER", "gemini").strip(),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),

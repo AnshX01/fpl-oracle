@@ -821,9 +821,14 @@ class DecisionCardGenerator:
 
         # News summary note
         news_count = 0
+        press_notes: list[dict[str, Any]] = []
         try:
             news_signals = await analysis_service.news_signals(boot, target_gw)
             news_count = len(news_signals)
+            from fpl_oracle.news.press import applied_press_notes
+
+            ids = {p.element for p in effective_state.squad} | {p["element"] for p in transfers_in + transfers_out}
+            press_notes = applied_press_notes(news_signals, ids)
         except Exception:
             pass
 
@@ -832,6 +837,8 @@ class DecisionCardGenerator:
             if news_count > 0
             else "Predictions use the latest fixtures and official availability flags."
         )
+        if press_notes:
+            what_changed += " " + " ".join(n["text"] for n in press_notes)
 
         deadline_seconds = game_state.seconds_to_deadline or 0.0
         active_ver = model_registry.get_active_version()
@@ -902,6 +909,7 @@ class DecisionCardGenerator:
             "caution": caution,
             "your_choices": _your_choices(boot),
             "what_changed": what_changed,
+            "press_signals": press_notes,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
             "is_stale": is_stale,
             "stale": is_stale,

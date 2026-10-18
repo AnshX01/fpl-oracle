@@ -86,7 +86,6 @@ class NewsIngestion:
         self.dead_feeds: set[str] = set()
         self.last_fetch_time: datetime | None = None
         self.last_articles_count: int = 0
-        self._seen_article_hashes: set[str] = set()
 
     def get_news_status(self) -> dict[str, Any]:
         """Return diagnostic metrics for news pipeline."""
@@ -148,6 +147,7 @@ class NewsIngestion:
         and content deduplication.
         """
         articles = []
+        seen_hashes: set[str] = set()  # per fetch: every refresh re-reads the 72h window
         now_iso = datetime.now(UTC).isoformat()
 
         for feed in self.sources_cfg:
@@ -182,7 +182,7 @@ class NewsIngestion:
 
                     if resp is not None and resp.status_code == 200:
                         parsed = feedparser.parse(resp.text)
-                        for entry in parsed.entries[:15]:
+                        for entry in parsed.entries:
                             title = getattr(entry, "title", "").strip()
                             summary = getattr(entry, "summary", "").strip()
                             link = getattr(entry, "link", "").strip()
@@ -191,9 +191,9 @@ class NewsIngestion:
                             # Deduplication by content hash
                             content_str = f"{link}|{title}|{summary}"
                             c_hash = hashlib.sha256(content_str.encode("utf-8")).hexdigest()
-                            if c_hash in self._seen_article_hashes:
+                            if c_hash in seen_hashes:
                                 continue
-                            self._seen_article_hashes.add(c_hash)
+                            seen_hashes.add(c_hash)
 
                             articles.append(
                                 {

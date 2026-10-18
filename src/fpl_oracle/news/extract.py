@@ -231,6 +231,13 @@ class TextExtractor:
         )
         if is_minutes_restricted and min_match:
             minutes_limit = int(min_match.group(1))
+        elif re.search(
+            r"\b(?:only\s+(?:be\s+)?fit\s+(?:enough\s+)?for\s+the\s+bench|fit\s+only\s+for\s+the\s+bench"
+            r"|(?:won't|will\s+not|unlikely\s+to|not\s+expected\s+to)\s+start)\b",
+            clause_lower,
+        ):
+            is_minutes_restricted = True
+            minutes_limit = 30
 
         # Check for unverified / colloquial / transfer speculation
         is_unverified = any(w in clause_lower for w in ["unverified", "fan forum"])
@@ -244,6 +251,11 @@ class TextExtractor:
                 "refereeing",
                 "pivot role",
                 "nations league tie",
+                "offside",
+                "disallowed",
+                "strikes ruled",
+                "goal ruled",
+                "goals ruled",
             ]
         )
 
@@ -281,10 +293,15 @@ class TextExtractor:
                 or "sidelined" in clause_lower
                 or "hamstring tear" in clause_lower
                 or "severe knee injury" in clause_lower
-                or "acl" in clause_lower
+                or re.search(r"\bacl\b", clause_lower)
                 or "fracture" in clause_lower
                 or "surgery" in clause_lower
                 or "will miss" in clause_lower
+                or re.search(
+                    r"\b(?:breaks?|broke|broken|suffers?|suffered)\b.{0,25}\b(?:jaw|leg|foot|ankle|toe|collarbone|wrist|arm|rib|nose|cheekbone|metatarsal|cruciate)\b",
+                    clause_lower,
+                )
+                or re.search(r"\bout\s+for\s+(?:\w+\s+){0,2}(?:weeks|months|season)\b", clause_lower)
                 or "miss the next" in clause_lower
                 or "suspended" in clause_lower
                 or "red card" in clause_lower
@@ -338,7 +355,7 @@ class TextExtractor:
             or "twinge" in clause_lower
             or "swollen" in clause_lower
             or "assessed tomorrow" in clause_lower
-            or "hopeful" in clause_lower
+            or re.search(r"\bhopeful\b", clause_lower)
             or "minor knock" in clause_lower
             or "knock" in clause_lower
             or "not at 100%" in clause_lower

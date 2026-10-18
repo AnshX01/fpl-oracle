@@ -74,6 +74,7 @@ class ExtractedNewsPayload(BaseModel):
 class RecommendationMode(StrEnum):
     API_ONLY = "api_only"
     SHADOW = "shadow"
+    PRESS = "press"
     GATED_ACTIVE = "gated_active"
 
 
