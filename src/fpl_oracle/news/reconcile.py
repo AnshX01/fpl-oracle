@@ -11,6 +11,7 @@ import logging
 import re
 import urllib.parse
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fpl_oracle.config import (
@@ -61,6 +62,14 @@ def official_chance_of_playing(element: Any, target_gw: int, first_gw: int | Non
         return 100.0
     steps = max(0, target_gw - first_gw) if first_gw is not None else 0
     return 100.0 - (100.0 - float(cop)) * DOUBT_RECOVERY_PER_GW**steps
+
+
+PRESS_MAX_AGE_HOURS = 72
+MAJOR_DOUBT_RE = re.compile(
+    r"major\s+doubt|serious\s+doubt|significant\s+doubt|very\s+doubtful|long\s+shot|unlikely\s+to\s+(?:play|feature|be)"
+    r"|(?:won't|will\s+not)\s+be\s+(?:fit|ready|available)|not\s+expected\s+to\s+(?:play|be\s+fit)",
+    re.IGNORECASE,
+)
 
 
 def get_trusted_publishers() -> list[str]:
@@ -369,14 +378,94 @@ def are_syndicated_copies(e1: PlayerEvidence, e2: PlayerEvidence) -> bool:
 
 class AvailabilityReconciler:
     def __init__(self, mode: str | None = None, prob_settings: ReconcileProbabilitySettings | None = None):
-        raw_mode = (mode or NEWS_RECOMMENDATION_MODE or "shadow").lower().strip()
-        if raw_mode in ("gated_active", "active"):
+        raw_mode = (mode or NEWS_RECOMMENDATION_MODE or "press").lower().strip()
+        if raw_mode == "press":
+            self.mode = RecommendationMode.PRESS
+        elif raw_mode in ("gated_active", "active"):
             self.mode = RecommendationMode.GATED_ACTIVE
         elif raw_mode == "api_only":
             self.mode = RecommendationMode.API_ONLY
         else:
             self.mode = RecommendationMode.SHADOW
         self.prob_settings = prob_settings or ReconcileProbabilitySettings()
+
+    def _press_override(
+        self,
+        element: Any,
+        target_gw: int,
+        candidate_evidence: list[PlayerEvidence],
+        baseline_cop: float,
+        baseline_p_start: float,
+        rejected: list[str],
+    ) -> tuple[PlayerEvidence, float, float, float, float | None] | None:
+        """
+        Press evidence for the next gameweek. It can only LOWER availability below the official figure:
+        verbatim safe quote, trusted-publisher URL, published within 72h, and the official flag must not have
+        changed since the article. Returns (evidence, chance, p_avail, p_start, minutes_cap) or None.
+        """
+        now = datetime.now(UTC)
+        trusted = get_trusted_publishers()
+        news_added = None
+        if getattr(element, "news_added", None):
+            try:
+                news_added = datetime.fromisoformat(str(element.news_added).replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        best: tuple[float, PlayerEvidence, float | None] | None = None
+        for ev in candidate_evidence:
+            if ev.player_id != getattr(element, "id", 0):
+                continue
+            safe, why = is_safe_quote(ev.quote)
+            pub = ev.published_at
+            reason = (
+                why
+                if not safe
+                else "not from a trusted publisher"
+                if extract_publisher_domain(ev.source_url) not in trusted
+                else "no publication time"
+                if pub is None
+                else "older than 72h"
+                if now - pub > timedelta(hours=PRESS_MAX_AGE_HOURS)
+                else "official FPL flag changed after the article"
+                if news_added and news_added > pub
+                else "negated"
+                if ev.is_negated
+                else "low confidence"
+                if ev.confidence < 0.65
+                else "cup context"
+                if ev.match_context
+                else "other gameweek"
+                if ev.target_gw not in (None, target_gw)
+                else ""
+            )
+            if reason:
+                rejected.append(f"Press rejected ({reason}): '{ev.quote[:40]}'")
+                continue
+            if ev.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE):
+                chance, cap = 0.0, None
+            elif ev.category == EvidenceCategory.DOUBTFUL:
+                chance, cap = (25.0 if MAJOR_DOUBT_RE.search(ev.quote) else 50.0), None
+            elif ev.category == EvidenceCategory.MINUTES_LIMIT:
+                chance, cap = 100.0, float(ev.minutes_restriction or 60.0)
+            else:
+                continue  # available / returned-to-training never raises the official figure
+            if best is None or (chance, cap or 999.0) < (best[0], best[2] or 999.0):
+                best = (chance, ev, cap)
+        if best is None:
+            return None
+        chance, ev, cap = best
+        if cap is not None and baseline_cop > 0:
+            return (
+                ev,
+                baseline_cop,
+                baseline_cop / 100.0,
+                min(baseline_p_start, self.prob_settings.prob_start_minutes_limit),
+                cap,
+            )
+        if cap is None and chance < baseline_cop:
+            p_start = 0.0 if chance == 0 else min(baseline_p_start, self.prob_settings.prob_start_doubtful)
+            return ev, chance, chance / 100.0, p_start, None
+        return None
 
     def reconcile_player_fixture(
         self,
@@ -428,9 +517,23 @@ class AvailabilityReconciler:
         source_url = None
         evidence_category = EvidenceCategory.UNKNOWN
         rejected_signals: list[str] = []
+        source_age: float | None = None
 
         # 2. Evaluate Candidate Text Evidence if in Shadow or Gated-Active mode
-        if self.mode != RecommendationMode.API_ONLY and candidate_evidence:
+        if self.mode == RecommendationMode.PRESS and candidate_evidence and first_gw == target_gw:
+            pr = self._press_override(
+                element, target_gw, candidate_evidence, baseline_cop, baseline_p_start, rejected_signals
+            )
+            if pr:
+                ev, effective_cop, p_avail, p_start_given_avail, mins_limit = pr
+                is_shadow_override = True
+                evidence_category, source_quote, source_url = ev.category, ev.quote, ev.source_url
+                source_age = (datetime.now(UTC) - ev.published_at).total_seconds() / 3600 if ev.published_at else None
+                reconciliation_reason = (
+                    f"Press: {ev.category.value} lowers availability {baseline_cop:.0f}% -> {effective_cop:.0f}% "
+                    f"(Official FPL: '{status}') ('{ev.quote[:50]}...')"
+                )
+        elif self.mode not in (RecommendationMode.API_ONLY, RecommendationMode.PRESS) and candidate_evidence:
             player_evidences = [
                 e for e in candidate_evidence if e.player_id == elem_id and e.target_gw in (None, target_gw)
             ]
@@ -579,7 +682,11 @@ class AvailabilityReconciler:
             if not gate_open:
                 rejected_signals.append(f"News gate closed: {gate_reason}")
 
-        applied_to_production = (self.mode == RecommendationMode.GATED_ACTIVE) and is_shadow_override and gate_open
+        applied_to_production = (
+            self.mode in (RecommendationMode.GATED_ACTIVE, RecommendationMode.PRESS)
+            and is_shadow_override
+            and gate_open
+        )
 
         # Log all disagreements between news-adjusted and API-only availability (WI-6.2)
         if is_shadow_override or abs(effective_cop - baseline_cop) > 0.01:
@@ -609,6 +716,7 @@ class AvailabilityReconciler:
             evidence_category=evidence_category,
             source_quote=source_quote,
             source_url=source_url,
+            source_published_age_hours=source_age,
             reconciliation_reason=reconciliation_reason,
             rejected_signals=rejected_signals,
             mode=self.mode,
