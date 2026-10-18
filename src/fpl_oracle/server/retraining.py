@@ -112,3 +112,22 @@ async def retrain_finalized_gameweeks():
             )
             _save(state)
             raise
+
+
+async def ensure_latest_data() -> dict:
+    """Before advice: pull every gameweek FPL has finalized into the history (so form is current), then
+    retrain on it if it is new. Returns what the advice is based on."""
+    boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
+    finalized = sorted(e.id for e in boot.events if e.finished and e.data_checked)
+    meta_path = historical_manager.output_file.with_suffix(".meta.json")
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    if not stale and set(finalized) - set(meta.get("finalized_gameweeks") or []):
+        meta = await historical_manager.refresh_current_season()
+    if not stale:
+        await retrain_finalized_gameweeks()
+    have = meta.get("finalized_gameweeks") or []
+    return {
+        "form_through_gameweek": max(have) if have else None,
+        "model_trained_through_gameweek": model_registry.get_active_version().get("max_gw"),
+        "latest_finalized_gameweek": max(finalized) if finalized else None,
+    }

@@ -519,7 +519,14 @@ def start_scheduler():
         # Job 5: Pre-deadline alert & briefing check every 5 minutes
         scheduler.add_job(deadline_alert_job, "interval", minutes=5, id="deadline_alert", replace_existing=True)
 
-        scheduler.add_job(history_refresh_job, "interval", hours=1, id="history_refresh", replace_existing=True)
+        scheduler.add_job(
+            history_refresh_job,
+            "interval",
+            hours=1,
+            id="history_refresh",
+            replace_existing=True,
+            next_run_time=datetime.now(UTC),
+        )
 
         # Job 6: Forward Holdout freeze and scoring every 15 minutes
         scheduler.add_job(holdout_forward_job, "interval", minutes=15, id="holdout_forward", replace_existing=True)

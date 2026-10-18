@@ -6,7 +6,7 @@ This report documents the empirical evaluation of the FPL Oracle Multi-Component
 - **Primary Model**: LightGBM Multi-Component Ensemble (Minutes, Attacking, Defending, DefCon, Bonus, Cards/Saves)
 - **Scoring Engine**: Verified 2026/27 official rules including Defensive Contribution (DefCon +2) and rebalanced BPS
 - **Evaluated Samples**: 13,744 player-match observations
-- **Evaluation Time**: 2026-10-18T09:20:18.300007+00:00
+- **Evaluation Time**: 2026-10-18T09:36:11.690646+00:00
 
 ---
 
@@ -14,12 +14,12 @@ This report documents the empirical evaluation of the FPL Oracle Multi-Component
 
 | Model / Baseline | Mean Absolute Error (MAE) | Root Mean Squared Error (RMSE) | Spearman Rank Correlation ($\rho$) |
 |:---|:---:|:---:|:---:|
-| **ML Projection Engine (Full Features)** | **1.023 pts** | **1.965 pts** | **0.698** |
-| *Baseline 1: Weighted Recent Form (5 GW)* | 1.026 pts | 2.151 pts | 0.694 |
-| *Baseline 2: Season-to-Date Average (PPG)* | 1.022 pts | 2.131 pts | 0.684 |
-| *Baseline 3: Heuristic Fixture-Adjusted* | 1.091 pts | 2.321 pts | 0.704 |
+| **ML Projection Engine (Full Features)** | **1.021 pts** | **1.965 pts** | **0.698** |
+| *Baseline 1: Weighted Recent Form (5 GW)* | 1.027 pts | 2.157 pts | 0.694 |
+| *Baseline 2: Season-to-Date Average (PPG)* | 1.023 pts | 2.137 pts | 0.684 |
+| *Baseline 3: Heuristic Fixture-Adjusted* | 1.094 pts | 2.329 pts | 0.704 |
 
-> **Verdict**: The ML Projection Engine achieves an MAE of 1.023 and RMSE of 1.965 with a Spearman rank correlation of 0.698 (vs 0.694 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.
+> **Verdict**: The ML Projection Engine achieves an MAE of 1.021 and RMSE of 1.965 with a Spearman rank correlation of 0.698 (vs 0.694 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.
 
 ---
 
@@ -29,8 +29,8 @@ Out-of-time evaluation measuring whether opponent defensive strength, opponent f
 
 | Configuration | Out-of-Time MAE | Out-of-Time RMSE | Spearman $\rho$ | Improvement vs Ablated |
 |:---|:---:|:---:|:---:|:---:|
-| **Full Model (With Opponent Form & Implied xG)** | **1.023 pts** | **1.965 pts** | **0.698** | **Baseline (+0.1%)** |
-| *Ablated Model (NO Fixture/Opponent Features)* | 1.024 pts | 1.97 pts | 0.698 | Ref (Degraded) |
+| **Full Model (With Opponent Form & Implied xG)** | **1.021 pts** | **1.965 pts** | **0.698** | **Baseline (+-0.1%)** |
+| *Ablated Model (NO Fixture/Opponent Features)* | 1.02 pts | 1.97 pts | 0.698 | Ref (Degraded) |
 | *Odds Signal Candidate (A7)* | N/A (External odds omitted to preserve Rule 0.4 zero-cost API guarantee) | N/A | N/A | Candidate evaluated: Implied continuous team ratings provide honest match strength without external betting odds; external odds API kept out of production to maintain zero-cost API guarantee. |
 
 ---
@@ -41,8 +41,8 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Player Form Tier | vs Elite Defence ($xGC \le 1.05$) | vs Average Defence | vs Weak Defence ($xGC \ge 1.60$) | Spread (Weak vs Elite) |
 |:---|:---:|:---:|:---:|:---:|
-| **Star Hauler in Peak Form** ($xG \ge 0.50$ / $Pts \ge 6.0$) | **3.68 pts** | **3.99 pts** | **3.9 pts** | +0.22 pts |
-| **Regular Mid-Tier Starter** | 3.03 pts | 3.37 pts | 3.5 pts | +0.47 pts |
+| **Star Hauler in Peak Form** ($xG \ge 0.50$ / $Pts \ge 6.0$) | **3.7 pts** | **3.93 pts** | **3.87 pts** | +0.17 pts |
+| **Regular Mid-Tier Starter** | 3.01 pts | 3.37 pts | 3.5 pts | +0.49 pts |
 | **Bench / Low-Minutes Asset** | 0.95 pts | 1.05 pts | 1.09 pts | +0.14 pts |
 
 - **Home Advantage Effect**: +0.06 expected points on average.
@@ -54,10 +54,10 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Position | Match Samples | ML MAE | Heuristic Form MAE | ML RMSE | Heuristic Form RMSE |
 |:---|:---:|:---:|:---:|:---:|:---:|
-| **GKP** | 1,564 | **0.649** | 0.637 | **1.493** | 1.589 |
-| **DEF** | 4,458 | **1.188** | 1.186 | **2.152** | 2.347 |
-| **MID** | 6,160 | **0.967** | 0.982 | **1.876** | 2.069 |
-| **FWD** | 1,562 | **1.148** | 1.132 | **2.158** | 2.362 |
+| **GKP** | 1,564 | **0.647** | 0.639 | **1.494** | 1.595 |
+| **DEF** | 4,458 | **1.188** | 1.188 | **2.155** | 2.362 |
+| **MID** | 6,160 | **0.963** | 0.982 | **1.873** | 2.069 |
+| **FWD** | 1,562 | **1.143** | 1.133 | **2.154** | 2.363 |
 
 ---
 
@@ -65,9 +65,9 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Origin / Split | Training Matches | Holdout Matches | Holdout MAE | Holdout RMSE | Spearman $\rho$ |
 |:---|:---:|:---:|:---:|:---:|:---:|
-| **Holdout 2024-25 (trained on 2023-24)** | 21,427 | 27,605 | **1.04** pts | 2.088 pts | **0.679** |
-| **Holdout 2025-26 (trained on 2023-24, 2024-25)** | 29,725 | 29,757 | **0.957** pts | 1.962 pts | **0.708** |
-| **Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)** | 57,330 | 3,883 | **1.26** pts | 2.22 pts | **0.64** |
+| **Holdout 2024-25 (trained on 2023-24)** | 21,427 | 27,605 | **1.04** pts | 2.091 pts | **0.677** |
+| **Holdout 2025-26 (trained on 2023-24, 2024-25)** | 29,725 | 29,757 | **0.955** pts | 1.96 pts | **0.709** |
+| **Holdout 2026-27 (trained on 2023-24, 2024-25, 2025-26)** | 57,330 | 3,883 | **1.257** pts | 2.223 pts | **0.64** |
 
 ---
 
@@ -75,13 +75,13 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Metric | Empirical Value | Nominal Target | Evaluation Status |
 |:---|:---:|:---:|:---|
-| **80% Credible Interval Coverage ($[P_{10}, P_{90}]$)** | **83.64%** | 80.0% | **CONSERVATIVE INTERVAL (83.64% vs 80% nominal)** |
-| **Lower Tail Fraction ($Y < P_{10}$)** | **10.61%** | 10.0% | Calibrated |
-| **Upper Tail Fraction ($Y > P_{90}$)** | **5.76%** | 10.0% | Calibrated |
-| **Pinball Loss ($q=0.10$, P10 Floor)** | **0.1512** | — | Minimized |
-| **Pinball Loss ($q=0.50$, P50 Median)** | **0.5046** | — | Minimized |
-| **Pinball Loss ($q=0.90$, P90 Ceiling)** | **0.3782** | — | Minimized |
-| **Average Credible Interval Width** | **3.21 pts** | — | Informative Spread |
+| **80% Credible Interval Coverage ($[P_{10}, P_{90}]$)** | **83.52%** | 80.0% | **CONSERVATIVE INTERVAL (83.52% vs 80% nominal)** |
+| **Lower Tail Fraction ($Y < P_{10}$)** | **10.59%** | 10.0% | Calibrated |
+| **Upper Tail Fraction ($Y > P_{90}$)** | **5.89%** | 10.0% | Calibrated |
+| **Pinball Loss ($q=0.10$, P10 Floor)** | **0.1507** | — | Minimized |
+| **Pinball Loss ($q=0.50$, P50 Median)** | **0.5038** | — | Minimized |
+| **Pinball Loss ($q=0.90$, P90 Ceiling)** | **0.3791** | — | Minimized |
+| **Average Credible Interval Width** | **3.19 pts** | — | Informative Spread |
 
 ---
 
@@ -89,14 +89,14 @@ Empirical evidence demonstrating that fixture features function as honest ML inp
 
 | Position | Player | Team | Opponent | Venue | Expected Points (xP) | Key Drivers |
 |:---|:---|:---:|:---:|:---:|:---:|:---|
-| **MID** | Bruno Borges Fernandes | Man Utd | Scheduled Opponent | H | **7.48 pts** | Form projection 7.48 xP, position role MID |
-| **MID** | Dominik Szoboszlai | Liverpool | Scheduled Opponent | H | **6.78 pts** | Form projection 6.78 xP, position role MID |
-| **MID** | Enzo Fernández | Chelsea | Scheduled Opponent | H | **6.61 pts** | Form projection 6.61 xP, position role MID |
-| **MID** | Cole Palmer | Chelsea | Scheduled Opponent | H | **6.47 pts** | Form projection 6.47 xP, position role MID |
-| **FWD** | Erling Haaland | Man City | Scheduled Opponent | H | **6.35 pts** | Form projection 6.35 xP, position role FWD |
-| **MID** | Mohamed Salah | Liverpool | Scheduled Opponent | H | **6.27 pts** | Form projection 6.27 xP, position role MID |
-| **MID** | Bukayo Saka | Arsenal | Scheduled Opponent | H | **6.16 pts** | Form projection 6.16 xP, position role MID |
-| **FWD** | Igor Thiago Nascimento Rodrigues | Brentford | Scheduled Opponent | H | **6.05 pts** | Form projection 6.05 xP, position role FWD |
+| **MID** | Dominik Szoboszlai | Liverpool | Scheduled Opponent | H | **6.86 pts** | Form projection 6.86 xP, position role MID |
+| **MID** | Bruno Borges Fernandes | Man Utd | Scheduled Opponent | H | **6.78 pts** | Form projection 6.78 xP, position role MID |
+| **MID** | Mohamed Salah | Liverpool | Scheduled Opponent | H | **6.65 pts** | Form projection 6.65 xP, position role MID |
+| **MID** | Enzo Fernández | Chelsea | Scheduled Opponent | H | **6.63 pts** | Form projection 6.63 xP, position role MID |
+| **MID** | Cole Palmer | Chelsea | Scheduled Opponent | H | **6.4 pts** | Form projection 6.40 xP, position role MID |
+| **FWD** | Erling Haaland | Man City | Scheduled Opponent | H | **6.01 pts** | Form projection 6.01 xP, position role FWD |
+| **MID** | Bukayo Saka | Arsenal | Scheduled Opponent | H | **5.97 pts** | Form projection 5.97 xP, position role MID |
+| **FWD** | Igor Thiago Nascimento Rodrigues | Brentford | Scheduled Opponent | H | **5.88 pts** | Form projection 5.88 xP, position role FWD |
 
 ---
 
