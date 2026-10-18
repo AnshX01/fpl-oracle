@@ -110,14 +110,26 @@ class TextExtractor:
 
             # Check if this sentence mentions multiple distinct player names
             # Look for contrastive conjunctions or semicolons
-            delims = list(re.finditer(r"\b(?:but|while|whereas)\b|;", sent_text, re.IGNORECASE))
+            # Contrast and subordinate clauses: "A started when B was ruled out" says nothing about A
+            delims = list(
+                re.finditer(
+                    r"\b(?:but|while|whereas|when|after|because|as|since|although|though|until)\b|;",
+                    sent_text,
+                    re.IGNORECASE,
+                )
+            )
             if delims:
                 cuts = [0] + [d.start() for d in delims] + [len(sent_text)]
                 clauses = [sent_text[cuts[i] : cuts[i + 1]].strip() for i in range(len(cuts) - 1)]
 
                 player_clause_idx = None
                 for i, c in enumerate(clauses):
-                    c_clean = re.sub(r"^(?:but|while|whereas|;)\s+", "", c, flags=re.IGNORECASE).strip()
+                    c_clean = re.sub(
+                        r"^(?:but|while|whereas|when|after|because|as|since|although|though|until|;)\s+",
+                        "",
+                        c,
+                        flags=re.IGNORECASE,
+                    ).strip()
                     if re.search(r"\b" + re.escape(last_name) + r"\b", c_clean, re.IGNORECASE):
                         player_clause_idx = i
                         break
@@ -222,6 +234,13 @@ class TextExtractor:
             r"\bin\s+2023\s*,?\s*but\s+has\s+been\b",
         ]
         is_past_resolved = any(re.search(pat, clause_lower) for pat in past_resolved_patterns)
+        # A clause told only in the past ("was ruled out", "With X suspended, they were light") describes an earlier
+        # absence: it says nothing about now unless it points at the present or a coming match
+        is_past_tense = bool(re.search(r"\b(?:was|were|had)\b", clause_lower)) and not re.search(
+            r"\b(?:will|is|are|remains?|still|has\s+been|have\s+been|this\s+weekend|tonight|tomorrow|next\s+(?:week|game|match)"
+            r"|(?:for|of|on)\s+(?:saturday|sunday|monday|tuesday|wednesday|thursday|friday|the\s+(?:trip|visit|game|match|weekend)))\b",
+            clause_lower,
+        )
 
         # Minutes restriction parsing
         minutes_limit = None
@@ -288,6 +307,7 @@ class TextExtractor:
         elif (
             not is_negated
             and not is_past_resolved
+            and not is_past_tense
             and (
                 "ruled out" in clause_lower
                 or "sidelined" in clause_lower
