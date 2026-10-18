@@ -1,53 +1,32 @@
-"""
-Tests for the pre-deadline odds snapshot (WI-3.2): refuses without a real source, persists metadata otherwise.
-"""
+"""Bookmaker odds -> expected goals: the Poisson fit, fixture lookup and market-implied team ratings."""
 
-import json
-from pathlib import Path
+import math
+from datetime import datetime
 
-import pytest
-
-from fpl_oracle.data.odds import FootballDataOddsProvider, OddsProvider, snapshot_odds
+import fpl_oracle.data.odds as odds
 
 
-class _StubOddsProvider(OddsProvider):
-    """Provider returning one explicit, test-owned match (the real provider has no upcoming-fixture source)."""
-
-    def get_match_odds(self, season, gameweek=None):
-        odds = [2.10, 3.40, 3.50]
-        return [
-            {
-                "home_team": "Arsenal",
-                "away_team": "Chelsea",
-                "bookmaker": "stub",
-                "odds_1x2": dict(zip(("home_win", "draw", "away_win"), odds, strict=True)),
-            }
-        ]
+def test_implied_goals_reproduce_the_market():
+    home, away = odds.implied_goals(1.2, 7.0, 13.0, 1.57, 2.38)  # heavy home favourite, goals expected
+    assert 2.2 < home < 2.9 and 0.4 < away < 0.8
+    even_home, even_away = odds.implied_goals(2.7, 3.3, 2.7, 2.0, 1.85)
+    assert abs(even_home - even_away) < 0.15
+    assert odds.implied_goals("", 3, 3, 2, 2) is None
 
 
-def test_odds_snapshot_refuses_when_no_real_source(tmp_path: Path):
-    """The default provider has no live odds: snapshotting must fail instead of persisting invented odds."""
-    assert FootballDataOddsProvider().get_match_odds("2026-27", 8) == []
-    with pytest.raises(RuntimeError, match="No odds source"):
-        snapshot_odds(target_gw=8, custom_output_dir=tmp_path)
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_odds_snapshot_persistence(tmp_path: Path):
-    """WI-3.2 Step 5: Verify scheduled odds_snapshot stores pre-deadline snapshots with metadata."""
-    snap_path = snapshot_odds(target_gw=6, custom_output_dir=tmp_path, provider=_StubOddsProvider())
-    assert snap_path.exists()
-    assert snap_path.suffix == ".json"
-
-    with open(snap_path, encoding="utf-8") as f:
-        data = json.load(f)
-
-    assert data["gameweek"] == 6
-    assert "snapshot_at_utc" in data
-    assert data["matches_count"] > 0
-    assert len(data["matches"]) == data["matches_count"]
-
-    first_match = data["matches"][0]
-    assert "home_team" in first_match
-    assert "away_team" in first_match
-    assert "odds_1x2" in first_match
+def test_lookup_and_ratings_use_names_and_dates(tmp_path, monkeypatch):
+    monkeypatch.setattr(odds, "ODDS_DIR", tmp_path)
+    rows = ["Date,HomeTeam,AwayTeam,AvgH,AvgD,AvgA,Avg>2.5,Avg<2.5"]
+    teams = ["Arsenal", "Man United", "Tottenham", "Hull", "Chelsea", "Everton"]
+    day = 1
+    for i, h in enumerate(teams):  # every team plays every other: enough prices for ratings
+        for a in teams[i + 1 :] + teams[:i]:
+            price = "1.5,4.2,6.0" if h == "Arsenal" else ("6.0,4.2,1.5" if a == "Arsenal" else "2.6,3.3,2.8")
+            rows.append(f"{day:02d}/09/2026,{h},{a},{price},1.9,1.9")
+            day = day % 28 + 1
+    (tmp_path / "2026-27.csv").write_text("\n".join(rows))
+    assert odds.market_goals("Arsenal", "Man Utd", "2026-09-01T14:00:00Z") is not None  # FPL name matches
+    assert odds.market_goals("Arsenal", "Man Utd", "2026-12-01T14:00:00Z") is None  # different date: not that game
+    strong = odds.projected_market_goals("Arsenal", "Hull City", datetime(2026, 11, 1))
+    weak = odds.projected_market_goals("Hull City", "Arsenal", datetime(2026, 11, 1))
+    assert strong and weak and strong[0] > weak[0] and math.isfinite(strong[1])

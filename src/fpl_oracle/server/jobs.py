@@ -5,6 +5,7 @@ hourly price snapshot logging, post-GW automated retrain triggers with rollback,
 and pre-deadline briefing refresh alerts.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -404,34 +405,26 @@ async def holdout_forward_job():
 
 
 async def odds_snapshot_job():
-    """WI-3.2: Snapshots current betting market odds for upcoming matches."""
+    """Downloads this season's and the upcoming fixtures' bookmaker odds (free football-data.co.uk)."""
     job_id = "odds_snapshot"
-    job_name = "Pre-Deadline Match Odds Snapshot"
+    job_name = "Bookmaker Odds Refresh"
     start_t = datetime.now(UTC)
 
     run_id = data_store.record_job_start(job_id, job_name)
     tracker.update_job_start(job_id)
 
     try:
-        from fpl_oracle.data.odds import snapshot_odds
+        from fpl_oracle.data.odds import refresh_odds
 
-        _, next_gw = await fpl_client.get_current_and_next_gw()
-        target_gw = next_gw or 1
-        path = snapshot_odds(target_gw=target_gw)
-        details = f"Snapshotted match odds for GW{target_gw} to {path.name}"
-
+        written = await asyncio.to_thread(refresh_odds)
+        details = f"Bookmaker odds refreshed: {written}"
         dur = (datetime.now(UTC) - start_t).total_seconds()
         data_store.record_job_finish(run_id, "SUCCESS", dur, details)
         tracker.update_job_finish(job_id, True, dur, details)
         logger.info(f"[Scheduler] {details}")
     except Exception as e:
         dur = (datetime.now(UTC) - start_t).total_seconds()
-        if isinstance(e, RuntimeError) and "No odds source configured" in str(e):
-            data_store.record_job_finish(run_id, "SKIPPED", dur, str(e))
-            tracker.update_job_finish(job_id, True, dur, str(e), status="SKIPPED")
-            logger.info(f"[Scheduler] Odds snapshot skipped: {e}")
-            return
-        err_msg = f"Odds snapshot error: {str(e)}"
+        err_msg = f"Odds refresh error: {str(e)}"
         data_store.record_job_finish(run_id, "FAILED", dur, err_msg)
         tracker.update_job_finish(job_id, False, dur, err_msg)
         logger.warning(f"[Scheduler] {job_name} failed: {e}")
@@ -532,7 +525,14 @@ def start_scheduler():
         scheduler.add_job(holdout_forward_job, "interval", minutes=15, id="holdout_forward", replace_existing=True)
 
         # Job 7: Pre-deadline match odds snapshotting hourly
-        scheduler.add_job(odds_snapshot_job, "interval", hours=1, id="odds_snapshot", replace_existing=True)
+        scheduler.add_job(
+            odds_snapshot_job,
+            "interval",
+            hours=6,
+            id="odds_snapshot",
+            replace_existing=True,
+            next_run_time=datetime.now(UTC),
+        )
 
         try:
             scheduler.start()

@@ -104,6 +104,7 @@ class FPLSettings(BaseModel):
 
     # Joint Multi-GW Planner Settings
     planner_horizon: int = Field(default=5, description="Default planning horizon in gameweeks for joint search")
+    odds_api_key: str = Field(default="", description="Optional free The Odds API key for earlier upcoming odds")
     planner_min_horizon: int = Field(default=6, description="Fewest gameweeks the main plan looks ahead")
     planner_max_horizon: int = Field(default=12, description="Most gameweeks the main plan looks ahead")
 
@@ -165,6 +166,7 @@ def _load_settings_from_env() -> FPLSettings:
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
         rival_points_window=_parse_int(os.getenv("RIVAL_POINTS_WINDOW")) or 20,
+        odds_api_key=os.getenv("ODDS_API_KEY", "").strip(),
         planner_min_horizon=_parse_int(os.getenv("PLANNER_MIN_HORIZON")) or 6,
         planner_max_horizon=_parse_int(os.getenv("PLANNER_MAX_HORIZON")) or 12,
         max_standings_pages=_parse_int(os.getenv("MAX_STANDINGS_PAGES")) or 200,
@@ -193,6 +195,7 @@ DEFAULT_CLEAN_SHEET_PROBABILITY = app_config.default_clean_sheet_probability
 CLEAN_SHEET_HOME_FACTOR = app_config.clean_sheet_home_factor
 CLEAN_SHEET_AWAY_FACTOR = app_config.clean_sheet_away_factor
 PLANNER_HORIZON = app_config.planner_horizon
+ODDS_API_KEY = app_config.odds_api_key
 PLANNER_MIN_HORIZON = app_config.planner_min_horizon
 PLANNER_MAX_HORIZON = app_config.planner_max_horizon
 
