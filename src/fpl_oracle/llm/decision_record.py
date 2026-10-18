@@ -173,6 +173,9 @@ def build_decision_record(result: dict[str, Any], extras: dict[str, Any] | None 
                 "play_now": chip.get("recommend"),
                 "chip": chip.get("chip_display_name"),
                 "gain_vs_hold_xp": chip.get("gain_vs_hold"),
+                "comparison": chip.get("comparison"),
+                "check": chip.get("check"),
+                "later_provisional": chip.get("later"),
                 "reason": chip.get("reason"),
                 "set_1_warning": chip.get("set_1_deadline_warning"),
                 "now_vs_later": card.get("ranked_options"),
@@ -217,6 +220,19 @@ def published_result() -> tuple[dict[str, Any] | None, str]:
     cur = advice_publisher.current
     if cur and cur.get("status") == "ready" and isinstance(cur.get("result"), dict):
         return cur["result"], ""
+    # While a new run calculates (or after a restart), the last published advice for this team still stands.
+    previous = (cur or {}).get("previous_result")
+    if isinstance(previous, dict) and previous.get("decisionCard"):
+        return (
+            previous,
+            f"Advice from {(cur or {}).get('previous_published_at') or 'the last run'}; an update is running.",
+        )
+    from fpl_oracle.data.store import data_store
+    from fpl_oracle.server.advice_job import load_last_advice, profile_key
+
+    saved = load_last_advice(profile_key(data_store.get_profile()))
+    if saved and isinstance(saved.get("result"), dict):
+        return saved["result"], f"Advice from {saved.get('published_at')}; refresh the app for newer data."
     if not cur:
         return None, "No advice has been published yet. Open the app's Advice screen to calculate it."
     return None, f"Advice is {cur.get('status')} ({cur.get('stage') or 'no stage'}); it is not published yet."
@@ -256,7 +272,10 @@ async def current_decision_record() -> dict[str, Any]:
     result, reason = published_result()
     if result is None:
         return {"status": "unavailable", "reason": reason}
-    return build_decision_record(result, await _extras(result))
+    record = build_decision_record(result, await _extras(result))
+    if reason:
+        record["as_of_note"] = reason
+    return record
 
 
 def section_of(record: dict[str, Any], section: str | None) -> dict[str, Any]:
