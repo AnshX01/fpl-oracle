@@ -15,3 +15,16 @@ shutil.copytree(ROOT / "data", _DATA_COPY, ignore=shutil.ignore_patterns("*.db",
 os.environ["FPL_ORACLE_DATA_DIR"] = str(_DATA_COPY)
 
 pytest_plugins = ["tests.repair_fixtures"]
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _no_live_refresh_before_advice(monkeypatch):
+    """Advice runs refresh history and retrain first; tests use their fixtures instead of the live API."""
+
+    async def held_data():
+        return {"form_through_gameweek": None, "model_trained_through_gameweek": None}
+
+    monkeypatch.setattr("fpl_oracle.server.retraining.ensure_latest_data", held_data)
