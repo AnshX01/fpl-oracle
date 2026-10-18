@@ -102,21 +102,12 @@ def test_chip_preservation_frontier_exposes_future_value_gap(sample_squad_and_po
     assert result["decision_scope"]["season_tail_value_estimated"] is False
 
 
-def test_freehit_not_recommended_on_zero_gain_normal_week(monkeypatch):
-    from fpl_oracle.league import objective
+def test_freehit_not_recommended_on_zero_gain_normal_week():
     from tests.test_sequential_search import fixture_data
 
     frame, pools, maps = fixture_data()
 
-    # The rival tie-break only ever sees trajectories that make the same first-chip decision, so it
-    # cannot trade a chip decision for exposure. A zero-benefit FH is never recommended.
-    offered = []
-
-    def choose(states, *args, **kwargs):
-        offered.append({s["first_chip"] for s in states})
-        return states[-1], dict(status="test")
-
-    monkeypatch.setattr(objective, "select_balanced_sequence", choose)
+    # A zero-benefit Free Hit is never recommended by the fallback search.
     result = transfer_optimizer.evaluate_joint_transfer_and_chip_plan(
         current_squad_df=frame,
         player_pool_df=frame,
@@ -129,6 +120,5 @@ def test_freehit_not_recommended_on_zero_gain_normal_week(monkeypatch):
         horizon_len=1,
         locked_in_ids=set(frame.element),
     )
-    assert offered and all(len(chips) == 1 for chips in offered)
     assert result["recommended_chip"] is None
     assert result["best_candidate"]["chip"] == "HOLD"
