@@ -44,7 +44,15 @@ Market ratings: log λ_home = μ + home + att[h] − def[a], log λ_away = μ + 
 on the last 240 days of market prices with a 60-day half-life. Held-out against each match's own later prices:
 correlation 0.95 one week ahead, 0.90 twelve weeks ahead (the Dixon-Coles model: 0.58–0.83 for the same week).
 Odds are free from football-data.co.uk (season files priced around the FPL deadline; fixtures.csv for upcoming
-games) and optionally The Odds API (ODDS_API_KEY). With odds in place, held-out RMSE improved 1.965 → 1.956.
+games) and optionally The Odds API (ODDS_API_KEY).
+
+Next-gameweek goalscorer odds (kickoffscore.com, averaged over several bookmakers, keyed by FPL ids): a priced
+player's goals-if-he-plays comes from his anytime price. Anytime prices carry a large margin, most of it on
+long shots, removed per team-match by the power method: chances p^k with k set so the priced players' goals,
+-ln(1 - p^k) weighted by their chance of playing, equal the team's market goals (own goals excluded) less the
+model's goals for unpriced players. GW8 2026-27: Haaland at Villa raw 58%, after margin 42% (the source's own
+model 44%; this model alone 39%). Not yet validated on our own data (no free price history); the weekly track
+record measures it from now on. With odds in place, held-out RMSE improved 1.965 → 1.956.
 
 Scoring constants come from the live `game_config.scoring` (GKP goal 10, DEF 6, MID 5, FWD 4, DefCon 2).
 
@@ -91,20 +99,14 @@ Baseline b: for transfers, rolling; for a chip now, the same chip next week (or 
 This is what stops a 13-player Wildcard built on small samples from beating a two-transfer fix by a
 margin smaller than its own uncertainty.
 
-**Wildcard now vs keeping it, allowing for what waiting teaches.** The plain comparison scores both plans on
-today's forecasts, so a kept Wildcard gets no credit for reacting to injuries first. The planner adds that
-credit (optimise/information.py): 10 scenarios of who goes missing over the next 3 gameweeks (one average
-absence), drawn per player so that each player's long-run availability equals the planner's own chance of
-playing; absence lengths follow 2023-24 to 2026-27 (regular starters: 8.6% start an absence each week; 53% last
-one match, 25% four or more; mean 3.1). In each scenario both arms keep their week-1 squad, are scored as
-planned, and are then re-planned with the same search as the main plans:
-
-    gain with information = E[J(now) − J(keep)] + mean_s( re-planning gain(now) − re-planning gain(keep) )
-
-Re-planning starts from the plan itself, so solver slack can only shrink a re-planning gain, never invent one;
-with the main plans' polish on both arms the two are searched equally hard. Form changes are not simulated,
-so the value of waiting is a lower bound. GW8 2026-27: waiting worth +0.9 ± 1.2 points; the Wildcard gain
-falls 4.6 → 3.7 and still clears its 0.9 margin.
+**Known gap: the value of waiting.** Chip-now vs keep-it compares both plans on today's forecasts, so a kept
+Wildcard gets no credit for reacting to injuries first. A scenario version (absence spells per player, both arms
+re-planned) was built and withdrawn: re-planning a 3-week window with every absence revealed at once rewards
+the squad with more rotation risk (hindsight, not waiting), its estimate flipped sign across variants, and the
+honest version (reveal a week, re-plan, repeat) needs about three times the solves of a 10-minute run. The
++0.9 figure once quoted here was measured while Wildcard plans could not be polished (a Free Hit ban bug) and is
+withdrawn. Absences measured for any later attempt: regular starters start one in 8.6% of weeks; 53% last one
+match, 25% four or more.
 
 **Free Hit**: planned only in a blank or double gameweek, or the last week of its set (GW19 / GW38: use it or
 lose it). In a normal week it does what one more transfer does.
