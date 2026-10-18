@@ -8,24 +8,15 @@ Provides:
 """
 
 import logging
-import re
-import unicodedata
 from typing import Any
 
 import pandas as pd
 
 from fpl_oracle.api.models import BootstrapStatic
-from fpl_oracle.optimise.lineup import lineup_optimizer
+from fpl_oracle.optimise.lineup import lineup_optimizer, play_probability
 from fpl_oracle.optimise.transfers import transfer_optimizer
 
 logger = logging.getLogger("fpl_oracle.optimise.contingency")
-
-
-def _normalize_name(name: str) -> str:
-    """Normalize accents and strip non-alphanumeric chars for robust matching."""
-    nfkd = unicodedata.normalize("NFKD", name)
-    ascii_str = "".join(c for c in nfkd if not unicodedata.combining(c))
-    return re.sub(r"[^a-zA-Z0-9]+", " ", ascii_str).lower().strip()
 
 
 class ContingencyEngine:
@@ -150,27 +141,6 @@ class ContingencyEngine:
                 "trigger_condition": f"Press conference confirms {transferred_in_name} is doubtful (<75%) or ruled out.",
                 "action_summary": f"Pivot target: buy {backup_in_names} instead of {transferred_in_name} (net impact: {delta_b:+.2f} xP).",
             }
-            # Plan A was to roll. Plan B evaluates the best 1 transfer if an existing squad member is ruled out.
-            cand_plans = base_res.get("candidate_plans", [])
-            top_1_plan = next((p for p in cand_plans if p.get("plan_type") == "1_TRANSFER"), None)
-            if top_1_plan:
-                top_xp = float(top_1_plan.get("net_expected_points", plan_a_xp))
-                delta_b = round(top_xp - plan_a_xp, 2)
-                in_name = top_1_plan["transfers_in"][0]["web_name"]
-                out_name = top_1_plan["transfers_out"][0]["web_name"]
-                plan_b = {
-                    "title": f"Plan B (Injury Acceleration): Transfer {out_name} -> {in_name}",
-                    "plan_type": "1_TRANSFER",
-                    "transfers_count": 1,
-                    "transfers_in": top_1_plan.get("transfers_in", []),
-                    "transfers_out": top_1_plan.get("transfers_out", []),
-                    "hits": top_1_plan.get("hits", 0),
-                    "hit_cost": top_1_plan.get("hit_cost", 0.0),
-                    "net_expected_points": top_xp,
-                    "delta_vs_plan_a": delta_b,
-                    "trigger_condition": f"Squad regular ({out_name}) suffers training setback or is confirmed benched.",
-                    "action_summary": f"Burn 1 banked FT immediately for {in_name} ({delta_b:+.2f} xP vs rolling).",
-                }
 
         if plan_b is None:
             owned_line = lineup_optimizer.select_lineup_and_captain(current_squad_df, risk_preference=risk_preference)
@@ -202,14 +172,21 @@ class ContingencyEngine:
         for move in moves:
             ids = (current_elements - set(move["transfers_out"])) | set(move["transfers_in"])
             frame = pd.DataFrame([pmap[e] for e in sorted(ids)])
-            line = lineup_optimizer.select_lineup_and_captain(frame, risk_preference="aggressive")
+            line = lineup_optimizer.select_lineup_and_captain(
+                frame, risk_preference="aggressive", simulate_captaincy=False
+            )
             hits = max(0, len(move["transfers_in"]) - free_transfers)
             net = float(line["total_gameweek_expected_points"]) - 4 * hits
-            ceiling = (
-                sum(float(r.get("p90", r["expected_points"])) for _, r in line["starters"].iterrows())
-                + float(line["captain"].get("p90", line["captain"]["expected_points"]))
-                - 4 * hits
+            # P90 of the lineup total: independent normals, sigma from each player's p10-p90 spread.
+            spread = (line["starters"].get("p90", line["starters"]["expected_points"] * 1.8)) - (
+                line["starters"].get("p10", line["starters"]["expected_points"] * 0.4)
             )
+            var = float(((spread / 2.563) ** 2).sum())
+            cap = line["captain"]
+            var += ((float(cap.get("p90", 0.0)) - float(cap.get("p10", 0.0))) / 2.563) ** 2 * (
+                cap["multiplier"] ** 2 - 1
+            )
+            ceiling = net + 1.2816 * var**0.5
             choices.append((ceiling, net, move))
         if choices:
             ceiling, net, move = max(choices, key=lambda choice: (choice[0], choice[1]))
@@ -314,7 +291,11 @@ class ContingencyEngine:
                         break
 
             sub_name = sub_row["web_name"] if sub_row is not None else "None"
-            sub_xp = round(float(sub_row["expected_points"]), 2) if sub_row is not None else 0.0
+            sub_xp = (
+                round(float(sub_row["expected_points"]) * float(play_probability(sub_row.to_frame().T).iloc[0]), 2)
+                if sub_row is not None
+                else 0.0
+            )
             autosub_delta = round(sub_xp - st_xp, 2)
 
             # Determine best emergency transfer replacement
@@ -325,13 +306,16 @@ class ContingencyEngine:
                 & (player_pool_df["element"] != elem_id)
                 & (~player_pool_df["element"].isin(squad_df["element"]))
                 & (player_pool_df["value"] <= avail_budget)
-            ].sort_values(by="expected_points", ascending=False)
+            ]
             other_teams = squad_df[squad_df["element"] != elem_id]["team"].value_counts()
             candidates = candidates[candidates["team"].map(other_teams).fillna(0) < 3]
+            # Only fit-enough replacements, ranked by availability-adjusted xP.
+            candidates = candidates.assign(_avail_xp=candidates["expected_points"] * play_probability(candidates))
+            candidates = candidates[play_probability(candidates) >= 0.75].sort_values("_avail_xp", ascending=False)
 
             best_rep = candidates.iloc[0] if not candidates.empty else None
             rep_name = best_rep["web_name"] if best_rep is not None else "None"
-            rep_xp = round(float(best_rep["expected_points"]), 2) if best_rep is not None else 0.0
+            rep_xp = round(float(best_rep["_avail_xp"]), 2) if best_rep is not None else 0.0
 
             # Transfer net gain vs trusting the bench
             hit_cost = 0.0 if free_transfers >= 1 else 4.0
@@ -379,134 +363,6 @@ class ContingencyEngine:
             )
 
         return matrix
-
-    def panic_button_reoptimize(
-        self,
-        query: str,
-        squad_df: pd.DataFrame,
-        player_pool_df: pd.DataFrame,
-        bank: float,
-        free_transfers: int,
-        ruled_out_ids: list[int] | None = None,
-    ) -> dict[str, Any]:
-        """
-        Emergency 1-click crisis solver for breaking team news (e.g. 'Star player ruled out 6 weeks').
-        Instantly identifies ruled-out squad player, zeros their minutes/points, and solves:
-        1. Clean bench promotion & revised captaincy.
-        2. Best immediate 1-transfer market replacement.
-        """
-        affected_ids = set(ruled_out_ids or [])
-
-        # Match player from text query if not provided directly
-        if not affected_ids and query:
-            clean_q = _normalize_name(query)
-            for _, r in squad_df.iterrows():
-                p_norm = _normalize_name(r["web_name"])
-                if p_norm and (f" {p_norm} " in f" {clean_q} " or clean_q == p_norm):
-                    affected_ids.add(int(r["element"]))
-
-        owned = set(int(e) for e in squad_df["element"])
-        if not affected_ids or not affected_ids.issubset(owned):
-            return dict(status="needs_player", recommendation="Name a player in your squad, or select their player ID.")
-        if len(affected_ids) != 1:
-            return dict(status="needs_player", recommendation="Check one player at a time.")
-
-        # Perturb squad with ruled-out player having 0.0 expected points
-        unavailable = set(affected_ids)
-        if "status" in squad_df:
-            unavailable.update(int(e) for e in squad_df.loc[squad_df["status"].isin(["i", "s", "u"]), "element"])
-        perturbed_squad = squad_df.copy()
-        for idx in perturbed_squad.index:
-            if int(perturbed_squad.loc[idx, "element"]) in affected_ids:
-                perturbed_squad.loc[idx, "expected_points"] = 0.0
-                perturbed_squad.loc[idx, "p10"] = 0.0
-                perturbed_squad.loc[idx, "p90"] = 0.0
-
-        # 1. New lineup with bench promotion
-        try:
-            new_lineup = lineup_optimizer.select_lineup_and_captain(
-                perturbed_squad, risk_preference="points", excluded_ids=unavailable
-            )
-        except RuntimeError:
-            return dict(
-                status="unavailable",
-                recommendation="Not enough available players for a legal XI. Review transfers before the deadline.",
-            )
-
-        # Identify which player was promoted
-        orig_lineup = lineup_optimizer.select_lineup_and_captain(squad_df, risk_preference="points")
-        orig_starters = set(orig_lineup["starters"]["element"].tolist())
-        new_starters = set(new_lineup["starters"]["element"].tolist())
-        promoted_ids = list(new_starters - orig_starters)
-        promoted_player = None
-        if promoted_ids:
-            p_row = new_lineup["starters"][new_lineup["starters"]["element"] == promoted_ids[0]].iloc[0]
-            promoted_player = {
-                "element": int(p_row["element"]),
-                "web_name": p_row["web_name"],
-                "position": p_row["position"],
-                "expected_points": round(float(p_row["expected_points"]), 2),
-            }
-
-        # 2. Emergency 1-transfer market solution
-        ruled_out_id = list(affected_ids)[0]
-        ruled_out_row = squad_df[squad_df["element"] == ruled_out_id].iloc[0]
-        sell_val = float(ruled_out_row.get("selling_price", ruled_out_row["value"]))
-        avail_cash = sell_val + bank
-
-        candidates = player_pool_df[
-            (player_pool_df["position"] == ruled_out_row["position"])
-            & (player_pool_df["element"] != ruled_out_id)
-            & (~player_pool_df["element"].isin(squad_df["element"]))
-            & (player_pool_df["value"] <= avail_cash)
-        ].sort_values(by="expected_points", ascending=False)
-
-        if "status" in candidates:
-            candidates = candidates[~candidates["status"].isin(["i", "s", "u"])]
-        other_teams = squad_df[squad_df["element"] != ruled_out_id]["team"].value_counts()
-        candidates = candidates[candidates["team"].map(other_teams).fillna(0) < 3]
-        best_market_rep = None
-        if not candidates.empty:
-            bm = candidates.iloc[0]
-            hit = 0.0 if free_transfers >= 1 else 4.0
-            best_market_rep = {
-                "element": int(bm["element"]),
-                "web_name": bm["web_name"],
-                "team": int(bm["team"]),
-                "position": bm["position"],
-                "cost": round(bm["value"] / 10.0, 1),
-                "expected_points": round(float(bm["expected_points"]), 2),
-                "net_expected_points": round(float(bm["expected_points"]) - hit, 2),
-                "hit_cost": hit,
-            }
-
-        return {
-            "status": "crisis_resolved",
-            "crisis_query": query,
-            "ruled_out_player": {
-                "element": ruled_out_id,
-                "web_name": ruled_out_row["web_name"],
-                "position": ruled_out_row["position"],
-                "lost_expected_points": round(
-                    float(squad_df[squad_df["element"] == ruled_out_id]["expected_points"].iloc[0]), 2
-                ),
-            },
-            "lineup_action": {
-                "summary": f"Bench {ruled_out_row['web_name']}. Auto-promote {promoted_player['web_name'] if promoted_player else 'first reserve'}.",
-                "promoted_player": promoted_player,
-                "new_formation": new_lineup["formation"],
-                "captain": new_lineup["captain"],
-                "vice_captain": new_lineup["vice_captain"],
-                "total_gameweek_expected_points": new_lineup["total_gameweek_expected_points"],
-            },
-            "emergency_transfer": best_market_rep,
-            "recommendation": (
-                f"If {ruled_out_row['web_name']} is definitely out, "
-                f"start {promoted_player['web_name'] if promoted_player else 'bench'} ({promoted_player['expected_points'] if promoted_player else 0} predicted pts). "
-                f"Alternatively, transfer {ruled_out_row['web_name']} -> {best_market_rep['web_name'] if best_market_rep else 'Replacement'} "
-                f"for {best_market_rep['net_expected_points'] if best_market_rep else 0} net predicted pts."
-            ),
-        }
 
     def generate_pre_deadline_checklist(
         self,
@@ -580,35 +436,37 @@ class ContingencyEngine:
             }
         )
 
-        # 4. Chip Set 1 Expiry Horizon
+        # 4. Chip set expiry horizon (set 1 expires after GW19, set 2 after GW38)
         curr_gw = game_state_data.get("next_gw") or game_state_data.get("current_gw") or 5
-        rem_set_1 = chips_status.get("set_1_remaining", [])
-        gws_to_19 = max(0, 20 - curr_gw)
-        if len(rem_set_1) > gws_to_19:
+        set_no, last_gw = (1, 19) if curr_gw <= 19 else (2, 38)
+        rem_chips = chips_status.get(f"set_{set_no}_remaining", [])
+        gws_left = last_gw + 1 - curr_gw
+        item = f"Chip Set {set_no} Expiry Deadline"
+        if len(rem_chips) > max(0, gws_left):
             checklist.append(
                 {
-                    "item": "Chip Set 1 Expiry Deadline",
+                    "item": item,
                     "status": "ACTION_REQUIRED",
                     "badge": "CRITICAL CONGESTION",
-                    "detail": f"You have {len(rem_set_1)} Set 1 chips left with only {gws_to_19} gameweeks before GW19! Play a chip now or forfeit it.",
+                    "detail": f"You have {len(rem_chips)} Set {set_no} chips left with only {max(0, gws_left)} gameweeks up to GW{last_gw}! Play a chip now or forfeit it.",
                 }
             )
-        elif rem_set_1:
+        elif rem_chips:
             checklist.append(
                 {
-                    "item": "Chip Set 1 Expiry Deadline",
+                    "item": item,
                     "status": "INFO",
-                    "badge": f"{len(rem_set_1)} Chips / {gws_to_19} GWs",
-                    "detail": f"{len(rem_set_1)} chips expire at GW19.",
+                    "badge": f"{len(rem_chips)} Chips / {gws_left} GWs",
+                    "detail": f"{len(rem_chips)} chips expire at GW{last_gw}.",
                 }
             )
         else:
             checklist.append(
                 {
-                    "item": "Chip Set 1 Expiry Deadline",
+                    "item": item,
                     "status": "PASS",
-                    "badge": "Set 1 Complete",
-                    "detail": "No first-set chips left.",
+                    "badge": f"Set {set_no} Complete",
+                    "detail": f"No set {set_no} chips left.",
                 }
             )
 

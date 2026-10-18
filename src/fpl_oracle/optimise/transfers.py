@@ -13,18 +13,7 @@ import pandas as pd
 from fpl_oracle.config import is_flag_enabled
 from fpl_oracle.optimise.multiperiod import multiperiod_optimizer
 from fpl_oracle.optimise.transfers_beam import (
-    VALID_FORMATIONS,
-    _fast_eval_squad_full,
-    _safe_team,
-    compute_dynamic_chip_retention_values,
-)
-from fpl_oracle.optimise.transfers_beam import (
     TransferOptimizer as BeamSearchTransferOptimizer,
-)
-from fpl_oracle.rules.transfers import (
-    next_free_transfers,
-    sell_price,
-    validate_chip_legality,
 )
 
 
@@ -52,7 +41,13 @@ class TransferOptimizer(BeamSearchTransferOptimizer):
         stability_threshold: float = 0.3,
         num_mc_scenarios: int = 50,
         horizon_len: int | None = None,
+        chips_available: list[str] | None = None,
+        previous_chip: str | None = None,
     ) -> dict[str, Any]:
+        """
+        Transfer options only, whichever engine runs: the beam search plans no chips, so the MILP is given
+        only the chips the caller names (none by default). It must never pick a chip the manager has used.
+        """
         projections = horizon_projections if horizon_projections is not None else {target_gw: player_pool_df}
 
         if is_flag_enabled("multiperiod_milp", default=False) or free_transfers >= 3:
@@ -67,6 +62,8 @@ class TransferOptimizer(BeamSearchTransferOptimizer):
                 locked_in_ids=locked_in_ids,
                 locked_out_ids=locked_out_ids,
                 excluded_team_ids=excluded_team_ids,
+                chips_available=chips_available or [],
+                previous_chip=previous_chip,
                 risk_preference=risk_preference,
                 include_price_gain=include_price_gain,
                 stability_threshold=stability_threshold,
@@ -94,15 +91,3 @@ class TransferOptimizer(BeamSearchTransferOptimizer):
 
 
 transfer_optimizer = TransferOptimizer()
-
-__all__ = [
-    "VALID_FORMATIONS",
-    "TransferOptimizer",
-    "_fast_eval_squad_full",
-    "_safe_team",
-    "compute_dynamic_chip_retention_values",
-    "next_free_transfers",
-    "sell_price",
-    "transfer_optimizer",
-    "validate_chip_legality",
-]

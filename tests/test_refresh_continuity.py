@@ -46,7 +46,7 @@ def test_official_failure_does_not_substitute_saved_manual_team():
     profile = SimpleNamespace(
         manager_id=7, target_league_id=None, manual_squad=list(range(1, 16)), bank=None, free_transfers=None
     )
-    state = ManagerStateService.build_effective_state(profile, SimpleNamespace(elements=[]), [], is_stale=True)
+    state = ManagerStateService.build_effective_state(profile, SimpleNamespace(elements=[]), is_stale=True)
     assert not state.squad
 
 
@@ -114,14 +114,14 @@ def test_chat_team_uses_canonical_bank_and_zero_ft(configured_advisor):
 def test_joint_plan_canonicalizes_surface_columns_and_coalesces(configured_advisor, monkeypatch):
     from unittest.mock import Mock
 
-    from fpl_oracle.optimise.transfers import transfer_optimizer
+    from fpl_oracle.server import analysis as analysis_module
     from fpl_oracle.server.analysis import AnalysisService
 
     state, pool, horizon = configured_advisor
     service = AnalysisService()
     monkeypatch.setattr(service, "league_context", AsyncMock(return_value=None))
     solve = Mock(return_value={"recommended_plan": {}})
-    monkeypatch.setattr(transfer_optimizer, "evaluate_joint_transfer_and_chip_plan", solve)
+    monkeypatch.setattr(analysis_module, "execute_authoritative_milp_plan", solve)
     first = state.to_squad_dataframe()
     second = first.copy()
     second["expected_points"] = 0.0

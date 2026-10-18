@@ -4,6 +4,7 @@ Simulates points gain of playing Wildcard, Free Hit, Triple Captain, or Bench Bo
 in candidate gameweeks.
 """
 
+import logging
 from typing import Any
 
 import pandas as pd
@@ -11,14 +12,14 @@ import pandas as pd
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.squad import squad_optimizer
 
+logger = logging.getLogger(__name__)
+
 
 class ChipSimulator:
     def __init__(self):
         pass
 
-    def evaluate_bench_boost(
-        self, gw: int, squad_df: pd.DataFrame, gw_projections_df: pd.DataFrame | None = None
-    ) -> dict[str, Any]:
+    def evaluate_bench_boost(self, gw: int, squad_df: pd.DataFrame) -> dict[str, Any]:
         """
         Bench Boost gain = sum of expected points of the 4 bench players.
         """
@@ -26,11 +27,11 @@ class ChipSimulator:
             return {
                 "chip": "bboost",
                 "gameweek": gw,
-                "expected_gain": 12.0,
-                "reasoning": f"Bench Boost in GW{gw} activates your 4 substitutes for an estimated +12.0 points.",
+                "expected_gain": None,
+                "reasoning": f"Bench Boost in GW{gw} cannot be measured: the squad has {len(squad_df)} players, not 15.",
             }
 
-        lineup = lineup_optimizer.select_lineup_and_captain(squad_df, is_bench_boost=True)
+        lineup = lineup_optimizer.select_lineup_and_captain(squad_df, is_bench_boost=True, simulate_captaincy=False)
         bench_gain = lineup["bench_expected_points"]
         return {
             "chip": "bboost",
@@ -56,7 +57,7 @@ class ChipSimulator:
                 "reasoning": f"Triple Captain on {top_cand['web_name']} in GW{gw} adds an extra +{round(gain, 2)} points (3x multiplier).",
             }
 
-        lineup = lineup_optimizer.select_lineup_and_captain(squad_df, is_triple_captain=True)
+        lineup = lineup_optimizer.select_lineup_and_captain(squad_df, is_triple_captain=True, simulate_captaincy=False)
         cap = lineup["captain"]
         gain = cap["expected_points"]  # Extra 1x points
         return {
@@ -74,7 +75,7 @@ class ChipSimulator:
         """
         Free Hit gain = optimal 1-week squad expected points minus current squad expected points.
         """
-        curr_lineup = lineup_optimizer.select_lineup_and_captain(current_squad_df)
+        curr_lineup = lineup_optimizer.select_lineup_and_captain(current_squad_df, simulate_captaincy=False)
         curr_xp = curr_lineup["total_gameweek_expected_points"]
 
         # Solve dream 1-week squad
@@ -82,12 +83,19 @@ class ChipSimulator:
             optimal_squad_res = squad_optimizer.solve_best_squad(
                 player_pool_df=player_pool_df, budget=budget, metric_col="expected_points"
             )
-            opt_lineup = lineup_optimizer.select_lineup_and_captain(optimal_squad_res["squad"])
+            opt_lineup = lineup_optimizer.select_lineup_and_captain(
+                optimal_squad_res["squad"], simulate_captaincy=False
+            )
             opt_xp = opt_lineup["total_gameweek_expected_points"]
             gain = max(0.0, opt_xp - curr_xp)
-        except Exception:
-            gain = 8.5
-            opt_xp = curr_xp + gain
+        except Exception as ex:
+            logger.warning("Free Hit gain for GW%s could not be measured: %s", gw, ex)
+            return {
+                "chip": "freehit",
+                "gameweek": gw,
+                "expected_gain": None,
+                "reasoning": f"Free Hit in GW{gw} could not be measured (squad optimiser failed).",
+            }
 
         return {
             "chip": "freehit",
@@ -109,22 +117,26 @@ class ChipSimulator:
         """
         Wildcard gain = cumulative uplift of restructuring the squad permanently.
         """
-        curr_lineup = lineup_optimizer.select_lineup_and_captain(current_squad_df)
+        curr_lineup = lineup_optimizer.select_lineup_and_captain(current_squad_df, simulate_captaincy=False)
 
         try:
             opt_squad_res = squad_optimizer.solve_best_squad(
                 player_pool_df=player_pool_df, budget=budget, metric_col="expected_points"
             )
-            opt_lineup = lineup_optimizer.select_lineup_and_captain(opt_squad_res["squad"])
+            opt_lineup = lineup_optimizer.select_lineup_and_captain(opt_squad_res["squad"], simulate_captaincy=False)
             single_gw_gain = max(
                 0.0, opt_lineup["total_gameweek_expected_points"] - curr_lineup["total_gameweek_expected_points"]
             )
             total_gain = max(0.0, single_gw_gain * 2.5)
             target_squad = opt_squad_res["squad"]
-        except Exception:
-            single_gw_gain = 6.0
-            total_gain = 18.0
-            target_squad = current_squad_df
+        except Exception as ex:
+            logger.warning("Wildcard gain for GW%s could not be measured: %s", gw, ex)
+            return {
+                "chip": "wildcard",
+                "gameweek": gw,
+                "expected_gain": None,
+                "reasoning": f"Wildcard in GW{gw} could not be measured (squad optimiser failed).",
+            }
 
         return {
             "chip": "wildcard",

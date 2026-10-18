@@ -282,6 +282,16 @@ class AdvicePublisher:
                     status="unavailable", reason="Sources changed; refresh advice"
                 )
                 return
+            if result.get("status") == "model_expiry_sensitivity":
+                # A separate bounded beam search, not the MILP behind the card: say whether it agrees
+                published = ((publication["result"].get("decisionCard") or {}).get("chip") or {}).get("chip_name")
+                result = dict(
+                    result,
+                    published_first_chip=published,
+                    agrees_with_published_plan=all(
+                        result.get(k, {}).get("first_chip") == published for k in ("short", "extended")
+                    ),
+                )
             publication["result"]["expiryResearch"] = result
             if result.get("status") == "model_expiry_sensitivity":
                 self.expiry_cache[cache_key] = result

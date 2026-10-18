@@ -1,6 +1,7 @@
 import asyncio
 from unittest.mock import AsyncMock
 
+from fpl_oracle.config import planning_horizon
 from fpl_oracle.server.analysis import analysis_service
 from fpl_oracle.server.routes import api
 
@@ -41,7 +42,7 @@ def test_emergency_equals_normal_model_with_same_constraint(configured_advisor, 
         assert result["joint_plan"]["recommended_plan"]["trajectory"] == safe_json_serialize(
             direct["recommended_plan"]["trajectory"]
         )
-        assert result["joint_plan"]["decision_scope"]["horizon_gameweeks"][-1] == 19
+        assert result["joint_plan"]["decision_scope"]["horizon_gameweeks"][-1] == 6 + planning_horizon(6) - 1
         assert affected not in {int(p) for p in direct["recommended_plan"]["lineup"]["starters"].element}
         for step in direct["recommended_plan"]["trajectory"]:
             assert affected not in step["transfers_in"]

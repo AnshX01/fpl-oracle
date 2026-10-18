@@ -22,7 +22,7 @@ from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
-from fpl_oracle.server.analysis import analysis_service
+from fpl_oracle.server.analysis import analysis_service, target_gameweek
 
 logger = logging.getLogger("fpl_oracle.pipeline")
 
@@ -130,7 +130,7 @@ class SyncPipeline:
             rules_ver = rules_checker.verify(boot)
             game_state = await game_state_manager.get_game_state()
 
-            target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 1)
+            target_gw = target_gameweek(curr_gw, next_gw)
             effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
             # ------------------------------------------------------------------
@@ -242,14 +242,13 @@ class SyncPipeline:
                         user_manager_id=profile.manager_id,
                         current_gw=effective_curr_gw,
                         bootstrap=boot,
+                        user_squad_df=user_squad_df,
                     )
-                    user_pts = 0.0
-                    if profile.manager_id:
-                        try:
-                            entry, _ = await fpl_client.get_manager_entry(profile.manager_id)
-                            user_pts = float(entry.summary_overall_points or 0)
-                        except Exception:
-                            pass
+                    # Same source as every other league surface: the standings row, not the manager entry summary.
+                    user_row = next(
+                        (r for r in standings_data["standings"] if r.get("entry") == profile.manager_id), None
+                    )
+                    user_pts = float(user_row["total"]) if user_row and user_row.get("total") is not None else 0.0
                     league_res = await asyncio.to_thread(
                         monte_carlo_simulator.simulate_league,
                         user_points=user_pts,

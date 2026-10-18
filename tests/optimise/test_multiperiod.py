@@ -173,8 +173,11 @@ def test_property_1_h1_equivalence_to_lineup_optimizer():
             f"Squad {squad_idx}: MILP captain {milp_captain} != lineup captain {expected_captain}"
         )
 
-        # 3. Starting XI players must match
-        assert milp_starters == expected_starters, (
+        # 3. Starting XI players must match (players of exactly equal xP are interchangeable)
+        xp = dict(zip(squad_df["element"], squad_df["expected_points"], strict=True))
+        swapped_out = sorted(xp[e] for e in expected_starters - milp_starters)
+        swapped_in = sorted(xp[e] for e in milp_starters - expected_starters)
+        assert swapped_out == swapped_in, (
             f"Squad {squad_idx}: Starters mismatch: {milp_starters.symmetric_difference(expected_starters)}"
         )
 
@@ -326,14 +329,18 @@ def test_property_4_feasibility_across_horizon():
         assert out_ids.issubset(current_squad_ids), f"GW{act.gameweek}: Transferred out unowned players"
 
         current_squad_ids = (current_squad_ids - out_ids) | in_ids
+        # A Free Hit week fields a temporary squad; the owned squad is unchanged and returns next week
+        fielded_ids = set(act.squad) if act.active_chip == "freehit" else current_squad_ids
+        if act.active_chip == "freehit":
+            assert not in_ids and not out_ids, f"GW{act.gameweek}: Free Hit must not change the owned squad"
 
         # 1. Squad size = 15
-        assert len(current_squad_ids) == 15, f"GW{act.gameweek}: Squad size is {len(current_squad_ids)}, expected 15"
+        assert len(fielded_ids) == 15, f"GW{act.gameweek}: Squad size is {len(fielded_ids)}, expected 15"
 
         # 2. Position counts
         pos_counts: dict[str, int] = {}
         club_counts: dict[int, int] = {}
-        for eid in current_squad_ids:
+        for eid in fielded_ids:
             p = player_map[eid]
             pos_counts[p["position"]] = pos_counts.get(p["position"], 0) + 1
             club_counts[p["team"]] = club_counts.get(p["team"], 0) + 1
@@ -350,7 +357,7 @@ def test_property_4_feasibility_across_horizon():
         # 4. Starting XI formation
         starters = set(act.starters)
         assert len(starters) == 11, f"GW{act.gameweek}: Starters count {len(starters)}"
-        assert starters.issubset(current_squad_ids), f"GW{act.gameweek}: Starters not subset of squad"
+        assert starters.issubset(fielded_ids), f"GW{act.gameweek}: Starters not subset of squad"
 
         st_pos: dict[str, int] = {}
         for eid in starters:
@@ -545,7 +552,7 @@ def test_multiperiod_config_defaults():
     assert cfg.solver_name == "highs"
     assert cfg.gamma == 0.95
     assert cfg.mip_gap == 1e-4
-    assert cfg.time_limit_sec == 60
+    assert cfg.time_limit_sec == 50
 
 
 def test_multiperiod_fast_single_gw_solve():

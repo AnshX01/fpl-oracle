@@ -117,9 +117,9 @@ class JobExecutionTracker:
             self.jobs_state[job_id]["status"] = "RUNNING"
             self.jobs_state[job_id]["last_run"] = datetime.now(UTC).isoformat()
 
-    def update_job_finish(self, job_id: str, success: bool, duration: float, details: str):
+    def update_job_finish(self, job_id: str, success: bool, duration: float, details: str, status: str | None = None):
         if job_id in self.jobs_state:
-            self.jobs_state[job_id]["status"] = "SUCCESS" if success else "FAILED"
+            self.jobs_state[job_id]["status"] = status or ("SUCCESS" if success else "FAILED")
             self.jobs_state[job_id]["duration_seconds"] = round(duration, 2)
             self.jobs_state[job_id]["run_count"] += 1
             self.jobs_state[job_id]["details"] = details
@@ -140,12 +140,11 @@ async def cadence_refresh_job():
     tracker.update_job_start(job_id)
 
     try:
-        game_state = await game_state_manager.get_game_state()
-        is_live = game_state.phase in (GameweekPhase.LIVE, GameweekPhase.BONUS_PENDING)
-
-        # Force refresh bootstrap and fixtures
+        # Refresh bootstrap and fixtures first so phase / is_live are computed from fresh data
         await fpl_client.get_bootstrap_static(force_refresh=True)
         await fpl_client.get_fixtures(force_refresh=True)
+        game_state = await game_state_manager.get_game_state(force_refresh=True)
+        is_live = game_state.phase in (GameweekPhase.LIVE, GameweekPhase.BONUS_PENDING)
 
         curr, nxt = await fpl_client.get_current_and_next_gw()
         if is_live and curr:
@@ -427,6 +426,11 @@ async def odds_snapshot_job():
         logger.info(f"[Scheduler] {details}")
     except Exception as e:
         dur = (datetime.now(UTC) - start_t).total_seconds()
+        if isinstance(e, RuntimeError) and "No odds source configured" in str(e):
+            data_store.record_job_finish(run_id, "SKIPPED", dur, str(e))
+            tracker.update_job_finish(job_id, True, dur, str(e), status="SKIPPED")
+            logger.info(f"[Scheduler] Odds snapshot skipped: {e}")
+            return
         err_msg = f"Odds snapshot error: {str(e)}"
         data_store.record_job_finish(run_id, "FAILED", dur, err_msg)
         tracker.update_job_finish(job_id, False, dur, err_msg)
