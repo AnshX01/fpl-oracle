@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from fpl_oracle.config import planning_horizon
 from fpl_oracle.ml.model_registry import model_registry
 from fpl_oracle.ml.predict import projection_engine
 from fpl_oracle.news.analyse import news_analyzer
@@ -18,6 +19,17 @@ from fpl_oracle.news.analyse import news_analyzer
 logger = logging.getLogger("fpl_oracle.server.analysis")
 
 publication_projections = ContextVar("publication_projections", default=None)
+
+
+def target_gameweek(current_gw: int | None, next_gw: int | None) -> int:
+    """The gameweek being decided. Never guessed: planning the wrong week gives wrong advice."""
+    if next_gw:
+        return next_gw
+    if current_gw and current_gw < 38:
+        return current_gw + 1
+    from fastapi import HTTPException
+
+    raise HTTPException(status_code=409, detail="Upcoming official gameweek unavailable")
 
 
 class AnalysisService:
@@ -50,7 +62,7 @@ class AnalysisService:
             hit_ledger._refreshes.clear()
 
     async def projections(self, start_gw, horizon, bootstrap, fixtures):
-        horizon = max(horizon, (20 if start_gw <= 19 else 39) - start_gw)
+        horizon = max(horizon, planning_horizon(start_gw))
         pinned = publication_projections.get()
         request_key = (
             start_gw,
@@ -189,6 +201,17 @@ class AnalysisService:
         from fpl_oracle.chips.planner import chip_planner
 
         squad = kwargs["current_squad_df"]
+        # The planner counts chips from `current_gw`; the in-progress gameweek is locked, so the first
+        # gameweek a chip can be played is the first one with a loaded projection.
+        kwargs["current_gw"] = max(kwargs["current_gw"], min(kwargs["horizon_projections"]))
+        if "bank" not in kwargs:
+            # Free Hit / Wildcard gains are measured against the owner's real budget, not a flat 100.0m
+            from fpl_oracle.domain.manager_state import manager_state_service
+
+            try:
+                kwargs["bank"] = float((await manager_state_service.get_current_state()).bank_tenths)
+            except Exception:
+                kwargs["bank"] = 0.0
         for frame in kwargs["horizon_projections"].values():
             if (
                 frame.empty
@@ -218,6 +241,7 @@ class AnalysisService:
                         for g, df in kwargs["horizon_projections"].items()
                     },
                     "current_gw": kwargs["current_gw"],
+                    "bank": kwargs["bank"],
                     "history": kwargs.get("manager_history"),
                 },
                 sort_keys=True,
@@ -250,7 +274,12 @@ class AnalysisService:
             row["recommended_gw"]: row["code"] for row in result["chip_plan_table"] if row["recommended_gw"] is not None
         }
         result["schedule_status"] = joint.get("chip_measurement_status", "unavailable")
-        result["set_1_deadline_warning"] = "First-set chips expire at GW19. Check chip timing again each week."
+        # First-set chips only expire at GW19 while a first-set chip can still be planned
+        target = joint.get("target_gameweek")
+        if (target is None or target <= 19) and (target is None or result["chip_plan_table"]):
+            result["set_1_deadline_warning"] = "First-set chips expire at GW19. Check chip timing again each week."
+        else:
+            result.pop("set_1_deadline_warning", None)
         result["timing_note"] = (
             "Based on current fixtures and player forecasts. Future injuries and unconfirmed doubles can change the plan."
         )
@@ -359,6 +388,7 @@ class AnalysisService:
 
         return dict(
             status="model_expiry_sensitivity",
+            method="bounded_beam_stress_test",
             calibrated=False,
             promotion_allowed=False,
             snapshot_id=projections[start].attrs.get("snapshot_id"),
@@ -417,8 +447,11 @@ class AnalysisService:
         # Automatic strategy never turns an old manual preference into a large
         # captain/points trade-off. League exposure only breaks close scores.
         kwargs["risk_preference"] = "points"
+        # None and "not given" mean the same thing; one spelling keeps every surface on one cached plan.
         for name in ("locked_in_ids", "locked_out_ids", "excluded_team_ids"):
-            kwargs.setdefault(name, set())
+            kwargs[name] = set(kwargs.get(name) or ())
+        # Callers fall back differently when the API has no current gameweek; the plan only depends on the target.
+        kwargs["current_gw"] = kwargs["target_gw"] - 1
 
         from fpl_oracle.data.store import data_store
         from fpl_oracle.optimise.hit_ledger import hit_ledger
@@ -447,13 +480,11 @@ class AnalysisService:
             kwargs["hit_cooldown_until"] = max(kwargs["hit_cooldown_until"], kwargs["target_gw"] + 1)
             hit_context["warning"] = "Hit outcome history unavailable; no new hit this week until refreshed."
 
-        # Search all supported loaded weeks, with no fabricated season-tail forecast.
+        # Search the loaded weeks of the planning horizon, with no fabricated season-tail forecast.
         if "horizon_len" not in kwargs:
             start = kwargs["target_gw"]
             consecutive = 0
-            while start + consecutive in kwargs["horizon_projections"] and start + consecutive <= (
-                19 if start <= 19 else 38
-            ):
+            while start + consecutive in kwargs["horizon_projections"] and consecutive < planning_horizon(start):
                 consecutive += 1
             kwargs["horizon_len"] = consecutive
         for gw in range(kwargs["target_gw"], kwargs["target_gw"] + kwargs["horizon_len"]):
@@ -543,24 +574,23 @@ class AnalysisService:
         return await self.plan(**kwargs)
 
 
+# Inputs the beam search honours but the MILP does not model. They are named in the result, never silently dropped.
+MILP_UNMODELLED_INPUTS = ("rival_context", "evaluate_rival_scenarios")
+# The MILP always measures chip values (it re-solves without each scheduled chip), so this flag is not an input to drop.
+MILP_ALWAYS_ON_INPUTS = ("measure_chip_values",)
+
+
 def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
     """
     Authoritative planning implementation using Multi-Period Mixed-Integer Linear Programming (MILP).
-    Full legal action set (all chips, hits, FT banking) is solved to mathematical optimality.
-    Retains bounded beam search as a fast cross-check for <= 2 transfers and as a graceful fallback.
+    Full legal action set (all chips, hits, FT banking) is solved with the best incumbent kept when the
+    solver time limit is reached; solver status and gap are reported in decision_scope.
+    Falls back to the bounded beam search only when the MILP cannot produce a plan, and says so.
     """
     import inspect
 
     from fpl_oracle.optimise.multiperiod import multiperiod_optimizer
-    from fpl_oracle.optimise.transfers import transfer_optimizer
     from fpl_oracle.optimise.transfers_beam import TransferOptimizer as BeamSearchTransferOptimizer
-
-    # If evaluate_joint_transfer_and_chip_plan was mocked by a test (e.g. test_refresh_continuity)
-    target_fn = getattr(transfer_optimizer, "evaluate_joint_transfer_and_chip_plan", None)
-    if target_fn is not None and (
-        hasattr(target_fn, "call_count") or hasattr(target_fn, "assert_called") or hasattr(target_fn, "_mock_name")
-    ):
-        return target_fn(**kwargs)
 
     beam_opt = BeamSearchTransferOptimizer()
     pool_df = kwargs.get("player_pool_df")
@@ -574,68 +604,51 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
     if "available_chips" in milp_args and "chips_available" not in milp_args:
         milp_args["chips_available"] = milp_args.pop("available_chips")
 
-    sig = inspect.signature(multiperiod_optimizer.evaluate_transfer_options)
-    valid_keys = set(sig.parameters.keys())
-    filtered_milp_kwargs = {k: v for k, v in milp_args.items() if k in valid_keys}
+    params = inspect.signature(multiperiod_optimizer.evaluate_transfer_options).parameters
+    accepted = set(milp_args) if any(p.kind is p.VAR_KEYWORD for p in params.values()) else set(params)
+    dropped = sorted(k for k in milp_args if k not in accepted and k not in MILP_ALWAYS_ON_INPUTS)
+    ignored_inputs = [
+        k
+        for k in dropped
+        if not (
+            milp_args[k] is None
+            or milp_args[k] is False
+            or (isinstance(milp_args[k], dict | list | tuple) and not milp_args[k])
+        )
+    ]
+    unknown = [k for k in dropped if k not in MILP_UNMODELLED_INPUTS]
+    if unknown:
+        logger.warning("MILP planner does not accept inputs %s; they are ignored", unknown)
+    milp_kwargs = {k: v for k, v in milp_args.items() if k in accepted}
 
     try:
-        milp_res = multiperiod_optimizer.evaluate_transfer_options(**filtered_milp_kwargs)
+        milp_res = multiperiod_optimizer.evaluate_transfer_options(**milp_kwargs)
         rec_plan = milp_res["recommended_plan"]
-
-        # Fast cross-check with beam search for <= 2 transfers
-        if rec_plan.get("transfers_count", 0) <= 2:
-            try:
-                beam_check = beam_opt.evaluate_transfer_options(
-                    current_squad_df=kwargs["current_squad_df"],
-                    player_pool_df=pool_df,
-                    bank=kwargs["bank"],
-                    free_transfers=kwargs["free_transfers"],
-                    horizon_projections=kwargs["horizon_projections"],
-                    current_gw=kwargs["current_gw"],
-                    target_gw=kwargs["target_gw"],
-                    risk_preference=kwargs.get("risk_preference", "balanced"),
-                    horizon_len=kwargs.get("horizon_len", 2),
-                    num_mc_scenarios=5,
-                )
-                b_rec = beam_check.get("recommended_plan", {})
-                milp_res["cross_check"] = {
-                    "method": "beam_search_cross_check",
-                    "beam_plan_type": b_rec.get("plan_type"),
-                    "beam_gain": b_rec.get("horizon_gain_vs_roll"),
-                    "matches_milp": bool(b_rec.get("plan_type") == rec_plan.get("plan_type")),
-                }
-            except Exception as e_cross:
-                logger.debug(f"Beam search cross-check omitted: {e_cross}")
-
-        milp_res.setdefault("normal_plan_feasible", True)
-        milp_res.setdefault("recommended_chip", rec_plan.get("chip"))
-        milp_res.setdefault("chip_action", rec_plan.get("chip"))
-        milp_res.setdefault(
-            "hold_plan",
-            next((p for p in milp_res["candidate_plans"] if p.get("plan_type") == "ROLL_TRANSFER"), rec_plan),
-        )
-        milp_res.setdefault("roll_plan", milp_res["hold_plan"])
-        chip_table = []
-        for p in milp_res.get("candidate_plans", [rec_plan]):
-            chip_code = p.get("chip") or "HOLD"
-            chip_table.append(
-                {
-                    "chip": chip_code,
-                    "chip_code": chip_code,
-                    "action": "DEPLOY" if p.get("chip") else "HOLD",
-                    "net_gain_vs_hold": float(p.get("horizon_gain_vs_roll", 0.0)),
-                    "reason": f"Plan {p.get('plan_type')} across projection horizon.",
-                    "is_recommended": bool(p.get("plan_type") == rec_plan.get("plan_type")),
-                    "plan": p,
-                }
-            )
-        milp_res.setdefault("chip_comparison_table", chip_table)
-        horizon_gws = sorted(kwargs.get("horizon_projections", {}).keys()) or [kwargs.get("target_gw", 1)]
+        solver = milp_res.get("solver", {})
+        milp_res["is_joint_plan"] = True
         milp_res["decision_scope"] = {
             "method": "authoritative_multi_period_milp",
-            "global_optimum_proven": True,
-            "horizon_gameweeks": horizon_gws,
+            "global_optimum_proven": bool(solver.get("global_optimum_proven", False)),
+            "solver_max_gap": solver.get("max_gap"),
+            "solver_time_limit_sec": solver.get("time_limit_sec"),
+            "solver_plans": solver.get("plans", {}),
+            "candidate_pool_pruned": True,
+            "horizon_gameweeks": milp_res.get("horizon_gameweeks") or [kwargs.get("target_gw", 1)],
+            "objective": "discounted_net_expected_points_with_terminal_ft_and_bank_value",
+            "fallback_used": False,
+            "ignored_inputs": ignored_inputs,
         }
+        if any(a.get("chip") in ("wildcard", "freehit") for a in rec_plan.get("trajectory", [])):
+            from fpl_oracle.rules.transfers import POST_CHIP_FT_RULE_DEFAULT, POST_CHIP_FT_RULE_STATUS
+
+            milp_res["decision_scope"]["assumptions"] = [
+                f"Free transfers after a Wildcard or Free Hit: rule '{POST_CHIP_FT_RULE_DEFAULT}' "
+                f"({POST_CHIP_FT_RULE_STATUS}). If FPL grants an extra transfer, banked transfers after the chip "
+                "week are one higher than shown."
+            ]
+        if not solver.get("global_optimum_proven", False):
+            logger.warning("MILP plan is the best incumbent, not proven optimal (max gap %s)", solver.get("max_gap"))
+
         return milp_res
 
     except Exception as e_milp:
@@ -643,6 +656,8 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
         fallback_res = beam_opt.evaluate_joint_transfer_and_chip_plan(**kwargs)
         fallback_res["fallback_used"] = True
         fallback_res["fallback_reason"] = str(e_milp)
+        scope = fallback_res.setdefault("decision_scope", {})
+        scope.update(global_optimum_proven=False, fallback_used=True, fallback_reason=str(e_milp))
         return fallback_res
 
 

@@ -132,25 +132,28 @@ def chips():
                 )
             )
 
+        rec = chip_res.get("recommended_chip")
+        console.print(f"[bold]This gameweek:[/bold] {'Play ' + rec if rec else 'Save your chips'}")
+
         table = Table(title="2026/27 Chip Strategy Schedule")
         table.add_column("Chip", style="bold white")
-        table.add_column("Set", justify="center")
-        table.add_column("Rec. GW", justify="center", style="green")
-        table.add_column("Exp. Gain", justify="right", style="green")
-        table.add_column("Confidence", justify="center")
-        table.add_column("Backup GW", justify="center")
-        table.add_column("Strategic Role")
+        table.add_column("Plan week", justify="center", style="green")
+        table.add_column("Est. extra points", justify="right", style="green")
+        table.add_column("Status", justify="center")
+        table.add_column("Notes")
 
-        for c in chip_res["chip_plan_table"]:
+        for c in chip_res.get("chip_plan_table", []):
+            gw = c.get("recommended_gw")
+            gain = c.get("expected_gain")
             table.add_row(
-                c["chip"],
-                f"Set {c['set']}",
-                f"GW {c['recommended_gw']}",
-                f"+{c['expected_gain']:.1f} pts",
-                c["confidence"],
-                f"GW {c['alternative_gw']}",
-                c["reasoning"],
+                str(c.get("chip", c.get("code", "?"))),
+                f"GW {gw}" if gw is not None else "No clear benefit",
+                f"{gain:+.1f} pts" if gain is not None else "n/a",
+                str(c.get("status", "")),
+                str(c.get("reasoning", "")),
             )
+        if not chip_res.get("chip_plan_table"):
+            console.print("No chip timeline: no chips left to plan, or chip timing is not ready yet.")
 
         console.print(table)
 

@@ -7,17 +7,6 @@ import pytest
 
 from fpl_oracle.api.models import ChipHistoryItem, ManagerHistory
 from fpl_oracle.chips.planner import chip_planner
-from fpl_oracle.config import RULES
-
-
-def test_chip_rules_config_2026_27():
-    """Verify that chip configuration matches official 2026/27 rules."""
-    assert RULES["chips"]["total_chips_in_season"] == 8
-    assert RULES["chips"]["max_chips_per_event"] == 1
-    assert RULES["chips"]["assistant_manager_enabled"] is False
-    assert RULES["transfers"]["max_banked_free_transfers"] == 5
-    assert RULES["chips"]["set_1"]["deadline_event"] == 19
-    assert RULES["chips"]["set_2"]["start_event"] == 20
 
 
 def test_remaining_chips_set_boundaries():

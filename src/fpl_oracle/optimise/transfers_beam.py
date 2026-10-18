@@ -53,7 +53,6 @@ VALID_FORMATIONS = [
 def _fast_eval_squad_full(
     elements: set[int],
     player_map: dict[int, dict[str, Any]],
-    risk_preference: str = "balanced",
 ) -> tuple[float, int, tuple[int, int, int], float, float]:
     """
     Evaluates 15-player squad formation, captaincy, and bench expected points in < 0.05ms.
@@ -122,102 +121,13 @@ def _fast_eval_squad_full(
 def _fast_eval_squad_formation(
     elements: set[int],
     player_map: dict[int, dict[str, Any]],
-    risk_preference: str = "balanced",
 ) -> tuple[float, int, tuple[int, int, int]]:
     """
     Evaluates 15-player squad formation and captaincy in < 0.05ms.
     Returns (total_xp, captain_element_id, formation_tuple).
     """
-    total_xp, cap_id, best_form, _, _ = _fast_eval_squad_full(elements, player_map, risk_preference)
+    total_xp, cap_id, best_form, _, _ = _fast_eval_squad_full(elements, player_map)
     return total_xp, cap_id, best_form
-
-
-def compute_dynamic_chip_retention_values(
-    horizon_projections: dict[int, pd.DataFrame],
-    current_squad_df: pd.DataFrame,
-    target_gw: int,
-    available_chips: list[str],
-    player_maps: dict[int, dict[int, dict[str, Any]]] | None = None,
-    dgw_gws: list[int] | None = None,
-    bgw_gws: list[int] | None = None,
-) -> dict[str, float]:
-    """
-    Computes dynamic opportunity cost / retention values for chips directly from
-    per-gameweek projections across the multi-GW horizon. Replaces static 6/10/10/8 constants.
-    """
-    future_gws = [gw for gw in sorted(horizon_projections.keys()) if gw > target_gw]
-    squad_elements = set(current_squad_df["element"].tolist()) if "element" in current_squad_df.columns else set()
-    retention_values: dict[str, float] = {}
-
-    # 1. Triple Captain (3xc) dynamic retention value:
-    # Option value is determined by the highest projected captain score across future gameweeks.
-    if "3xc" in available_chips:
-        future_cap_peaks: list[float] = []
-        for gw in future_gws:
-            df = horizon_projections.get(gw)
-            if df is not None and not df.empty and "expected_points" in df.columns:
-                max_xp = float(df["expected_points"].max())
-                future_cap_peaks.append(max_xp)
-        if future_cap_peaks:
-            retention_values["3xc"] = round(max(future_cap_peaks), 2)
-        else:
-            target_df = horizon_projections.get(target_gw)
-            curr_max = (
-                float(target_df["expected_points"].max())
-                if target_df is not None and not target_df.empty and "expected_points" in target_df.columns
-                else 6.0
-            )
-            retention_values["3xc"] = round(max(curr_max, 6.0), 2)
-
-    # 2. Bench Boost (bboost) dynamic retention value:
-    # Option value is determined by the maximum bench points projected across future gameweeks.
-    if "bboost" in available_chips:
-        future_bench_peaks: list[float] = []
-        for gw in future_gws:
-            pmap = player_maps.get(gw) if player_maps else None
-            if not pmap:
-                df = horizon_projections.get(gw)
-                if df is not None and not df.empty:
-                    pmap = {int(r["element"]): dict(r) for _, r in df.iterrows()}
-            if pmap and squad_elements:
-                _, _, _, b_xp, _ = _fast_eval_squad_full(squad_elements, pmap)
-                future_bench_peaks.append(b_xp)
-        if future_bench_peaks:
-            retention_values["bboost"] = round(max(future_bench_peaks), 2)
-        else:
-            retention_values["bboost"] = 8.0
-
-    # 3. Free Hit (freehit) dynamic retention value:
-    # Option value is the maximum squad swing / blank gameweek impact across future gameweeks.
-    if "freehit" in available_chips:
-        future_fh_swings: list[float] = []
-        for gw in future_gws:
-            pmap = player_maps.get(gw) if player_maps else None
-            if not pmap:
-                df = horizon_projections.get(gw)
-                if df is not None and not df.empty:
-                    pmap = {int(r["element"]): dict(r) for _, r in df.iterrows()}
-            if pmap and squad_elements:
-                s_xp, _, _, _, _ = _fast_eval_squad_full(squad_elements, pmap)
-                df = horizon_projections.get(gw)
-                top_11_xp = (
-                    float(df.nlargest(11, "expected_points")["expected_points"].sum())
-                    if df is not None and not df.empty and "expected_points" in df.columns
-                    else s_xp
-                )
-                swing = max(0.0, top_11_xp - s_xp)
-                future_fh_swings.append(swing)
-        if future_fh_swings:
-            retention_values["freehit"] = round(max(future_fh_swings), 2)
-        else:
-            retention_values["freehit"] = 8.0
-
-    # 4. Wildcard (wildcard) dynamic retention value:
-    # Option value is the cumulative trajectory gain of a fresh squad across the remaining horizon.
-    if "wildcard" in available_chips:
-        retention_values["wildcard"] = round(max(7.0, len(future_gws) * 1.5), 2)
-
-    return retention_values
 
 
 class TransferOptimizer:
@@ -231,31 +141,6 @@ class TransferOptimizer:
         Prices in tenths (e.g. 100 = £10.0m).
         """
         return sell_price(purchase_price, now_cost)
-
-    def calculate_banked_free_transfers(self, history: Any) -> int:
-        """
-        Calculate banked free transfers (1 to 5) from manager history according to 2026/27 rules.
-        Start with 1 in GW1. Each GW adds +1 FT, minus transfers made, capped at 5.
-        """
-        if not history or not hasattr(history, "current") or not history.current:
-            return 1
-
-        entries = sorted(history.current, key=lambda e: getattr(e, "event", 0))
-        chips_used = {getattr(c, "event", 0): getattr(c, "name", "") for c in getattr(history, "chips", [])}
-
-        banked = 1
-        for index, entry in enumerate(entries):
-            gw = getattr(entry, "event", 0)
-            transfers_made = getattr(entry, "event_transfers", 0)
-            active_chip = chips_used.get(gw, "")
-
-            if index == 0:
-                # Initial deadline is unlimited; the following week starts at one FT.
-                banked = 1
-            else:
-                banked, _ = next_free_transfers(banked, transfers_made, active_chip)
-
-        return max(1, min(5, banked))
 
     def compute_squad_selling_prices(
         self, squad_df: pd.DataFrame, transfer_history: list[Any] | None = None, bootstrap: Any | None = None
@@ -309,27 +194,6 @@ class TransferOptimizer:
         df["selling_price"] = selling_prices
         df["selling_price_millions"] = [round(sp / 10.0, 1) for sp in selling_prices]
         return df
-
-    def compute_available_free_transfers(
-        self, entry_history: list[Any] | None = None, transfer_history: list[Any] | None = None, current_gw: int = 5
-    ) -> int:
-        """
-        Calculates exact available free transfers according to verified 2026/27 rules:
-        - 1 FT granted per GW
-        - Up to 4 extra FTs can be saved (maximum 5 FTs total banked)
-        - Initial unlimited deadline grants one FT for the following gameweek
-        """
-        if not entry_history:
-            return 1
-
-        from fpl_oracle.domain.manager_state import ManagerStateService
-
-        rows = [
-            e
-            for e in entry_history
-            if int((getattr(e, "event", 0) if not isinstance(e, dict) else e.get("event", 0)) or 0) <= current_gw
-        ]
-        return ManagerStateService.calculate_banked_free_transfers(rows, [])
 
     def _pool_arrays(self, pool_df: pd.DataFrame) -> dict[str, Any]:
         """Column arrays for one projection frame, built once and reused by every candidate call."""
@@ -428,72 +292,6 @@ class TransferOptimizer:
                         "buy_costs": {buy_id: buy_value},
                         "bank_delta": sell_price - buy_value,
                         "immediate_gain": float(xp_arr[pos_i]) - float(sell_p.get("expected_points", 0.0)),
-                    }
-                )
-
-        moves.sort(key=lambda m: float(m.get("immediate_gain", 0.0)), reverse=True)
-        return moves
-
-    def _get_candidate_1_transfers_frame(
-        self,
-        elements: set[int],
-        bank: int,
-        purchase_prices: dict[int, int],
-        pool_df: pd.DataFrame,
-        player_map: dict[int, dict[str, Any]],
-        locked_in: set[int],
-        locked_out: set[int],
-        excluded_teams: set[Any],
-        max_per_pos: int = 3,
-    ) -> list[dict[str, Any]]:
-        moves: list[dict[str, Any]] = []
-        sellable = [eid for eid in elements if eid not in locked_in]
-        team_counts: dict[Any, int] = {}
-        for eid in elements:
-            tm = player_map[eid]["team"]
-            team_counts[tm] = team_counts.get(tm, 0) + 1
-
-        for sell_id in sellable:
-            sell_p = player_map.get(sell_id)
-            if not sell_p:
-                continue
-            sell_pos = sell_p["position"]
-            now_cost = int(sell_p.get("value", 50))
-            purch_cost = purchase_prices.get(sell_id, now_cost)
-            sell_price = self.calculate_selling_price(purch_cost, now_cost)
-            avail_budget = bank + sell_price
-            sell_team = sell_p["team"]
-
-            eligible_pool = pool_df
-            if "simulation_unavailable" in pool_df:
-                eligible_pool = pool_df[~pool_df["simulation_unavailable"].fillna(False).astype(bool)]
-            cands = eligible_pool[
-                (eligible_pool["position"] == sell_pos)
-                & (~eligible_pool["element"].isin(elements))
-                & (~eligible_pool["element"].isin(locked_out))
-                & (~eligible_pool["team"].isin(excluded_teams))
-                & (eligible_pool["value"] <= avail_budget)
-            ].sort_values(by="expected_points", ascending=False)
-
-            # Club-limit failures must not consume the candidate allowance.
-            legal_teams = [team for team, count in team_counts.items() if count < 3 or team == sell_team]
-            cands = cands[cands["team"].isin(legal_teams) | ~cands["team"].isin(team_counts)]
-            for _, buy_row in cands.head(max_per_pos).iterrows():
-                buy_id = int(buy_row["element"])
-                buy_team = buy_row["team"]
-                cnt = team_counts.get(buy_team, 0)
-                if buy_team != sell_team and cnt >= 3:
-                    continue
-
-                moves.append(
-                    {
-                        "plan_type": "1_TRANSFER",
-                        "transfers_in": [buy_id],
-                        "transfers_out": [sell_id],
-                        "sell_prices": {sell_id: sell_price},
-                        "buy_costs": {buy_id: int(buy_row["value"])},
-                        "bank_delta": sell_price - int(buy_row["value"]),
-                        "immediate_gain": float(buy_row["expected_points"]) - float(sell_p.get("expected_points", 0.0)),
                     }
                 )
 
@@ -656,7 +454,7 @@ class TransferOptimizer:
         next_ft0, hit_points0 = next_free_transfers(initial_ft, transfers_count, chip=active_chip)
         hits0 = hit_points0 // 4
         hit_cost0 = hits0 * self.hit_penalty
-        xp0, cap0, form0 = _fast_eval_squad_formation(curr_elements, pmap0, risk_preference=risk_preference)
+        xp0, cap0, form0 = _fast_eval_squad_formation(curr_elements, pmap0)
         net_xp0 = xp0 - hit_cost0
 
         step0_record = {
@@ -703,9 +501,7 @@ class TransferOptimizer:
 
             for state in beam:
                 # 1. Roll action
-                xp_roll, cap_roll, form_roll = _fast_eval_squad_formation(
-                    state["elements"], pmap, risk_preference=risk_preference
-                )
+                xp_roll, cap_roll, form_roll = _fast_eval_squad_formation(state["elements"], pmap)
                 roll_ft, _ = next_free_transfers(state["banked_ft"], 0)
                 roll_rec = {
                     "gameweek": gw,
@@ -762,7 +558,7 @@ class TransferOptimizer:
                     n_ft, hit_points = next_free_transfers(state["banked_ft"], 1)
                     hits = hit_points // 4
                     h_cost = hits * self.hit_penalty
-                    xp_m, cap_m, form_m = _fast_eval_squad_formation(new_elems, pmap, risk_preference=risk_preference)
+                    xp_m, cap_m, form_m = _fast_eval_squad_formation(new_elems, pmap)
                     net_m = xp_m - h_cost
 
                     m_rec = {
@@ -826,7 +622,7 @@ class TransferOptimizer:
             pmap = player_maps[gw]
             pool_df = horizon_projections[gw]
 
-            xp_roll, _, _ = _fast_eval_squad_formation(curr_elems, pmap, risk_preference=risk_preference)
+            xp_roll, _, _ = _fast_eval_squad_formation(curr_elems, pmap)
             best_action: tuple[str, dict[str, Any] | None, float, int, float] = ("ROLL", None, xp_roll, 0, 0.0)
 
             cand_moves = self._get_candidate_1_transfers(
@@ -847,7 +643,7 @@ class TransferOptimizer:
                 trial_elems = (curr_elems - set(t_out)) | set(t_in)
                 hits = 0 if curr_ft >= 1 else 1
                 hit_c = hits * self.hit_penalty
-                xp_m, _, _ = _fast_eval_squad_formation(trial_elems, pmap, risk_preference=risk_preference)
+                xp_m, _, _ = _fast_eval_squad_formation(trial_elems, pmap)
                 net_m = xp_m - hit_c
                 if net_m > best_action[2]:
                     best_action = ("1_TRANSFER", m, net_m, hits, hit_c)
@@ -1352,7 +1148,6 @@ class TransferOptimizer:
         # ----------------------------------------------------------------------
         roadmap = self._generate_dynamic_roadmap(
             trajectory=recommended_plan.get("trajectory", roll_plan["trajectory"]),
-            horizon_gws=horizon_gws,
             clean_projections=clean_projections,
             player_maps=player_maps,
         )
@@ -1393,223 +1188,6 @@ class TransferOptimizer:
             "include_price_gain": include_price_gain,
         }
 
-    def exhaustive_reference_search(
-        self,
-        elements: set[int],
-        bank: int,
-        purchase_prices: dict[int, int],
-        free_transfers: int,
-        horizon_gws: list[int],
-        horizon_projections: dict[int, pd.DataFrame],
-        player_maps: dict[int, dict[int, dict[str, Any]]],
-        risk_preference: str = "balanced",
-    ) -> dict[str, Any]:
-        """
-        Unpruned exhaustive reference search across a bounded action space.
-        Evaluates every possible action (Roll and all legal 1-transfers within budget/club limits)
-        recursively across the horizon to find the true mathematical optimum.
-        Used for verification and benchmarking against the pruned beam search.
-        """
-        gw0 = horizon_gws[0]
-        pmap0 = player_maps[gw0]
-
-        # Generate all valid candidate 1-transfer moves at step 0 without pruning
-        all_step0_actions: list[dict[str, Any]] = [
-            {
-                "plan_type": "ROLL",
-                "transfers_in": [],
-                "transfers_out": [],
-                "bank_delta": 0,
-                "buy_costs": {},
-                "sell_prices": {},
-            }
-        ]
-
-        sellable = list(elements)
-        for s_id in sellable:
-            s_p = pmap0[s_id]
-            s_pos = s_p["position"]
-            now_cost = int(s_p.get("value", 50))
-            purch_cost = purchase_prices.get(s_id, now_cost)
-            sell_price = self.calculate_selling_price(purch_cost, now_cost)
-            avail_budget = bank + sell_price
-
-            for b_id, b_p in pmap0.items():
-                if b_id in elements:
-                    continue
-                if b_p["position"] != s_pos:
-                    continue
-                b_val = int(b_p.get("value", 50))
-                if b_val > avail_budget:
-                    continue
-                # Check max-3-per-club constraint
-                trial_elems = (elements - {s_id}) | {b_id}
-                team_counts: dict[Any, int] = {}
-                valid_club = True
-                for eid in trial_elems:
-                    tm = pmap0[eid]["team"]
-                    team_counts[tm] = team_counts.get(tm, 0) + 1
-                    if team_counts[tm] > 3:
-                        valid_club = False
-                        break
-                if not valid_club:
-                    continue
-
-                all_step0_actions.append(
-                    {
-                        "plan_type": "1_TRANSFER",
-                        "transfers_in": [b_id],
-                        "transfers_out": [s_id],
-                        "bank_delta": sell_price - b_val,
-                        "buy_costs": {b_id: b_val},
-                        "sell_prices": {s_id: sell_price},
-                    }
-                )
-
-        # Enumerate all legal 2-transfer moves at step 0 without pruning
-        for i in range(len(sellable)):
-            s1_id = sellable[i]
-            s1_p = pmap0[s1_id]
-            now_cost1 = int(s1_p.get("value", 50))
-            purch1 = purchase_prices.get(s1_id, now_cost1)
-            sp1 = self.calculate_selling_price(purch1, now_cost1)
-
-            for j in range(i + 1, len(sellable)):
-                s2_id = sellable[j]
-                s2_p = pmap0[s2_id]
-                now_cost2 = int(s2_p.get("value", 50))
-                purch2 = purchase_prices.get(s2_id, now_cost2)
-                sp2 = self.calculate_selling_price(purch2, now_cost2)
-                tot_budget2 = bank + sp1 + sp2
-
-                pool_keys = list(pmap0.keys())
-                for bi in range(len(pool_keys)):
-                    b1_id = pool_keys[bi]
-                    if b1_id in elements:
-                        continue
-                    b1_p = pmap0[b1_id]
-                    for bj in range(bi + 1, len(pool_keys)):
-                        b2_id = pool_keys[bj]
-                        if b2_id in elements:
-                            continue
-                        b2_p = pmap0[b2_id]
-                        pos_match = (s1_p["position"] == b1_p["position"] and s2_p["position"] == b2_p["position"]) or (
-                            s1_p["position"] == b2_p["position"] and s2_p["position"] == b1_p["position"]
-                        )
-                        if not pos_match:
-                            continue
-                        b1_val = int(b1_p.get("value", 50))
-                        b2_val = int(b2_p.get("value", 50))
-                        if b1_val + b2_val > tot_budget2:
-                            continue
-
-                        trial2 = (elements - {s1_id, s2_id}) | {b1_id, b2_id}
-                        t_cnts: dict[Any, int] = {}
-                        valid_c = True
-                        for eid in trial2:
-                            tm = pmap0[eid]["team"]
-                            t_cnts[tm] = t_cnts.get(tm, 0) + 1
-                            if t_cnts[tm] > 3:
-                                valid_c = False
-                                break
-                        if not valid_c:
-                            continue
-
-                        all_step0_actions.append(
-                            {
-                                "plan_type": "2_TRANSFERS",
-                                "transfers_in": [b1_id, b2_id],
-                                "transfers_out": [s1_id, s2_id],
-                                "bank_delta": (sp1 + sp2) - (b1_val + b2_val),
-                                "buy_costs": {b1_id: b1_val, b2_id: b2_val},
-                                "sell_prices": {s1_id: sp1, s2_id: sp2},
-                            }
-                        )
-
-        best_score = -1e9
-        best_action: dict[str, Any] = all_step0_actions[0]
-
-        for act in all_step0_actions:
-            t_in = act["transfers_in"]
-            t_out = act["transfers_out"]
-            s0_elems = (elements - set(t_out)) | set(t_in)
-            s0_bank = bank + act["bank_delta"]
-            s0_purch = dict(purchase_prices)
-            for out_id in t_out:
-                s0_purch.pop(out_id, None)
-            for in_id in t_in:
-                s0_purch[in_id] = act["buy_costs"][in_id]
-
-            t_count = len(t_in)
-            hits0 = 0 if t_count <= free_transfers else (t_count - free_transfers)
-            next_ft = min(5, (free_transfers - t_count) + 1) if t_count <= free_transfers else 1
-            hit_cost0 = hits0 * self.hit_penalty
-            xp0, _, _ = _fast_eval_squad_formation(s0_elems, pmap0, risk_preference=risk_preference)
-            net0 = xp0 - hit_cost0
-
-            # Step 1 evaluation (Roll or best 1-transfer)
-            if len(horizon_gws) > 1:
-                gw1 = horizon_gws[1]
-                pmap1 = player_maps[gw1]
-                disc = self.discount_factor
-                # Evaluate Roll at step 1
-                xp_roll1, _, _ = _fast_eval_squad_formation(s0_elems, pmap1, risk_preference=risk_preference)
-                best_step1_net = xp_roll1
-
-                # Evaluate all legal 1-transfers at step 1
-                for s1_id in s0_elems:
-                    s1_p = pmap1[s1_id]
-                    s1_pos = s1_p["position"]
-                    now_cost1 = int(s1_p.get("value", 50))
-                    purch_cost1 = s0_purch.get(s1_id, now_cost1)
-                    sell_price1 = self.calculate_selling_price(purch_cost1, now_cost1)
-                    avail_budget1 = s0_bank + sell_price1
-
-                    for b1_id, b1_p in pmap1.items():
-                        if b1_id in s0_elems:
-                            continue
-                        if b1_p["position"] != s1_pos:
-                            continue
-                        b1_val = int(b1_p.get("value", 50))
-                        if b1_val > avail_budget1:
-                            continue
-                        trial1_elems = (s0_elems - {s1_id}) | {b1_id}
-                        t1_cnts: dict[Any, int] = {}
-                        valid_c1 = True
-                        for eid in trial1_elems:
-                            tm = pmap1[eid]["team"]
-                            t1_cnts[tm] = t1_cnts.get(tm, 0) + 1
-                            if t1_cnts[tm] > 3:
-                                valid_c1 = False
-                                break
-                        if not valid_c1:
-                            continue
-
-                        hits1 = 0 if 1 <= next_ft else 1
-                        hc1 = hits1 * self.hit_penalty
-                        xp1_trial, _, _ = _fast_eval_squad_formation(
-                            trial1_elems, pmap1, risk_preference=risk_preference
-                        )
-                        net1_trial = xp1_trial - hc1
-                        if net1_trial > best_step1_net:
-                            best_step1_net = net1_trial
-
-                total_score = net0 + disc * best_step1_net
-            else:
-                total_score = net0
-
-            if total_score > best_score:
-                best_score = total_score
-                best_action = act
-
-        return {
-            "best_action": best_action,
-            "optimal_score": round(best_score, 2),
-            "transfers_in": best_action["transfers_in"],
-            "transfers_out": best_action["transfers_out"],
-            "is_roll": best_action["plan_type"] == "ROLL",
-        }
-
     def evaluate_joint_transfer_and_chip_plan(
         self,
         current_squad_df: pd.DataFrame,
@@ -1620,7 +1198,6 @@ class TransferOptimizer:
         current_gw: int,
         target_gw: int,
         available_chips: list[str] | None = None,
-        chip_retention_values: dict[str, float] | None = None,
         chips_by_set: dict[int, list[str]] | None = None,
         rival_context: dict[str, Any] | None = None,
         chips_already_used: set[str] | list[str] | None = None,
@@ -1659,9 +1236,6 @@ class TransferOptimizer:
         4. Beam Search State Pruning: After evaluating valid lineup formations and transfer costs
            for each branch, the state space is pruned to the top B branches ranked by accumulated
            discounted net expected points.
-
-        Incorporates dynamic chip retention opportunity costs computed from per-GW projections (G9)
-        to ensure chips are only deployed when their marginal gain exceeds their option retention value.
         """
         # The sequential search supplies the ordinary-transfer baseline too.
         # Do not run an obsolete second beam/MC just to copy its overwritten fields.
@@ -1712,7 +1286,6 @@ class TransferOptimizer:
             locked_out,
             excluded_teams,
             risk_preference,
-            terminal_costs=chip_retention_values,
             chips_by_set=chips_by_set,
             previous_chip=previous_chip,
             hit_cooldown_until=hit_cooldown_until,
@@ -1745,7 +1318,6 @@ class TransferOptimizer:
                         locked_out,
                         excluded_teams,
                         risk_preference,
-                        terminal_costs=chip_retention_values,
                         chips_by_set=chips_by_set,
                         previous_chip=previous_chip,
                         hit_cooldown_until=hit_cooldown_until,
@@ -1761,11 +1333,15 @@ class TransferOptimizer:
         # current-chip bonus against a chip-free continuation.
         from fpl_oracle.league.objective import select_balanced_sequence
 
-        league_choice, league_objective = select_balanced_sequence(sequences, rival_context, player_maps)
-        sequences = [league_choice] + [s for s in sequences if s is not league_choice]
+        # Rival exposure only breaks ties between near-equal trajectories that make the SAME first-chip
+        # decision. It must never trade a chip decision (or a better move) for exposure.
         by_first: dict[str | None, dict[str, Any]] = {}
         for state in sequences:
             by_first.setdefault(state["first_chip"], state)
+        same_decision = [state for state in sequences if state["first_chip"] == sequences[0]["first_chip"]]
+        league_choice, league_objective = select_balanced_sequence(same_decision, rival_context, player_maps)
+        by_first[league_choice["first_chip"]] = league_choice
+        sequences = [league_choice] + [s for s in sequences if s is not league_choice]
         normal_plan_feasible = None in by_first
         # Expose data-derived option-value break-even, never a fabricated tail constant.
         resource_frontier = []
@@ -1789,7 +1365,12 @@ class TransferOptimizer:
                         interpretation="If this chip's later option value exceeds this threshold, the preserved-chip trajectory may beat current-window deployment. Later value is not estimated.",
                     )
                 )
-        hold_score = by_first[None]["score"] if normal_plan_feasible else max(s["score"] for s in sequences)
+        # Gains are measured against the best ordinary plan, not whichever near-tie the rival check picked
+        hold_score = (
+            max(s["score"] for s in sequences if s["first_chip"] is None)
+            if normal_plan_feasible
+            else max(s["score"] for s in sequences)
+        )
         rival_scenarios = None
         if evaluate_rival_scenarios:
             from fpl_oracle.league.scenarios import compare_plan_scenarios
@@ -1854,7 +1435,6 @@ class TransferOptimizer:
                     gross_gain_vs_hold=round(first["gross_xp"] - by_first[None]["history"][0]["gross_xp"], 2)
                     if normal_plan_feasible
                     else None,
-                    opportunity_cost=float((chip_retention_values or {}).get(chip or "", 0)),
                     effective_trajectory_score=round(state["score"], 2),
                     reason="Legal sequential transfer/chip trajectory across the projection horizon."
                     if normal_plan_feasible
@@ -1931,7 +1511,6 @@ class TransferOptimizer:
                         locked_out,
                         excluded_teams,
                         risk_preference,
-                        terminal_costs=chip_retention_values,
                         chips_by_set={
                             number: [code for code in values if code != chip]
                             for number, values in (chips_by_set or {}).items()
@@ -1962,7 +1541,6 @@ class TransferOptimizer:
                                 locked_out,
                                 excluded_teams,
                                 risk_preference,
-                                terminal_costs=chip_retention_values,
                                 chips_by_set={
                                     number: [code for code in values if code != chip]
                                     for number, values in (chips_by_set or {}).items()
@@ -2055,7 +1633,6 @@ class TransferOptimizer:
                     locked_out,
                     excluded_teams,
                     risk_preference,
-                    terminal_costs=chip_retention_values,
                     chips_by_set=chips_by_set,
                     previous_chip=previous_chip,
                     hit_cooldown_until=hit_cooldown_until,
@@ -2108,9 +1685,8 @@ class TransferOptimizer:
                 ],
                 "automatic_execution": False,
             },
-            "opportunity_costs_applied": chip_retention_values or {},
             "transfer_roadmap": self._generate_dynamic_roadmap(
-                recommended_plan["trajectory"], horizon_gws, clean_projections, player_maps
+                recommended_plan["trajectory"], clean_projections, player_maps
             ),
             "hit_verdict": f"Plan costs {recommended_plan['horizon_hits']} hit(s) over {len(horizon_gws)} gameweeks.",
             "target_gameweek": target_gw,
@@ -2121,7 +1697,6 @@ class TransferOptimizer:
     def _generate_dynamic_roadmap(
         self,
         trajectory: list[dict[str, Any]],
-        horizon_gws: list[int],
         clean_projections: dict[int, pd.DataFrame],
         player_maps: dict[int, dict[int, dict[str, Any]]],
     ) -> list[dict[str, Any]]:

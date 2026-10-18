@@ -36,7 +36,7 @@ from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.news.ingest import news_ingestion
 from fpl_oracle.optimise.contingency import contingency_engine
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.server.analysis import analysis_service
+from fpl_oracle.server.analysis import analysis_service, target_gameweek
 from fpl_oracle.server.jobs import get_jobs_status, run_job_on_demand
 from fpl_oracle.server.pipeline import sync_pipeline
 from fpl_oracle.server.safe_json import SafeJSONResponse, safe_json_serialize
@@ -44,6 +44,9 @@ from fpl_oracle.server.safe_json import SafeJSONResponse, safe_json_serialize
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", default_response_class=SafeJSONResponse)
+
+
+_target_gw = target_gameweek
 
 
 class RollbackRequest(BaseModel):
@@ -210,10 +213,10 @@ class ChatRequest(BaseModel):
 
 @router.get("/research/league-validation")
 async def get_league_validation_status():
-    from fpl_oracle.config import BASE_DIR
+    from fpl_oracle.config import DATA_DIR
     from fpl_oracle.league.validation import validation_summary
 
-    directory = BASE_DIR / "data" / "league_forward"
+    directory = DATA_DIR / "league_forward"
     scored = [json.loads(p.read_text()) for p in directory.glob("*.score.json")] if directory.exists() else []
     summary = validation_summary(scored)
     summary["frozen_forecast_count"] = len(list(directory.glob("*.index.json"))) if directory.exists() else 0
@@ -438,11 +441,11 @@ async def get_basic_squad(refresh: bool = False):
 
 
 @router.get("/squad")
-async def get_squad(manager_id: int | None = None):
+async def get_squad():
     effective_state = await manager_state_service.get_current_state()
     boot, is_stale = await fpl_client.get_bootstrap_static()
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
+    target_gw = _target_gw(curr_gw, next_gw)
 
     fixtures_list, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale
@@ -597,8 +600,9 @@ async def get_squad(manager_id: int | None = None):
             }
         )
 
-    squad_val = round(sum(s["now_cost"] for s in starters_out + bench_out), 1)
-    sell_val = round(sum(s["selling_price"] for s in starters_out + bench_out), 1)
+    # Valuation is of the squad owned today, matching the bank it is added to; the XI above is the plan's.
+    squad_val = round(sum(p.now_cost for p in effective_state.squad) / 10.0, 1)
+    sell_val = round(sum(p.selling_price for p in effective_state.squad) / 10.0, 1)
     team_val = round(sell_val + effective_state.bank_millions, 1)
 
     return safe_json_serialize(
@@ -684,8 +688,8 @@ async def get_projections(position: str | None = None, team_id: int | None = Non
     boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale
-    _, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or 6
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = _target_gw(curr_gw, next_gw)
 
     horizon_proj = await analysis_service.projections(target_gw, horizon, boot, fixtures)
     df = horizon_proj.get(target_gw, pd.DataFrame())
@@ -731,14 +735,14 @@ async def run_optimizer(req: OptimizeRequest | None = None):
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
+    target_gw = _target_gw(curr_gw, next_gw)
 
     # News adjustment path: pass reconciled availabilities map
     horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     # Get user squad with real selling prices and actual free transfers
-    user_squad_df, bank_tenths, free_transfers = await _get_effective_user_squad(target_df, boot)
+    user_squad_df, bank_tenths, free_transfers = await _get_effective_user_squad(target_df)
 
     locked_in = req.locked_in if req else None
     locked_out = req.locked_out if req else None
@@ -793,7 +797,7 @@ async def get_chip_strategy():
     is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
 
-    target_gw = next_gw or (curr_gw + 1 if curr_gw and curr_gw < 38 else 6)
+    target_gw = _target_gw(curr_gw, next_gw)
 
     # News adjustment path: identical across all surfaces
     horizon_proj = await analysis_service.projections(target_gw, 8, boot, fixtures)
@@ -806,7 +810,7 @@ async def get_chip_strategy():
         except Exception as e:
             logger.warning("Manager history fetch warning: %s", e)
 
-    squad_df, _, _ = await _get_effective_user_squad(pool_df, boot)
+    squad_df, _, _ = await _get_effective_user_squad(pool_df)
 
     res = await analysis_service.chip_strategy(
         current_gw=curr_gw or 5,
@@ -860,7 +864,7 @@ async def get_league_intel(league_id: int | None = None):
                 "current_league_rank": None,
                 "league_rank_status": "league_unconfigured",
                 "message": "No target mini-league ID configured. Enter a mini-league ID to see rival analysis.",
-                "league_name": "None",
+                "league_name": None,
                 "total_teams": 0,
                 "standings": [],
                 "template_players": [],
@@ -909,11 +913,13 @@ async def get_league_intel(league_id: int | None = None):
             }
         )
 
+    user_squad_df = effective_state.to_squad_dataframe()
     rivals_res = await rival_analyzer.analyze_rivals(
         standings=standings_data["standings"],
         user_manager_id=effective_state.manager_id,
         current_gw=curr_gw or 5,
         bootstrap=boot,
+        user_squad_df=user_squad_df,
     )
 
     from fpl_oracle.league.rivals import attach_squad_overlap
@@ -925,12 +931,14 @@ async def get_league_intel(league_id: int | None = None):
     )
 
     user_pts = effective_state.overall_points
-    # Find user's rank in this mini-league if present, otherwise fallback to overall_rank or 1
+    # Find user's rank in this mini-league if present, otherwise fallback to overall_rank or 1.
+    # The standings row total is the league's own points figure and is what the rivals are measured against.
     user_mini_rank = None
     if effective_state.manager_id and standings_data.get("standings"):
         for row in standings_data["standings"]:
             if row.get("entry") == effective_state.manager_id:
                 user_mini_rank = row.get("rank")
+                user_pts = int(row.get("total", user_pts))
                 break
     user_rank: int = (
         int(user_mini_rank)
@@ -945,7 +953,6 @@ async def get_league_intel(league_id: int | None = None):
     projections_horizon = await analysis_service.projections(sim_target_gw, 5, boot, fixtures)
     proj_df = projections_horizon.get(sim_target_gw)
 
-    user_squad_df = effective_state.to_squad_dataframe()
     if user_squad_df.empty or len(user_squad_df) != 15:
         return {
             "status": "unavailable",
@@ -1007,7 +1014,7 @@ async def get_news_signals(
 ):
     """Return all reconciled news signals with verbatim quotes, source links, and mode badges (N7)."""
     boot, _ = await fpl_client.get_bootstrap_static()
-    target_gw = gw or 6
+    target_gw = gw or _target_gw(*await fpl_client.get_current_and_next_gw())
     signals = await news_analyzer.get_player_news_signals(boot, target_gw=target_gw)
     return safe_json_serialize(
         {
@@ -1065,7 +1072,7 @@ async def get_price_changes():
     )
 
 
-async def _get_effective_user_squad(target_df: pd.DataFrame, boot: Any) -> tuple[pd.DataFrame, float, int]:
+async def _get_effective_user_squad(target_df: pd.DataFrame) -> tuple[pd.DataFrame, float, int]:
     effective_state = await manager_state_service.get_current_state()
     user_squad_df = effective_state.to_squad_dataframe()
     if user_squad_df.empty or len(user_squad_df) != 15:
@@ -1089,12 +1096,12 @@ async def get_contingency_plans(detailed: bool = True):
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or 6
+    target_gw = _target_gw(curr_gw, next_gw)
 
     horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
-    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
+    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df)
 
     state = await manager_state_service.get_current_state()
     joint = await analysis_service.joint_plan(
@@ -1129,7 +1136,7 @@ async def get_contingency_plans(detailed: bool = True):
 
 
 async def _selected_advice_context(pool, projections, boot, current_gw, target_gw):
-    owned, bank, ft = await _get_effective_user_squad(pool, boot)
+    owned, bank, ft = await _get_effective_user_squad(pool)
     state = await manager_state_service.get_current_state()
     joint = await analysis_service.joint_plan(
         current_squad_df=owned,
@@ -1145,7 +1152,10 @@ async def _selected_advice_context(pool, projections, boot, current_gw, target_g
     )
     plan = joint["recommended_plan"]
     lineup = plan["lineup"]
-    squad = pd.concat([lineup["starters"], lineup["bench"]], ignore_index=True)
+    # A Free Hit squad is temporary: what the manager owns afterwards is the squad they started with
+    squad = (
+        owned if plan.get("chip") == "freehit" else pd.concat([lineup["starters"], lineup["bench"]], ignore_index=True)
+    )
     return (
         joint,
         squad,
@@ -1176,7 +1186,7 @@ async def get_contingency_matrix():
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or 6
+    target_gw = _target_gw(curr_gw, next_gw)
 
     horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
@@ -1213,7 +1223,7 @@ async def post_contingency_panic(req: PanicRequest):
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or 6
+    target_gw = _target_gw(curr_gw, next_gw)
 
     horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
@@ -1221,7 +1231,7 @@ async def post_contingency_panic(req: PanicRequest):
     if is_stale or state.is_stale or target_df.empty:
         raise HTTPException(status_code=409, detail="Fresh squad and predictions required. Update data and try again.")
 
-    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df, boot)
+    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df)
 
     import re
     import unicodedata
@@ -1356,7 +1366,7 @@ async def get_pre_deadline_checklist():
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = next_gw or 6
+    target_gw = _target_gw(curr_gw, next_gw)
 
     horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())

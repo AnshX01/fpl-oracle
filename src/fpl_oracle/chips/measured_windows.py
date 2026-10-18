@@ -14,12 +14,14 @@ def measured_windows(squad, projections):
         frame = pool[pool.element.isin(owned)].copy()
         if len(frame) != 15 or not pd.to_numeric(frame.expected_points, errors="coerce").notna().all():
             continue
-        base = lineup_optimizer.select_lineup_and_captain(frame, risk_preference="points")
+        base = lineup_optimizer.select_lineup_and_captain(frame, risk_preference="points", simulate_captaincy=False)
         for code, display, flag in [
             ("3xc", "Triple Captain", "is_triple_captain"),
             ("bboost", "Bench Boost", "is_bench_boost"),
         ]:
-            with_chip = lineup_optimizer.select_lineup_and_captain(frame, risk_preference="points", **{flag: True})
+            with_chip = lineup_optimizer.select_lineup_and_captain(
+                frame, risk_preference="points", **{flag: True}, simulate_captaincy=False
+            )
             rows.append(
                 dict(
                     chip=code,

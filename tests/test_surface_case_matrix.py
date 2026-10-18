@@ -97,6 +97,11 @@ def test_concurrent_surface_case(configured_advisor, monkeypatch, bank, ft, chip
             0 if opt["recommended_chip"] in ("wildcard", "freehit") else min(ft, len(selected["transfers_in"]))
         )
         assert selected["next_banked_ft"] == card["transfers"]["ft_next_gw"]
+        if card["transfers"]["is_roll"] and not opt["recommended_chip"]:
+            assert card["transfers"]["ft_next_gw"] == min(5, ft + 1)
+        assert card["vice_captain"]["team_short"] != "PL" and card["captain"]["team_short"] != "PL"
+        assert card["vice_captain"]["p90"] > 0
+        assert card["transfers"]["horizon_label"]
         assert (
             card["is_stale"]
             == squad["is_stale"]
@@ -180,7 +185,7 @@ def test_chat_captain_is_configured_lineup_not_market_leader(configured_advisor,
     async def run():
         squad = await get_squad()
         captain = await tool_executor.execute("captain_options", {})
-        assert captain["safe_captain"] == squad["captain"]["web_name"]
+        assert captain["captain_name"] == squad["captain"]["web_name"]
         assert captain["captain"]["element"] == squad["captain"]["element"]
         assert all(p["element"] in {r["element"] for r in squad["starters"]} for p in captain["candidates"])
 
@@ -260,6 +265,11 @@ def test_profitable_replacement_hits_and_sale_prices_across_surfaces(configured_
     replacement["expected_points"] = 25.0
     market = pd.concat([pool, pd.DataFrame([replacement])], ignore_index=True)
     monkeypatch.setattr(analysis_service, "projections", AsyncMock(return_value={6: market, 7: market.copy()}))
+    # The fixture's 25 xP player has no real scoring components, so the hit simulation would not see the gain:
+    # this test checks hit accounting and sale prices, so the fixed xP hit bar decides.
+    from fpl_oracle.optimise.multiperiod import multiperiod_optimizer
+
+    monkeypatch.setattr(multiperiod_optimizer, "_score_robustness", lambda *a, **k: None)
     monkeypatch.setattr(
         data_store,
         "get_profile",
