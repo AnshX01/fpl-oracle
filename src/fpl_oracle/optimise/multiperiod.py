@@ -1840,6 +1840,10 @@ class MultiPeriodOptimizer:
                         "points_vs_plan": round(by_name[name]["total_objective"] - rec_plan["total_objective"], 1),
                         "p_win": by_name[name]["league"]["p_win"],
                         "chosen": by_name[name] is rec_plan or move_key(by_name[name]) == move_key(rec_plan),
+                        "owned": int(name.split(":")[1]) in owned_now,
+                        # the recommendation does not beat this plan by its own confidence margin
+                        "close": not confident(rec_plan, by_name[name])["passed"],
+                        "margin_needed": confident(rec_plan, by_name[name])["needed"],
                     }
                     for name in by_name
                     if name.startswith("cover:") and by_name[name].get("league")
