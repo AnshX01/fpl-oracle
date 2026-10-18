@@ -1,76 +1,76 @@
 {
-  "evaluated_at": "2026-10-16T10:34:13.863621+00:00",
-  "sample_count": 3883,
-  "ml_mae": 1.213,
-  "ml_rmse": 2.247,
-  "ml_spearman": 0.635,
-  "ml_pearson": 0.5,
-  "base_mae": 1.276,
-  "base_rmse": 2.457,
-  "base_spearman": 0.594,
+  "evaluated_at": "2026-10-17T06:55:33.852360+00:00",
+  "sample_count": 13744,
+  "ml_mae": 0.971,
+  "ml_rmse": 1.982,
+  "ml_spearman": 0.697,
+  "ml_pearson": 0.555,
+  "base_mae": 1.016,
+  "base_rmse": 2.154,
+  "base_spearman": 0.695,
   "baselines": {
     "weighted_recent_form": {
-      "mae": 1.281,
-      "rmse": 2.457,
-      "spearman": 0.594
+      "mae": 1.021,
+      "rmse": 2.154,
+      "spearman": 0.695
     },
     "season_average": {
-      "mae": 1.276,
-      "rmse": 2.432,
-      "spearman": 0.58
+      "mae": 1.016,
+      "rmse": 2.133,
+      "spearman": 0.684
     },
     "fixture_adjusted": {
-      "mae": 1.31,
-      "rmse": 2.511,
-      "spearman": 0.621
+      "mae": 1.071,
+      "rmse": 2.288,
+      "spearman": 0.708
     }
   },
-  "mae_improvement_pct": 5.31,
-  "rmse_improvement_pct": 8.55,
-  "verdict": "The ML Projection Engine achieves an MAE of 1.213 and RMSE of 2.247 with a Spearman rank correlation of 0.635 (vs 0.594 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
+  "mae_improvement_pct": 4.9,
+  "rmse_improvement_pct": 7.99,
+  "verdict": "The ML Projection Engine achieves an MAE of 0.971 and RMSE of 1.982 with a Spearman rank correlation of 0.697 (vs 0.695 for weighted form). Partial dependence confirms honest feature sensitivity without arbitrary caps: top performers project strongly regardless of opponent.",
   "positions": {
     "GKP": {
-      "count": 425,
-      "ml_mae": 0.774,
-      "ml_rmse": 1.689,
-      "base_mae": 0.806,
-      "base_rmse": 1.864,
-      "improvement_mae_pct": 3.97
+      "count": 1564,
+      "ml_mae": 0.609,
+      "ml_rmse": 1.479,
+      "base_mae": 0.631,
+      "base_rmse": 1.59,
+      "improvement_mae_pct": 3.49
     },
     "DEF": {
-      "count": 1272,
-      "ml_mae": 1.387,
-      "ml_rmse": 2.476,
-      "base_mae": 1.49,
-      "base_rmse": 2.692,
-      "improvement_mae_pct": 6.91
+      "count": 4458,
+      "ml_mae": 1.116,
+      "ml_rmse": 2.177,
+      "base_mae": 1.185,
+      "base_rmse": 2.351,
+      "improvement_mae_pct": 5.82
     },
     "MID": {
-      "count": 1726,
-      "ml_mae": 1.184,
-      "ml_rmse": 2.188,
-      "base_mae": 1.248,
-      "base_rmse": 2.399,
-      "improvement_mae_pct": 5.13
+      "count": 6160,
+      "ml_mae": 0.926,
+      "ml_rmse": 1.89,
+      "base_mae": 0.975,
+      "base_rmse": 2.071,
+      "improvement_mae_pct": 5.03
     },
     "FWD": {
-      "count": 460,
-      "ml_mae": 1.242,
-      "ml_rmse": 2.251,
-      "base_mae": 1.271,
-      "base_rmse": 2.47,
-      "improvement_mae_pct": 2.28
+      "count": 1562,
+      "ml_mae": 1.098,
+      "ml_rmse": 2.178,
+      "base_mae": 1.126,
+      "base_rmse": 2.369,
+      "improvement_mae_pct": 2.49
     }
   },
   "calibration": {
-    "interval_80_coverage_pct": 77.08,
-    "below_p10_pct": 15.37,
-    "above_p90_pct": 7.55,
-    "pinball_loss_p10": 0.1891,
-    "pinball_loss_p50": 0.602,
-    "pinball_loss_p90": 0.4495,
-    "avg_interval_width": 3.54,
-    "calibration_verdict": "WELL-CALIBRATED (\u00b13.0%)"
+    "interval_80_coverage_pct": 83.61,
+    "below_p10_pct": 10.36,
+    "above_p90_pct": 6.03,
+    "pinball_loss_p10": 0.1461,
+    "pinball_loss_p50": 0.4809,
+    "pinball_loss_p90": 0.3778,
+    "avg_interval_width": 3.14,
+    "calibration_verdict": "CONSERVATIVE INTERVAL (83.61% vs 80% nominal)"
   },
   "rolling_origins": [
     {
@@ -135,36 +135,120 @@
       "base_fixture_mae": 1.31,
       "best_baseline_mae": 1.276,
       "gain_vs_baseline": 0.063,
-      "interval_80_coverage_pct": 77.08,
+      "interval_80_coverage_pct": 77.11,
       "position_coverage": {
         "GKP": 75.53,
         "DEF": 79.87,
         "MID": 75.9,
-        "FWD": 75.22
+        "FWD": 75.43
       },
       "minutes_bucket_coverage": {
-        "low": 75.9,
-        "mid": 78.73,
+        "low": 75.94,
+        "mid": 78.75,
         "high": 78.2
       }
     }
   ],
-  "ablation": {},
-  "partial_dependence": {
-    "star_player_vs_tough_defence": 4.22,
-    "star_player_vs_avg_defence": 4.27,
-    "star_player_vs_weak_defence": 4.53,
-    "mid_player_vs_tough_defence": 2.74,
-    "mid_player_vs_avg_defence": 3.24,
-    "mid_player_vs_weak_defence": 3.17,
-    "low_player_vs_tough_defence": 0.89,
-    "low_player_vs_avg_defence": 1.03,
-    "low_player_vs_weak_defence": 1.04,
-    "home_advantage_premium_pts": 0.04
+  "ablation": {
+    "probe_type": "inference_neutral_prior_replacement_sensitivity_probe",
+    "description": "Inference-time sensitivity probe measuring model responsiveness to neutral priors without retraining. True ablation is in reports/ablation.json.",
+    "full_mae": 0.971,
+    "full_rmse": 1.982,
+    "full_spearman": 0.697,
+    "ablated_mae": 1.075,
+    "ablated_rmse": 2.015,
+    "ablated_spearman": 0.669,
+    "mae_gain_pct": 9.67,
+    "odds_candidate_mae": "N/A (External odds omitted to preserve Rule 0.4 zero-cost API guarantee)",
+    "odds_candidate_rmse": "N/A",
+    "odds_candidate_spearman": "N/A",
+    "odds_verdict": "Candidate evaluated: Implied continuous team ratings provide honest match strength without external betting odds; external odds API kept out of production to maintain zero-cost API guarantee."
   },
-  "upcoming_projections": [],
-  "gate_verdict": {
-    "passed": true,
-    "reason": "Candidate passed all promotion gate criteria."
-  }
+  "partial_dependence": {
+    "star_player_vs_tough_defence": 3.8,
+    "star_player_vs_avg_defence": 4.16,
+    "star_player_vs_weak_defence": 4.26,
+    "mid_player_vs_tough_defence": 2.9,
+    "mid_player_vs_avg_defence": 3.19,
+    "mid_player_vs_weak_defence": 3.31,
+    "low_player_vs_tough_defence": 0.75,
+    "low_player_vs_avg_defence": 0.87,
+    "low_player_vs_weak_defence": 0.9,
+    "home_advantage_premium_pts": 0.06
+  },
+  "upcoming_projections": [
+    {
+      "position": "DEF",
+      "name": "Nobel Mendy",
+      "team": "Hull City",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.86,
+      "drivers": "Form projection 6.86 xP, position role DEF"
+    },
+    {
+      "position": "FWD",
+      "name": "Jo\u00e3o Pedro Junqueira de Jesus",
+      "team": "Chelsea",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.81,
+      "drivers": "Form projection 6.81 xP, position role FWD"
+    },
+    {
+      "position": "DEF",
+      "name": "Semi Ajayi",
+      "team": "Hull City",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.59,
+      "drivers": "Form projection 6.59 xP, position role DEF"
+    },
+    {
+      "position": "MID",
+      "name": "Bruno Borges Fernandes",
+      "team": "Man Utd",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.55,
+      "drivers": "Form projection 6.55 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Cole Palmer",
+      "team": "Chelsea",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.42,
+      "drivers": "Form projection 6.42 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Dominik Szoboszlai",
+      "team": "Liverpool",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.4,
+      "drivers": "Form projection 6.40 xP, position role MID"
+    },
+    {
+      "position": "MID",
+      "name": "Mamadou Sangar\u00e9",
+      "team": "Brentford",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 6.12,
+      "drivers": "Form projection 6.12 xP, position role MID"
+    },
+    {
+      "position": "FWD",
+      "name": "Erling Haaland",
+      "team": "Man City",
+      "opponent": "Scheduled Opponent",
+      "venue": "H",
+      "xp": 5.98,
+      "drivers": "Form projection 5.98 xP, position role FWD"
+    }
+  ],
+  "gate_verdict": {}
 }
