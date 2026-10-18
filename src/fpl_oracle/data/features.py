@@ -95,7 +95,38 @@ FEATURE_COLUMNS = [
     "chance_of_playing",
 ]
 
+
 # Canonical feature schema hash to guarantee train/serve parity
+MARKET_USE = {
+    "odds": 0,
+    "ratings": 0,
+    "model": 0,
+}  # how many fixture rows took their goal expectations from each source
+
+
+def with_market_odds(dc_fix: dict, home: str, away: str, kickoff, was_home: bool) -> dict:
+    """Expected goals for a fixture, best source first (same rule in training and live advice):
+    the fixture's own bookmaker odds, else team ratings fitted to recent market prices (held-out: corr 0.95
+    one week ahead, 0.90 twelve weeks ahead), else the Dixon-Coles team model.
+    Clean-sheet chance = P(opponent scores 0) under Poisson."""
+    from fpl_oracle.data.odds import market_goals, projected_market_goals
+
+    market = market_goals(home, away, kickoff)
+    source = "odds"
+    if market is None:
+        market, source = projected_market_goals(home, away, kickoff), "ratings"
+    MARKET_USE[source if market else "model"] += 1
+    if market is None:
+        return dc_fix
+    team, opp = market if was_home else market[::-1]
+    return {
+        "implied_team_xG": team,
+        "implied_opp_xG": opp,
+        "implied_team_cs_prob": float(np.exp(-opp)),
+        "implied_opp_cs_prob": float(np.exp(-team)),
+    }
+
+
 FEATURE_SCHEMA_HASH = hashlib.sha256(",".join(FEATURE_COLUMNS).encode("utf-8")).hexdigest()
 
 # Documented neutral priors for newly promoted clubs or zero-match start of season
@@ -669,6 +700,7 @@ class FeatureEngineering:
             df["days_rest"] = 7.0
 
         dc_as_of = self._walk_forward_dixon_coles(df)
+        MARKET_USE.update(odds=0, ratings=0, model=0)
 
         for _, row in df.iterrows():
             s = str(row.get("season", "2025-26"))
@@ -717,11 +749,17 @@ class FeatureEngineering:
             legacy_implied_opp_xg_list.append(leg_imp_opp_xg)
             legacy_implied_opp_cs_list.append(float(np.exp(-leg_imp_team_xg)))
 
-            # Structural Dixon-Coles match expectations fitted only on matches played before this gameweek.
-            # No market odds: unplayed fixtures have none at serve time (train/serve parity).
+            # Match expectations: bookmaker odds when held for the fixture (pre-deadline prices), otherwise the
+            # Dixon-Coles model fitted only on matches played before this gameweek. Same rule at serve time.
             h_team = t_name if was_h else opp_name
             a_team = opp_name if was_h else t_name
-            dc_fix = dc_as_of[(s, rnd)].predict_fixture(h_team, a_team, is_home=was_h)
+            dc_fix = with_market_odds(
+                dc_as_of[(s, rnd)].predict_fixture(h_team, a_team, is_home=was_h),
+                h_team,
+                a_team,
+                row.get("kickoff_time"),
+                was_h,
+            )
 
             implied_team_xg_list.append(dc_fix["implied_team_xG"])
             implied_team_cs_list.append(dc_fix["implied_team_cs_prob"])
@@ -753,6 +791,7 @@ class FeatureEngineering:
         df["net_strength_diff"] = net_diffs
         df["opponent_difficulty"] = opp_diffs
 
+        logger.info("Match expectations rows: %s", MARKET_USE)
         df["implied_team_xG"] = implied_team_xg_list
         df["implied_team_cs_prob"] = implied_team_cs_list
         df["implied_opp_xG"] = implied_opp_xg_list
@@ -1331,12 +1370,18 @@ class FeatureEngineering:
                 leg_imp_team_cs = float(np.exp(-leg_imp_opp_xg))
                 leg_imp_opp_cs = float(np.exp(-leg_imp_team_xg))
 
-                # Structural Dixon-Coles match expectations (identical recipe to training, no market blend)
+                # Match expectations: same rule as training (odds when held, Dixon-Coles otherwise)
                 my_team_name = tid_to_name.get(elem.team, str(elem.team))
                 opp_team_name = tid_to_name.get(int(fix.get("opponent") or 0), str(fix.get("opponent") or 0))
                 h_team = my_team_name if was_h else opp_team_name
                 a_team = opp_team_name if was_h else my_team_name
-                dc_fix = dixon_coles_model.predict_fixture(h_team, a_team, is_home=was_h)
+                dc_fix = with_market_odds(
+                    dixon_coles_model.predict_fixture(h_team, a_team, is_home=was_h),
+                    h_team,
+                    a_team,
+                    fix.get("kickoff_time"),
+                    was_h,
+                )
 
                 imp_team_xg = dc_fix["implied_team_xG"]
                 imp_team_cs = dc_fix["implied_team_cs_prob"]

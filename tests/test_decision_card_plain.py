@@ -26,7 +26,10 @@ def test_pair_moves_matches_position_first():
 
 def test_chip_comparison_in_plain_words():
     keep = {"decision_check": {"gain": 4.9, "uncertainty": 1.2, "needed": 2.0, "versus": "keeping the chip"}}
-    assert _comparison_sentences(keep, "Wildcard")[0] == "Playing it now is about 4.9 points better than keeping your Wildcard for later."
+    assert (
+        _comparison_sentences(keep, "Wildcard")[0]
+        == "Playing it now is about 4.9 points better than keeping your Wildcard for later."
+    )
     held = {
         "rejected_alternative": {
             "gain": 1.0,
@@ -50,7 +53,9 @@ def test_later_chips_are_provisional():
         ]
     }
     # the 0.4 point Free Hit is noise and is dropped
-    later = _later_chips(plan, [{"code": "bboost", "expected_gain": 3.456}, {"code": "freehit", "expected_gain": 0.4}], 8)
+    later = _later_chips(
+        plan, [{"code": "bboost", "expected_gain": 3.456}, {"code": "freehit", "expected_gain": 0.4}], 8
+    )
     assert later == [
         {
             "chip": "bboost",
