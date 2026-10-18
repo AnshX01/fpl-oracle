@@ -32,8 +32,8 @@ data/snapshots/*
 !data/cache/.gitkeep
 !data/snapshots/.gitkeep
 data/models/versions/*
-!data/models/versions/v2026.10.18.0946/
-!data/models/versions/v2026.10.18.0946/**
+!data/models/versions/v2026.10.18.1305/
+!data/models/versions/v2026.10.18.1305/**
 data/models/rejected/
 data/backups/
 backups/
@@ -81,3 +81,5 @@ data/models/.staging_*/
 /image*.png
 data/last_advice.json
 data/last_advice.json.tmp
+data/odds/upcoming.csv
+data/odds/*.csv.tmp

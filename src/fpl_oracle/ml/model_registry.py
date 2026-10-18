@@ -35,7 +35,8 @@ logger = logging.getLogger("fpl_oracle.ml.registry")
 MANIFEST_PATH = MODELS_DIR / "manifest.json"
 # Bump when training targets or component semantics change: bundles from another recipe are never restored.
 # v2: clean sheets / DefCon trained conditional on minutes, DefCon only on labelled seasons, final refit on all rows.
-RECIPE_ID = "fpl_oracle_canonical_v2"
+# v3: team goal and clean-sheet inputs from bookmaker odds / market-implied ratings.
+RECIPE_ID = "fpl_oracle_canonical_v3"
 VERSIONS_DIR = MODELS_DIR / "versions"
 REJECTED_DIR = MODELS_DIR / "rejected"
 

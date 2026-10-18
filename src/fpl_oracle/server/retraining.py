@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -12,6 +13,7 @@ from fpl_oracle.data.historical import historical_manager
 from fpl_oracle.ml.model_registry import model_registry
 
 STATE_PATH = DATA_DIR / "retraining_state.json"
+logger = logging.getLogger("fpl_oracle.retraining")
 _lock = asyncio.Lock()
 
 
@@ -129,6 +131,12 @@ async def retrain_finalized_gameweeks():
 async def ensure_latest_data() -> dict:
     """Before advice: pull every gameweek FPL has finalized into the history (so form is current), then
     retrain on it if it is new. Returns what the advice is based on."""
+    from fpl_oracle.data.odds import refresh_odds
+
+    try:  # newest bookmaker prices for the upcoming fixtures; the advice still runs without them
+        await asyncio.to_thread(refresh_odds)
+    except Exception as error:
+        logger.warning("Odds refresh before advice failed: %s", type(error).__name__)
     boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
     finalized = sorted(e.id for e in boot.events if e.finished and e.data_checked)
     meta_path = historical_manager.output_file.with_suffix(".meta.json")
