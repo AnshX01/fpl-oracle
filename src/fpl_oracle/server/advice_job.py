@@ -22,6 +22,41 @@ class SourceChanged(ValueError):
 logger = logging.getLogger("fpl_oracle.advice")
 
 
+def _last_path():
+    from fpl_oracle.config import DATA_DIR
+
+    return DATA_DIR / "last_advice.json"
+
+
+def load_last_advice(profile_key_value):
+    """Last published advice for this manager, if its deadline has not passed (shown, labelled, while updating)."""
+    try:
+        saved = json.loads(_last_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if saved.get("profile_key") != json.dumps(profile_key_value, sort_keys=True, default=str):
+        return None
+    deadline = (saved.get("result") or {}).get("decisionCard", {}).get("deadline")
+    try:
+        if deadline and datetime.fromisoformat(str(deadline).replace("Z", "+00:00")) <= datetime.now(UTC):
+            return None
+    except ValueError:
+        return None
+    return saved
+
+
+def save_last_advice(profile_key_value, result):
+    path = _last_path()
+    body = {
+        "profile_key": json.dumps(profile_key_value, sort_keys=True, default=str),
+        "published_at": datetime.now(UTC).isoformat(),
+        "result": result,
+    }
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(body, default=str), encoding="utf-8")
+    tmp.replace(path)
+
+
 class AdvicePublisher:
     def __init__(self):
         self.current = None
@@ -57,6 +92,11 @@ class AdvicePublisher:
             return self.public()
         if self.expiry_task and not self.expiry_task.done():
             self.expiry_task.cancel()
+        last = None
+        if self.current and self.current.get("status") == "ready" and self.current["profile_key"] == profile_key:
+            last = {"result": self.current["result"], "published_at": self.current.get("published_at")}
+        else:
+            last = load_last_advice(profile_key)
         self.current = dict(
             id=uuid.uuid4().hex,
             status="calculating",
@@ -64,6 +104,8 @@ class AdvicePublisher:
             profile_key=profile_key,
             created=time.monotonic(),
             result=None,
+            previous_result=last["result"] if last else None,
+            previous_published_at=last["published_at"] if last else None,
         )
         self.task = asyncio.create_task(self.run())
         return self.public()
@@ -238,9 +280,15 @@ class AdvicePublisher:
                 stage="Ready",
                 result=result,
                 previous_result=None,
+                previous_published_at=None,
+                published_at=datetime.now(UTC).isoformat(),
                 sources={k: v[0] for k, v in (read_context.get() or {}).items()},
                 model_version=model_registry.get_active_version(),
             )
+            try:
+                save_last_advice(original_key, result)
+            except OSError as error:
+                logger.warning("Could not save the last advice: %s", error)
             saved_recommendation = result["decisionCard"].pop("confirmation_recommendation", None)
             if saved_recommendation:
                 from fpl_oracle.domain.team_confirmation import team_confirmation
@@ -264,11 +312,16 @@ class AdvicePublisher:
                 self.current.get("stage"),
                 time.monotonic() - self.current["created"],
             )
+            from fastapi import HTTPException
+
+            # A 409 is a reason the manager can act on (e.g. a saved bank that disagrees with FPL): show it.
+            reason = error.detail if isinstance(error, HTTPException) and error.status_code == 409 else None
             self.current.update(
                 status="failed",
                 stage="Calculation stopped",
-                error="Could not prepare advice. Check the application log.",
+                error=reason or "Could not prepare advice. Check the application log.",
                 error_type=type(error).__name__,
+                fixable="saved_override" if reason and "override" in reason else None,
                 result=None,
             )
         finally:
