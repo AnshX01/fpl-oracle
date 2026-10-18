@@ -13,6 +13,7 @@ The Odds API adds upcoming odds earlier in the week.
 """
 
 import csv
+import json
 import logging
 import math
 import re
@@ -33,6 +34,10 @@ logger = logging.getLogger("fpl_oracle.data.odds")
 
 ODDS_DIR = DATA_DIR / "odds"
 UPCOMING_FILE = ODDS_DIR / "upcoming.csv"
+SCORERS_FILE = ODDS_DIR / "scorers.json"
+# Anytime-goalscorer prices averaged over several bookmakers for the next gameweek's fixtures, keyed by FPL
+# fixture and player ids (embedded in the page's data). Free, no key.
+SCORERS_URL = "https://kickoffscore.com/fpl/odds"
 FIELDS = ("Date", "HomeTeam", "AwayTeam", "AvgH", "AvgD", "AvgA", "Avg>2.5", "Avg<2.5")
 
 # football-data / The Odds API names -> the names FPL uses
@@ -203,7 +208,60 @@ def refresh_odds(now: datetime | None = None) -> dict[str, int]:
             logger.warning("The Odds API unavailable: %s", type(error).__name__)
     _write(UPCOMING_FILE, upcoming)
     written["upcoming"] = len(upcoming)
+    try:  # player prices are a bonus: the team odds above stand without them
+        written["scorers"] = refresh_scorer_odds()
+    except Exception as error:
+        logger.warning("Goalscorer odds unavailable: %s", type(error).__name__)
     return written
+
+
+def parse_scorer_page(html: str) -> dict[int, dict[int, float]]:
+    """{FPL fixture id: {FPL player id: bookmaker probability of scoring}} from the page's embedded data.
+    Untrusted input: only well-formed numbers in range are kept."""
+    text = html.replace('\\"', '"')
+    decoder = json.JSONDecoder()
+    fixtures: dict[int, dict[int, float]] = {}
+    for match in re.finditer(r'\{"fixture":(\d+),', text):
+        try:
+            obj, _ = decoder.raw_decode(text, match.start())
+        except ValueError:
+            continue
+        rows = {}
+        for s in obj.get("scorers") or []:
+            element, implied = s.get("element"), s.get("implied")
+            if isinstance(element, int) and isinstance(implied, int | float) and 0.0 < implied < 1.0:
+                rows[element] = float(implied)
+        if rows:
+            fixtures[int(obj["fixture"])] = rows
+    return fixtures
+
+
+def refresh_scorer_odds() -> int:
+    """Download the next gameweek's anytime-goalscorer prices; returns the number of player prices kept."""
+    resp = httpx.get(SCORERS_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=30, follow_redirects=True)
+    resp.raise_for_status()
+    fixtures = parse_scorer_page(resp.text)
+    if not fixtures:
+        raise ValueError("no goalscorer prices found on the page")
+    ODDS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = SCORERS_FILE.with_suffix(".json.tmp")
+    payload = {
+        "source": SCORERS_URL,
+        "fetched_at": datetime.now(UTC).isoformat(),
+        "fixtures": {str(f): {str(e): p for e, p in rows.items()} for f, rows in fixtures.items()},
+    }
+    tmp.write_text(json.dumps(payload), encoding="utf-8")
+    tmp.replace(SCORERS_FILE)
+    return sum(len(rows) for rows in fixtures.values())
+
+
+def scorer_probabilities() -> dict[tuple[int, int], float]:
+    """(fixture, player) -> bookmaker chance that he scores if he plays (margin still in; the attacking model
+    removes it per team against the match odds)."""
+    if not SCORERS_FILE.exists():
+        return {}
+    data = json.loads(SCORERS_FILE.read_text(encoding="utf-8"))
+    return {(int(f), int(e)): float(p) for f, rows in data.get("fixtures", {}).items() for e, p in rows.items()}
 
 
 @lru_cache(maxsize=64)

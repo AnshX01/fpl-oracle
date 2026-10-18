@@ -82,5 +82,7 @@ data/models/.staging_*/
 data/last_advice.json
 data/last_advice.json.tmp
 data/odds/upcoming.csv
+data/odds/scorers.json
+data/odds/*.json.tmp
 data/odds/*.csv.tmp
 data/news_applied.jsonl
