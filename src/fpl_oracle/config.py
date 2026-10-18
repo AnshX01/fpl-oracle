@@ -32,7 +32,6 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 CONFIG_DIR = BASE_DIR / "config"
 SETTINGS: dict[str, Any] = _load_yaml(CONFIG_DIR / "settings.yaml")
 RULES: dict[str, Any] = _load_yaml(CONFIG_DIR / "rules.yaml")
-SCORING: dict[str, Any] = _load_yaml(CONFIG_DIR / "scoring.yaml")
 NEWS_SOURCES: dict[str, Any] = _load_yaml(CONFIG_DIR / "news_sources.yaml")
 
 
@@ -42,10 +41,6 @@ def load_rules_config() -> dict[str, Any]:
 
 def load_scoring_config() -> dict[str, Any]:
     return _load_yaml(CONFIG_DIR / "scoring.yaml")
-
-
-def load_flags_config() -> dict[str, Any]:
-    return _load_yaml(CONFIG_DIR / "flags.yaml")
 
 
 def is_flag_enabled(flag_name: str, default: bool = False) -> bool:
@@ -73,8 +68,6 @@ class FPLSettings(BaseModel):
         default=False, description="Confirmation that project is non-billable Free Tier"
     )
     gemini_model: str = Field(default="gemini-flash-lite-latest", description="Supported Gemini free model")
-    gemini_daily_request_limit: int = Field(default=150, description="Max daily requests on free tier")
-    gemini_daily_token_limit: int = Field(default=500_000, description="Max daily tokens on free tier")
 
     # Recommendation Mode (api_only, shadow, gated_active)
     news_recommendation_mode: str = Field(default="shadow", description="Application mode for candidate news evidence")
@@ -92,21 +85,9 @@ class FPLSettings(BaseModel):
     )
 
     # Optional Providers
-    odds_api_key: str = Field(
-        default="", description="Dormant/deprecated (N8): zero-cost guarantee uses continuous Dixon-Coles team ratings"
-    )
     llm_provider: str = Field(default="gemini", description="LLM provider for chat/briefings")
     anthropic_api_key: str = Field(default="", description="Optional Anthropic API Key")
     openai_api_key: str = Field(default="", description="Optional OpenAI API Key")
-    tavily_api_key: str = Field(
-        default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds"
-    )
-    brave_api_key: str = Field(
-        default="", description="Dormant/deprecated (N8): zero-cost guarantee uses free RSS feeds"
-    )
-    discord_webhook_url: str = Field(default="", description="Optional Discord webhook")
-    telegram_bot_token: str = Field(default="", description="Optional Telegram bot token")
-    telegram_chat_id: str = Field(default="", description="Optional Telegram chat ID")
 
     # League & Rival Intelligence Settings
     rival_points_window: int = Field(default=20, description="Points window below user for proximity rival selection")
@@ -123,6 +104,8 @@ class FPLSettings(BaseModel):
 
     # Joint Multi-GW Planner Settings
     planner_horizon: int = Field(default=5, description="Default planning horizon in gameweeks for joint search")
+    planner_min_horizon: int = Field(default=6, description="Fewest gameweeks the main plan looks ahead")
+    planner_max_horizon: int = Field(default=12, description="Most gameweeks the main plan looks ahead")
 
     def get_redacted_status(self) -> dict[str, Any]:
         """Return diagnostic status without exposing secrets or private IDs."""
@@ -176,20 +159,14 @@ def _load_settings_from_env() -> FPLSettings:
         gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
         gemini_free_tier_confirmed=_parse_bool(os.getenv("GEMINI_FREE_TIER_CONFIRMED")),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip(),
-        gemini_daily_request_limit=_parse_int(os.getenv("GEMINI_DAILY_REQUEST_BUDGET")) or 150,
-        gemini_daily_token_limit=_parse_int(os.getenv("GEMINI_DAILY_TOKEN_BUDGET")) or 500_000,
         news_recommendation_mode=os.getenv("NEWS_RECOMMENDATION_MODE", "shadow").strip(),
         gated_active_opt_in=_parse_bool(os.getenv("GATED_ACTIVE_OPT_IN")),
-        odds_api_key=os.getenv("ODDS_API_KEY", "").strip(),
         llm_provider=os.getenv("LLM_PROVIDER", "gemini").strip(),
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
-        tavily_api_key=os.getenv("TAVILY_API_KEY", "").strip(),
-        brave_api_key=os.getenv("BRAVE_API_KEY", "").strip(),
-        discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL", "").strip(),
-        telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
-        telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
         rival_points_window=_parse_int(os.getenv("RIVAL_POINTS_WINDOW")) or 20,
+        planner_min_horizon=_parse_int(os.getenv("PLANNER_MIN_HORIZON")) or 6,
+        planner_max_horizon=_parse_int(os.getenv("PLANNER_MAX_HORIZON")) or 12,
         max_standings_pages=_parse_int(os.getenv("MAX_STANDINGS_PAGES")) or 200,
         default_clean_sheet_probability=_parse_float(os.getenv("DEFAULT_CLEAN_SHEET_PROBABILITY"), 0.30),
         clean_sheet_home_factor=_parse_float(os.getenv("CLEAN_SHEET_HOME_FACTOR"), 1.15),
@@ -201,10 +178,7 @@ app_config = _load_settings_from_env()
 
 # Top-level exports for backwards compatibility
 GEMINI_API_KEY = app_config.gemini_api_key
-GEMINI_FREE_TIER_CONFIRMED = app_config.gemini_free_tier_confirmed
-GEMINI_MODEL = app_config.gemini_model
 NEWS_RECOMMENDATION_MODE = app_config.news_recommendation_mode
-GATED_ACTIVE_OPT_IN = app_config.gated_active_opt_in
 NEWS_GATE_MIN_PRECISION = app_config.news_gate_min_precision
 NEWS_GATE_MIN_RECALL = app_config.news_gate_min_recall
 NEWS_GATE_MAX_FALSE_RULED_OUT = app_config.news_gate_max_false_ruled_out
@@ -218,16 +192,21 @@ MAX_STANDINGS_PAGES = app_config.max_standings_pages
 DEFAULT_CLEAN_SHEET_PROBABILITY = app_config.default_clean_sheet_probability
 CLEAN_SHEET_HOME_FACTOR = app_config.clean_sheet_home_factor
 CLEAN_SHEET_AWAY_FACTOR = app_config.clean_sheet_away_factor
-TAVILY_API_KEY = app_config.tavily_api_key
-BRAVE_API_KEY = app_config.brave_api_key
-ODDS_API_KEY = app_config.odds_api_key
-DISCORD_WEBHOOK_URL = app_config.discord_webhook_url
-TELEGRAM_BOT_TOKEN = app_config.telegram_bot_token
-TELEGRAM_CHAT_ID = app_config.telegram_chat_id
 PLANNER_HORIZON = app_config.planner_horizon
+PLANNER_MIN_HORIZON = app_config.planner_min_horizon
+PLANNER_MAX_HORIZON = app_config.planner_max_horizon
+
+
+def planning_horizon(start_gw: int) -> int:
+    """Gameweeks the main plan covers: through the current chip set's expiry, but never fewer than
+    PLANNER_MIN_HORIZON (no myopic plans near GW19/GW38) or more than PLANNER_MAX_HORIZON (solve time)."""
+    to_expiry = (20 if start_gw <= 19 else 39) - start_gw
+    return max(1, min(39 - start_gw, PLANNER_MAX_HORIZON, max(PLANNER_MIN_HORIZON, to_expiry)))
+
 
 # Directory paths
-DATA_DIR = BASE_DIR / "data"
+# FPL_ORACLE_DATA_DIR lets tests run against a copy instead of the live data/ folder.
+DATA_DIR = Path(os.environ.get("FPL_ORACLE_DATA_DIR") or BASE_DIR / "data")
 CACHE_DIR = DATA_DIR / "cache"
 SNAPSHOTS_DIR = DATA_DIR / "snapshots"
 MODELS_DIR = DATA_DIR / "models"
@@ -240,85 +219,3 @@ for d in [DATA_DIR, CACHE_DIR, SNAPSHOTS_DIR, MODELS_DIR, HISTORICAL_DIR, REPORT
     d.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = DATA_DIR / "fpl_oracle.db"
-
-
-# ==============================================================================
-# Configuration Schema Validation (WI-7.1)
-# ==============================================================================
-class ServerConfigSchema(BaseModel):
-    host: str = "127.0.0.1"
-    port: int = 8000
-    reload: bool = False
-
-
-class OptimizerConfigSchema(BaseModel):
-    default_horizon: int = 5
-    discount_factor: float = 0.95
-    max_hits: int = 2
-    hit_penalty: float = 4.0
-    solver_name: str = "PULP_CBC_CMD"
-    max_solve_time_seconds: int = 60
-    threads: int = 4
-
-
-class ChipsConfigSchema(BaseModel):
-    first_set_deadline_gw: int = 19
-    max_chips_per_gameweek: int = 1
-    gw1_free_hit_forbidden: bool = True
-    consecutive_fh_forbidden: bool = True
-
-
-class SettingsConfigSchema(BaseModel):
-    server: ServerConfigSchema = Field(default_factory=ServerConfigSchema)
-    storage: dict[str, Any] = Field(default_factory=dict)
-    cache: dict[str, Any] = Field(default_factory=dict)
-    fpl: dict[str, Any] = Field(default_factory=dict)
-    manager_profile: dict[str, Any] = Field(default_factory=dict)
-    ml: dict[str, Any] = Field(default_factory=dict)
-    optimizer: OptimizerConfigSchema = Field(default_factory=OptimizerConfigSchema)
-    chips: ChipsConfigSchema = Field(default_factory=ChipsConfigSchema)
-    llm: dict[str, Any] = Field(default_factory=dict)
-
-
-class FlagsConfigSchema(BaseModel):
-    flags: dict[str, bool] = Field(default_factory=dict)
-    assistant: dict[str, Any] = Field(default_factory=dict)
-
-
-def validate_configuration_schemas() -> dict[str, bool]:
-    """
-    Validates all committed YAML configuration files against strict Pydantic schemas (WI-7.1).
-    Raises ValidationError if any configuration is structurally invalid.
-    """
-    results = {}
-
-    # 1. Validate settings.yaml
-    settings_data = _load_yaml(CONFIG_DIR / "settings.yaml")
-    SettingsConfigSchema.model_validate(settings_data)
-    results["settings.yaml"] = True
-
-    # 2. Validate flags.yaml
-    flags_data = _load_yaml(CONFIG_DIR / "flags.yaml")
-    FlagsConfigSchema.model_validate(flags_data)
-    results["flags.yaml"] = True
-
-    # 3. Validate rules.yaml
-    rules_data = _load_yaml(CONFIG_DIR / "rules.yaml")
-    assert isinstance(rules_data, dict) and len(rules_data) > 0, "rules.yaml is empty"
-    results["rules.yaml"] = True
-
-    # 4. Validate news_sources.yaml
-    news_data = _load_yaml(CONFIG_DIR / "news_sources.yaml")
-    assert isinstance(news_data, dict) and "trusted_publishers" in news_data, "news_sources.yaml invalid"
-    results["news_sources.yaml"] = True
-
-    # 5. Validate manager_profile.yaml
-    profile_path = CONFIG_DIR / "manager_profile.yaml"
-    if profile_path.exists():
-        from fpl_oracle.advisor.profile import ManagerProfile
-
-        prof_data = _load_yaml(profile_path)
-        ManagerProfile.model_validate(prof_data)
-        results["manager_profile.yaml"] = True
-
-    return results
