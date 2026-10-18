@@ -78,11 +78,15 @@ margin smaller than its own uncertainty.
 
 ## 4. Mini-league layer
 
-For each tracked rival r (managers above you, and within RIVAL_POINTS_WINDOW below):
+Tracked rivals: every manager above you, and every manager below who can still finish above you with at
+least 5% probability: gap ≤ 1.645 · 13 · √(weeks left) points (13 = per-week spread of the gap between two
+managers, matching var_r below; 120 points at GW8, 38 at GW36). RIVAL_POINTS_WINDOW overrides it. For each:
 
     mu_r  = (my points − r's points today) + Σ_horizon (my held XI xP − r's held XI xP) + (J_plan − J_best)
     var_r = Σ_weeks Σ_players (w_plan − w_r)² · sd², scaled for the weeks after the horizon
-    P(finish above r) = Φ(mu_r / √var_r),   P(win) ≈ Π_r P(finish above r)
+    P(finish above r) = Φ(mu_r / √var_r)
+    cov(D_r, D_s) = Σ (w_plan − w_r)(w_plan − w_s) · sd²     (the gaps share our own players)
+    P(win) = P(D_r > 0 for every r) under that joint normal, from 20,000 fixed draws
 
 Symmetric assumption: rivals improve their squads as well as our planner improves ours, so only today's
 squad quality, today's gap, how far a plan falls below our best plan, and how many players we share enter.
@@ -99,7 +103,8 @@ rule of thumb, decides whether covering is worth it. The card lists each cover c
 Use: expected points decide (sections 2–3). Among plans the forecasts cannot tell apart from the
 recommendation (it does not beat them by its own confidence margin), the tool picks the one with the higher
 P(win) and says so on the card. Over many remaining weeks var is large and this rarely changes the move;
-near the end of the season it matters more, as it should. GW8 2026-27: P(finish above leader) ≈ 41%.
+near the end of the season it matters more, as it should. GW8 2026-27 (7 rivals in reach, all captaining Haaland): P(win) ≈ 22%, P(finish above leader) ≈ 28%;
+keeping Haaland as a cover costs 5.4 points and lowers P(win) to ≈ 19%.
 
 ## 5. Captaincy and bench
 

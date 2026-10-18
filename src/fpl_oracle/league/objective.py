@@ -7,7 +7,9 @@ our best plan:
           + (this plan's xP - our best plan's xP)
   var_r = sum over weeks and players of (this plan's weight - r's weight)^2 * sd^2, scaled up for the weeks
           left after the horizon at the same per-week rate
-P(finish above r) = Phi(mu_r / sqrt(var_r)); P(win) ~ product over the tracked rivals.
+P(finish above r) = Phi(mu_r / sqrt(var_r)). The gaps to different rivals share our own players, so
+cov(D_r, D_s) = sum (w_plan - w_r)(w_plan - w_s) sd^2 and P(win) = P(every gap > 0) under that joint normal,
+estimated with fixed draws (the same draws for every plan, so plans are compared without sampling noise).
 Weights: 1 per starter, +1 for the captain (+2 with Triple Captain), 1 per bench player with Bench Boost.
 A held squad fields its best XI with the top-xP captain, except that a rival's first week keeps the captain
 they picked last week while he is still in their XI (managers rarely switch a premium captain).
@@ -18,7 +20,10 @@ from math import sqrt
 from statistics import NormalDist
 from typing import Any
 
+import numpy as np
+
 SD_PER_P10_P90 = 2.5631  # p90 - p10 of a normal distribution spans 2.563 standard deviations
+JOINT_DRAWS = 20000  # standard error of P(win) about 0.3 percentage points
 
 
 def week_weights(starters: list[int], captain: int | None, chip: str | None, bench: list[int]) -> dict[int, float]:
@@ -94,22 +99,31 @@ def win_probability(
     cache = rival_cache if rival_cache is not None else {}
     plan_points = sum(w * xp[gw].get(p, 0.0) for gw, week in zip(gws, my_weeks, strict=True) for p, w in week.items())
     per_rival = []
-    p_all = 1.0
+    means: list[float] = []
+    diffs: list[dict[tuple[int, int], float]] = []  # (gw, player) -> (my weight - r's weight) * sd
     for index, rival in enumerate(rivals):
         if index not in cache:
             cache[index] = rival_weeks(rival["elements"], gws, xp, position, rival.get("captain"))
         mean = float(rival_context["user_points"]) - float(rival["points"]) + plan_points - best_plan_points
-        var = 0.0
+        diff: dict[tuple[int, int], float] = {}
         for gw, mine, held, theirs in zip(gws, my_weeks, held_weeks, cache[index], strict=True):
             mean += sum(w * xp[gw].get(p, 0.0) for p, w in held.items())
             mean -= sum(w * xp[gw].get(p, 0.0) for p, w in theirs.items())
             for p in set(mine) | set(theirs):
-                diff = mine.get(p, 0.0) - theirs.get(p, 0.0)
-                var += (diff * sd[gw].get(p, 0.0)) ** 2
-        var += var / len(gws) * rest
+                d = (mine.get(p, 0.0) - theirs.get(p, 0.0)) * sd[gw].get(p, 0.0)
+                if d:
+                    diff[(gw, p)] = d
+        means.append(mean)
+        diffs.append(diff)
+    scale = 1.0 + rest / len(gws)  # the weeks after the horizon at the same per-week rate
+    cov = np.array([[scale * sum(v * b.get(k, 0.0) for k, v in a.items()) for b in diffs] for a in diffs])
+    for mean, var, rival in zip(means, np.diag(cov), rivals, strict=True):
         p_above = NormalDist().cdf(mean / sqrt(var)) if var > 0 else float(mean > 0)
         per_rival.append(
             {"rival_points": rival["points"], "expected_margin": round(mean, 1), "p_above": round(p_above, 3)}
         )
-        p_all *= p_above
+    draws = np.random.default_rng(0).standard_normal((JOINT_DRAWS, len(means)))
+    eigval, eigvec = np.linalg.eigh(cov)
+    gaps = np.array(means) + draws @ (eigvec * np.sqrt(np.clip(eigval, 0.0, None))).T
+    p_all = float((gaps > 0).all(axis=1).mean())
     return {"p_win": round(p_all, 3), "rivals": per_rival, "weeks_after_horizon": rest}
