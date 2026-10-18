@@ -16,3 +16,11 @@ def test_live_league_totals_do_not_invalidate_advice():
     assert changes("2026-27:league-classic:435956:page:1", page(400, [1, 2]), page(400, [1, 3])) == [
         "owner_or_rival_data"
     ]
+
+
+def test_live_manager_points_do_not_invalidate_advice():
+    entry = lambda pts, bank: {"id": 1, "summary_event_points": pts, "last_deadline_bank": bank}  # noqa: E731
+    assert changes("2026-27:entry:1", entry(20, 1), entry(45, 1)) == []
+    assert changes("2026-27:entry:1", entry(20, 1), entry(20, 3)) == ["owner_or_rival_data"]
+    hist = lambda pts: {"current": [{"event": 7, "points": pts, "event_transfers": 0, "bank": 1}], "chips": []}  # noqa: E731
+    assert changes("2026-27:entry:1:history", hist(20), hist(45)) == []

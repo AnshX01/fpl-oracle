@@ -37,7 +37,6 @@ FIXTURE_FIELDS = (
     "kickoff_time",
     "team_h_difficulty",
     "team_a_difficulty",
-    "finished",
 )
 
 
@@ -58,6 +57,26 @@ def base_key(key):
 
 def decision_source(key, value):
     key = base_key(key)
+    parts = key.split(":")
+    if parts[0] == "entry" and isinstance(value, dict):
+        # Live points and ranks tick during matches; the decision uses money, transfers, chips and the squad.
+        if len(parts) == 2:
+            return picked(value, ("id", "last_deadline_bank", "last_deadline_value", "last_deadline_total_transfers"))
+        if parts[-1] == "history":
+            return {
+                "gameweeks": rows(
+                    value.get("current"), ("event", "event_transfers", "event_transfers_cost", "bank", "value")
+                ),
+                "chips": rows(value.get("chips")),
+            }
+        if parts[-1] == "picks":
+            return {
+                "chip": value.get("active_chip"),
+                "picks": rows(value.get("picks"), ("element", "position", "is_captain", "is_vice_captain")),
+                "money": picked(
+                    value.get("entry_history") or {}, ("bank", "value", "event_transfers", "event_transfers_cost")
+                ),
+            }
     if key.startswith("league-classic:") and isinstance(value, dict):
         # Live point totals tick during matches; the advice depends on who is in the league, not the live score.
         standings = (value.get("standings") or {}).get("results") or []
