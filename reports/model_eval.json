@@ -1,5 +1,5 @@
 {
-  "evaluated_at": "2026-10-18T08:13:48.039942+00:00",
+  "evaluated_at": "2026-10-18T09:20:18.300007+00:00",
   "sample_count": 13744,
   "ml_mae": 1.023,
   "ml_rmse": 1.965,
@@ -67,39 +67,39 @@
       "calibration_by_xp_bin": [
         {
           "bin": "<1",
-          "count": 2383,
-          "mean_pred": 0.16,
-          "mean_actual": 0.225
+          "count": 2379,
+          "mean_pred": 0.159,
+          "mean_actual": 0.224
         },
         {
           "bin": "1-2",
-          "count": 710,
-          "mean_pred": 1.506,
-          "mean_actual": 1.475
+          "count": 711,
+          "mean_pred": 1.501,
+          "mean_actual": 1.468
         },
         {
           "bin": "2-3",
-          "count": 653,
-          "mean_pred": 2.505,
-          "mean_actual": 2.453
+          "count": 659,
+          "mean_pred": 2.499,
+          "mean_actual": 2.508
         },
         {
           "bin": "3-4",
-          "count": 605,
-          "mean_pred": 3.423,
-          "mean_actual": 3.364
+          "count": 603,
+          "mean_pred": 3.425,
+          "mean_actual": 3.299
         },
         {
           "bin": "4-5",
-          "count": 105,
-          "mean_pred": 4.268,
-          "mean_actual": 4.467
+          "count": 103,
+          "mean_pred": 4.26,
+          "mean_actual": 4.544
         },
         {
           "bin": "5+",
-          "count": 2,
-          "mean_pred": 5.2,
-          "mean_actual": 4.0
+          "count": 3,
+          "mean_pred": 5.127,
+          "mean_actual": 3.0
         }
       ],
       "count": 4458,
@@ -113,44 +113,44 @@
       "calibration_by_xp_bin": [
         {
           "bin": "<1",
-          "count": 3515,
-          "mean_pred": 0.154,
-          "mean_actual": 0.178
+          "count": 3513,
+          "mean_pred": 0.153,
+          "mean_actual": 0.177
         },
         {
           "bin": "1-2",
-          "count": 946,
+          "count": 942,
           "mean_pred": 1.484,
-          "mean_actual": 1.535
+          "mean_actual": 1.537
         },
         {
           "bin": "2-3",
-          "count": 823,
-          "mean_pred": 2.503,
-          "mean_actual": 2.327
+          "count": 830,
+          "mean_pred": 2.501,
+          "mean_actual": 2.329
         },
         {
           "bin": "3-4",
-          "count": 614,
-          "mean_pred": 3.452,
-          "mean_actual": 3.479
+          "count": 611,
+          "mean_pred": 3.446,
+          "mean_actual": 3.481
         },
         {
           "bin": "4-5",
-          "count": 217,
-          "mean_pred": 4.349,
-          "mean_actual": 4.138
+          "count": 219,
+          "mean_pred": 4.345,
+          "mean_actual": 4.082
         },
         {
           "bin": "5+",
           "count": 45,
-          "mean_pred": 5.596,
+          "mean_pred": 5.597,
           "mean_actual": 4.6
         }
       ],
       "count": 6160,
       "ml_mae": 0.967,
-      "ml_rmse": 1.875,
+      "ml_rmse": 1.876,
       "base_mae": 0.982,
       "base_rmse": 2.069,
       "improvement_mae_pct": 1.53
@@ -165,41 +165,41 @@
         },
         {
           "bin": "1-2",
-          "count": 252,
-          "mean_pred": 1.524,
-          "mean_actual": 1.437
+          "count": 251,
+          "mean_pred": 1.523,
+          "mean_actual": 1.434
         },
         {
           "bin": "2-3",
           "count": 233,
-          "mean_pred": 2.473,
+          "mean_pred": 2.471,
           "mean_actual": 2.687
         },
         {
           "bin": "3-4",
-          "count": 175,
-          "mean_pred": 3.45,
-          "mean_actual": 3.206
+          "count": 176,
+          "mean_pred": 3.452,
+          "mean_actual": 3.199
         },
         {
           "bin": "4-5",
           "count": 62,
-          "mean_pred": 4.349,
+          "mean_pred": 4.353,
           "mean_actual": 3.919
         },
         {
           "bin": "5+",
           "count": 26,
-          "mean_pred": 5.395,
+          "mean_pred": 5.401,
           "mean_actual": 5.346
         }
       ],
       "count": 1562,
-      "ml_mae": 1.147,
+      "ml_mae": 1.148,
       "ml_rmse": 2.158,
       "base_mae": 1.132,
       "base_rmse": 2.362,
-      "improvement_mae_pct": -1.33
+      "improvement_mae_pct": -1.41
     }
   },
   "price_calibration": [
@@ -212,37 +212,37 @@
     {
       "band": "6.0-8.0",
       "count": 1132,
-      "mean_pred": 2.473,
+      "mean_pred": 2.474,
       "mean_actual": 2.399
     },
     {
       "band": "8.0-10.0",
       "count": 140,
-      "mean_pred": 3.159,
+      "mean_pred": 3.166,
       "mean_actual": 3.586
     },
     {
       "band": "10.0-12.0",
       "count": 39,
-      "mean_pred": 3.776,
+      "mean_pred": 3.77,
       "mean_actual": 3.795
     },
     {
       "band": "12.0+",
       "count": 30,
-      "mean_pred": 4.623,
+      "mean_pred": 4.631,
       "mean_actual": 4.6
     }
   ],
   "calibration": {
-    "interval_80_coverage_pct": 83.66,
-    "below_p10_pct": 10.59,
-    "above_p90_pct": 5.75,
-    "pinball_loss_p10": 0.1509,
-    "pinball_loss_p50": 0.5047,
+    "interval_80_coverage_pct": 83.64,
+    "below_p10_pct": 10.61,
+    "above_p90_pct": 5.76,
+    "pinball_loss_p10": 0.1512,
+    "pinball_loss_p50": 0.5046,
     "pinball_loss_p90": 0.3782,
     "avg_interval_width": 3.21,
-    "calibration_verdict": "CONSERVATIVE INTERVAL (83.66% vs 80% nominal)"
+    "calibration_verdict": "CONSERVATIVE INTERVAL (83.64% vs 80% nominal)"
   },
   "rolling_origins": [
     {
@@ -338,8 +338,8 @@
   },
   "partial_dependence": {
     "star_player_vs_tough_defence": 3.68,
-    "star_player_vs_avg_defence": 3.98,
-    "star_player_vs_weak_defence": 3.89,
+    "star_player_vs_avg_defence": 3.99,
+    "star_player_vs_weak_defence": 3.9,
     "mid_player_vs_tough_defence": 3.03,
     "mid_player_vs_avg_defence": 3.37,
     "mid_player_vs_weak_defence": 3.5,
@@ -355,8 +355,8 @@
       "team": "Man Utd",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 7.49,
-      "drivers": "Form projection 7.49 xP, position role MID"
+      "xp": 7.48,
+      "drivers": "Form projection 7.48 xP, position role MID"
     },
     {
       "position": "MID",
@@ -364,8 +364,8 @@
       "team": "Liverpool",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.76,
-      "drivers": "Form projection 6.76 xP, position role MID"
+      "xp": 6.78,
+      "drivers": "Form projection 6.78 xP, position role MID"
     },
     {
       "position": "MID",
@@ -373,8 +373,8 @@
       "team": "Chelsea",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.58,
-      "drivers": "Form projection 6.58 xP, position role MID"
+      "xp": 6.61,
+      "drivers": "Form projection 6.61 xP, position role MID"
     },
     {
       "position": "MID",
@@ -382,8 +382,8 @@
       "team": "Chelsea",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.48,
-      "drivers": "Form projection 6.48 xP, position role MID"
+      "xp": 6.47,
+      "drivers": "Form projection 6.47 xP, position role MID"
     },
     {
       "position": "FWD",
@@ -400,8 +400,8 @@
       "team": "Liverpool",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.26,
-      "drivers": "Form projection 6.26 xP, position role MID"
+      "xp": 6.27,
+      "drivers": "Form projection 6.27 xP, position role MID"
     },
     {
       "position": "MID",
@@ -409,8 +409,8 @@
       "team": "Arsenal",
       "opponent": "Scheduled Opponent",
       "venue": "H",
-      "xp": 6.13,
-      "drivers": "Form projection 6.13 xP, position role MID"
+      "xp": 6.16,
+      "drivers": "Form projection 6.16 xP, position role MID"
     },
     {
       "position": "FWD",

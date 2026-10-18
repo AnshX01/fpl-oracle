@@ -256,6 +256,11 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
     val_preds_df = candidate_ensemble.aggregate_components(val_comps, X_val)
     full_preds = val_preds_df["expected_points"].values
     actual_val = Y_val["target_points"].values
+    # The most recent out-of-sample block is the honest estimate of the model's per-player error.
+    est_sd = candidate_ensemble.fit_estimation_sd(
+        full_preds, actual_val, (meta_val["element"].astype(str) + meta_val["season"].astype(str)).values
+    )
+    logger.info(f"xP estimation error per player-gameweek (validation block): {est_sd:.3f}")
 
     full_mae = float(np.round(mean_absolute_error(actual_val, full_preds), 3))
     full_rmse = float(np.round(root_mean_squared_error(actual_val, full_preds), 3))

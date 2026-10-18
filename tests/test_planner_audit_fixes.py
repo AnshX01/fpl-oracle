@@ -40,7 +40,6 @@ def evaluate(squad, pool, proj, horizon, cfg=None, **kwargs):
         current_gw=7,
         target_gw=GWS[0],
         horizon_len=horizon,
-        num_mc_scenarios=0,
     )
     args.update(kwargs)
     return opt.evaluate_transfer_options(**args)
@@ -66,7 +65,7 @@ def test_chip_without_transfers_is_a_candidate_and_can_be_recommended():
 def test_free_hit_exposes_a_temporary_squad_and_reverts():
     squad, pool, proj = scenario(squad_xp=0.5, pool_xp=5.0)
     # FH now and FH next week tie here; the chip-now margin would keep it, this test is about FH mechanics
-    res = evaluate(squad, pool, proj, 2, cfg={"chip_now_min_gain_vs_hold": 0.0}, chips_available=["freehit"])
+    res = evaluate(squad, pool, proj, 2, stability_threshold=0.0, chips_available=["freehit"])
     plan = res["recommended_plan"]
     owned = set(squad.element)
     fh = plan["free_hit"]
@@ -225,7 +224,7 @@ def test_solver_status_reaches_the_decision_scope(monkeypatch):
         "solver": {"global_optimum_proven": False, "max_gap": 0.03, "time_limit_sec": 60, "plans": {"opt": {}}},
     }
 
-    def solve(current_squad_df=None, player_pool_df=None, target_gw=None, hit_cooldown_until=0):
+    def solve(current_squad_df=None, player_pool_df=None, target_gw=None, hit_cooldown_until=0, xp_estimation_sd=None):
         return fake
 
     monkeypatch.setattr(multiperiod_optimizer, "evaluate_transfer_options", solve)

@@ -37,6 +37,9 @@ class ScoringEnsemble:
         self.blend_weights: tuple[float, float, float] | None = blend_weights or (0.72, 0.04, 0.24)
         self.positional_blend_weights: dict[str, tuple[float, float, float]] | None = None
         self.bucket_quantiles: dict[str, dict[str, float]] = {}
+        # Model estimation error of one player-gameweek xP (not match luck); None until fitted. Used only by the
+        # planner's decision gate, never by the objective.
+        self.xp_estimation_sd: float | None = None
         if z10 is None and z90 is None and blend_weights is None:
             self._load_default_calibration()
 
@@ -61,6 +64,8 @@ class ScoringEnsemble:
                 }
             if "bucket_quantiles" in data:
                 self.bucket_quantiles = data["bucket_quantiles"]
+            if data.get("xp_estimation_sd") is not None:
+                self.xp_estimation_sd = float(data["xp_estimation_sd"])
             return True
         except Exception:
             return False
@@ -74,12 +79,28 @@ class ScoringEnsemble:
                 [round(w, 4) for w in self.blend_weights] if self.blend_weights is not None else [0.72, 0.04, 0.24]
             ),
             "bucket_quantiles": self.bucket_quantiles,
+            "xp_estimation_sd": self.xp_estimation_sd,
         }
         if self.positional_blend_weights is not None:
             res["positional_blend_weights"] = {
                 pos: [round(w, 4) for w in weights] for pos, weights in self.positional_blend_weights.items()
             }
         return res
+
+    def fit_estimation_sd(
+        self, pred: np.ndarray, actual: np.ndarray, player: np.ndarray, min_rows: int = 6, min_xp: float = 2.0
+    ) -> float:
+        """Between-player spread of mean residuals minus what match luck explains:
+        sigma_est^2 = Var_i(mean residual_i) - mean_i(within-player residual variance_i / n_i), floored at 0.
+        Fitted on regular players (n >= min_rows, mean xP >= min_xp), the ones transfers are decided on."""
+        d = pd.DataFrame({"r": np.asarray(actual, float) - np.asarray(pred, float), "p": pred, "player": player})
+        g = d.groupby("player").agg(n=("r", "size"), rbar=("r", "mean"), s2=("r", "var"), p=("p", "mean"))
+        g = g[(g.n >= min_rows) & (g.p >= min_xp)]
+        if len(g) < 30:
+            self.xp_estimation_sd = None
+            return float("nan")
+        self.xp_estimation_sd = round(float(np.sqrt(max(0.0, g.rbar.var() - (g.s2 / g.n).mean()))), 4)
+        return self.xp_estimation_sd
 
     def calibrate(
         self,

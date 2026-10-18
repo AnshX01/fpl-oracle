@@ -24,6 +24,7 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from statistics import NormalDist
 from typing import Any, Literal
 
 import numpy as np
@@ -111,116 +112,15 @@ class MultiPeriodConfig:
     # Owner rule: no back-to-back chips. Chip weeks must be at least this many gameweeks apart (1 = no rule).
     # With no blank/double gameweeks announced, flat projections otherwise bunch every chip into the first weeks.
     min_gameweeks_between_chips: int = 2
-    # A chip is played this week only if it beats the best no-chip plan (which still schedules it later)
-    # by this many discounted horizon xP. Below that the chip is kept for a fixture-specific week.
-    chip_now_min_gain_vs_hold: float = 3.0
+    # Decision rule: act only if P(true gain > 0) >= this, given the model's fitted estimation error
+    # (docs/decision_model.md section 3). 0.75 = act on a 3-to-1 edge; set before looking at any live result.
+    decision_confidence: float = 0.75
     w_bench_mean: float = 0.05  # flat weight on every bench player; bench order is chosen after the solve
     lambda_bank: float = 0.05  # 0.05 xP per 1.0m (£0.1m = 0.005 xP)
     chip_week_ft_rule: Literal["preserve", "preserve_plus_one"] = "preserve"
     pruning_limits: dict[str, int] = field(default_factory=lambda: {"GKP": 15, "DEF": 45, "MID": 45, "FWD": 25})
     enablers_count: int = 5
     ft_terminal_increments: tuple[float, float, float, float] = (1.0, 0.8, 0.6, 0.4)
-    # Hit policy configuration (WI-2.5)
-    hit_threshold_base: float = 2.0  # Default base net xP gain over roll required to justify a hit
-    hit_threshold_per_hit: float = 0.5  # Compounding margin required per additional hit beyond the first
-    hit_p_star_base: float = 0.60  # Base required P(J_plan > J_roll) to recommend a hit [PROVISIONAL]
-    hit_k_sigma_base: float = 0.25  # Base hurdle multiplier k = Phi^-1(p*) for Delta >= k * sigma_Delta [PROVISIONAL]
-    hit_risk_adjustments: dict[str, float] = field(
-        default_factory=lambda: {
-            "conservative": 1.0,
-            "protect_lead": 1.0,
-            "balanced": 0.0,
-            "points": 0.0,
-            "aggressive": -1.0,
-            "chase_deficit": -1.0,
-        }
-    )
-    hit_risk_p_star_adjustments: dict[str, float] = field(
-        default_factory=lambda: {
-            "conservative": 0.15,
-            "protect_lead": 0.15,
-            "balanced": 0.0,
-            "points": 0.0,
-            "aggressive": -0.10,
-            "chase_deficit": -0.10,
-        }
-    )
-    hit_risk_k_adjustments: dict[str, float] = field(
-        default_factory=lambda: {
-            "conservative": 0.42,
-            "protect_lead": 0.42,
-            "balanced": 0.0,
-            "points": 0.0,
-            "aggressive": -0.25,
-            "chase_deficit": -0.25,
-        }
-    )
-
-    def compute_hit_parameters(
-        self,
-        risk_preference: str = "balanced",
-        mini_league_mode: str | None = None,
-        mini_league_deficit: float | None = None,
-    ) -> tuple[float, float]:
-        """
-        Derives p* and k hurdle parameters from risk preference and mini-league deficit (WI-2.5).
-        [PROVISIONAL: hand-set heuristics; to be tuned on walk-forward backtest after WI-4.1]
-        Under the Gaussian assumption Delta ~ N(mu, sigma^2), P(Delta > 0) >= p* implies mu >= k * sigma,
-        where k = Phi^-1(p*).
-        - Balanced mode (deficit < 20): p* = 0.60, k = Phi^-1(0.60) = 0.25
-        - Aggressive / Chasing deficit (deficit >= 20): p* = 0.50, k = Phi^-1(0.50) = 0.00
-        - Conservative / Defending lead (deficit <= -20): p* = 0.75, k = Phi^-1(0.75) = 0.67
-        Rule: Hit is recommended if and only if (P(Delta > 0) >= p*) AND (mean_delta >= k * sigma_delta).
-        """
-        risk_key = (mini_league_mode or risk_preference).lower()
-        p_adj = self.hit_risk_p_star_adjustments.get(risk_key, 0.0)
-        k_adj = self.hit_risk_k_adjustments.get(risk_key, 0.0)
-
-        deficit_p_adj = 0.0
-        deficit_k_adj = 0.0
-        if mini_league_deficit is not None:
-            if mini_league_deficit >= 20.0:
-                deficit_p_adj = -0.10
-                deficit_k_adj = -0.25
-            elif mini_league_deficit <= -20.0:
-                deficit_p_adj = 0.15
-                deficit_k_adj = 0.42
-
-        p_star = max(0.40, min(0.95, self.hit_p_star_base + p_adj + deficit_p_adj))
-        k = max(0.00, min(3.0, self.hit_k_sigma_base + k_adj + deficit_k_adj))
-        return round(p_star, 2), round(k, 2)
-
-    def compute_hit_threshold(
-        self,
-        hits: int = 1,
-        risk_preference: str = "balanced",
-        mini_league_mode: str | None = None,
-        mini_league_deficit: float | None = None,
-    ) -> float:
-        """
-        Derives the dynamic hit justification threshold from risk preference and mini-league context (WI-2.5).
-        - Default: 2.0 net xP gain over roll for 1 hit in balanced mode.
-        - Conservative / Defending lead: +1.0 xP threshold hurdle (3.0 xP required).
-        - Aggressive / Chasing deficit: -1.0 xP threshold hurdle (1.0 xP required).
-        - Deficit >= 20 pts: additional -0.5 xP discount to encourage upside moves.
-        - Compounding: +0.5 xP margin per additional hit beyond the first.
-        """
-        if hits <= 0:
-            return 0.0
-
-        risk_key = (mini_league_mode or risk_preference).lower()
-        risk_adj = self.hit_risk_adjustments.get(risk_key, 0.0)
-
-        deficit_adj = 0.0
-        if mini_league_deficit is not None:
-            if mini_league_deficit >= 20.0:
-                deficit_adj = -0.5
-            elif mini_league_deficit <= -20.0:
-                deficit_adj = 0.5
-
-        compounding = max(0, hits - 1) * self.hit_threshold_per_hit
-        effective_threshold = max(0.5, self.hit_threshold_base + risk_adj + deficit_adj + compounding)
-        return round(effective_threshold, 2)
 
 
 @dataclass
@@ -1460,41 +1360,6 @@ class MultiPeriodOptimizer:
             "trajectory": trajectory,
         }
 
-    def _score_robustness(
-        self, candidates: list[dict[str, Any]], roll: dict[str, Any], player_pool_df: pd.DataFrame, n_sims: int
-    ) -> None:
-        """
-        Simulated week-1 score distribution of every candidate (plus later-week xP), then P(plan beats roll),
-        sigma of the difference and how often each plan wins. Without the simulator nothing is invented:
-        the fields stay None and the hit verdict falls back to the plain xP bar.
-        """
-        if n_sims <= 0 or len(candidates) < 2:
-            return
-        try:
-            from fpl_oracle.sim.match_sim import match_simulator
-
-            sim_res = match_simulator.simulate_gameweek(player_pool_df, n_sims=n_sims, seed=42)
-            scores = []
-            for cand in candidates:
-                squad_pts = sim_res.get_squad_score_distribution(
-                    cand["starting_xi"], cand["bench_ids"], cand["captain_id"], cand["vice_captain_id"]
-                )
-                later_xp = sum(a["net_xp"] for a in cand["trajectory"][1:])
-                scores.append(squad_pts - float(cand["hit_cost"]) + later_xp)
-        except Exception as ex:
-            logger.warning("Plan not simulated, robustness not scored: %s", ex)
-            return
-        matrix = np.array(scores)
-        winners = np.argmax(matrix, axis=0)
-        roll_scores = scores[next(i for i, c in enumerate(candidates) if c is roll)]
-        for i, cand in enumerate(candidates):
-            cand["robustness_score"] = round(float(np.mean(winners == i)), 2)
-            cand["is_no_regret"] = bool(cand["robustness_score"] >= 0.70)
-            diff = scores[i] - roll_scores
-            cand["p_beat_roll"] = round(float((diff > 0).mean()), 3) if cand is not roll else 1.0
-            cand["sigma_delta"] = round(float(diff.std()), 3)
-            cand["mc_delta_mean"] = round(float(diff.mean()), 3)
-
     def evaluate_transfer_options(
         self,
         current_squad_df: pd.DataFrame,
@@ -1514,7 +1379,6 @@ class MultiPeriodOptimizer:
         mini_league_deficit: float | None = None,
         include_price_gain: bool = False,
         stability_threshold: float = 0.3,
-        num_mc_scenarios: int = 50,
         horizon_len: int | None = None,
         chips_by_set: dict[int, list[str] | set[str]] | None = None,
         chips_already_used: set[str] | list[str] | None = None,
@@ -1522,6 +1386,7 @@ class MultiPeriodOptimizer:
         forced_current_chip: str | None = None,
         time_limit_sec: float | None = None,
         enforce_hit_gain: bool = True,
+        xp_estimation_sd: float | None = None,
     ) -> dict[str, Any]:
         """
         Comprehensive multi-period solver producing the required comparison set (WI-2.2):
@@ -1721,56 +1586,60 @@ class MultiPeriodOptimizer:
         report_search_progress("Checking hits and the chip options")
         add_plans(plans)
         cand_roll = unique[move_key(by_name["roll"])]
-        self._score_robustness(list(unique.values()), cand_roll, player_pool_df, int(num_mc_scenarios))
-        p_star, k_hurdle = self.config.compute_hit_parameters(
-            risk_preference=risk_preference,
-            mini_league_mode=mini_league_mode,
-            mini_league_deficit=mini_league_deficit,
-        )
+        # --- one decision rule (docs/decision_model.md section 3): act only when the gain beats the baseline by
+        # more than the model's own estimation error, E[dJ] >= max(m_min, z * sigma_est(dJ)). A player's error
+        # is the same in every week (correlated), errors of different players are independent.
+        sigma_est = float(xp_estimation_sd or 0.0)
+        z = NormalDist().inv_cdf(self.config.decision_confidence)
+
+        def exposure(cand: dict[str, Any]) -> dict[int, float]:
+            weights: dict[int, float] = defaultdict(float)
+            for idx, act in enumerate(cand["trajectory"]):
+                disc = self.config.gamma**idx
+                for p in act["starters"]:
+                    weights[int(p)] += disc
+                if act.get("captain") is not None:
+                    weights[int(act["captain"])] += disc * (2 if act.get("chip") == "3xc" else 1)
+                if act.get("chip") == "bboost":
+                    for p in act["bench"]:
+                        weights[int(p)] += disc
+            return weights
+
+        def confident(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+            wa, wb = exposure(a), exposure(b)
+            sigma = sigma_est * math.sqrt(sum((wa.get(p, 0.0) - wb.get(p, 0.0)) ** 2 for p in set(wa) | set(wb)))
+            delta = a["total_objective"] - b["total_objective"]
+            needed = max(stability_threshold, z * sigma)
+            return {
+                "gain": round(delta, 2),
+                "uncertainty": round(sigma, 2),
+                "needed": round(needed, 2),
+                "passed": delta >= needed,
+                "confidence": self.config.decision_confidence,
+            }
 
         def hit_check(cand: dict[str, Any]) -> tuple[bool, str]:
-            """(allowed, verdict text). A hit needs the owner's raw-gain rule AND the simulated test."""
-            hits = cand["hits"]
-            if hits == 0:
+            """(allowed, verdict text). A hit needs the owner's raw-gain rule AND a confident gain over the best
+            plan without a hit (the -4 per hit is already inside the objective)."""
+            if cand["hits"] == 0:
                 return True, "No hit recommended"
-            delta = cand["horizon_gain_vs_roll"]
-            threshold = self.config.compute_hit_threshold(
-                hits=hits,
-                risk_preference=risk_preference,
-                mini_league_mode=mini_league_mode,
-                mini_league_deficit=mini_league_deficit,
-            )
-            p_beat, sigma = cand.get("p_beat_roll"), cand.get("sigma_delta")
             if enforce_hit_gain and cand["expected_player_gain"] + 1e-9 < cand["hit_cost"]:
                 return False, (
                     f"AVOID: Hit of -{cand['hit_cost']} pts is not covered by the transferred players' own "
                     f"expected returns ({cand['expected_player_gain']:+.2f} xP)."
                 )
-            if p_beat is None or sigma is None:
-                # No simulation: only the fixed xP bar can be applied, and the text says so
-                if delta >= threshold:
-                    return True, (
-                        f"JUSTIFIED: Hit of -{hits * 4} pts clears the {threshold:.2f} xP bar "
-                        f"(Delta={delta:+.2f} xP; not simulated)."
-                    )
-                return False, (
-                    f"MARGINAL: Hit yields {delta:+.2f} net xP, below the {threshold:.2f} xP bar "
-                    "(not simulated). Rolling or single FT preferred."
-                )
-            k_xp = round(k_hurdle * sigma, 2)
-            if p_beat >= p_star and delta >= k_xp and delta > 0.0:
+            no_hit = [c for c in unique.values() if c["hits"] == 0 and c["chip"] == cand["chip"]]
+            base = max(no_hit, key=lambda c: c["total_objective"]) if no_hit else cand_roll
+            check = confident(cand, base)
+            cand["decision_check"] = dict(check, versus="best plan without a hit")
+            if check["passed"]:
                 return True, (
-                    f"JUSTIFIED: Hit of -{hits * 4} pts justified: P(J_plan > J_roll) = {p_beat:.2f} >= {p_star:.2f} "
-                    f"and Delta={delta:+.2f} xP >= {k_hurdle:.2f}*sigma ({k_xp:.2f} xP)."
-                )
-            if delta > 0.0:
-                return False, (
-                    f"MARGINAL: Hit yields +{delta:.2f} net xP but fails hurdle: P(J_plan > J_roll) = "
-                    f"{p_beat:.2f} vs {p_star:.2f} required and Delta vs {k_hurdle:.2f}*sigma ({k_xp:.2f} xP). "
-                    "Rolling or single FT preferred."
+                    f"JUSTIFIED: the -{cand['hit_cost']} hit gains {check['gain']:+.2f} xP over the best plan "
+                    f"without it, above its {check['uncertainty']:.2f} xP uncertainty."
                 )
             return False, (
-                f"AVOID: Hit fails to recover points (delta={delta:.2f} xP, P(J_plan > J_roll) = {p_beat:.2f})."
+                f"MARGINAL: the -{cand['hit_cost']} hit gains {check['gain']:+.2f} xP, within its "
+                f"{check['uncertainty']:.2f} xP uncertainty (needs {check['needed']:.2f}). Free transfers only."
             )
 
         def gate_new() -> None:
@@ -1827,26 +1696,31 @@ class MultiPeriodOptimizer:
 
             rec_plan = top_cand
             stability_note = None
-            if top_cand is not cand_roll and top_cand["objective_gain_vs_roll"] < stability_threshold and not forced:
-                rec_plan = cand_roll
-                stability_note = (
-                    f"Roll transfer recommended. Top move ({top_cand['objective_gain_vs_roll']:+.2f} xP over the "
-                    f"horizon) does not exceed {stability_threshold:.2f} xP stability threshold."
-                )
-                rec_plan["recommendation_summary"] = stability_note
-            margin = self.config.chip_now_min_gain_vs_hold
-            if (
-                rec_plan["chip"]
-                and not forced
-                and hold_cand is not None
-                and rec_plan["total_objective"] - hold_cand["total_objective"] < margin
-            ):
-                stability_note = (
-                    f"{rec_plan['chip']} now beats the best plan that keeps it by only "
-                    f"{rec_plan['total_objective'] - hold_cand['total_objective']:+.2f} xP (needs {margin:.1f}); "
-                    "the chip is kept for a better week."
-                )
-                rec_plan = hold_cand
+            if not forced and rec_plan["chip"] and hold_cand is not None:
+                # Playing a chip now is judged against keeping it (which includes the same chip next week)
+                check = confident(rec_plan, hold_cand)
+                if not check["passed"]:
+                    stability_note = (
+                        f"Keep the chip: playing it now gains {check['gain']:+.2f} xP over keeping it, within the "
+                        f"{check['uncertainty']:.2f} xP uncertainty of the forecasts (needs {check['needed']:.2f})."
+                    )
+                    rejected = dict(check, chip=rec_plan["chip"], versus="keeping the chip")
+                    rec_plan = hold_cand
+                    rec_plan["rejected_alternative"] = rejected
+                else:
+                    rec_plan["decision_check"] = dict(check, versus="keeping the chip")
+            if not forced and not rec_plan["chip"] and rec_plan is not cand_roll:
+                check = confident(rec_plan, cand_roll)
+                if not check["passed"]:
+                    stability_note = (
+                        f"Roll the transfer: the best move gains {check['gain']:+.2f} xP, within the "
+                        f"{check['uncertainty']:.2f} xP uncertainty of the forecasts (needs {check['needed']:.2f})."
+                    )
+                    cand_roll["rejected_alternative"] = dict(check, versus="rolling")
+                    rec_plan = cand_roll
+                else:
+                    rec_plan.setdefault("decision_check", dict(check, versus="rolling"))
+            if stability_note:
                 rec_plan["recommendation_summary"] = stability_note
             rejected_hit = next((c for c in ranked if c["total_objective"] > top_cand["total_objective"]), None)
             rec_chip = rec_plan["chip"]
@@ -1889,12 +1763,6 @@ class MultiPeriodOptimizer:
             hit_verdict = f"{rejected_hit['hit_verdict']} Best hit plan not recommended."
         else:
             hit_verdict = rec_plan["hit_verdict"]
-        hit_threshold = self.config.compute_hit_threshold(
-            hits=max(1, rec_plan["hits"]),
-            risk_preference=risk_preference,
-            mini_league_mode=mini_league_mode,
-            mini_league_deficit=mini_league_deficit,
-        )
 
         # --- chip table: HOLD (best eligible week-1 plan without a chip) against each chip played now
         hold_obj = hold_cand["total_objective"] if hold_cand else None
@@ -2042,11 +1910,6 @@ class MultiPeriodOptimizer:
             "recommended_plan": rec_plan,
             "candidate_plans": candidate_plans,
             "hit_verdict": hit_verdict,
-            "hit_threshold": hit_threshold,
-            "p_star": p_star,
-            "k_hurdle": k_hurdle,
-            "p_beat_roll": rec_plan.get("p_beat_roll"),
-            "sigma_delta": rec_plan.get("sigma_delta"),
             "stability_note": stability_note,
             "recommended_chip": rec_chip,
             "chip_action": "DEPLOY" if rec_chip else "HOLD",

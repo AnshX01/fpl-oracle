@@ -8,6 +8,10 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 
 
+def _logit(p: np.ndarray) -> np.ndarray:
+    return np.log(p / (1.0 - p)).reshape(-1, 1)
+
+
 class Calibrator:
     def __init__(self, method: str = "isotonic"):
         self.method = method
@@ -19,9 +23,9 @@ class Calibrator:
             iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
             iso.fit(y_prob, y_true)
             self.model = iso
-        else:  # platt scaling
+        else:  # Platt scaling on the logit: smooth and monotone, no plateau on thin top bins
             lr = LogisticRegression()
-            lr.fit(y_prob.reshape(-1, 1), y_true)
+            lr.fit(_logit(y_prob), y_true)
             self.model = lr
 
     def calibrate(self, y_prob: np.ndarray) -> np.ndarray:
@@ -31,4 +35,4 @@ class Calibrator:
         if self.method == "isotonic":
             return np.clip(self.model.predict(y_prob), 0.0, 1.0)
         else:
-            return self.model.predict_proba(y_prob.reshape(-1, 1))[:, 1]
+            return self.model.predict_proba(_logit(y_prob))[:, 1]

@@ -46,7 +46,7 @@ class DefConModel(BaseComponent):
             verbosity=-1,
             n_jobs=4,
         )
-        self.calibrator = Calibrator("isotonic")
+        self.calibrator = Calibrator("platt")  # smooth logit calibration: no plateau on the thin top bin
 
         # Position overdispersion alpha (Var = mu + alpha * mu^2)
         self.dispersions: dict[str, float] = {
