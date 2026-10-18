@@ -1,6 +1,6 @@
 /**
- * Small reusable UI components: GlassCard, Button, Field (Input), Modal,
- * Tabs, Badge, Toasts, plus Icon, Disclosure, Skeleton and Menu.
+ * Small reusable UI components: GlassCard, Button, Field, Modal, Tabs, Badge,
+ * Toasts, Icon and Skeleton.
  * Styling lives in /static/css/ui.css and reads only tokens.css variables.
  */
 (function () {
@@ -34,7 +34,7 @@
     name: 'UiButton',
     components: { UiIcon: Icon },
     props: {
-      variant: { type: String, default: 'default' }, // default | primary | ghost | danger
+      variant: { type: String, default: 'default' }, // default | primary | ghost
       size: { type: String, default: 'md' },
       icon: { type: String, default: '' },
       loading: Boolean,
@@ -57,8 +57,8 @@
 
   const GlassCard = {
     name: 'GlassCard',
-    props: { title: String, subtitle: String, lift: Boolean, tag: { type: String, default: 'section' } },
-    template: `<component :is="tag" class="glass card" :class="{ lift }">
+    props: { title: String, subtitle: String, tag: { type: String, default: 'section' } },
+    template: `<component :is="tag" class="glass card">
       <header v-if="title || $slots.actions" class="card-head">
         <div><h3 v-if="title" class="card-title">{{ title }}</h3><p v-if="subtitle" class="card-sub">{{ subtitle }}</p></div>
         <div v-if="$slots.actions" class="card-actions"><slot name="actions" /></div>
@@ -74,7 +74,6 @@
       label: String,
       placeholder: String,
       type: { type: String, default: 'text' },
-      rows: Number,
       select: Boolean,
       id: String,
     },
@@ -83,7 +82,6 @@
     template: `<div class="field">
       <label v-if="label" class="field-label" :for="id || uid">{{ label }}</label>
       <select v-if="select" class="input" :id="id || uid" :value="modelValue" @change="$emit('update:modelValue', $event.target.value)"><slot /></select>
-      <textarea v-else-if="rows" class="input" :id="id || uid" :rows="rows" :placeholder="placeholder" :value="modelValue" @input="$emit('update:modelValue', $event.target.value)"></textarea>
       <input v-else class="input" :id="id || uid" :type="type" :placeholder="placeholder" :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" />
     </div>`,
   };
@@ -93,7 +91,7 @@
   const Modal = {
     name: 'UiModal',
     components: { UiButton: Button },
-    props: { open: Boolean, title: String, wide: Boolean, drawer: Boolean },
+    props: { open: Boolean, title: String, wide: Boolean },
     emits: ['close'],
     data() { return { returnFocus: null }; },
     watch: {
@@ -119,8 +117,8 @@
       },
     },
     template: `<transition name="modal">
-      <div v-if="open" class="modal-backdrop" :class="{ 'drawer-wrap': drawer }" @mousedown.self="$emit('close')">
-        <div ref="dialog" class="modal glass" :class="{ wide, drawer }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1" @keydown="onKey">
+      <div v-if="open" class="modal-backdrop" @mousedown.self="$emit('close')">
+        <div ref="dialog" class="modal" :class="{ wide }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1" @keydown="onKey">
           <header class="modal-head">
             <h2 class="modal-title">{{ title }}</h2>
             <ui-button variant="ghost" icon="x" icon-only size="sm" aria-label="Close dialog" @click="$emit('close')"></ui-button>
@@ -134,8 +132,7 @@
 
   const Tabs = {
     name: 'UiTabs',
-    components: { UiIcon: Icon },
-    props: { modelValue: String, items: { type: Array, required: true }, label: String, segmented: Boolean, idPrefix: { type: String, default: 'tab' } },
+    props: { modelValue: String, items: { type: Array, required: true }, label: String, idPrefix: { type: String, default: 'tab' } },
     emits: ['update:modelValue'],
     methods: {
       move(event, index) {
@@ -148,12 +145,12 @@
         this.$nextTick(() => { const el = this.$el.querySelector('[data-tab="' + this.items[next].key + '"]'); if (el) el.focus(); });
       },
     },
-    template: `<div class="tabs" :class="{ seg: segmented }" role="tablist" :aria-label="label">
+    template: `<div class="tabs" role="tablist" :aria-label="label">
       <button v-for="(item, i) in items" :key="item.key" type="button" class="tab" role="tab" :data-tab="item.key"
         :id="idPrefix + '-' + item.key" :aria-selected="modelValue === item.key ? 'true' : 'false'"
         :aria-controls="idPrefix + '-panel-' + item.key" :tabindex="modelValue === item.key ? 0 : -1"
         @click="$emit('update:modelValue', item.key)" @keydown="move($event, i)">
-        <ui-icon v-if="item.icon" :name="item.icon" :size="16" />{{ item.label }}
+        {{ item.label }}
       </button>
     </div>`,
   };
@@ -178,48 +175,6 @@
     template: `<span class="skeleton" :style="{ width, height }" aria-hidden="true"></span>`,
   };
 
-  const Disclosure = {
-    name: 'UiDisclosure',
-    components: { UiIcon: Icon },
-    props: { title: String, hint: String, open: Boolean },
-    template: `<details class="disclosure" :open="open">
-      <summary><span>{{ title }}<span v-if="hint" class="subtle"> {{ hint }}</span></span><ui-icon class="chev" name="chevron-down" :size="16" /></summary>
-      <div class="disclosure-body"><slot /></div>
-    </details>`,
-  };
-
-  const Menu = {
-    name: 'UiMenu',
-    components: { UiIcon: Icon, UiBadge: Badge, UiButton: Button },
-    props: { label: String, icon: { type: String, default: 'ellipsis' }, items: { type: Array, required: true } },
-    emits: ['select'],
-    data() { return { shown: false }; },
-    mounted() { this._off = (e) => { if (this.shown && !this.$el.contains(e.target)) this.shown = false; }; document.addEventListener('mousedown', this._off); },
-    unmounted() { document.removeEventListener('mousedown', this._off); },
-    methods: {
-      toggle() { this.shown = !this.shown; if (this.shown) this.$nextTick(() => { const f = this.$el.querySelector('.menu-item'); if (f) f.focus(); }); },
-      pick(item) { this.shown = false; this.$emit('select', item.key); },
-      key(event) {
-        const items = [...this.$el.querySelectorAll('.menu-item')];
-        const i = items.indexOf(document.activeElement);
-        if (event.key === 'Escape') { this.shown = false; const b = this.$el.querySelector('.menu-trigger'); if (b) b.focus(); }
-        else if (event.key === 'ArrowDown') { event.preventDefault(); (items[i + 1] || items[0]).focus(); }
-        else if (event.key === 'ArrowUp') { event.preventDefault(); (items[i - 1] || items[items.length - 1]).focus(); }
-      },
-    },
-    template: `<div class="menu" @keydown="key">
-      <ui-button class="menu-trigger" variant="ghost" :icon="icon" icon-only :aria-label="label" aria-haspopup="menu" :aria-expanded="shown ? 'true' : 'false'" @click="toggle"></ui-button>
-      <transition name="menu">
-        <div v-if="shown" class="menu-list" role="menu" :aria-label="label">
-          <button v-for="item in items" :key="item.key" type="button" class="menu-item" role="menuitem" @click="pick(item)">
-            <ui-icon :name="item.icon" :size="16" />{{ item.label }}
-            <ui-badge v-if="item.badge" :tone="item.tone || 'muted'">{{ item.badge }}</ui-badge>
-          </button>
-        </div>
-      </transition>
-    </div>`,
-  };
-
   window.FPLUI = {
     register(app) {
       app.component('UiIcon', Icon);
@@ -231,8 +186,6 @@
       app.component('UiTabs', Tabs);
       app.component('UiToasts', Toasts);
       app.component('UiSkeleton', Skeleton);
-      app.component('UiDisclosure', Disclosure);
-      app.component('UiMenu', Menu);
     },
   };
 })();

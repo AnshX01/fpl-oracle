@@ -145,7 +145,7 @@ def test_deadline_distinct_states():
 
 
 def test_league_name_is_guarded():
-    """Verify leagueData.league_name is guarded against undefined."""
+    """The league name comes from the published decision card and has a fallback when it is missing."""
     html = INDEX_HTML.read_text(encoding="utf-8")
-    assert "leagueData.league_name ||" not in html
-    assert "(leagueData && leagueData.league_name)" in html
+    assert "leagueData" not in html
+    assert "card.rivals.league_name || 'Mini-league'" in html
