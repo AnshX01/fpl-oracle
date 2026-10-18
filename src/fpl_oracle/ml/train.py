@@ -23,7 +23,6 @@ from fpl_oracle.ml.components.minutes import MinutesModel
 from fpl_oracle.ml.ensemble import ScoringEnsemble
 from fpl_oracle.ml.eval import model_evaluator
 from fpl_oracle.ml.model_registry import model_registry
-from fpl_oracle.ml.quantiles import ConformalQuantileRegressor
 
 logger = logging.getLogger("fpl_oracle.train")
 
@@ -244,22 +243,6 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
     z10, z90 = candidate_ensemble.calibrate(cal_comps_flat, X_cal, Y_cal)
     logger.info(f"Empirical quantile calibration fit: z10={z10:.3f}, z90={z90:.3f}, blend_weights={bw}")
 
-    # 6b. Refit and recalibrate CQR quantile regression models on rolling finalised data (D4)
-    logger.info("Refitting and recalibrating CQR quantile regression models on rolling data (D4)...")
-    candidate_cqr = ConformalQuantileRegressor(nominal_coverage=0.80, n_estimators=50, random_state=42)
-    candidate_cqr.fit(
-        X_train=X_fit,
-        y_train=Y_fit["target_points"],
-        pos_train=meta_train.loc[fit_mask, "position"],
-    )
-    candidate_cqr.calibrate_conformal(
-        X_cal=X_cal,
-        y_cal=Y_cal["target_points"],
-        pos_cal=meta_train.loc[cal_mask, "position"],
-        shrink_across_positions=True,
-    )
-    candidate_ensemble.set_cqr(candidate_cqr)
-
     # 7. Evaluate candidate models on holdout validation split with real dynamic ablation (M8)
     logger.info("Evaluating candidate models on holdout validation split with real ablation...")
     mins_val = candidate_models["minutes_model"].predict(X_val)
@@ -418,12 +401,27 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
             },
         }
 
+    def refit_on_all_rows() -> dict[str, Any]:
+        """Final bundle: same recipe refit on every finalized row (the gate has passed on held-out metrics)."""
+        logger.info(f"Gate passed: refitting all components on all {len(X)} finalized rows...")
+        final_models = {name: type(m)() for name, m in candidate_models.items()}  # type: ignore[call-arg]
+        for name, m in final_models.items():
+            logger.info(f"Refitting {name} on full corpus...")
+            m.fit(X, Y)
+        return final_models
+
     provenance = {
         "operation_id": operation_id,
         "fit": block_provenance(meta_train[fit_mask]),
         "calibration": block_provenance(meta_train[cal_mask]),
         "validation": block_provenance(meta[~train_mask]),
         "corpus": block_provenance(meta),
+        # Served weights are refit on the whole corpus; metrics/calibration come from the disjoint blocks above.
+        "served_fit": block_provenance(meta),
+        "metrics_scope": "held_out_candidate_before_final_refit",
+        # z10/z90, bucket quantiles and blend weights were calibrated on the 72% fit's out-of-sample residuals;
+        # the refit served models are in-sample there, so 80% interval coverage is not verified for served weights.
+        "served_interval_coverage_verified": False,
     }
     promote_res = model_registry.verify_and_promote(
         candidate_models=candidate_models,
@@ -433,9 +431,9 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
         notes="Automated retrain pipeline with true rolling origins",
         calibration_data=cal_dict,
         rolling_origins=rolling_origins,
-        training_data_df=X_fit,
+        training_data_df=X,
         training_provenance=provenance,
-        cqr=candidate_ensemble.cqr,
+        refit_final=refit_on_all_rows,
     )
 
     X.attrs["training_outcome"] = {**promote_res, "training_provenance": provenance}
@@ -444,8 +442,8 @@ def train_all_models(operation_id: str | None = None) -> tuple[pd.DataFrame, pd.
         logger.info("Retaining existing production models. Aborting full fit.")
         return X, Y
 
-    # 8. Post-promotion provenance lock: no refit after promotion
-    logger.info("Candidate models successfully promoted to production. Weights locked and verified against manifest.")
+    # 8. Weights were refit before promotion and are now locked against the manifest
+    logger.info("Final models promoted to production. Weights locked and verified against manifest.")
 
     logger.info("=== ML Training Pipeline Completed Successfully! ===")
     return X, Y

@@ -28,7 +28,6 @@ class TextExtractor:
         text: str,
         player_name: str,
         player_id: int,
-        target_gw: int | None = None,
     ) -> list[PlayerEvidence]:
         """
         Deterministic NLP rule-based evidence extractor for sports news and press conferences.

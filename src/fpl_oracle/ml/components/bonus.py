@@ -1,9 +1,8 @@
 """
 Bonus Points component model and zero-sum fixture allocator (WI-3.6).
-Accounts for the 2026/27 BPS rules-era shift (R6):
-- Tackled penalty removed
-- CBI earns 1 BPS per 3 actions (was per 2)
-- GK: 2 BPS for any save
+The 2026/27 BPS rules era (tackled penalty removed, CBI 1 BPS per 3 actions, GK 2 BPS per save) is learned
+from 2026-27 rows through the is_2026_27 feature, which the final refit up-weights; there are no hand-set
+positional multipliers.
 - Strictly enforces fixture-level zero-sum constraint: sum(E[bonus]) <= 6.0 per fixture.
 """
 
@@ -59,7 +58,9 @@ class BonusModel(BaseComponent):
     ) -> np.ndarray:
         """
         WI-3.6: Enforce post-hoc fixture-level zero-sum constraint.
-        Total bonus points awarded across all players in a match cannot exceed 6.0.
+        Total bonus points awarded across all players in a match cannot exceed 6.0. With real fixture ids
+        (fixture_ids / X["fixture_id"]) the cap is exactly 6.0 per fixture; groupings by gameweek (training
+        corpora) scale it by the number of matches they contain.
         """
         n = len(exp_bonus)
         if n == 0:
@@ -80,6 +81,7 @@ class BonusModel(BaseComponent):
                 meta_df = None
 
         # Resolve fixture identifiers
+        exact_fixtures = fixture_ids is not None or "fixture_id" in X.columns
         if fixture_ids is not None:
             fixtures = np.asarray(fixture_ids)
         elif "fixture_id" in X.columns:
@@ -98,8 +100,9 @@ class BonusModel(BaseComponent):
         s_fixtures = pd.Series(fixtures, index=np.arange(n))
         for f_id, idx_list in s_fixtures.groupby(s_fixtures).groups.items():
             idx = idx_list.values if hasattr(idx_list, "values") else np.array(idx_list)
-            # Target cap: 6.0 for single match; scale by number of matches if aggregate round
-            target_cap = max_fixture_bonus if len(idx) <= 35 else float(max_fixture_bonus * (len(idx) / 30.0))
+            target_cap = (
+                max_fixture_bonus if exact_fixtures or len(idx) <= 35 else float(max_fixture_bonus * (len(idx) / 30.0))
+            )
             f_sum = float(np.sum(constrained[idx]))
             if f_sum > target_cap and target_cap > 0:
                 scale = target_cap / f_sum
@@ -118,12 +121,10 @@ class BonusModel(BaseComponent):
         self,
         X: pd.DataFrame,
         fixture_ids: pd.Series | np.ndarray | None = None,
-        apply_era_shift: bool = True,
         apply_fixture_constraint: bool = True,
     ) -> dict[str, np.ndarray]:
         """
-        Predict expected bonus points per player, adapting for the 2026/27 BPS rules-era
-        shift and constraining fixture sums <= 6.0 (WI-3.6).
+        Predict expected bonus points per player, constraining fixture sums <= 6.0 (WI-3.6).
         """
         if not self.is_fitted:
             raise RuntimeError("BonusModel is not fitted.")
@@ -142,24 +143,6 @@ class BonusModel(BaseComponent):
             X_feat[c] = pd.to_numeric(X_feat[c], errors="coerce").fillna(0.0)
 
         exp_bonus = np.clip(self.reg.predict(X_feat), 0.0, 3.0)
-
-        # 2026/27 BPS Rules-Era Shift (R6)
-        if apply_era_shift and "is_2026_27" in X.columns:
-            is_26 = pd.to_numeric(X["is_2026_27"], errors="coerce").fillna(0.0).values > 0
-            if is_26.any():
-                is_gkp = pd.to_numeric(X.get("pos_GKP", 0), errors="coerce").fillna(0.0).values
-                is_fwd = pd.to_numeric(X.get("pos_FWD", 0), errors="coerce").fillna(0.0).values
-                is_def = pd.to_numeric(X.get("pos_DEF", 0), errors="coerce").fillna(0.0).values
-
-                era_mult = np.ones(len(X))
-                era_mult = np.where(is_gkp > 0, 1.25, era_mult)
-                era_mult = np.where(is_fwd > 0, 0.85, era_mult)
-                era_mult = np.where(is_def > 0, 1.05, era_mult)
-                era_mult = np.where(
-                    is_def == 0, np.where(is_gkp == 0, np.where(is_fwd == 0, 0.92, era_mult), era_mult), era_mult
-                )
-
-                exp_bonus = np.where(is_26, exp_bonus * era_mult, exp_bonus)
 
         # Post-hoc fixture-level zero-sum constraint (WI-3.6)
         if apply_fixture_constraint:

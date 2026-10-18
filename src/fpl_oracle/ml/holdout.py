@@ -124,7 +124,6 @@ def save_official_ep_snapshot(
 
 async def freeze_predictions(
     target_gw: int | None = None,
-    force: bool = False,
     dry_run: bool = False,
     custom_holdout_dir: Path | None = None,
 ) -> dict[str, Any]:

@@ -52,7 +52,7 @@ def test_freeze_target_deadline_and_snapshot(tmp_path):
             assert payload["schema_version"] == 2 and payload["snapshot_id"] == "fixture"
             assert datetime.fromisoformat(payload["frozen_at"]) < datetime.fromisoformat(payload["deadline_utc"])
             before = (tmp_path / "gw7_predictions.json").read_bytes()
-            assert await freeze_predictions(7, force=True, custom_holdout_dir=tmp_path) == payload
+            assert await freeze_predictions(7, custom_holdout_dir=tmp_path) == payload
             assert before == (tmp_path / "gw7_predictions.json").read_bytes()
 
     asyncio.run(run())

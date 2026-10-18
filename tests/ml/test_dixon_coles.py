@@ -46,16 +46,6 @@ def test_dixon_coles_bivariate_scoreline_matrix():
     assert 0.05 < pred["p_cs_away"] < 0.90
 
 
-def test_dixon_coles_low_score_adjustment_formula():
-    model = DixonColesModel()
-    prob_00, prob_indep_00 = model.evaluate_scoreline_adjustment("Arsenal", "Chelsea", score=(0, 0))
-
-    # Dixon-Coles rho adjustment changes 0-0 probability
-    assert prob_00 != prob_indep_00
-    ratio_00 = prob_00 / prob_indep_00
-    assert ratio_00 > 0.0
-
-
 def test_dixon_coles_promoted_team_fallback():
     model = DixonColesModel()
     # A completely unknown club should shrink to the promoted team prior

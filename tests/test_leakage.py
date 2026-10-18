@@ -115,21 +115,25 @@ def test_shift_propagation_to_subsequent_gw():
 
 def test_first_career_match_has_no_lookahead():
     """
-    Assert that the very first match of a player's career has 0.0 rolling attacking/defensive form,
-    proving no lookahead contamination from future matches.
+    A player's very first match carries the documented cold-start priors (identical to live serving
+    for a player with no history) and is unchanged by anything he does later.
     """
+    from fpl_oracle.data.features import compute_player_rolling_stats
+
     fe = FeatureEngineering()
     df = make_synthetic_player_history("Rookie Talent", 5)
     X, _ = fe.build_historical_features(df)
 
-    match_0 = X.iloc[0]
-    assert match_0["roll_minutes_3"] == 0.0
-    assert match_0["roll_points_3"] == 0.0
-    assert match_0["roll_xG_3"] == 0.0
-    assert match_0["roll_xA_3"] == 0.0
-    assert match_0["roll_goals_5"] == 0.0
-    assert match_0["roll_assists_5"] == 0.0
-    assert match_0["roll_defcon_5"] == 0.0
+    priors = compute_player_rolling_stats(None, pos_code="FWD", val_m=11.5)
+    for col, prior in priors.items():
+        assert X.iloc[0][col] == prior, f"{col}: first match must use the cold-start prior"
+
+    df_future = df.copy()
+    df_future.loc[1:, "total_points"] = 30
+    df_future.loc[1:, "goals_scored"] = 5
+    X_future, _ = fe.build_historical_features(df_future)
+    for col in priors:
+        assert X_future.iloc[0][col] == X.iloc[0][col]
 
 
 def test_dixon_coles_point_in_time_season_leakage():

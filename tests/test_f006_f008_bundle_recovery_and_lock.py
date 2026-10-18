@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from fpl_oracle.ml.model_registry import ModelRegistry
+from fpl_oracle.data.features import FEATURE_SCHEMA_HASH
+from fpl_oracle.ml.model_registry import RECIPE_ID, ModelBundleCorruptError, ModelRegistry
+
+# Restores only accept bundles trained by the current recipe on the current features.
+COMPAT = {"recipe_id": RECIPE_ID, "feature_list_hash": FEATURE_SCHEMA_HASH}
 
 
 def test_corrupt_bundle_auto_recovers_to_previous_version():
@@ -37,6 +41,7 @@ def test_corrupt_bundle_auto_recovers_to_previous_version():
             "versions": [
                 {
                     "version": "v1.0.0",
+                    **COMPAT,
                     "file_hashes": {"minutes_model.pkl": v1_hash},
                 }
             ],
@@ -81,6 +86,7 @@ def test_no_valid_version_raises_clear_error_not_raw_valueerror():
             "versions": [
                 {
                     "version": "v1.0.0",
+                    **COMPAT,
                     "file_hashes": {"minutes_model.pkl": "deadbeef1234"},
                 }
             ],
@@ -100,8 +106,8 @@ def test_no_valid_version_raises_clear_error_not_raw_valueerror():
 
 def test_tampered_manifest_auto_recovers():
     """
-    F-006: Tampered manifest (invalid JSON or corrupt content) must be detected
-    and recovered from disk archives without unhandled crash.
+    F-006: Tampered manifest (invalid JSON or corrupt content) must be detected and fail closed:
+    archives of unknown recipe are never restored.
     """
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -123,9 +129,10 @@ def test_tampered_manifest_auto_recovers():
         reg.manifest_path = models_dir / "manifest.json"
         reg.versions_dir = versions_dir
 
-        success, msg = reg.verify_weight_integrity()
-        assert success is True
-        assert (models_dir / "minutes_model.pkl").read_bytes() == legit_data
+        # Without a manifest no archive can be shown to match this code's recipe: fail closed, never guess
+        with pytest.raises(ModelBundleCorruptError):
+            reg.verify_weight_integrity()
+        assert legit_data == (v1_dir / "minutes_model.pkl").read_bytes()
 
 
 def test_cross_process_bundle_lock_mutual_exclusion():
@@ -218,6 +225,7 @@ def test_cqr_tampering_triggers_quarantine_and_rollback():
             "versions": [
                 {
                     "version": "v1.0.0",
+                    **COMPAT,
                     "file_hashes": {"cqr/cqr_DEF_q10.txt": v1_hash},
                 }
             ],
@@ -283,11 +291,23 @@ def test_rollback_to_previous_bundle_replaces_active_weights():
     active_info = reg.get_active_version()
     assert active_info is not None
     active_ver = active_info["version"]
-    assert active_ver == "v2026.10.16.1307"
-
-    prev_ver = "v2026.10.06.1713"
-    prev_dir = reg.versions_dir / prev_ver
     active_dir = reg.versions_dir / active_ver
+    if not active_dir.exists():
+        pytest.skip(f"Active version {active_ver} has no local archive")
+    active_minutes = hashlib.sha256((active_dir / "minutes_model.pkl").read_bytes()).hexdigest()
+    others = sorted(
+        d.name
+        for d in reg.versions_dir.iterdir()
+        if d.is_dir()
+        and d.name != active_ver
+        and reg.is_compatible(next((v for v in reg.load_manifest()["versions"] if v["version"] == d.name), {}))
+        and (d / "minutes_model.pkl").exists()
+        and hashlib.sha256((d / "minutes_model.pkl").read_bytes()).hexdigest() != active_minutes
+    )
+    if not others:
+        pytest.skip("No distinct archived bundle to roll back to")
+    prev_ver = others[-1]
+    prev_dir = reg.versions_dir / prev_ver
 
     assert prev_dir.exists() and prev_dir.is_dir(), f"Previous version {prev_ver} must be retained in versions/"
     assert active_dir.exists() and active_dir.is_dir(), f"Active version {active_ver} must exist in versions/"

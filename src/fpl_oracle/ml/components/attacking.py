@@ -62,14 +62,17 @@ class AttackingModel(BaseComponent):
         team_ids: pd.Series | np.ndarray | None = None,
         fixture_ids: pd.Series | np.ndarray | None = None,
         assist_rate: float = 0.85,
+        availability: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         WI-3.3: Reconcile player-level expectations with team-level expectations.
 
         Rescales player goals and assists within each team-fixture so that:
-            sum_{p in team} E[goals_p] == implied_team_xG (within 5% tolerance)
-            sum_{p in team} E[assists_p] == assist_rate * implied_team_xG
-        Logs scaling factors for auditability.
+            sum_{p in team} availability_p * E[goals_p] == implied_team_xG (within 5% tolerance)
+            sum_{p in team} availability_p * E[assists_p] == assist_rate * implied_team_xG
+        `availability` (chance of playing in [0, 1]) is applied later by the ensemble, so the team total only
+        holds after that step; weighting by it here hands the goals of an absent player to his teammates
+        instead of losing them. Returned expectations stay unweighted. Logs scaling factors for auditability.
         """
         n = len(exp_goals)
         if n == 0:
@@ -78,6 +81,7 @@ class AttackingModel(BaseComponent):
 
         reconciled_goals = exp_goals.copy()
         reconciled_assists = exp_assists.copy()
+        avail = np.ones(n, dtype=float) if availability is None else np.asarray(availability, dtype=float)
         goal_shares = np.zeros(n, dtype=float)
         assist_shares = np.zeros(n, dtype=float)
 
@@ -147,12 +151,12 @@ class AttackingModel(BaseComponent):
                 continue
 
             # Goals reconciliation
-            s_goals = float(np.sum(reconciled_goals[idx]))
+            s_goals = float(np.sum(reconciled_goals[idx] * avail[idx]))
             if s_goals > 1e-6:
                 kappa_g = float(lambda_team / s_goals)
                 reconciled_goals[idx] = reconciled_goals[idx] * kappa_g
-                new_s_goals = float(np.sum(reconciled_goals[idx]))
-                goal_shares[idx] = reconciled_goals[idx] / lambda_team
+                new_s_goals = float(np.sum(reconciled_goals[idx] * avail[idx]))
+                goal_shares[idx] = reconciled_goals[idx] * avail[idx] / lambda_team
                 logger.debug(
                     "WI-3.3: Reconciled goals for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
                     key,
@@ -166,12 +170,12 @@ class AttackingModel(BaseComponent):
 
             # Assists reconciliation
             lambda_assists = lambda_team * assist_rate
-            s_assists = float(np.sum(reconciled_assists[idx]))
+            s_assists = float(np.sum(reconciled_assists[idx] * avail[idx]))
             if s_assists > 1e-6:
                 kappa_a = float(lambda_assists / s_assists)
                 reconciled_assists[idx] = reconciled_assists[idx] * kappa_a
-                new_s_assists = float(np.sum(reconciled_assists[idx]))
-                assist_shares[idx] = reconciled_assists[idx] / lambda_assists
+                new_s_assists = float(np.sum(reconciled_assists[idx] * avail[idx]))
+                assist_shares[idx] = reconciled_assists[idx] * avail[idx] / lambda_assists
                 logger.debug(
                     "WI-3.3: Reconciled assists for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
                     key,
@@ -230,33 +234,29 @@ class AttackingModel(BaseComponent):
             exp_goals = exp_goals * (1.0 - is_gkp * 0.98)
             exp_assists = exp_assists * (1.0 - is_gkp * 0.95)
 
-        # 3. Set-piece hierarchy adjustments (WI-3.3)
-        if "chance_of_playing" in X.columns:
-            cop = pd.to_numeric(X["chance_of_playing"], errors="coerce").fillna(100.0).values
-            m_weight = np.clip(cop / 100.0, 0.0, 1.0)
-        else:
-            m_weight = np.ones(len(X), dtype=float)
-
+        # 3. Set-piece hierarchy adjustments (WI-3.3). Availability is applied once, by the ensemble.
         # Penalty taker boost: ~0.12 goals/match for primary, ~0.03 for secondary
         if "penalties_order" in X.columns:
             p_ord = pd.to_numeric(X["penalties_order"], errors="coerce").fillna(99).values
-            pen_boost = np.where(p_ord == 1, 0.12, np.where(p_ord == 2, 0.03, 0.0)) * m_weight
-            exp_goals = exp_goals + pen_boost
+            exp_goals = exp_goals + np.where(p_ord == 1, 0.12, np.where(p_ord == 2, 0.03, 0.0))
 
         # Direct free-kick boost: ~0.03 goals/match
         if "direct_freekicks_order" in X.columns:
             fk_ord = pd.to_numeric(X["direct_freekicks_order"], errors="coerce").fillna(99).values
-            fk_boost = np.where(fk_ord == 1, 0.03, np.where(fk_ord == 2, 0.01, 0.0)) * m_weight
-            exp_goals = exp_goals + fk_boost
+            exp_goals = exp_goals + np.where(fk_ord == 1, 0.03, np.where(fk_ord == 2, 0.01, 0.0))
 
         # Corner / indirect free-kick boost: ~0.08 assists/match for primary
         if "corners_and_indirect_freekicks_order" in X.columns:
             cn_ord = pd.to_numeric(X["corners_and_indirect_freekicks_order"], errors="coerce").fillna(99).values
-            cn_boost = np.where(cn_ord == 1, 0.08, np.where(cn_ord == 2, 0.03, 0.0)) * m_weight
-            exp_assists = exp_assists + cn_boost
+            exp_assists = exp_assists + np.where(cn_ord == 1, 0.08, np.where(cn_ord == 2, 0.03, 0.0))
 
         # 4. Team-level reconciliation (WI-3.3)
         if reconcile:
+            availability = (
+                np.clip(pd.to_numeric(X["chance_of_playing"], errors="coerce").fillna(100.0).values / 100.0, 0.0, 1.0)
+                if "chance_of_playing" in X.columns
+                else None
+            )
             rec_g, rec_a, g_shares, a_shares = self.reconcile_team_goals_and_assists(
                 exp_goals=exp_goals,
                 exp_assists=exp_assists,
@@ -264,6 +264,7 @@ class AttackingModel(BaseComponent):
                 team_ids=team_ids,
                 fixture_ids=fixture_ids,
                 assist_rate=assist_rate,
+                availability=availability,
             )
             return {
                 "expected_goals": rec_g,

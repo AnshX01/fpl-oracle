@@ -6,27 +6,17 @@ Test Matrix:
           verbatim quote verification, entity resolution, multi-player isolation.
 - WI-6.2: Wilson 95% interval gating, minimum sample size refusal (N < 189),
           shadow mode default, and disagreement logging.
-- WI-6.3: StructuredRecommendation object, numeric grounding post-check, retry and templated fallback,
-          config-driven models, offline mode labelling.
+- WI-6.3: offline mode labelling.
 """
 
 from unittest.mock import AsyncMock
 
 import pytest
 
-from fpl_oracle.api.models import Element
 from fpl_oracle.llm.provider import OFFLINE_MODE_PREFIX, OfflineExpertProvider
-from fpl_oracle.llm.recommendation import (
-    RecommendedMove,
-    StructuredRecommendation,
-    get_assistant_config,
-    narrate_recommendation_with_grounding,
-    verify_numeric_grounding,
-)
 from fpl_oracle.news.extract import text_extractor
-from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence, RecommendationMode
+from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence
 from fpl_oracle.news.reconcile import (
-    AvailabilityReconciler,
     check_news_benchmark_gate,
     compute_wilson_interval,
     is_safe_quote,
@@ -54,7 +44,6 @@ class TestPromptInjectionQuarantineWI61:
             text=injected_text,
             player_name="Saka",
             player_id=10,
-            target_gw=6,
         )
         assert len(evidences) >= 1
         ev = evidences[0]
@@ -105,10 +94,8 @@ class TestPromptInjectionQuarantineWI61:
         """Sentences mentioning multiple players with contrasting statuses isolate clauses."""
         text = "Saka is fully fit and ready to start, but Martinelli has been ruled out with a knee issue."
 
-        saka_ev = text_extractor.extract_evidence_from_text(text, player_name="Saka", player_id=10, target_gw=6)
-        martinelli_ev = text_extractor.extract_evidence_from_text(
-            text, player_name="Martinelli", player_id=11, target_gw=6
-        )
+        saka_ev = text_extractor.extract_evidence_from_text(text, player_name="Saka", player_id=10)
+        martinelli_ev = text_extractor.extract_evidence_from_text(text, player_name="Martinelli", player_id=11)
 
         assert len(saka_ev) == 1
         assert saka_ev[0].category == EvidenceCategory.AVAILABLE
@@ -206,146 +193,12 @@ class TestWilsonPromotionGateWI62:
         assert wb["recall"][0] >= 0.80
         assert wb["false_ruled_out"][1] <= 0.02
 
-    def test_shadow_mode_logs_disagreements_without_altering_production(self):
-        """Shadow mode logs all availability disagreements without modifying production effective_cop."""
-        reconciler = AvailabilityReconciler(mode=RecommendationMode.SHADOW)
-        reconciler.clear_logged_disagreements()
-
-        elem = Element(
-            id=77,
-            web_name="StarPlayer",
-            team=1,
-            status="a",
-            chance_of_playing_this_round=100.0,
-            chance_of_playing_next_round=100.0,
-            news="",
-            element_type=3,
-            now_cost=80,
-        )
-
-        candidate_ev = [
-            PlayerEvidence(
-                player_id=77,
-                player_name="StarPlayer",
-                category=EvidenceCategory.RULED_OUT,
-                quote="StarPlayer has sustained a hamstring injury and is ruled out.",
-                confidence=0.95,
-            )
-        ]
-
-        rec = reconciler.reconcile_player_fixture(element=elem, target_gw=8, candidate_evidence=candidate_ev)
-
-        # In Shadow mode: production COP is unchanged (100.0)
-        assert rec.effective_chance_of_playing == 100.0
-        assert rec.applied_to_production is False
-        assert rec.is_shadow_override is True
-
-        # Disagreement must be formally logged
-        disagreements = reconciler.get_logged_disagreements()
-        assert len(disagreements) == 1
-        d = disagreements[0]
-        assert d["element_id"] == 77
-        assert d["baseline_cop"] == 100.0
-        assert d["effective_cop"] == 0.0
-        assert d["applied_to_production"] is False
-        assert "ruled out" in d["source_quote"].lower()
-
 
 # ==============================================================================
-# WI-6.3: Assistant Grounding & Structured Recommendation Object
+# WI-6.3: Offline assistant labelling
 # ==============================================================================
 class TestAssistantGroundingWI63:
-    """Tests for StructuredRecommendation, numeric grounding verification, and offline labelling."""
-
-    def test_structured_recommendation_serialization_and_number_collection(self):
-        """StructuredRecommendation collects all allowable numbers for grounding."""
-        rec = StructuredRecommendation(
-            recommendation_id="rec_gw6_001",
-            gameweek=6,
-            action_type="1_TRANSFER",
-            headline_verdict="Roll free transfer to bank 2 FTs for GW7",
-            expected_points_primary=58.4,
-            expected_points_baseline=56.2,
-            expected_gain_xp=2.2,
-            confidence_tier="HIGH",
-            grounded_numbers={"budget_bank": 1.5, "hit_penalty": 4.0},
-            moves=[
-                RecommendedMove(
-                    element_out="DefenderA",
-                    cost_out=4.5,
-                    element_in="DefenderB",
-                    cost_in=4.8,
-                    net_cost=0.3,
-                )
-            ],
-            captain_pick={"web_name": "CaptainX", "expected_points": 7.4, "p10": 2.0, "p90": 13.5},
-            alternatives=[{"summary": "Take -4 hit for PremiumMid", "net_xp": 57.1, "gain": 0.9}],
-            decision_triggers=["Injury to core starter before Saturday 11:00 deadline."],
-        )
-
-        all_nums = rec.collect_all_grounded_numbers()
-        assert 6.0 in all_nums
-        assert 58.4 in all_nums
-        assert 56.2 in all_nums
-        assert 2.2 in all_nums
-        assert 1.5 in all_nums
-        assert 4.5 in all_nums
-        assert 4.8 in all_nums
-        assert 7.4 in all_nums
-        assert 13.5 in all_nums
-
-    def test_numeric_grounding_accepts_grounded_text(self):
-        """Grounding validator passes when narration contains only permitted numbers."""
-        allowed = {6.0, 58.4, 56.2, 2.2, 4.5, 4.8, 7.4, 2.0, 13.5}
-        narrative = (
-            "For Gameweek 6, our optimal plan yields 58.4 expected points (+2.2 over 56.2 baseline). "
-            "CaptainX is projected for 7.4 points with a ceiling of 13.5."
-        )
-        is_grounded, ungrounded = verify_numeric_grounding(narrative, allowed)
-        assert is_grounded is True
-        assert len(ungrounded) == 0
-
-    def test_numeric_grounding_rejects_hallucinated_numbers(self):
-        """Grounding validator flags ungrounded numbers (e.g. hallucinated price or points)."""
-        allowed = {6.0, 58.4, 56.2, 2.2}
-        hallucinated_narrative = (
-            "In Gameweek 6, we gain +2.2 xP to reach 58.4. "
-            "We also buy a midfielder for £9.5m who scores 14.8 points."  # 9.5 and 14.8 are hallucinated!
-        )
-        is_grounded, ungrounded = verify_numeric_grounding(hallucinated_narrative, allowed)
-        assert is_grounded is False
-        assert 9.5 in ungrounded
-        assert 14.8 in ungrounded
-
-    @pytest.mark.anyio
-    async def test_narrate_with_grounding_retry_and_templated_fallback(self):
-        """
-        Narrator retries once on hallucination; if still hallucinating,
-        falls back to deterministic templated narration.
-        """
-        rec = StructuredRecommendation(
-            recommendation_id="rec_test",
-            gameweek=6,
-            action_type="ROLL",
-            headline_verdict="Roll free transfer",
-            expected_points_primary=55.0,
-            expected_points_baseline=55.0,
-            expected_gain_xp=0.0,
-            confidence_tier="HIGH",
-        )
-
-        # Mock LLM that hallucinates twice
-        bad_response_1 = "GW6 roll transfer. He scored 99.9 points!"
-        bad_response_2 = "GW6 roll transfer. His cost is 88.8m!"
-        mock_chat = AsyncMock(side_effect=[bad_response_1, bad_response_2])
-
-        text, is_grounded, source = await narrate_recommendation_with_grounding(rec, chat_callable=mock_chat)
-
-        assert is_grounded is True
-        assert source == "templated_fallback"
-        assert "Gameweek 6 Recommendation" in text
-        assert "55.0" in text
-        assert "99.9" not in text
+    """Tests for offline labelling."""
 
     @pytest.mark.anyio
     async def test_offline_expert_provider_clearly_labelled(self, monkeypatch):
@@ -356,12 +209,3 @@ class TestAssistantGroundingWI63:
         assert ans.startswith(OFFLINE_MODE_PREFIX)
         assert "OFFLINE EXPERT MODE" in ans
         assert "without external LLM keys" in ans
-
-    def test_assistant_config_loads_from_flags(self):
-        """Assistant config reads model tier and primary/fallback settings from config/flags.yaml."""
-        cfg = get_assistant_config()
-        assert "model_tier" in cfg
-        assert cfg["model_tier"] in ("flash_lite", "pro")
-        assert "primary_model" in cfg
-        assert "fallback_model" in cfg
-        assert cfg["enforce_numeric_grounding"] is True

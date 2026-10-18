@@ -13,7 +13,6 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
-from fpl_oracle.api.models import BootstrapStatic, Fixture
 from fpl_oracle.config import (
     CONFIG_DIR,
     NEWS_GATE_MAX_FALSE_RULED_OUT,
@@ -40,6 +39,28 @@ DEFAULT_TRUSTED_PUBLISHERS = [
     "premierleague.com",
     "theathletic.com",
 ]
+
+
+UNAVAILABLE_STATUSES = ("i", "s", "u", "n")  # injured, suspended, unavailable (left/loaned), not available
+DOUBT_RECOVERY_PER_GW = 0.5  # share of an official doubt that is still open one further gameweek on
+
+
+def official_chance_of_playing(element: Any, target_gw: int, first_gw: int | None = None) -> float:
+    """
+    Official FPL availability (percent) for target_gw.
+    chance_of_playing_next_round only describes the first upcoming gameweek (first_gw): for later horizon
+    gameweeks the doubt decays towards 100 instead of being applied to the whole horizon. Statuses that are
+    unavailable stay at 0 (the API gives no return date; press evidence may override).
+    """
+    if getattr(element, "status", "a") in UNAVAILABLE_STATUSES:
+        return 0.0
+    cop = getattr(element, "chance_of_playing_next_round", None)
+    if cop is None:
+        cop = getattr(element, "chance_of_playing_this_round", None)
+    if cop is None:
+        return 100.0
+    steps = max(0, target_gw - first_gw) if first_gw is not None else 0
+    return 100.0 - (100.0 - float(cop)) * DOUBT_RECOVERY_PER_GW**steps
 
 
 def get_trusted_publishers() -> list[str]:
@@ -356,23 +377,14 @@ class AvailabilityReconciler:
         else:
             self.mode = RecommendationMode.SHADOW
         self.prob_settings = prob_settings or ReconcileProbabilitySettings()
-        self._logged_disagreements: list[dict[str, Any]] = []
-
-    def get_logged_disagreements(self) -> list[dict[str, Any]]:
-        """Return all logged disagreements between news-adjusted and API-only availability."""
-        return list(self._logged_disagreements)
-
-    def clear_logged_disagreements(self) -> None:
-        """Clear logged disagreements."""
-        self._logged_disagreements.clear()
 
     def reconcile_player_fixture(
         self,
         element: Any,
         target_gw: int,
-        fixture: Fixture | None = None,
         candidate_evidence: list[PlayerEvidence] | None = None,
         extractor_name: str = "deterministic_fallback",
+        first_gw: int | None = None,
     ) -> ReconciledAvailability:
         """
         Reconcile a single player's availability for a specific gameweek and fixture.
@@ -385,13 +397,7 @@ class AvailabilityReconciler:
         news_text = getattr(element, "news", "") or ""
 
         # 1. Authoritative Official FPL Baseline
-        baseline_cop = 100.0
-        if status in ("i", "s"):
-            baseline_cop = 0.0
-        elif getattr(element, "chance_of_playing_next_round", None) is not None:
-            baseline_cop = float(element.chance_of_playing_next_round)
-        elif getattr(element, "chance_of_playing_this_round", None) is not None:
-            baseline_cop = float(element.chance_of_playing_this_round)
+        baseline_cop = official_chance_of_playing(element, target_gw, first_gw)
 
         # Baseline probabilities
         p_avail = baseline_cop / 100.0
@@ -577,22 +583,6 @@ class AvailabilityReconciler:
 
         # Log all disagreements between news-adjusted and API-only availability (WI-6.2)
         if is_shadow_override or abs(effective_cop - baseline_cop) > 0.01:
-            disagreement_entry = {
-                "element_id": elem_id,
-                "web_name": web_name,
-                "target_gw": target_gw,
-                "baseline_status": status,
-                "baseline_cop": baseline_cop,
-                "effective_cop": effective_cop,
-                "mode": str(self.mode),
-                "is_shadow_override": is_shadow_override,
-                "applied_to_production": applied_to_production,
-                "evidence_category": str(evidence_category),
-                "source_quote": source_quote,
-                "source_url": source_url,
-                "reconciliation_reason": reconciliation_reason,
-            }
-            self._logged_disagreements.append(disagreement_entry)
             logger.info(
                 "[AvailabilityDisagreement] %s (ID %s): API=%s%% vs News=%s%% (mode=%s, applied=%s)",
                 web_name,
@@ -625,23 +615,6 @@ class AvailabilityReconciler:
             is_shadow_override=is_shadow_override,
             applied_to_production=applied_to_production,
         )
-
-    def reconcile_squad_availability(
-        self,
-        bootstrap: BootstrapStatic,
-        target_gw: int,
-        candidate_evidence: list[PlayerEvidence] | None = None,
-    ) -> dict[int, ReconciledAvailability]:
-        """Reconcile availability for all active players in bootstrap."""
-        results = {}
-        for elem in bootstrap.elements:
-            rec = self.reconcile_player_fixture(
-                element=elem,
-                target_gw=target_gw,
-                candidate_evidence=candidate_evidence,
-            )
-            results[elem.id] = rec
-        return results
 
 
 availability_reconciler = AvailabilityReconciler()

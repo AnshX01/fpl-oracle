@@ -9,7 +9,6 @@ from filelock import FileLock
 from fpl_oracle.config import MODELS_DIR
 
 BUNDLE_THREAD_LOCK = RLock()
-BUNDLE_LOCK = BUNDLE_THREAD_LOCK  # Backwards-compatible in-process alias
 
 
 _LOCK_CACHE: dict[Path, FileLock] = {}

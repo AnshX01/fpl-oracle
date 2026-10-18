@@ -1,5 +1,7 @@
 """
 Defensive Contribution (DefCon) component model for 2026/27 rules (WI-3.5).
+Predicts P(DefCon | player plays) - the ensemble multiplies by P(play) - so it is trained only on rows with a
+real DefCon label (seasons before 2025-26 never recorded it: NaN) in which the player actually played.
 Replaces the naive binary classifier with a Negative-Binomial count model conditional on minutes,
 evaluates position-specific thresholds (DEF: 10 CBIT, MID/FWD: 12 CBIRT, GKP: 0 ineligible),
 cross-checks against binary estimation to maintain the best-calibrated estimator per position,
@@ -59,13 +61,6 @@ class DefConModel(BaseComponent):
             "FWD": "count",
             "GKP": "rule",
         }
-        # Post-calibration scaling to strictly satisfy <= 5.0% error gate
-        self.position_cal_scale: dict[str, float] = {
-            "DEF": 0.790,
-            "MID": 1.000,
-            "FWD": 1.000,
-            "GKP": 0.000,
-        }
 
     def _get_threshold(self, pos: str) -> int:
         thresh = DEFCON_THRESHOLDS.get(pos)
@@ -76,6 +71,17 @@ class DefConModel(BaseComponent):
         Fit action count regressor and binary classifier, cross-check OOF Brier scores,
         and fit out-of-fold probability calibrator.
         """
+        # Only rows with a real label (NaN = season without DefCon) where the player played.
+        keep = Y["target_defcon"].notna().to_numpy()
+        if "target_minutes" in Y.columns:
+            keep = keep & (Y["target_minutes"].to_numpy() > 0)
+        if not keep.any():
+            # Corpus without any DefCon-era rows (e.g. a pre-2025-26 rolling origin): DefCon did not exist,
+            # so predict() leaves the unfitted estimators at p_defcon = 0.
+            self.is_fitted = True
+            return
+        X, Y = X[keep], Y[keep]
+
         # Time-decay weights + is_2026_27 era feature (retires uniform 5x multiplier)
         weights = np.ones(len(X), dtype=float)
         if "is_2026_27" in X.columns:
@@ -244,18 +250,7 @@ class DefConModel(BaseComponent):
 
         p_defcon = self.calibrator.calibrate(probs_raw)
 
-        # Scale adjustment per position to strictly satisfy <= 5.0% error gate
-        scales = np.ones(n_samples, dtype=float)
-        scales[pos_is_def] = self.position_cal_scale.get("DEF", 0.945)
-        scales[pos_is_mid] = self.position_cal_scale.get("MID", 1.000)
-        scales[pos_is_fwd] = self.position_cal_scale.get("FWD", 1.000)
-        scales[pos_is_gkp] = 0.000
-        p_defcon = p_defcon * scales
-
-        # Enforce zero DefCon probability for goalkeepers
-        if "pos_GKP" in X.columns:
-            p_defcon = p_defcon * (1.0 - X["pos_GKP"].values)
-        elif np.any(pos_is_gkp):
-            p_defcon[pos_is_gkp] = 0.0
+        # Goalkeepers are not DefCon-eligible
+        p_defcon = np.where(pos_is_gkp, 0.0, p_defcon)
 
         return {"p_defcon": p_defcon, "expected_defcon_actions": pred_mu}
