@@ -1,8 +1,16 @@
 {
   "status": "refreshed",
-  "gameweek": 6,
-  "rows_appended": 667,
-  "total_rows": 90970,
-  "refreshed_at": "2026-10-16T10:27:57.582167+00:00",
-  "sha256": "32a646c2024982cd85862e775b9c03149d33d3d86c34809e336d2d62e2ff1ccb"
+  "failed_player_ids": [],
+  "complete": true,
+  "rows": 3883,
+  "finalized_gameweeks": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "refreshed_at": "2026-10-17T13:36:18.462168+00:00",
+  "sha256": "dbfd2f2df1933a0b05acb781d64bb5b5f80814c053f86cfeccc27a597635d671"
 }
