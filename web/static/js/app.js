@@ -78,6 +78,10 @@ const app = createApp({
 
   computed: {
     isDark() { return this.theme === 'dark'; },
+    choiceCount() {
+      const c = this.card && this.card.your_choices;
+      return c ? (c.keep || []).length + (c.avoid || []).length : 0;
+    },
     card() {
       const c = this.advice && this.advice.decisionCard;
       return c && c.transfers && c.chip && c.captain && c.vice_captain ? c : null;
@@ -340,6 +344,24 @@ const app = createApp({
       } finally {
         if (generation === this.generation) this.adviceBusy = false;
       }
+    },
+    async saveChoices(update) {
+      // Keep / don't-buy calls live in the profile; every plan on every screen respects them.
+      const profile = await fetch('/api/profile').then(r => (r.ok ? r.json() : {})).catch(() => ({}));
+      const keep = new Set(profile.keep_ids || []), avoid = new Set(profile.avoid_ids || []);
+      update(keep, avoid);
+      await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keep_ids: [...keep], avoid_ids: [...avoid] }) });
+      this.refreshAll(true);
+    },
+    setChoice(player, kind) {
+      return this.saveChoices((keep, avoid) => {
+        keep.delete(player.element); avoid.delete(player.element);
+        (kind === 'keep' ? keep : avoid).add(player.element);
+      });
+    },
+    clearChoice(player) {
+      return this.saveChoices((keep, avoid) => { keep.delete(player.element); avoid.delete(player.element); });
     },
     async useOfficialNumbers() {
       // Drop saved bank / free-transfer overrides so the advice uses FPL's own figures.

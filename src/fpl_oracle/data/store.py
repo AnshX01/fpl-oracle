@@ -4,7 +4,7 @@ Persists API cache, snapshots, user profile, decisions log, and chat sessions.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -57,6 +57,9 @@ class UserProfile(Base):
     bank_override_enabled: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ft_override_enabled: Mapped[int | None] = mapped_column(Integer, nullable=True)
     manual_squad: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list of element IDs
+    # Manager's own calls the planner must respect: JSON lists of element IDs
+    keep_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avoid_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
@@ -124,6 +127,9 @@ def init_db():
         for name in ("bank_override_enabled", "ft_override_enabled"):
             if name not in names:
                 conn.execute(text(f"ALTER TABLE user_profile ADD COLUMN {name} INTEGER"))
+        for name in ("keep_ids", "avoid_ids"):
+            if name not in names:
+                conn.execute(text(f"ALTER TABLE user_profile ADD COLUMN {name} TEXT"))
     with engine.connect() as conn:
         try:
             conn.execute(text("ALTER TABLE user_profile ADD COLUMN manual_squad TEXT"))
@@ -147,6 +153,8 @@ class ProfileData:
     bank_override_enabled: bool | None = None
     ft_override_enabled: bool | None = None
     manual_squad: str | None = None
+    keep_ids: list[int] = field(default_factory=list)
+    avoid_ids: list[int] = field(default_factory=list)
     updated_at: datetime | None = None
 
 
@@ -349,6 +357,8 @@ class DataStore:
                 bank=float(profile.bank if profile.bank is not None else 0.0),
                 free_transfers=int(profile.free_transfers if profile.free_transfers is not None else 1),
                 manual_squad=str(profile.manual_squad) if profile.manual_squad else None,
+                keep_ids=sorted(json.loads(profile.keep_ids)) if profile.keep_ids else [],
+                avoid_ids=sorted(json.loads(profile.avoid_ids)) if profile.avoid_ids else [],
                 updated_at=profile.updated_at if isinstance(profile.updated_at, datetime) else None,
             )
 
@@ -359,7 +369,9 @@ class DataStore:
                 profile = UserProfile(id=1, bank_override_enabled=0, ft_override_enabled=0)
                 session.add(profile)
             for k, v in kwargs.items():
-                if k == "manual_squad":
+                if k in ("keep_ids", "avoid_ids"):
+                    setattr(profile, k, json.dumps(sorted({int(i) for i in v})) if v else None)
+                elif k == "manual_squad":
                     if isinstance(v, list) and len(v) > 0:
                         profile.manual_squad = json.dumps(v)
                     elif v is None or v == [] or v == "":

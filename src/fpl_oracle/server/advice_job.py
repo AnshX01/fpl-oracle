@@ -381,6 +381,8 @@ def profile_key(profile):
             "bank_override_enabled",
             "ft_override_enabled",
             "manual_squad",
+            "keep_ids",
+            "avoid_ids",
         )
     }
     fields["team_confirmation"] = team_confirmation.read(getattr(profile, "manager_id", None))

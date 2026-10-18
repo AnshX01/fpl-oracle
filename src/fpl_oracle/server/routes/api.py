@@ -61,6 +61,8 @@ class ProfileUpdateRequest(BaseModel):
     bank: float | None = None
     free_transfers: int | None = None
     manual_squad: list[int] | None = None
+    keep_ids: list[int] | None = None  # players the plan must keep / bring in
+    avoid_ids: list[int] | None = None  # players the plan must not buy (and sells if owned)
 
 
 class ConfirmTeamRequest(BaseModel):
@@ -335,6 +337,8 @@ def get_profile():
         "bank_override_enabled": p.bank_override_enabled,
         "ft_override_enabled": p.ft_override_enabled,
         "manual_squad": json.loads(p.manual_squad) if p.manual_squad else None,
+        "keep_ids": p.keep_ids,
+        "avoid_ids": p.avoid_ids,
         "status_diagnostic": diag,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
     }
@@ -351,6 +355,11 @@ def update_profile(req: ProfileUpdateRequest):
         kwargs["free_transfers"] = req.free_transfers
     if req.manual_squad is not None:
         kwargs["manual_squad"] = req.manual_squad
+    for name in ("keep_ids", "avoid_ids"):
+        if name in req.model_fields_set:
+            kwargs[name] = getattr(req, name) or []
+    if set(kwargs.get("keep_ids") or []) & set(kwargs.get("avoid_ids") or []):
+        raise HTTPException(status_code=422, detail="A player cannot be both kept and avoided")
 
     import math
 
