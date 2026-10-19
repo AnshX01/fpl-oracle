@@ -172,6 +172,9 @@ def paired_block_bootstrap_gw(
     }
 
 
+ACTIVE_SKILL_TOLERANCE = 0.003  # noise between two holdout tails (audit: same-quality refits differ by about 0.05%)
+
+
 def check_promotion_gate(
     candidate_metrics: dict[str, Any],
     active_metrics: dict[str, Any] | None = None,
@@ -251,7 +254,20 @@ def check_promotion_gate(
         cmp_name = "RMSE" if active_rmse else "MAE"
         cand_cmp = cand_err if active_rmse else float(cand_mae)
         active_err = float(active_metrics["ml_rmse"]) if active_rmse else float(active_mae or 0.0)
-        if cand_cmp > (active_err + tolerance):
+        raw_base = active_metrics.get("base_rmse" if active_rmse else "base_mae")
+        active_base = float(raw_base) if raw_base is not None and finite(raw_base) else 0.0
+        if active_base > 0 and base_err > 0:
+            # The active score was recorded on an earlier, easier tail than the candidate's: compare each model
+            # against the baseline on its own rows (as harder 2026-27 games enter the tail the baselines worsen
+            # too), with a small tolerance for noise.
+            cand_skill, active_skill = cand_cmp / base_err, active_err / active_base
+            if cand_skill > active_skill * (1.0 + ACTIVE_SKILL_TOLERANCE):
+                return (
+                    False,
+                    f"Candidate {cmp_name} relative to its baseline ({cand_skill:.4f}) degraded vs the active model's "
+                    f"({active_skill:.4f}) by more than {ACTIVE_SKILL_TOLERANCE:.1%}.",
+                )
+        elif cand_cmp > (active_err + tolerance):
             return (
                 False,
                 f"Candidate {cmp_name} ({cand_cmp:.3f}) degraded vs active production {cmp_name} ({active_err:.3f}) by > {tolerance:.2f}.",

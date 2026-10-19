@@ -12,6 +12,11 @@ import pandas as pd
 from fpl_oracle.ml.calibration import Calibrator
 from fpl_oracle.ml.components.base import BaseComponent
 
+# Half the clean-sheet chance comes from the bookmaker-implied one already in the inputs, rescaled to the observed rate.
+# Held-out Brier (DEF + GKP, 60+ minutes), model -> 50/50: 2024-25 0.1768 -> 0.1725, 2025-26 0.1907 -> 0.1850,
+# 2026-27 0.1957 -> 0.1946 (the market alone was best in two seasons and worst in 2026-27).
+MARKET_CS_WEIGHT = 0.5
+
 
 class DefendingModel(BaseComponent):
     def __init__(self):
@@ -23,6 +28,7 @@ class DefendingModel(BaseComponent):
             n_estimators=120, learning_rate=0.05, num_leaves=31, random_state=42, verbosity=-1, n_jobs=4
         )
         self.calibrator_cs = Calibrator("isotonic")
+        self.market_cs_scale = 1.0
 
     def fit(self, X: pd.DataFrame, Y: pd.DataFrame):
         y_gc = Y["target_goals_conceded"].values
@@ -33,6 +39,9 @@ class DefendingModel(BaseComponent):
         X_cs = X[played_60]
         y_cs = Y["target_clean_sheet"].to_numpy()[played_60]
         self.clf_cs.fit(X_cs, y_cs)
+        if "implied_team_cs_prob" in X_cs:
+            market = X_cs["implied_team_cs_prob"].to_numpy(dtype=float)
+            self.market_cs_scale = float(y_cs.mean() / max(market.mean(), 1e-6))
 
         if len(X_cs) >= 6:
             from fpl_oracle.ml.temporal import temporal_folds
@@ -63,6 +72,9 @@ class DefendingModel(BaseComponent):
 
         p_cs_raw = self.clf_cs.predict_proba(X)[:, 1]
         p_cs = self.calibrator_cs.calibrate(p_cs_raw)
+        if "implied_team_cs_prob" in X:
+            market = np.clip(X["implied_team_cs_prob"].to_numpy(dtype=float) * self.market_cs_scale, 0.0, 1.0)
+            p_cs = (1.0 - MARKET_CS_WEIGHT) * p_cs + MARKET_CS_WEIGHT * market
         exp_gc = np.clip(self.reg_gc.predict(X), 0.0, 5.0)
 
         return {"p_clean_sheet": p_cs, "expected_goals_conceded": exp_gc}

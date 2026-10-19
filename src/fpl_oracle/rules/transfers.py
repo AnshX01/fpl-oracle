@@ -29,11 +29,10 @@ def sell_price(purchase_tenths: int, current_tenths: int) -> int:
 
 
 # Named config constant for post-chip free-transfer state transition rule (WI-1.3, WI-1.4).
-# Flagged as UNCONFIRMED in official documentation: FPL rules confirm banked transfers are
-# preserved when Wildcard or Free Hit is deployed, but whether an additional transfer (+1)
-# is earned for the subsequent gameweek is ambiguous in the rulebook.
+# Banked transfers are preserved through a Wildcard or Free Hit with no extra transfer: confirmed in the 2026-27
+# game (a mini-league rival who played a GW5 Wildcard had 1 free transfer in GW6 and took a hit for a second).
 POST_CHIP_FT_RULE_DEFAULT: Literal["preserve", "preserve_plus_one"] = "preserve"
-POST_CHIP_FT_RULE_STATUS: str = "UNCONFIRMED"
+POST_CHIP_FT_RULE_STATUS: str = "CONFIRMED"
 
 
 # First gameweek each chip can be played (bootstrap `chips[].start_event`): the GW1 squad is built
