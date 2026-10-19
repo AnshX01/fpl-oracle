@@ -38,6 +38,7 @@ SCORERS_FILE = ODDS_DIR / "scorers.json"
 # Anytime-goalscorer prices averaged over several bookmakers for the next gameweek's fixtures, keyed by FPL
 # fixture and player ids (embedded in the page's data). Free, no key.
 SCORERS_URL = "https://kickoffscore.com/fpl/odds"
+SCORERS_MAX_AGE = timedelta(days=7)  # older prices belong to a past round
 FIELDS = ("Date", "HomeTeam", "AwayTeam", "AvgH", "AvgD", "AvgA", "Avg>2.5", "Avg<2.5")
 
 # football-data / The Odds API names -> the names FPL uses
@@ -142,11 +143,27 @@ def _season_code(now: datetime) -> tuple[str, str]:
     return f"{start}-{str(start + 1)[2:]}", f"{str(start)[2:]}{str(start + 1)[2:]}"
 
 
+def _download(url: str) -> list[dict[str, str]]:
+    """Rows of a football-data file; follows the site's redirects and raises on any failure status."""
+    resp = httpx.get(url, timeout=30, follow_redirects=True)
+    resp.raise_for_status()
+    return _keep_columns(resp.text)
+
+
+def _held_rows(path: Path) -> int:
+    return len(_keep_columns(path.read_text(encoding="utf-8"))) if path.exists() else 0
+
+
 def _keep_columns(text: str) -> list[dict[str, str]]:
+    """The odds columns of every well-formed E0 row. An HTML or error page lacks the expected columns, so it
+    yields nothing."""
+    reader = csv.DictReader(StringIO(text.lstrip("﻿")))
+    if not set(FIELDS) <= set(reader.fieldnames or ()):
+        return []
     return [
-        {k: row.get(k, "") for k in FIELDS}
-        for row in csv.DictReader(StringIO(text.lstrip("﻿")))
-        if row.get("Div", "E0") == "E0"
+        {k: row.get(k) or "" for k in FIELDS}
+        for row in reader
+        if row.get("Div", "E0") == "E0" and row.get("HomeTeam") and _parse_date(row.get("Date") or "")
     ]
 
 
@@ -196,18 +213,34 @@ def refresh_odds(now: datetime | None = None) -> dict[str, int]:
     season, code = _season_code(now)
     ODDS_DIR.mkdir(parents=True, exist_ok=True)
     written = {}
-    season_rows = _keep_columns(httpx.get(f"https://www.football-data.co.uk/mmz4281/{code}/E0.csv", timeout=30).text)
-    if season_rows:
-        _write(ODDS_DIR / f"{season}.csv", season_rows)
-        written[season] = len(season_rows)
-    upcoming = _keep_columns(httpx.get("https://www.football-data.co.uk/fixtures.csv", timeout=30).text)
+    base = "https://www.football-data.co.uk"
+    try:
+        season_rows = _download(f"{base}/mmz4281/{code}/E0.csv")
+        held = _held_rows(ODDS_DIR / f"{season}.csv")
+        if season_rows and len(season_rows) >= held:  # never replace a file with an empty or smaller download
+            _write(ODDS_DIR / f"{season}.csv", season_rows)
+            written[season] = len(season_rows)
+        else:
+            logger.warning(
+                "Season odds download has %s usable rows, the file holds %s: kept the file", len(season_rows), held
+            )
+    except Exception as error:
+        logger.warning("Season odds download failed: %s", error)
+    upcoming: list[dict[str, str]] = []
+    try:
+        upcoming = _download(f"{base}/fixtures.csv")
+    except Exception as error:
+        logger.warning("Upcoming odds download failed: %s", error)
     if ODDS_API_KEY:
         try:
             upcoming += _odds_api_rows(ODDS_API_KEY)
         except Exception as error:  # the free sources still stand
             logger.warning("The Odds API unavailable: %s", type(error).__name__)
-    _write(UPCOMING_FILE, upcoming)
-    written["upcoming"] = len(upcoming)
+    if upcoming:  # between rounds the file can be empty: keep the last one rather than blank it
+        _write(UPCOMING_FILE, upcoming)
+        written["upcoming"] = len(upcoming)
+    if not written:
+        raise RuntimeError("no usable bookmaker odds downloaded; existing odds files kept")
     try:  # player prices are a bonus: the team odds above stand without them
         written["scorers"] = refresh_scorer_odds()
     except Exception as error:
@@ -261,6 +294,12 @@ def scorer_probabilities() -> dict[tuple[int, int], float]:
     if not SCORERS_FILE.exists():
         return {}
     data = json.loads(SCORERS_FILE.read_text(encoding="utf-8"))
+    try:
+        fresh = datetime.now(UTC) - datetime.fromisoformat(data["fetched_at"]) <= SCORERS_MAX_AGE
+    except (KeyError, TypeError, ValueError):
+        fresh = False
+    if not fresh:
+        return {}
     return {(int(f), int(e)): float(p) for f, rows in data.get("fixtures", {}).items() for e, p in rows.items()}
 
 
