@@ -1327,7 +1327,7 @@ class FeatureEngineering:
                     raise ValueError("Availability map requires percent in [0,100]")
                 cop = val
             else:
-                cop = official_chance_of_playing(elem, target_gw, first_gw)
+                cop = official_chance_of_playing(elem, target_gw, first_gw, bootstrap.events)
 
             # Rolling player history is identical across the forecast horizon.
             if reuse_context and elem.id in self._live_player_stats:

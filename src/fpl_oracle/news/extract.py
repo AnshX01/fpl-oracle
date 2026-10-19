@@ -13,6 +13,17 @@ from bs4 import BeautifulSoup
 from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence
 
 
+def surname_token(web_name: str) -> str:
+    """Lower-case surname token of an FPL name: "B.Fernandes" -> "fernandes", "N'Diaye" -> "diaye"."""
+    tokens = [t for t in re.split(r"[\s\-.'\u2019]+", web_name.strip().lower()) if len(t) >= 3]
+    return tokens[-1] if tokens else web_name.strip().lower()
+
+
+def _has(text: str, *phrases: str) -> bool:
+    """True if any phrase occurs as whole words ("doubt" is not in "undoubtedly", "knock" is not in "knockdown")."""
+    return any(re.search(r"(?<!\w)" + re.escape(p) + r"(?!\w)", text) for p in phrases)
+
+
 class TextExtractor:
     def clean_html(self, raw_html: str) -> str:
         if not raw_html:
@@ -71,10 +82,7 @@ class TextExtractor:
             return []
 
         # 2. Extract player name tokens for subject matching
-        name_tokens = [t.lower() for t in re.split(r"[\s\-]+", player_name.strip()) if len(t) >= 3]
-        if not name_tokens:
-            name_tokens = [player_name.lower().strip()]
-        last_name = name_tokens[-1]
+        last_name = surname_token(player_name)
 
         # 3. Target gameweek reference
         explicit_gw = None
@@ -212,7 +220,7 @@ class TextExtractor:
 
         # Negation patterns
         negation_patterns = [
-            r"\b(?:won't|will\s+not|shall\s+not|not|never)\s+(?:be\s+)?(?:sidelined|ruled\s+out|missing|miss|injured|hurt)\b",
+            r"\b(?:won't|will\s+not|shall\s+not|not|never)\s+(?:be\s+|been\s+)?(?:sidelined|ruled\s+out|missing|miss|injured|hurt)\b",
             r"\bno\s+(?:serious\s+damage|injury|injuries|issue|issues|concern|concerns|tear|sprain|fracture|damage)\b",
             r"\b(?:dismissed|denied|quashed|refuted)\s+(?:rumou?rs?|claims?|reports?|fears?)\b",
             r"\b(?:will|shall|would)\s+not\s+miss\b",
@@ -221,6 +229,11 @@ class TextExtractor:
             r"\bnever\s+in\s+doubt\b",
             r"\bcleared\s+of\b",
             r"\bnot\s+an\s+injury\b",
+            r"\bno\s+(?:suggestion|indication|sign|signs|fears?|risk|danger|worries|doubts?)\b",
+            r"\b(?:not|never)\s+(?:expected|likely|thought)\s+to\s+(?:be\s+(?:out|sidelined)|miss)\b",
+            r"\bunlikely\s+to\s+miss\b",
+            r"\bno\s+longer\s+(?:a\s+)?(?:doubt|doubtful|injured)\b",
+            r"\b(?:isn't|is\s+not)\s+(?:injured|ruled\s+out|suspended)\b",
             r"\bnot\s+at\s+100%\s+but\s+(?:will|in)\b",
         ]
         is_negated = any(re.search(pat, clause_lower) for pat in negation_patterns)
@@ -246,7 +259,7 @@ class TextExtractor:
         minutes_limit = None
         min_match = re.search(r"(\d+)\s*(?:minutes|mins)", clause_lower)
         is_minutes_restricted = bool(
-            min_match and re.search(r"\b(?:only|bench|restriction|max|limit|eases?)\b", clause_lower)
+            min_match and re.search(r"\b(?:only|bench|restriction|max|limit|limited|eases?)\b", clause_lower)
         )
         if is_minutes_restricted and min_match:
             minutes_limit = int(min_match.group(1))
@@ -282,26 +295,20 @@ class TextExtractor:
         if is_unverified or is_colloquial_or_transfer:
             category = EvidenceCategory.UNKNOWN
             conf = 0.40
-        elif (
-            "ineligible" in clause_lower
-            or "cannot play" in clause_lower
-            or "contractual clause prevents" in clause_lower
-            or "cup-tied" in clause_lower
-            or "loan agreement forbids" in clause_lower
+        elif _has(
+            clause_lower,
+            "ineligible",
+            "cannot play",
+            "contractual clause prevents",
+            "cup-tied",
+            "loan agreement forbids",
         ):
             category = EvidenceCategory.INELIGIBLE
             conf = 0.95
         elif is_minutes_restricted:
             category = EvidenceCategory.MINUTES_LIMIT
             conf = 0.90
-        elif (
-            "returned to" in clause_lower
-            and "training" in clause_lower
-            or "back in" in clause_lower
-            and "training" in clause_lower
-            or "rejoined" in clause_lower
-            and "training" in clause_lower
-        ):
+        elif _has(clause_lower, "returned to", "back in", "rejoined") and _has(clause_lower, "training"):
             category = EvidenceCategory.RETURNED_TO_TRAINING
             conf = 0.92
         elif (
@@ -309,25 +316,27 @@ class TextExtractor:
             and not is_past_resolved
             and not is_past_tense
             and (
-                "ruled out" in clause_lower
-                or "sidelined" in clause_lower
-                or "hamstring tear" in clause_lower
-                or "severe knee injury" in clause_lower
+                _has(clause_lower, "ruled out", "sidelined", "hamstring tear", "severe knee injury")
                 or re.search(r"\bacl\b", clause_lower)
-                or "fracture" in clause_lower
-                or "surgery" in clause_lower
-                or "will miss" in clause_lower
+                or _has(clause_lower, "fracture", "fractured", "surgery", "will miss")
                 or re.search(
                     r"\b(?:breaks?|broke|broken|suffers?|suffered)\b.{0,25}\b(?:jaw|leg|foot|ankle|toe|collarbone|wrist|arm|rib|nose|cheekbone|metatarsal|cruciate)\b",
                     clause_lower,
                 )
                 or re.search(r"\bout\s+for\s+(?:\w+\s+){0,2}(?:weeks|months|season)\b", clause_lower)
-                or "miss the next" in clause_lower
-                or "suspended" in clause_lower
-                or "red card" in clause_lower
-                or "will be without" in clause_lower
-                or "return date is scheduled" in clause_lower
-                or "ankle sprain and is ruled out" in clause_lower
+                or re.search(
+                    r"\b(?:faces|facing|set\s+for)\s+(?:up\s+to\s+|at\s+least\s+)?\w+\s+(?:weeks|months)\s+out\b",
+                    clause_lower,
+                )
+                or _has(
+                    clause_lower,
+                    "miss the next",
+                    "suspended",
+                    "red card",
+                    "will be without",
+                    "return date is scheduled",
+                    "ankle sprain and is ruled out",
+                )
             )
         ):
             category = EvidenceCategory.RULED_OUT
@@ -340,47 +349,53 @@ class TextExtractor:
             conf = 0.90
         # Priority for positive affirmations over residual knock/doubt mentions
         elif (
-            "passed fit" in clause_lower
-            or "feels fine" in clause_lower
-            or "never in doubt" in clause_lower
-            or "no serious damage" in clause_lower
-            or "fit and available" in clause_lower
-            or "fully fit" in clause_lower
-            or "fit to start" in clause_lower
-            or "cleared" in clause_lower
-            or "trained normally" in clause_lower
-            or "available for selection" in clause_lower
-            or "in contention" in clause_lower
-            or "ready to play" in clause_lower
-            or "ready now" in clause_lower
-            or "will start" in clause_lower
-            or "eligible to play" in clause_lower
-            or "completed loan" in clause_lower
-            or "ready to feature" in clause_lower
-            or "feeling great" in clause_lower
+            _has(
+                clause_lower,
+                "passed fit",
+                "feels fine",
+                "never in doubt",
+                "no serious damage",
+                "fit and available",
+                "fully fit",
+                "fit to start",
+                "cleared",
+                "trained normally",
+                "available for selection",
+                "in contention",
+                "ready to play",
+                "ready now",
+                "will start",
+                "eligible to play",
+                "completed loan",
+                "ready to feature",
+                "feeling great",
+            )
             or is_past_resolved
             or (is_negated and "ruled out" not in clause_lower)
         ):
             category = EvidenceCategory.AVAILABLE
             conf = 0.90
         elif (
-            "fitness test" in clause_lower
-            or "touch and go" in clause_lower
-            or "50/50" in clause_lower
-            or "50-50" in clause_lower
-            or "tightness" in clause_lower
-            or "doubt" in clause_lower
-            or "doubtful" in clause_lower
-            or "niggle" in clause_lower
-            or "twinge" in clause_lower
-            or "swollen" in clause_lower
-            or "assessed tomorrow" in clause_lower
+            _has(
+                clause_lower,
+                "fitness test",
+                "touch and go",
+                "50/50",
+                "50-50",
+                "tightness",
+                "doubt",
+                "doubts",
+                "doubtful",
+                "niggle",
+                "twinge",
+                "swollen",
+                "assessed tomorrow",
+            )
             or re.search(r"\bhopeful\b", clause_lower)
-            or "minor knock" in clause_lower
-            or "knock" in clause_lower
-            or "not at 100%" in clause_lower
-            or "precaution" in clause_lower
-            or (is_negated and "ruled out" in clause_lower)
+            or _has(
+                clause_lower, "minor knock", "knock", "knocks", "knocked", "not at 100%", "precaution", "precautionary"
+            )
+            or (is_negated and _has(clause_lower, "ruled out"))
         ):
             category = EvidenceCategory.DOUBTFUL
             conf = 0.85

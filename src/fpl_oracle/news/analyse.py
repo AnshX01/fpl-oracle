@@ -116,6 +116,7 @@ class NewsAnalyzer:
                 candidate_evidence=candidate_evidences,
                 extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
                 first_gw=first_gw,
+                events=bootstrap.events,
             )
 
             status_code = getattr(elem, "status", "a")
@@ -163,6 +164,7 @@ class NewsAnalyzer:
                 candidate_evidence=self._last_candidate_evidences,
                 extractor_name=getattr(self, "_active_extractor", "deterministic_fallback"),
                 first_gw=first_gw,
+                events=bootstrap.events,
             )
             for e in bootstrap.elements
         }

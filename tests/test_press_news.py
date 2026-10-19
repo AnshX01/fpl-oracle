@@ -66,9 +66,11 @@ def test_jaw_article_marks_chelseas_martinez_out_for_next_gw():
     art = _art("Martinez breaks jaw in Chelsea win at Everton")
     evs = press.extract_article_evidence(art, "", press.PlayerIndex(_boot()))
     assert [e.player_id for e in evs] == [10]
-    r = _rec(evs)
-    assert r.applied_to_production and r.effective_chance_of_playing == 0 and r.source_url == BBC
+    r = _rec(evs)  # strict: one publisher and no FPL flag is a doubt, not a ruled-out
+    assert r.applied_to_production and r.effective_chance_of_playing == 75 and r.source_url == BBC
     assert "jaw" in r.source_quote
+    second = [evs[0].model_copy(update={"source_url": "https://www.theguardian.com/football/x"})]
+    assert _rec(evs + second).effective_chance_of_playing == 0
     assert not _rec(evs, target=9, first=8).applied_to_production  # later GW keeps the official decay
 
 
