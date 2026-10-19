@@ -54,7 +54,9 @@ def test_concurrent_surface_case(configured_advisor, monkeypatch, bank, ft, chip
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
     analysis_service._chip_plans.clear()
     analysis_service._chip_tasks.clear()
@@ -123,7 +125,9 @@ def test_no_personal_advice_on_missing_source(configured_advisor, monkeypatch, m
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
     if missing == "squad":
         state.squad = []
@@ -179,7 +183,9 @@ def test_chat_captain_is_configured_lineup_not_market_leader(configured_advisor,
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
 
     async def run():
@@ -202,7 +208,9 @@ def test_pipeline_summary_uses_joint_selected_action(configured_advisor, monkeyp
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
     monkeypatch.setattr(
         game_state_manager, "get_game_state", AsyncMock(return_value=GameState(current_gw=5, next_gw=6))
@@ -232,7 +240,9 @@ def test_offline_chat_matches_squad_captain(configured_advisor, monkeypatch):
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
 
     async def run():
@@ -265,15 +275,12 @@ def test_profitable_replacement_hits_and_sale_prices_across_surfaces(configured_
     replacement["expected_points"] = 25.0
     market = pd.concat([pool, pd.DataFrame([replacement])], ignore_index=True)
     monkeypatch.setattr(analysis_service, "projections", AsyncMock(return_value={6: market, 7: market.copy()}))
-    # The fixture's 25 xP player has no real scoring components, so the hit simulation would not see the gain:
-    # this test checks hit accounting and sale prices, so the fixed xP hit bar decides.
-    from fpl_oracle.optimise.multiperiod import multiperiod_optimizer
-
-    monkeypatch.setattr(multiperiod_optimizer, "_score_robustness", lambda *a, **k: None)
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
 
     async def run():
@@ -307,7 +314,9 @@ def test_chat_captain_other_gw_and_missing_squad_are_explicit(configured_advisor
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
 
     async def run():
@@ -342,7 +351,9 @@ def test_constrained_chat_optimizer_agree_without_changing_default(configured_ad
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
     kwargs = (
         {"locked_in": [owned.element]}
@@ -370,7 +381,9 @@ def test_stale_fixtures_propagate_every_advice_surface(configured_advisor, monke
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
     original = fpl_client.get_fixtures
 
