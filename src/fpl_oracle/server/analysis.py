@@ -169,7 +169,8 @@ class AnalysisService:
         if stale:
             return None
         result = await rival_analyzer.analyze_rivals(rows, profile.manager_id, target_gw, boot)
-        if result.get("is_stale"):
+        # A rival that failed to load would silently shrink the field and inflate the title chance.
+        if result.get("is_stale") or result.get("rivals_failed"):
             return None
         context = dict(
             user_points=user["total"],
@@ -666,7 +667,14 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
 
     except Exception as e_milp:
         logger.warning(f"Authoritative MILP optimization failed: {e_milp}. Executing beam search fallback.")
-        fallback_res = beam_opt.evaluate_joint_transfer_and_chip_plan(**kwargs)
+        # The beam search has no Free Hit rule or chip spacing, so the backup plan is transfers only. A chip is kept
+        # only when no legal team exists without one: then it is needed, not judged.
+        chipless = {**kwargs, "chips_by_set": None}
+        chipless["available_chips"] = [kwargs["forced_current_chip"]] if kwargs.get("forced_current_chip") else []
+        try:
+            fallback_res = beam_opt.evaluate_joint_transfer_and_chip_plan(**chipless)
+        except Exception:
+            fallback_res = beam_opt.evaluate_joint_transfer_and_chip_plan(**kwargs)
         fallback_res["fallback_used"] = True
         fallback_res["fallback_reason"] = str(e_milp)
         scope = fallback_res.setdefault("decision_scope", {})
