@@ -128,7 +128,10 @@ const app = createApp({
         b.latest_finalized_gameweek > b.form_through_gameweek;
     },
     adviceCurrent() {
-      return Boolean(this.card) && !this.deadlinePassed && !this.dataStale && this.adviceAgeMinutes < MAX_ADVICE_HOURS * 60;
+      return Boolean(this.card) && !this.adviceError && !this.deadlinePassed && !this.dataStale && this.adviceAgeMinutes < MAX_ADVICE_HOURS * 60;
+    },
+    adviceFromText() {
+      return this.adviceFrom ? new Date(this.adviceFrom).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
     },
     basisText() {
       const b = this.basis, f = b.form_through_gameweek, m = b.model_trained_through_gameweek;
@@ -341,8 +344,10 @@ const app = createApp({
         this.adviceFrom = null;
       } catch (error) {
         if (generation !== this.generation) return;
-        this.advice = null;
-        this.adviceFrom = null;
+        // A failed update must not blank the screen while an earlier valid advice exists: keep showing it, labelled.
+        const earlier = job && job.previous_result && job.previous_result.decisionCard && job.previous_result.squadData;
+        this.advice = earlier ? job.previous_result : null;
+        this.adviceFrom = earlier ? job.previous_published_at || null : null;
         this.adviceFixable = (job && job.fixable) || null;
         this.adviceError = (job && job.status === 'failed' && job.error && !job.error.includes('application log'))
           ? job.error
