@@ -95,7 +95,7 @@ def test_chip_legality_r2_and_boundaries():
 def test_post_chip_ft_rule_named_constant_status():
     """Verify that post-chip free-transfer rule is exposed as a named constant flagged UNCONFIRMED."""
     assert POST_CHIP_FT_RULE_DEFAULT == "preserve"
-    assert POST_CHIP_FT_RULE_STATUS == "UNCONFIRMED"
+    assert POST_CHIP_FT_RULE_STATUS == "CONFIRMED"
     cfg = TransferStateConfig()
     assert cfg.chip_week_ft_rule == POST_CHIP_FT_RULE_DEFAULT
 
