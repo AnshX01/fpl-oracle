@@ -136,7 +136,7 @@ async def ensure_latest_data() -> dict:
     try:  # newest bookmaker prices for the upcoming fixtures; the advice still runs without them
         await asyncio.to_thread(refresh_odds)
     except Exception as error:
-        logger.warning("Odds refresh before advice failed: %s", type(error).__name__)
+        logger.warning("Odds refresh before advice failed: %s", error)
     boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
     finalized = sorted(e.id for e in boot.events if e.finished and e.data_checked)
     meta_path = historical_manager.output_file.with_suffix(".meta.json")
