@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-from fpl_oracle.news.extract import text_extractor
+from fpl_oracle.news.extract import surname_token, text_extractor
 from fpl_oracle.news.ingest import is_safe_external_url
 from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence
 from fpl_oracle.news.reconcile import extract_publisher_domain, get_trusted_publishers, normalize_publisher_group
@@ -125,8 +125,7 @@ async def fetch_bodies(articles: list[dict[str, Any]], max_fetches: int = MAX_FE
 
 def _surname_key(web_name: str) -> str:
     """Same token the deterministic extractor matches on."""
-    tokens = [t for t in re.split(r"[\s\-]+", web_name.strip()) if len(t) >= 3]
-    return _norm(tokens[-1] if tokens else web_name.strip())
+    return _norm(surname_token(web_name))
 
 
 class PlayerIndex:

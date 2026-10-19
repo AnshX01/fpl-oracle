@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import urllib.parse
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -44,17 +45,50 @@ DEFAULT_TRUSTED_PUBLISHERS = [
 
 UNAVAILABLE_STATUSES = ("i", "s", "u", "n")  # injured, suspended, unavailable (left/loaned), not available
 DOUBT_RECOVERY_PER_GW = 0.5  # share of an official doubt that is still open one further gameweek on
+RETURN_RAMP = (50.0, 75.0)  # chance of an injured player in his first and second gameweek back; 100 after
+_RETURN_DATE_RE = re.compile(r"(?:Expected back|Suspended until)\s+(\d{1,2})\s+([A-Za-z]{3})\b")
 
 
-def official_chance_of_playing(element: Any, target_gw: int, first_gw: int | None = None) -> float:
+def _return_gameweek(element: Any, events: Sequence[Any]) -> int | None:
+    """First gameweek whose deadline is after the date in FPL's "Expected back 24 Oct" / "Suspended until 31 Oct"."""
+    m = _RETURN_DATE_RE.search(getattr(element, "news", "") or "")
+    if not m or not events:
+        return None
+    deadlines = [(e.id, datetime.fromisoformat(e.deadline_time.replace("Z", "+00:00"))) for e in events]
+    # The text has no year: the season starts in July or later, so earlier months fall in the next calendar year.
+    year = min(d for _, d in deadlines).year
+    try:
+        month = datetime.strptime(m.group(2).title(), "%b").month
+        due = datetime(year + (month < 7), month, int(m.group(1)), tzinfo=UTC)
+    except ValueError:
+        return None
+    return next((gw for gw, d in deadlines if d > due), None)
+
+
+def official_chance_of_playing(
+    element: Any, target_gw: int, first_gw: int | None = None, events: Sequence[Any] | None = None
+) -> float:
     """
     Official FPL availability (percent) for target_gw.
     chance_of_playing_next_round only describes the first upcoming gameweek (first_gw): for later horizon
-    gameweeks the doubt decays towards 100 instead of being applied to the whole horizon. Statuses that are
-    unavailable stay at 0 (the API gives no return date; press evidence may override).
+    gameweeks the doubt decays towards 100 instead of being applied to the whole horizon. Injured and suspended
+    players are 0 until the gameweek after the return date FPL states in its news text (events give the
+    deadlines), then an injured player ramps 50% / 75% / 100%. A date that has already passed with the flag still
+    on counts as a stale flag: the ramp starts at first_gw. Without a stated date they stay at 0 (press evidence
+    may override); other unavailable statuses (left, loaned) always stay at 0.
     """
-    if getattr(element, "status", "a") in UNAVAILABLE_STATUSES:
-        return 0.0
+    status = getattr(element, "status", "a")
+    if status in UNAVAILABLE_STATUSES:
+        due = _return_gameweek(element, events or ()) if status in ("i", "s") else None
+        if due is None:
+            return 0.0
+        back = max(due, first_gw or due)
+        if target_gw < back:
+            return 0.0
+        if status == "s" and back == due:
+            return 100.0  # a served ban leaves no fitness doubt
+        steps = target_gw - back
+        return RETURN_RAMP[steps] if steps < len(RETURN_RAMP) else 100.0
     cop = getattr(element, "chance_of_playing_next_round", None)
     if cop is None:
         cop = getattr(element, "chance_of_playing_this_round", None)
@@ -65,11 +99,42 @@ def official_chance_of_playing(element: Any, target_gw: int, first_gw: int | Non
 
 
 PRESS_MAX_AGE_HOURS = 72
+PRESS_UNCORROBORATED_COP = 75.0  # a "ruled out" report with one source and no FPL flag lowers a player to a doubt only
+FIT_CATEGORIES = (EvidenceCategory.AVAILABLE, EvidenceCategory.RETURNED_TO_TRAINING)
+RULED_OUT_CATEGORIES = (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE)
+_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+_ABSENCE_RE = re.compile(
+    r"\b(?:out\s+for|miss(?:\s+the\s+next)?)\s+(?:at\s+least\s+|about\s+)?"
+    r"(?:(?P<month>a\s+month)|(?P<n>\d+|" + "|".join(_NUMBER_WORDS) + r")\s+(?P<unit>weeks?|months?|games?|matches))\b",
+    re.IGNORECASE,
+)
 MAJOR_DOUBT_RE = re.compile(
     r"major\s+doubt|serious\s+doubt|significant\s+doubt|very\s+doubtful|long\s+shot|unlikely\s+to\s+(?:play|feature|be)"
     r"|(?:won't|will\s+not)\s+be\s+(?:fit|ready|available)|not\s+expected\s+to\s+(?:play|be\s+fit)",
     re.IGNORECASE,
 )
+
+
+def absence_gameweeks(quote: str) -> int:
+    """Gameweeks a press story says a player is out ("out for six weeks", "a month", "miss the next three games"); else 1."""
+    m = _ABSENCE_RE.search(quote)
+    if not m:
+        return 1
+    if m.group("month"):
+        return 4
+    n = int(m.group("n")) if m.group("n").isdigit() else _NUMBER_WORDS[m.group("n").lower()]
+    return n * 4 if m.group("unit").lower().startswith("month") else n
 
 
 def get_trusted_publishers() -> list[str]:
@@ -376,6 +441,19 @@ def are_syndicated_copies(e1: PlayerEvidence, e2: PlayerEvidence) -> bool:
     return False
 
 
+def count_independent_sources(items: list[PlayerEvidence]) -> int:
+    """Number of evidence items that are not syndicated copies of each other."""
+    clusters: list[list[PlayerEvidence]] = []
+    for item in items:
+        for cluster in clusters:
+            if any(are_syndicated_copies(item, member) for member in cluster):
+                cluster.append(item)
+                break
+        else:
+            clusters.append([item])
+    return len(clusters)
+
+
 class AvailabilityReconciler:
     def __init__(self, mode: str | None = None, prob_settings: ReconcileProbabilitySettings | None = None):
         raw_mode = (mode or NEWS_RECOMMENDATION_MODE or "press").lower().strip()
@@ -397,11 +475,15 @@ class AvailabilityReconciler:
         baseline_cop: float,
         baseline_p_start: float,
         rejected: list[str],
+        first_gw: int,
     ) -> tuple[PlayerEvidence, float, float, float, float | None] | None:
         """
-        Press evidence for the next gameweek. It can only LOWER availability below the official figure:
+        Press evidence for target_gw (first_gw or later). It can only LOWER availability below the official figure:
         verbatim safe quote, trusted-publisher URL, published within 72h, and the official flag must not have
-        changed since the article. Returns (evidence, chance, p_avail, p_start, minutes_cap) or None.
+        changed since the article. A story reaches past first_gw only for a stated absence ("out for six weeks");
+        newer fit news cancels older lowering news for the player. "Ruled out" takes a player to 0% only when two
+        independent publishers say so or FPL itself flags him; otherwise he is held at a doubt.
+        Returns (evidence, chance, p_avail, p_start, minutes_cap) or None.
         """
         now = datetime.now(UTC)
         trusted = get_trusted_publishers()
@@ -411,7 +493,7 @@ class AvailabilityReconciler:
                 news_added = datetime.fromisoformat(str(element.news_added).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        best: tuple[float, PlayerEvidence, float | None] | None = None
+        valid: list[PlayerEvidence] = []
         for ev in candidate_evidence:
             if ev.player_id != getattr(element, "id", 0):
                 continue
@@ -429,7 +511,7 @@ class AvailabilityReconciler:
                 else "official FPL flag changed after the article"
                 if news_added and news_added > pub
                 else "negated"
-                if ev.is_negated
+                if ev.is_negated and ev.category not in FIT_CATEGORIES
                 else "low confidence"
                 if ev.confidence < 0.65
                 else "cup context"
@@ -440,9 +522,30 @@ class AvailabilityReconciler:
             )
             if reason:
                 rejected.append(f"Press rejected ({reason}): '{ev.quote[:40]}'")
+            else:
+                valid.append(ev)
+        newest_fit = max(
+            (e.published_at for e in valid if e.category in FIT_CATEGORIES and e.published_at), default=None
+        )
+        zero_ok = (
+            getattr(element, "status", "a") != "a"
+            or baseline_cop < 100.0
+            or count_independent_sources([e for e in valid if e.category in RULED_OUT_CATEGORIES]) >= 2
+        )
+        best: tuple[float, PlayerEvidence, float | None] | None = None
+        for ev in valid:
+            if ev.category in FIT_CATEGORIES:
+                continue  # available / returned-to-training never raises the official figure
+            if newest_fit and ev.published_at and ev.published_at < newest_fit:
+                rejected.append(f"Press superseded by newer fit news: '{ev.quote[:40]}'")
                 continue
-            if ev.category in (EvidenceCategory.RULED_OUT, EvidenceCategory.INELIGIBLE):
-                chance, cap = 0.0, None
+            ruled_out = ev.category in RULED_OUT_CATEGORIES
+            if target_gw - first_gw >= (absence_gameweeks(ev.quote) if ruled_out else 1):
+                continue
+            if ruled_out:
+                chance, cap = (0.0 if zero_ok else PRESS_UNCORROBORATED_COP), None
+                if not zero_ok:
+                    rejected.append(f"Press ruled-out from one source, no FPL flag: held at a doubt: '{ev.quote[:40]}'")
             elif ev.category == EvidenceCategory.DOUBTFUL:
                 chance, cap = (25.0 if MAJOR_DOUBT_RE.search(ev.quote) else 50.0), None
             elif ev.category == EvidenceCategory.MINUTES_LIMIT:
@@ -474,6 +577,7 @@ class AvailabilityReconciler:
         candidate_evidence: list[PlayerEvidence] | None = None,
         extractor_name: str = "deterministic_fallback",
         first_gw: int | None = None,
+        events: Sequence[Any] | None = None,
     ) -> ReconciledAvailability:
         """
         Reconcile a single player's availability for a specific gameweek and fixture.
@@ -486,7 +590,7 @@ class AvailabilityReconciler:
         news_text = getattr(element, "news", "") or ""
 
         # 1. Authoritative Official FPL Baseline
-        baseline_cop = official_chance_of_playing(element, target_gw, first_gw)
+        baseline_cop = official_chance_of_playing(element, target_gw, first_gw, events)
 
         # Baseline probabilities
         p_avail = baseline_cop / 100.0
@@ -520,9 +624,14 @@ class AvailabilityReconciler:
         source_age: float | None = None
 
         # 2. Evaluate Candidate Text Evidence if in Shadow or Gated-Active mode
-        if self.mode == RecommendationMode.PRESS and candidate_evidence and first_gw == target_gw:
+        if (
+            self.mode == RecommendationMode.PRESS
+            and candidate_evidence
+            and first_gw is not None
+            and target_gw >= first_gw
+        ):
             pr = self._press_override(
-                element, target_gw, candidate_evidence, baseline_cop, baseline_p_start, rejected_signals
+                element, target_gw, candidate_evidence, baseline_cop, baseline_p_start, rejected_signals, first_gw
             )
             if pr:
                 ev, effective_cop, p_avail, p_start_given_avail, mins_limit = pr
@@ -600,19 +709,7 @@ class AvailabilityReconciler:
                                 continue
                             valid_ruled_out.append(other)
 
-                    # Group evidence items into independent source clusters using syndication detection
-                    source_clusters: list[list[PlayerEvidence]] = []
-                    for item in valid_ruled_out:
-                        placed = False
-                        for cluster in source_clusters:
-                            if any(are_syndicated_copies(item, member) for member in cluster):
-                                cluster.append(item)
-                                placed = True
-                                break
-                        if not placed:
-                            source_clusters.append([item])
-
-                    num_independent_sources = len(source_clusters)
+                    num_independent_sources = count_independent_sources(valid_ruled_out)
                     has_external_urls = any(bool(e.source_url) for e in valid_ruled_out)
 
                     if (
