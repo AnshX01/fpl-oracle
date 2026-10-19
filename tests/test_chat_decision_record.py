@@ -349,6 +349,33 @@ def test_evaluate_plan_tool_uses_tenths_remaining_chips_and_plan_horizon(configu
     assert seen["free_transfers"] == 2
 
 
+def test_what_if_runs_off_the_event_loop_and_respects_keep_and_avoid(configured_advisor, monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    from fpl_oracle.advisor.critique import PlanEvaluationResult, plan_critique_service
+    from fpl_oracle.llm import tools
+
+    seen = {}
+
+    def fake(**kw):
+        seen.update(kw, thread=threading.current_thread())
+        return PlanEvaluationResult()
+
+    monkeypatch.setattr(plan_critique_service, "evaluate_plan", fake)
+    monkeypatch.setattr(tools.data_store, "get_profile", lambda: SimpleNamespace(keep_ids=[7], avoid_ids=[9, 7]))
+
+    async def run():
+        loop_thread = threading.current_thread()
+        await tool_executor.execute("evaluate_plan", {})
+        return loop_thread
+
+    loop_thread = asyncio.run(run())
+    assert seen["thread"] is not loop_thread  # a minute-long solve must not freeze the app
+    assert seen["locked_in_ids"] == [7]
+    assert seen["locked_out_ids"] == [9]  # a player both kept and avoided is kept, as in the main plan
+
+
 def test_critique_honours_proposed_chip_and_chip_availability():
     import pandas as pd
 

@@ -59,11 +59,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS Middleware (Local dev & dashboard access)
+# Only the app's own page (http://127.0.0.1:<port> or http://localhost:<port>) may call the API from a browser.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origin_regex=r"^http://(127\.0\.0\.1|localhost)(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -155,8 +154,9 @@ async def serve_spa_or_static(full_path: str):
     if full_path.startswith("api/"):
         return SafeJSONResponse(status_code=404, content={"detail": "API endpoint not found"})
 
-    candidate_file = WEB_DIR / full_path
-    if candidate_file.is_file():
+    # Only files inside the web folder are served; "../" and absolute paths fall through to the page.
+    candidate_file = (WEB_DIR / full_path).resolve()
+    if candidate_file.is_relative_to(WEB_DIR.resolve()) and candidate_file.is_file():
         return FileResponse(candidate_file)
 
     index_file = WEB_DIR / "index.html"

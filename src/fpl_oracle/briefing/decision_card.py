@@ -27,6 +27,8 @@ logger = logging.getLogger("fpl_oracle.briefing.decision_card")
 
 
 MIN_LATER_CHIP_GAIN = 1.0
+BACKUP_PLANNER_NOTICE = "The main planner failed this run; this is a simpler backup plan."
+BACKUP_CHIP_TEXT = "Keep your chips this week; the backup planner does not judge chips."
 
 
 def _millions(price: Any) -> float:
@@ -147,11 +149,18 @@ def _close_calls(rec_plan: dict[str, Any]) -> list[str]:
     """Plain lines for owned players kept because selling them was not clearly better, and for players the plan
     sells (or skips) only narrowly: inside the forecast's uncertainty."""
     weeks = len(rec_plan.get("trajectory") or [])
-    lines = [
-        f"Keeping {k['player']}: selling him gains only {k['gain_from_selling']:.1f} points over the next {weeks} "
-        f"gameweeks, less than the {k['needed']:.1f} the forecasts' uncertainty requires."
-        for k in rec_plan.get("kept_owned") or []
-    ]
+    lines = []
+    kept = rec_plan.get("kept_owned") or []
+    if kept:
+        # One joint figure covers the whole kept set, so it is stated once, never per player.
+        names = [k["player"] for k in kept]
+        who = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+        one = len(names) == 1
+        lines.append(
+            f"Kept {who}: selling {'him' if one else 'them'} gains only {kept[0]['gain_from_selling']:.1f} points"
+            f"{'' if one else ' together'} over the next {weeks} gameweeks, less than the {kept[0]['needed']:.1f} "
+            "the forecasts' uncertainty requires."
+        )
     for c in rec_plan.get("league_cover_checks") or []:
         if c["chosen"] or not c["close"] or c["points_vs_plan"] > 0:
             continue
@@ -517,8 +526,11 @@ class DecisionCardGenerator:
         }
 
         # Synchronize chip decision directly with joint planner
-        chip_rec_now = bool(joint_res.get("recommended_chip") is not None)
-        active_chip_code = joint_res.get("recommended_chip")
+        backup_planner = bool((joint_res.get("decision_scope") or {}).get("fallback_used"))
+        # The backup planner does not judge chips; only one it needed for lack of any legal team is still shown.
+        no_chip_advice = backup_planner and joint_res.get("normal_plan_feasible", True)
+        chip_rec_now = joint_res.get("recommended_chip") is not None and not no_chip_advice
+        active_chip_code = None if no_chip_advice else joint_res.get("recommended_chip")
         from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
 
         best_cand = joint_res.get("best_candidate", {})
@@ -538,10 +550,14 @@ class DecisionCardGenerator:
             "recommend": chip_rec_now,
             "chip_name": active_chip_code,
             "chip_display_name": active_chip_name,
-            "reason": chip_text or ("Save your chips this week." if not chip_rec_now else None),
+            "reason": BACKUP_CHIP_TEXT
+            if no_chip_advice
+            else chip_text or ("Save your chips this week." if not chip_rec_now else None),
             "comparison": chip_text,
             "check": rec_plan.get("decision_check") or rec_plan.get("rejected_alternative"),
-            "later": _later_chips(rec_plan, joint_res.get("measured_chip_roadmap") or [], target_gw),
+            "later": []
+            if no_chip_advice
+            else _later_chips(rec_plan, joint_res.get("measured_chip_roadmap") or [], target_gw),
             "next_best_window": None,
             "gain_vs_hold": (
                 round(float(best_cand.get("net_gain_vs_hold", 0.0)), 1)
@@ -727,20 +743,27 @@ class DecisionCardGenerator:
 
                             # Monte Carlo simulation across multi-gameweek horizon
                             # A failed simulation must not hide the rival analysis that already succeeded.
-                            try:
-                                mc_res = await asyncio.to_thread(
-                                    monte_carlo_simulator.simulate_league,
-                                    user_points=user_pts,
-                                    user_squad_df=user_squad_df,
-                                    rival_squads=rivals_res.get("rival_squads", []),
-                                    projections_df=target_df,
-                                    horizon_gws=5,
-                                    seed=42,
-                                    projections_by_gw=horizon_proj,
-                                )
-                            except Exception as e:
-                                logger.error(f"[DecisionCard] Error during rival/Monte Carlo simulation: {e}")
-                                mc_res = {"status": "SIMULATION_ERROR", "error": str(e)}
+                            if rivals_res.get("rivals_failed"):
+                                # A smaller rival field would overstate the chance of finishing first.
+                                mc_res = {
+                                    "status": "RIVALS_INCOMPLETE",
+                                    "message": "League numbers are unavailable this run: some rivals' teams could not be loaded.",
+                                }
+                            else:
+                                try:
+                                    mc_res = await asyncio.to_thread(
+                                        monte_carlo_simulator.simulate_league,
+                                        user_points=user_pts,
+                                        user_squad_df=user_squad_df,
+                                        rival_squads=rivals_res.get("rival_squads", []),
+                                        projections_df=target_df,
+                                        horizon_gws=5,
+                                        seed=42,
+                                        projections_by_gw=horizon_proj,
+                                    )
+                                except Exception as e:
+                                    logger.error(f"[DecisionCard] Error during rival/Monte Carlo simulation: {e}")
+                                    mc_res = {"status": "SIMULATION_ERROR", "error": str(e)}
 
                             exposure_names = [p.get("web_name", "") for p in rivals_res.get("template_players", [])[:3]]
                             diff_names = [p.get("web_name", "") for p in rivals_res.get("differential_players", [])[:3]]
@@ -785,7 +808,9 @@ class DecisionCardGenerator:
                                     "p_first": None,
                                     "expected_rank": None,
                                     "mc_se": None,
-                                    "simulation_note": mc_res.get("status", "Unknown simulation state"),
+                                    "simulation_note": mc_res.get(
+                                        "message", mc_res.get("status", "Unknown simulation state")
+                                    ),
                                 }
                             else:
                                 win_prob_dict = {
@@ -815,6 +840,14 @@ class DecisionCardGenerator:
         if summary and league_odds:
             # From the planner's win-probability model (docs/decision_model.md section 4), same plan as the card
             summary["win_chance"] = league_odds["p_win"]
+            # One "chance of finishing first" everywhere: the planner's. The held-squad estimate is not shown beside it.
+            win_prob_dict = {
+                "status": "simulated",
+                "p_first": round(league_odds["p_win"] * 100, 1),
+                "expected_rank": None,
+                "mc_se": None,
+                "simulation_note": "The planner's chance of finishing first with this plan.",
+            }
             summary["text"] += f" Chance of finishing first with this plan: about {league_odds['p_win']:.0%}."
             covers = [c for c in rec_plan.get("league_cover_checks") or [] if not c["chosen"] and not c["close"]]
             if rec_plan.get("league_tiebreak"):
@@ -890,6 +923,8 @@ class DecisionCardGenerator:
             caveats.append(str(chip_decision["set_1_deadline_warning"]))
         if effective_state.error_message:
             caveats.insert(0, effective_state.error_message)
+        if backup_planner:
+            caveats.insert(0, BACKUP_PLANNER_NOTICE)
         minutes_note = _minutes_note(target_df, starters_list + transfers_in)
         if minutes_note:
             caveats.append(minutes_note)
@@ -995,6 +1030,7 @@ class DecisionCardGenerator:
             "track_record": track_record_summary(),
             "what_changed": what_changed,
             "minutes_note": minutes_note,
+            "backup_planner_notice": BACKUP_PLANNER_NOTICE if backup_planner else None,
             "close_calls": _close_calls(rec_plan),
             "press_signals": press_notes,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
