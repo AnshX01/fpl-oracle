@@ -79,8 +79,21 @@ def _comparison_sentences(rec_plan: dict[str, Any], chip_display: str | None) ->
                 chip_text = f"Playing it now is {_better(gain)} than keeping your {name} for later."
         elif versus == "rolling":
             if rejected:
+                moves = ", ".join(
+                    f"{p['out']['web_name']} for {p['in']['web_name']}"
+                    for p in _pair_moves(check.get("ins") or [], check.get("outs") or [])
+                    if p["out"] and p["in"]
+                )
                 move_text = (
-                    f"The best move is only {_better(gain)} than saving the transfer, too close to justify making it."
+                    f"The best move{f' ({moves})' if moves else ''} is only {_better(gain)} than saving the "
+                    f"transfer over the next {len(rec_plan.get('trajectory') or [])} gameweeks; it would need {float(check.get('needed', 0.0)):.1f} to beat the "
+                    "forecasts' uncertainty, so it is too close to justify making it."
+                )
+            elif not check.get("passed", True):
+                # Only the league tie-break recommends a move that did not clear the margin on points
+                move_text = (
+                    f"These moves are only {_better(gain)} than saving the transfer; they are chosen because "
+                    "they raise your chance of finishing first."
                 )
             else:
                 # The headline gives the points; this line only says the gain clears the forecasts' uncertainty
@@ -197,6 +210,41 @@ def _minutes_note(target_df: pd.DataFrame, players: list[dict[str, Any]]) -> str
         return None
     names = ", ".join(f"{name} ({chance:.0%} to start)" for name, chance in unsure.items())
     return f"Starting place not certain: {names}. Check team news before the deadline."
+
+
+def _bench_note(target_df: pd.DataFrame, bench: list[dict[str, Any]]) -> str | None:
+    """Plain line for doubtful players already on the bench: they cost little this week, so no move is needed."""
+    if target_df.empty or "p_play" not in target_df:
+        return None
+    p_play = target_df.groupby("element")["p_play"].max()
+    doubtful = [
+        f"{b['web_name']} ({p_play[b['element']]:.0%} to play)"
+        for b in bench
+        if b["element"] in p_play.index and p_play[b["element"]] < 0.5
+    ]
+    if not doubtful:
+        return None
+    one = len(doubtful) == 1
+    return (
+        f"{', '.join(doubtful)} {'is' if one else 'are'} on your bench, so "
+        f"{'he costs' if one else 'they cost'} little this week."
+    )
+
+
+def _captain_reason(rec_plan: dict[str, Any]) -> str:
+    """Why this captain: the top forecast, or a near-equal pick that raises the chance of finishing first."""
+    check = rec_plan.get("captain_check")
+    switched = (check or {}).get("switched")
+    if switched:
+        return (
+            f"Chosen for the league: {switched['points_given_up']:.1f} points below {switched['instead_of']} on "
+            f"forecast, inside the {switched['needed']:.1f}-point uncertainty, and it raises your chance of finishing "
+            f"first from {switched['p_win_before']:.0%} to {switched['p_win_after']:.0%}."
+        )
+    text = "Highest predicted score in your team"
+    if check:
+        text += f"; {check['owners']} of the {check['rivals']} rivals within reach own him"
+    return text + "."
 
 
 def _your_choices(boot: Any) -> dict[str, list[dict[str, Any]]]:
@@ -442,6 +490,7 @@ class DecisionCardGenerator:
             "expected_points": round(float(lineup_res["captain"]["expected_points"]), 2),
             "p10": round(float(lineup_res["captain"].get("p10", 0.0)), 2),
             "p90": round(float(lineup_res["captain"].get("p90", 0.0)), 2),
+            "reason": _captain_reason(rec_plan),
         }
 
         vice_dict = {
@@ -1030,6 +1079,7 @@ class DecisionCardGenerator:
             "track_record": track_record_summary(),
             "what_changed": what_changed,
             "minutes_note": minutes_note,
+            "bench_note": _bench_note(target_df, bench_list),
             "backup_planner_notice": BACKUP_PLANNER_NOTICE if backup_planner else None,
             "close_calls": _close_calls(rec_plan),
             "press_signals": press_notes,

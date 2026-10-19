@@ -462,3 +462,28 @@ def test_plan_prices_normalised_to_millions():
     assert _millions(65.0) == 6.5  # MILP trajectory: tenths
     assert _millions(6.5) == 6.5  # beam search: millions
     assert _millions(None) == 0.0
+
+
+def test_moves_that_miss_the_margin_are_not_called_clear():
+    from fpl_oracle.briefing.decision_card import _comparison_sentences
+
+    check = {"gain": 1.24, "needed": 1.75, "passed": False, "versus": "rolling"}
+    _, text = _comparison_sentences({"decision_check": check}, None)
+    assert "more than the forecasts' uncertainty" not in text and "finishing first" in text
+
+
+def test_card_says_why_for_bench_doubts_and_captain():
+    import pandas as pd
+
+    from fpl_oracle.briefing.decision_card import _bench_note, _captain_reason
+
+    df = pd.DataFrame({"element": [1, 2], "p_play": [0.25, 0.9]})
+    bench = [{"element": 1, "web_name": "Szoboszlai"}, {"element": 2, "web_name": "White"}]
+    assert _bench_note(df, bench) == "Szoboszlai (25% to play) is on your bench, so he costs little this week."
+    switched = {"instead_of": "Haaland", "points_given_up": 0.8, "needed": 0.95, "p_win_before": 0.2, "p_win_after": 0.22}
+    assert "raises your chance of finishing first from 20% to 22%" in _captain_reason(
+        {"captain_check": {"owners": 2, "rivals": 7, "switched": switched}}
+    )
+    assert _captain_reason({"captain_check": {"owners": 6, "rivals": 7, "switched": None}}).endswith(
+        "6 of the 7 rivals within reach own him."
+    )

@@ -148,6 +148,7 @@
         <section class="sec">
           <h3 class="sec-title">Captain and vice-captain</h3>
           <div class="item-row"><span><strong>{{ card.captain.web_name }}</strong><span class="mark">C</span><span class="meta">{{ card.captain.team_short }} · predicted {{ card.captain.expected_points }} points, {{ (card.captain.expected_points * 2).toFixed(1) }} as captain</span></span></div>
+          <p v-if="card.captain.reason" class="subtle" data-testid="captain-reason">{{ card.captain.reason }}</p>
           <div class="item-row"><span><strong>{{ card.vice_captain.web_name }}</strong><span class="mark vc">VC</span><span class="meta">{{ card.vice_captain.team_short }} · predicted {{ card.vice_captain.expected_points }} points</span></span></div>
         </section>
 
@@ -164,6 +165,7 @@
             <span class="xi-players"><span class="xi-p">{{ p.web_name }} <span v-if="p.position !== 'GKP'" class="subtle">{{ p.position }}</span> <span class="subtle num">{{ p.expected_points }}</span></span></span>
           </div>
           <p v-if="card.minutes_note" class="subtle" data-testid="minutes-note">{{ card.minutes_note }}</p>
+          <p v-if="card.bench_note" class="subtle" data-testid="bench-note">{{ card.bench_note }}</p>
         </section>
 
         <!-- 5. Chip -->
