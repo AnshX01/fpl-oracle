@@ -38,3 +38,25 @@ def test_win_probability_counts_shared_risk_once():
     one, two = p(other), p(other * 2)
     assert abs(one["p_win"] - one["rivals"][0]["p_above"]) < 0.01
     assert abs(two["p_win"] - one["p_win"]) < 0.01  # not one squared
+
+
+def test_captain_on_a_near_tie_follows_the_league():
+    from tests.test_planner_audit_fixes import evaluate, scenario
+
+    squad, pool, proj = scenario(squad_xp=2.0, pool_xp=0.5, gws=(8,))
+    a, b = (int(e) for e in squad[squad.position != "GKP"].element.iloc[:2])
+    for frame in [pool, *proj.values()]:
+        frame.loc[frame.element == a, ["expected_points", "p10", "p90"]] = (5.0, 1.0, 11.0)
+        frame.loc[frame.element == b, ["expected_points", "p10", "p90"]] = (4.9, 1.0, 11.0)
+    squad = pool[pool.element.isin(squad.element)].reset_index(drop=True)
+    twin = [dict(points=130, elements=[int(e) for e in squad.element], captain=a)]
+
+    def captain(user_points):
+        res = evaluate(squad, pool, proj, 1, chips_available=[], xp_estimation_sd=1.0,
+                       rival_context=dict(user_points=user_points, rivals=twin))
+        return int(res["recommended_plan"]["trajectory"][0]["captain"]), res["recommended_plan"]
+
+    chasing, plan = captain(100)  # 30 behind a rival with the same team: copying his captain cannot catch him
+    assert chasing == b and plan["captain_check"]["switched"]["instead_of"] == plan["lineup"]["vice_captain"]["web_name"]
+    leading, plan = captain(160)  # 30 ahead: matching his captain locks the lead
+    assert leading == a and plan["captain_check"]["switched"] is None

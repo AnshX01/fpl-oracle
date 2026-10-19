@@ -165,6 +165,7 @@ def build_decision_record(result: dict[str, Any], extras: dict[str, Any] | None 
                 "summary": transfers.get("action_summary"),
                 "hit_policy": card.get("hit_policy"),
                 "why": card.get("two_line_reasoning"),
+                "versus_saving": transfers.get("comparison"),
             },
             depth=3,
         ),
@@ -186,12 +187,14 @@ def build_decision_record(result: dict[str, Any], extras: dict[str, Any] | None 
             "formation": squad.get("formation") or card.get("formation"),
             "captain": _clean({k: captain.get(k) for k in _ARMBAND_KEYS}),
             "vice_captain": _clean({k: vice.get(k) for k in _ARMBAND_KEYS}),
-            "captain_reason": f"Highest-xP starters: {top}. Captain and vice come from the same optimiser as the XI.",
+            "captain_reason": (card.get("captain") or {}).get("reason")
+            or f"Highest-xP starters: {top}. Captain and vice come from the same optimiser as the XI.",
             "xi_xp": squad.get("starters_expected_points"),
             "total_xp_with_captain": squad.get("total_expected_points"),
             "xi": [_player(p, form) for p in starters],
             "bench": [_player(p, form) for p in bench],
             "bench_reason": "Bench order is the optimiser's choice; first bench player is first auto-sub.",
+            "bench_note": card.get("bench_note"),
         },
         "alternatives": {
             "chip_options": _clean(card.get("ranked_options"), items=10),

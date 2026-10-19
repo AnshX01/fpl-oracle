@@ -104,11 +104,12 @@ class MultiPeriodConfig:
     gamma: float = 0.95
     solver_name: Literal["highs", "cbc"] = "highs"
     mip_gap: float = 1e-4  # 0.01% (rel gap <= 1e-4, abs gap <= 0.05 xP on 500 xP horizon)
-    time_limit_sec: int = 50  # per solve; the best incumbent and its gap are kept and reported when it is hit
+    # Every solve runs to the proven best plan (within mip_gap): a time-limited search stops at a point that
+    # depends on the machine and its load, so identical inputs could give different advice. The cap is a safety
+    # net only (a full 12-week plan proves out in ~6 min); a solve that hits it is reported as not proven.
+    time_limit_sec: int = 3600
     mip_heuristic_effort: float = 0.7  # HiGHS primal-heuristic share; 0.7 found ~3% better incumbents than 0.05 in 60 s
-    wave1_time_limit_sec: float = 30.0  # first solve of each candidate; polishing does the rest
     polish_window: int = 4  # weeks re-optimised together in one local-search step (step = half a window)
-    polish_window_time_limit_sec: float = 20.0  # 4-week windows solve to optimality in ~2-15 s
     # Owner rule: no back-to-back chips. Chip weeks must be at least this many gameweeks apart (1 = no rule).
     # With no blank/double gameweeks announced, flat projections otherwise bunch every chip into the first weeks.
     min_gameweeks_between_chips: int = 2
@@ -296,7 +297,7 @@ class MultiPeriodOptimizer:
             if p in sf:
                 prob += sf[p] == 1
         prob += pulp.lpSum(xp.get(p, 0.0) * ((1.0 - w_bench) * sf[p] + cf[p] + w_bench * xf[p]) for p in ids)
-        if prob.solve(self._get_solver(min(self.config.time_limit_sec, 20))) != pulp.constants.LpStatusOptimal:
+        if prob.solve(self._get_solver(self.config.time_limit_sec)) != pulp.constants.LpStatusOptimal:
             return None
         chosen = [p for p in ids if (xf[p].varValue or 0.0) > 0.5]
         starters = [p for p in chosen if (sf[p].varValue or 0.0) > 0.5]
@@ -1181,6 +1182,9 @@ class MultiPeriodOptimizer:
 
         `bound` is the full solve's dual bound for this task; the reported gap stays relative to it, so a
         polished plan is never called proven unless that bound is met (None = no bound known)."""
+        proven = bound if bound is not None else plan.total_objective * (1.0 + plan.solver_gap)
+        if plan.total_objective * (1.0 + self.config.mip_gap) >= proven:
+            return plan  # already the proven best for this task: no window can improve it
         width = self.config.polish_window
         best = plan
         gws = plan.horizon_gws
@@ -1191,7 +1195,7 @@ class MultiPeriodOptimizer:
             result = run(
                 f"polish:{name}:{window[0]}",
                 dict(extra, warm_start=best.integer_solution, fix_except_gws=window),
-                self.config.polish_window_time_limit_sec,
+                self.config.time_limit_sec,
             )
             if isinstance(result, MultiPeriodPlan) and result.total_objective > best.total_objective + 1e-6:
                 best = result
@@ -1456,10 +1460,6 @@ class MultiPeriodOptimizer:
         from fpl_oracle.rules.transfers import validate_chip_legality
 
         limit = float(time_limit_sec if time_limit_sec is not None else self.config.time_limit_sec)
-        # Wave 1 only needs a good start: a window-by-window local search then polishes each contender.
-        wave1_limit = min(limit, self.config.wave1_time_limit_sec)
-        wave2_limit = min(limit, 20.0)
-        alt_limit = min(limit, 25.0)  # alternatives are context, not the decision
         workers = os.cpu_count() or 4
 
         # --- chip availability: never plan a chip that is not available in the set it would be played in
@@ -1519,14 +1519,11 @@ class MultiPeriodOptimizer:
                 return {name: fut.result() for name, fut in futures.items()}
 
         def run_batch(batch: dict[str, dict[str, Any]], lim: float) -> dict[str, MultiPeriodPlan | Exception]:
-            """Independent solves in parallel (HiGHS releases the GIL). With fewer cores than solves the
-            time limit is shared so the wall clock stays near `lim`."""
+            """Independent solves in parallel (HiGHS releases the GIL)."""
             if not batch:
                 return {}
-            pool_size = min(len(batch), workers)
-            per_solve = max(8.0, lim / math.ceil(len(batch) / pool_size))
-            with ThreadPoolExecutor(max_workers=pool_size) as pool:
-                futures = {name: pool.submit(run, name, extra, per_solve) for name, extra in batch.items()}
+            with ThreadPoolExecutor(max_workers=min(len(batch), workers)) as pool:
+                futures = {name: pool.submit(run, name, extra, lim) for name, extra in batch.items()}
                 return {name: fut.result() for name, fut in futures.items()}
 
         # --- wave 1
@@ -1544,7 +1541,7 @@ class MultiPeriodOptimizer:
             tasks["hold"] = {"no_chip_w1": True}
             for chip in chips_now:
                 tasks[f"chip:{chip}"] = {"forced_w1_chip": chip}
-        solved = run_batch(tasks, wave1_limit)
+        solved = run_batch(tasks, limit)
         if isinstance(solved["roll"], Exception):
             raise solved["roll"]
         plans = {n: p for n, p in solved.items() if isinstance(p, MultiPeriodPlan)}
@@ -1609,7 +1606,7 @@ class MultiPeriodOptimizer:
                         seed[key] = 0
                 seed[(chip_w1, t_k)] = 1
                 name = f"hold_delay{k}"
-                plan = run(name, {"no_chip_w1": True, "warm_start": seed}, wave2_limit)
+                plan = run(name, {"no_chip_w1": True, "warm_start": seed}, limit)
                 return self._polish(run, tasks[name], plan, name, bound) if isinstance(plan, MultiPeriodPlan) else None
 
             delays = [k for k in (1, 3, 6) if k < len(gws_h)]
@@ -1781,11 +1778,11 @@ class MultiPeriodOptimizer:
         pool2 = ThreadPoolExecutor(max_workers=max(1, min(workers, len(alt_runs) + len(chips_now) + len(extra_tasks))))
         try:
             alt_futures = {
-                name: pool2.submit(run, name, dict(forced_kw, forbidden_w1_moves=forbidden), alt_limit)
+                name: pool2.submit(run, name, dict(forced_kw, forbidden_w1_moves=forbidden), limit)
                 for name, forbidden in alt_runs.items()
             }
             if extra_tasks:
-                extra = run_batch(extra_tasks, wave2_limit)
+                extra = run_batch(extra_tasks, limit)
                 new_plans = {n: p for n, p in extra.items() if isinstance(p, MultiPeriodPlan)}
                 # Covers are compared with fully polished plans, so they get the same polish
                 new_plans.update(
@@ -1838,7 +1835,9 @@ class MultiPeriodOptimizer:
                         f"Roll the transfer: the best move gains {check['gain']:+.2f} xP, within the "
                         f"{check['uncertainty']:.2f} xP uncertainty of the forecasts (needs {check['needed']:.2f})."
                     )
-                    cand_roll["rejected_alternative"] = dict(check, versus="rolling")
+                    cand_roll["rejected_alternative"] = dict(
+                        check, versus="rolling", ins=rec_plan["transfers_in"], outs=rec_plan["transfers_out"]
+                    )
                     rec_plan = cand_roll
                 else:
                     rec_plan.setdefault("decision_check", dict(check, versus="rolling"))
@@ -1856,7 +1855,7 @@ class MultiPeriodOptimizer:
             if keep_tasks:
                 report_search_progress("Checking whether to keep the players it would sell")
                 solved_keeps = {
-                    n: q for n, q in run_batch(keep_tasks, wave2_limit).items() if isinstance(q, MultiPeriodPlan)
+                    n: q for n, q in run_batch(keep_tasks, limit).items() if isinstance(q, MultiPeriodPlan)
                 }
                 solved_keeps = run_parallel(
                     {n: (lambda n=n: self._polish(run, keep_tasks[n], solved_keeps[n], n, None)) for n in solved_keeps}
@@ -1890,7 +1889,7 @@ class MultiPeriodOptimizer:
                 else:
                     name = "keep:" + "+".join(map(str, sorted(trial)))
                     keep_extra = dict(chip_of(base_plan), locked_in_ids=sorted(set(locked_in_ids or ()) | trial))
-                    keep_solve = run(name, keep_extra, wave2_limit)
+                    keep_solve = run(name, keep_extra, limit)
                     plan_now = None
                     if isinstance(keep_solve, MultiPeriodPlan):
                         keep_solve = self._polish(run, keep_extra, keep_solve, name, None)
@@ -1973,11 +1972,29 @@ class MultiPeriodOptimizer:
                     and (c is rec_plan or not confident(rec_plan, c)["passed"])
                     and kept_ids <= {int(p) for p in c["trajectory"][0]["elements"]}
                 ]
-                choice = max(tied, key=lambda c: (c["league"]["p_win"], c["total_objective"]), default=rec_plan)
+                # Inside the tie the point gap is forecast noise (the rules above just said so), so plans are
+                # compared at the recommendation's predicted points: only who owns whom may move the choice
+                rec_net = raw_points(plan_weeks(rec_plan)) - hit_points(rec_plan)
+                level = {
+                    id(c): win_probability(
+                        plan_weeks(c),
+                        held,
+                        raw_points(plan_weeks(c)) - rec_net + best_points,
+                        horizon_gws,
+                        rival_context,
+                        maps,
+                        sd_maps,
+                        positions,
+                        rival_cache,
+                    )["p_win"]
+                    for c in tied
+                }
+                choice = max(tied, key=lambda c: (level[id(c)], c["total_objective"]), default=rec_plan)
                 if (
                     choice is not rec_plan
                     and rec_plan.get("league")
-                    and choice["league"]["p_win"] > rec_plan["league"]["p_win"] + 0.005
+                    and level[id(choice)] > level.get(id(rec_plan), rec_plan["league"]["p_win"]) + 0.005
+                    and choice["league"]["p_win"] >= rec_plan["league"]["p_win"]  # never a lower title chance
                 ):
                     choice["league_tiebreak"] = {
                         "replaced_points_plan": rec_plan["total_objective"],
@@ -2026,6 +2043,71 @@ class MultiPeriodOptimizer:
                         )
                     )
                 ]
+
+                # Captain (decision_model.md section 4): among starters whose armband points sit within the forecasts'
+                # uncertainty of the top pick, the one most likely to finish first, compared at equal points like the
+                # tie-break above; never one that lowers the real title chance.
+                week0, lineup = rec_plan["trajectory"][0], rec_plan["lineup"]
+                extra = lineup["captain"]["multiplier"] - 1  # copies of his score the armband adds
+                top = int(week0["captain"])
+                cap_needed = max(stability_threshold, z * sigma_est * math.sqrt(2) * extra)
+                rec_net = raw_points(plan_weeks(rec_plan)) - hit_points(rec_plan)
+
+                def captained(p: int) -> tuple[float, dict[str, Any]]:
+                    weeks = plan_weeks(rec_plan)
+                    weeks[0] = week_weights(week0["starters"], p, week0.get("chip"), week0["bench"])
+                    args = (horizon_gws, rival_context, maps, sd_maps, positions, rival_cache)
+                    level = win_probability(weeks, held, raw_points(weeks) - rec_net + best_points, *args)
+                    return level["p_win"], win_probability(weeks, held, best_points + hit_points(rec_plan), *args)
+
+                close = [
+                    int(p)
+                    for p in week0["starters"]
+                    if (maps[target_gw].get(top, 0.0) - maps[target_gw].get(int(p), 0.0)) * extra < cap_needed
+                ]
+                scored = {p: captained(p) for p in close}
+                pick = max(close, key=lambda p: (scored[p][0], p == top))
+                owners = sum(top in r["elements"] for r in rival_context["rivals"])
+                rec_plan["captain_check"] = {"owners": owners, "rivals": len(rival_context["rivals"]), "switched": None}
+                if pick != top and scored[pick][0] > scored[top][0] + 0.005 and scored[pick][1]["p_win"] >= (
+                    scored[top][1]["p_win"]
+                ):
+                    rows = lineup["starters"].set_index("element")
+                    old_cap = dict(lineup["captain"])
+                    lineup["vice_captain"] = {
+                        k: old_cap[k] for k in ("element", "web_name", "team", "expected_points", "p10", "p90")
+                    }
+                    lineup["captain"] = dict(
+                        old_cap,
+                        element=pick,
+                        web_name=rows.loc[pick, "web_name"],
+                        team=rows.loc[pick, "team"],
+                        expected_points=round(float(rows.loc[pick, "expected_points"]), 2),
+                        p10=round(float(rows.loc[pick].get("p10", 0.0)), 2),
+                        p90=round(float(rows.loc[pick].get("p90", 0.0)), 2),
+                    )
+                    given_up = round((old_cap["expected_points"] - lineup["captain"]["expected_points"]) * extra, 2)
+                    lineup["total_gameweek_expected_points"] = round(
+                        lineup["total_gameweek_expected_points"] - given_up, 2
+                    )
+                    week0.update(captain=pick, vice_captain=top, net_xp=round(week0["net_xp"] - given_up, 2))
+                    rec_plan["captain_check"].update(
+                        owners=sum(pick in r["elements"] for r in rival_context["rivals"]),
+                        switched={
+                            "instead_of": old_cap["web_name"],
+                            "points_given_up": given_up,
+                            "needed": round(cap_needed, 2),
+                            "p_win_before": rec_plan["league"]["p_win"],
+                            "p_win_after": scored[pick][1]["p_win"],
+                        },
+                    )
+                    rec_plan["league"] = scored[pick][1]
+            # The gains shown are measured against the roll plan the decision used (the best-searched one),
+            # not the first roll solve, which a short search can leave far behind
+            rec_plan["horizon_gain_vs_roll"] = round(rec_plan["horizon_net_xp"] - cand_roll["horizon_net_xp"], 2)
+            rec_plan["expected_gain"] = rec_plan["pure_xp_gain"] = round(
+                rec_plan["trajectory"][0]["net_xp"] - cand_roll["trajectory"][0]["net_xp"], 2
+            )
             rejected_hit = next((c for c in ranked if c["total_objective"] > top_cand["total_objective"]), None)
             rec_chip = rec_plan["chip"]
 
@@ -2051,7 +2133,7 @@ class MultiPeriodOptimizer:
                 # Start from the recommended plan with this chip switched off: always a legal plan, so a search that
                 # runs out of time can only understate the chip's value, never inflate it.
                 start = {k: (0 if k[0] == chip else v) for k, v in plans[rec_plan["source"]].integer_solution.items()}
-                return run(f"without:{chip}", dict(week_one, warm_start=start), wave2_limit, chips_by_set=shrunk)
+                return run(f"without:{chip}", dict(week_one, warm_start=start), limit, chips_by_set=shrunk)
 
             report_search_progress("Measuring what each chip is worth")
             without_futures = {c: pool2.submit(run_without, c) for c in scheduled}

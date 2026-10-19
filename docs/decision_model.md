@@ -104,8 +104,11 @@ Baseline b: for transfers, rolling; for a chip now, the same chip next week (or 
 This is what stops a 13-player Wildcard built on small samples from beating a two-transfer fix by a
 margin smaller than its own uncertainty.
 
-**Search noise and order of decisions.** Every margin above gains 1 point (SEARCH_TOLERANCE): plan values are
-time-limited search results that differ by up to a few points between runs. The chip-vs-keep and move-vs-roll
+**Search and order of decisions.** Every solve runs to the proven best plan (relative gap 0.01%, about 0.05
+points), so the same inputs give the same advice on any machine; time-limited searches stopped wherever the clock
+and machine load left them and flipped close calls between back-to-back runs. The one-hour cap per solve is a
+safety net only (a full 12-week plan proves out in about 6 minutes alone); a run takes about an hour.
+Every margin above still gains 1 point (SEARCH_TOLERANCE). The chip-vs-keep and move-vs-roll
 decisions are made first (the keep-the-chip baseline is polished once more when the verdict is within 3 points);
 keep checks then run on the surviving plan with its own chip, and a keep may not undo the decision that plan
 passed. The league tie-break only chooses among plans with the same chip, scoring title chances net of hits.
@@ -161,11 +164,19 @@ rule of thumb, decides whether covering is worth it. The card lists each cover c
 
 Use: expected points decide (sections 2–3). Among plans the forecasts cannot tell apart from the
 recommendation (it does not beat them by its own confidence margin), the tool picks the one with the higher
-P(win) and says so on the card. Over many remaining weeks var is large and this rarely changes the move;
+P(win) and says so on the card. Inside that tie the point gap is noise, so P(win) is compared with every plan
+set to the recommendation's predicted points (only who owns whom counts), and a switch may never lower the real
+P(win). Before this, a tied plan won on its extra predicted points alone, which undid the move-vs-roll rule
+(GW8 2026-27 with Calafiori, Groß and Haaland kept: two transfers +1.24 against 1.75 needed, then chosen anyway). Over many remaining weeks var is large and this rarely changes the move;
 near the end of the season it matters more, as it should. GW8 2026-27 (7 rivals in reach, all captaining Haaland): P(win) ≈ 22%, P(finish above leader) ≈ 28%;
 keeping Haaland as a cover costs 5.4 points and lowers P(win) to ≈ 19%.
 
 ## 5. Captaincy and bench
 
-Captain = argmax xP among starters (vice = best remaining starter, preferring a different kickoff).
+Captain = argmax xP among starters (vice = best remaining starter, preferring a different kickoff). With league
+data, every starter whose extra armband points are within max(m_min, z · σ · √2 · (multiplier − 1)) of the top
+pick is compared by P(win) at equal predicted points, as in the tie-break; a near-equal captain replaces the top
+pick only if it raises that P(win) by over half a point and does not lower the real P(win). The top pick becomes
+vice. Chasing a rival who shares your team, the less-owned captain is the only way to gain on him; leading,
+matching his captain protects the lead.
 Bench order = expected autosub value given each starter's non-play probability and formation legality.
