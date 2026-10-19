@@ -177,7 +177,6 @@
             <div class="pos-title">Likely later (checked again every week)</div>
             <div v-for="c in card.chip.later" :key="c.chip + c.gameweek" class="item-row">
               <span>{{ c.chip_display_name }}, gameweek {{ c.gameweek }}</span>
-              <span class="num">about {{ signed(c.gain) }} pts</span>
             </div>
           </div>
         </section>

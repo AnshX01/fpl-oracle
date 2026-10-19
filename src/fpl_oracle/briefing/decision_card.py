@@ -26,7 +26,6 @@ from fpl_oracle.server.analysis import analysis_service, target_gameweek
 logger = logging.getLogger("fpl_oracle.briefing.decision_card")
 
 
-MIN_LATER_CHIP_GAIN = 1.0
 BACKUP_PLANNER_NOTICE = "The main planner failed this run; this is a simpler backup plan."
 BACKUP_CHIP_TEXT = "Keep your chips this week; the backup planner does not judge chips."
 
@@ -103,29 +102,21 @@ def _comparison_sentences(rec_plan: dict[str, Any], chip_display: str | None) ->
     return chip_text, move_text
 
 
-def _later_chips(rec_plan: dict[str, Any], roadmap: list[dict[str, Any]], target_gw: int) -> list[dict[str, Any]]:
+def _later_chips(rec_plan: dict[str, Any], target_gw: int) -> list[dict[str, Any]]:
     """Chips the plan would play in later weeks. Provisional: the plan is re-decided at every deadline."""
     from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
 
-    gains = {r.get("code"): r.get("expected_gain") for r in roadmap or []}
-    later = []
-    for act in rec_plan.get("trajectory") or []:
-        chip, gw = act.get("chip"), int(act["gameweek"])
-        if chip and gw > target_gw:
-            gain = gains.get(chip)
-            if gain is None or float(gain) < MIN_LATER_CHIP_GAIN:
-                continue  # a gain this small is noise, and the plan is re-decided every week anyway
-            later.append(
-                {
-                    "chip": chip,
-                    "chip_display_name": CHIP_DISPLAY_NAMES.get(chip, chip),
-                    "gameweek": gw,
-                    "gain": round(float(gain), 1),
-                    "provisional": True,
-                    "label": "provisional - re-decided each week",
-                }
-            )
-    return later
+    return [
+        {
+            "chip": act["chip"],
+            "chip_display_name": CHIP_DISPLAY_NAMES.get(act["chip"], act["chip"]),
+            "gameweek": int(act["gameweek"]),
+            "provisional": True,
+            "label": "provisional - re-decided each week",
+        }
+        for act in rec_plan.get("trajectory") or []
+        if act.get("chip") and int(act["gameweek"]) > target_gw
+    ]
 
 
 def _ordinal(n: Any) -> str:
@@ -606,7 +597,7 @@ class DecisionCardGenerator:
             "check": rec_plan.get("decision_check") or rec_plan.get("rejected_alternative"),
             "later": []
             if no_chip_advice
-            else _later_chips(rec_plan, joint_res.get("measured_chip_roadmap") or [], target_gw),
+            else _later_chips(rec_plan, target_gw),
             "next_best_window": None,
             "gain_vs_hold": (
                 round(float(best_cand.get("net_gain_vs_hold", 0.0)), 1)

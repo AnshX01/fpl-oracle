@@ -45,23 +45,12 @@ def test_chip_comparison_in_plain_words():
 
 
 def test_later_chips_are_provisional():
-    plan = {
-        "trajectory": [
-            {"gameweek": 8, "chip": "wildcard"},
-            {"gameweek": 12, "chip": "bboost"},
-            {"gameweek": 15, "chip": "freehit"},
-        ]
-    }
-    # the 0.4 point Free Hit is noise and is dropped
-    later = _later_chips(
-        plan, [{"code": "bboost", "expected_gain": 3.456}, {"code": "freehit", "expected_gain": 0.4}], 8
-    )
-    assert later == [
+    plan = {"trajectory": [{"gameweek": 8, "chip": "wildcard"}, {"gameweek": 12, "chip": "bboost"}]}
+    assert _later_chips(plan, 8) == [
         {
             "chip": "bboost",
             "chip_display_name": "Bench Boost",
             "gameweek": 12,
-            "gain": 3.5,
             "provisional": True,
             "label": "provisional - re-decided each week",
         }
