@@ -637,7 +637,6 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
 
     try:
         milp_res = multiperiod_optimizer.evaluate_transfer_options(**milp_kwargs)
-        rec_plan = milp_res["recommended_plan"]
         solver = milp_res.get("solver", {})
         milp_res["is_joint_plan"] = True
         milp_res["decision_scope"] = {
@@ -652,14 +651,6 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
             "fallback_used": False,
             "ignored_inputs": ignored_inputs,
         }
-        if any(a.get("chip") in ("wildcard", "freehit") for a in rec_plan.get("trajectory", [])):
-            from fpl_oracle.rules.transfers import POST_CHIP_FT_RULE_DEFAULT, POST_CHIP_FT_RULE_STATUS
-
-            milp_res["decision_scope"]["assumptions"] = [
-                f"Free transfers after a Wildcard or Free Hit: rule '{POST_CHIP_FT_RULE_DEFAULT}' "
-                f"({POST_CHIP_FT_RULE_STATUS}). If FPL grants an extra transfer, banked transfers after the chip "
-                "week are one higher than shown."
-            ]
         if not solver.get("global_optimum_proven", False):
             logger.warning("MILP plan is the best incumbent, not proven optimal (max gap %s)", solver.get("max_gap"))
 
