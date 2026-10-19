@@ -551,7 +551,7 @@ def test_multiperiod_config_defaults():
     assert cfg.solver_name == "highs"
     assert cfg.gamma == 0.95
     assert cfg.mip_gap == 1e-4
-    assert cfg.time_limit_sec == 50
+    assert cfg.time_limit_sec == 3600  # a safety cap: solves run to the proven best
 
 
 def test_multiperiod_fast_single_gw_solve():
