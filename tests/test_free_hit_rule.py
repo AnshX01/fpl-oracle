@@ -30,3 +30,18 @@ def test_wildcard_now_still_allows_a_later_free_hit():
         forced_chip_schedule={8: "wildcard", 10: "freehit"},
     )
     assert [(a.gameweek, a.active_chip) for a in plan.trajectory if a.active_chip] == [(8, "wildcard"), (10, "freehit")]
+
+
+def test_a_chip_is_never_worth_more_than_it_adds_even_when_search_is_short():
+    from tests.test_planner_audit_fixes import evaluate, scenario
+
+    squad, pool, proj = scenario(squad_xp=2.0, pool_xp=3.0, gws=(8, 9, 10))
+    res = evaluate(squad, pool, proj, 3, time_limit_sec=2, chips_available=["bboost"])
+    rec = res["recommended_plan"]
+    for row in res["measured_chip_roadmap"]:
+        week = next((a for a in rec["trajectory"] if a.get("chip") == "bboost"), None)
+        if row["code"] != "bboost" or week is None or row["expected_gain"] is None:
+            continue
+        frame = proj[week["gameweek"]].set_index("element")["expected_points"]
+        bench_points = sum(float(frame.get(p, 0.0)) for p in week["bench"])  # what a Bench Boost adds that week
+        assert row["expected_gain"] <= bench_points + 1e-6

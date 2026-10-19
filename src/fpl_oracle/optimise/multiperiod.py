@@ -1890,7 +1890,10 @@ class MultiPeriodOptimizer:
                     week_one = {"no_chip_w1": True}
                 else:
                     week_one = {}
-                return run(f"without:{chip}", week_one, wave2_limit, chips_by_set=shrunk)
+                # Start from the recommended plan with this chip switched off: always a legal plan, so a search that
+                # runs out of time can only understate the chip's value, never inflate it.
+                start = {k: (0 if k[0] == chip else v) for k, v in plans[rec_plan["source"]].integer_solution.items()}
+                return run(f"without:{chip}", dict(week_one, warm_start=start), wave2_limit, chips_by_set=shrunk)
 
             report_search_progress("Measuring what each chip is worth")
             without_futures = {c: pool2.submit(run_without, c) for c in scheduled}

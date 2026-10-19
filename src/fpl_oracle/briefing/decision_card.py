@@ -81,7 +81,8 @@ def _comparison_sentences(rec_plan: dict[str, Any], chip_display: str | None) ->
                     f"The best move is only {_better(gain)} than saving the transfer, too close to justify making it."
                 )
             else:
-                move_text = f"These moves are {_better(gain)} than saving the transfer."
+                # The headline gives the points; this line only says the gain clears the forecasts' uncertainty
+                move_text = "These moves beat saving the transfer by more than the forecasts' uncertainty."
         elif versus == "best plan without a hit" and not rejected:
             move_text = f"The points hit pays off: {_better(gain)} than the best plan without one."
     return chip_text, move_text
