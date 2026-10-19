@@ -2111,33 +2111,10 @@ class MultiPeriodOptimizer:
             rejected_hit = next((c for c in ranked if c["total_objective"] > top_cand["total_objective"]), None)
             rec_chip = rec_plan["chip"]
 
-            # --- what each scheduled chip is worth: the plan re-solved without that chip
+            # Later chips are shown by planned week only: measuring each one's worth took four more full solves (about
+            # half the run) for a figure no decision uses
             expiry = SET_1_LAST_GW if target_gw <= SET_1_LAST_GW else 38
             scheduled = {a["chip"]: a["gameweek"] for a in rec_plan["trajectory"] if a["chip"] and a["chip"] != forced}
-
-            def run_without(chip: str) -> MultiPeriodPlan | Exception:
-                shrunk = {
-                    n: [c for c in names if c != chip] if n == target_set else list(names)
-                    for n, names in avail_lists.items()
-                }
-                # Keep this week's chip decision (it is what the card recommends) so the comparison is only
-                # about the chip being measured, and the solve stays as easy as the one that found the plan.
-                if forced:
-                    week_one: dict[str, Any] = dict(forced_kw)
-                elif rec_chip and rec_chip != chip:
-                    week_one = {"forced_w1_chip": rec_chip}
-                elif rec_chip is None:
-                    week_one = {"no_chip_w1": True}
-                else:
-                    week_one = {}
-                # Start from the recommended plan with this chip switched off: always a legal plan, so a search that
-                # runs out of time can only understate the chip's value, never inflate it.
-                start = {k: (0 if k[0] == chip else v) for k, v in plans[rec_plan["source"]].integer_solution.items()}
-                return run(f"without:{chip}", dict(week_one, warm_start=start), limit, chips_by_set=shrunk)
-
-            report_search_progress("Measuring what each chip is worth")
-            without_futures = {c: pool2.submit(run_without, c) for c in scheduled}
-            without_results = {c: f.result() for c, f in without_futures.items()}
             alt_results = {n: f.result() for n, f in alt_futures.items()}
             alt_plans = {n: r for n, r in alt_results.items() if isinstance(r, MultiPeriodPlan)}
         finally:
@@ -2195,90 +2172,27 @@ class MultiPeriodOptimizer:
         rows.sort(key=lambda r: (r["net_gain_vs_hold"] is None, -(r["net_gain_vs_hold"] or 0.0)))
         best_row = next((r for r in rows if r["is_recommended"]), rows[0] if rows else None)
 
-        # --- chip timeline from the recommended trajectory: what each chip is worth, and the cost of saving it
-        roadmap = []
-        frontier = []
+        # --- chip timeline from the recommended trajectory (re-decided every week)
         measurement_status = "measured_through_expiry" if horizon_gws[-1] == expiry else "incomplete_window"
-        for chip in [c for c in chips_now if c != forced]:
-            gw = scheduled.get(chip)
-            base = without_results.get(chip)
-            # Any plan already found that never uses this chip is also a valid "without it" plan; the best of
-            # them bounds the chip's value from above even when the dedicated re-solve ran out of time.
-            unused = [p for p in plans.values() if all(a.active_chip != chip for a in p.trajectory)]
-            if unused and (
-                not isinstance(base, MultiPeriodPlan) or max(p.total_objective for p in unused) > base.total_objective
-            ):
-                base = max(unused, key=lambda p: p.total_objective)
-            delta: float | None
-            if gw is None:
-                delta, status, base_score = 0.0, "measured", rec_plan["total_objective"]
-                base_traj = rec_plan["trajectory"]
-            elif isinstance(base, MultiPeriodPlan):
-                delta = round(rec_plan["total_objective"] - base.total_objective, 2)
-                status = "measured" if delta >= 0 else "search_inconclusive"
-                base_score = base.total_objective
-                base_traj = [
-                    {"gameweek": a.gameweek, "chip": a.active_chip, "transfers_count": a.transfers_count}
-                    for a in base.trajectory
-                ]
-            else:
-                delta, base_score, base_traj = None, None, []
-                # No legal plan without this chip vs. a search that ran out of time
-                status = (
-                    "search_inconclusive"
-                    if isinstance(base, MilpNoSolution) or not isinstance(base, MilpInfeasible)
-                    else "required_for_feasibility"
-                )
-            roadmap.append(
-                {
-                    "chip": CHIP_DISPLAY_NAMES[chip],
-                    "code": chip,
-                    "recommended_gw": gw,
-                    "expected_gain": delta,
-                    "baseline_score": base_score,
-                    "baseline_solver_gap": base.solver_gap if isinstance(base, MultiPeriodPlan) else None,
-                    "gain_is_upper_bound": bool(
-                        gw is not None and isinstance(base, MultiPeriodPlan) and base.is_lower_bound
-                    ),
-                    "plan_score": rec_plan["total_objective"],
-                    "baseline_trajectory": base_traj,
-                    "date_comparison": [],
-                    "forecast_through": expiry,
-                    "status": status,
-                    "reasoning": "Extra weighted points over the full plan without this chip. "
-                    "Transfers and other chip dates may change; gains do not add together."
-                    if gw is not None
-                    else "Not used in the best plan within the horizon: no measured benefit.",
-                }
-            )
-            if isinstance(base, MultiPeriodPlan) or gw is None:
-                frontier.append(
-                    {
-                        "chip": chip,
-                        "retained_through_gameweek": horizon_gws[-1],
-                        "first_chip": base.recommended_action.active_chip
-                        if isinstance(base, MultiPeriodPlan)
-                        else None,
-                        "retained_trajectory": base_traj,
-                        "ending_bank_tenths": base.trajectory[-1].bank_end
-                        if isinstance(base, MultiPeriodPlan)
-                        else None,
-                        "ending_free_transfers": base.trajectory[-1].free_transfers_next
-                        if isinstance(base, MultiPeriodPlan)
-                        else None,
-                        "discounted_horizon_cost_to_preserve": delta,
-                        "tail_value_break_even_at_horizon_end": round(
-                            float(delta or 0.0) / self.config.gamma ** len(horizon_gws), 2
-                        ),
-                        "interpretation": "If this chip's later option value exceeds this threshold, the preserved-chip "
-                        "trajectory may beat current-window deployment. Later value is not estimated.",
-                    }
-                )
+        roadmap = [
+            {
+                "chip": CHIP_DISPLAY_NAMES[chip],
+                "code": chip,
+                "recommended_gw": scheduled.get(chip),
+                "expected_gain": None,
+                "forecast_through": expiry,
+                "status": "planned" if chip in scheduled else "not_used",
+                "reasoning": "Planned week in the best plan; re-decided every week."
+                if chip in scheduled
+                else "Not used in the best plan within the horizon.",
+            }
+            for chip in chips_now
+            if chip != forced
+        ]
 
         # --- honest solver report: a time-limited incumbent is never called proven
         solver_rows = dict(plans)
-        solver_rows.update({f"without:{c}": r for c, r in without_results.items() if isinstance(r, MultiPeriodPlan)})
-        decisive = [p for n, p in solver_rows.items() if not n.startswith(("alt:", "without:"))]
+        decisive = [p for n, p in solver_rows.items() if not n.startswith("alt:")]
         solver = {
             "time_limit_sec": limit,
             "plans": {
@@ -2309,7 +2223,6 @@ class MultiPeriodOptimizer:
             "best_candidate": best_row,
             "measured_chip_roadmap": roadmap,
             "chip_measurement_status": measurement_status,
-            "resource_frontier": frontier,
             "decision_readiness": {
                 "status": "conditional" if rec_chip else "bounded_model_candidate",
                 "reasons": [

@@ -237,7 +237,6 @@ const app = createApp({
       if (h > 0) return `${h}h ${m}m`;
       return withSeconds ? `${m}m ${s % 60}s` : `${m}m`;
     },
-    signed(value) { return `${value >= 0 ? '+' : ''}${Number(value).toFixed(1)}`; },
     priceText(p) { return p.price != null ? `£${Number(p.price).toFixed(1)}m` : ''; },
     playerName(id) {
       const p = ((this.confirmTeamData && this.confirmTeamData.players) || []).find(x => x.element === Number(id));
