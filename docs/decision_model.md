@@ -35,6 +35,11 @@ For each fixture f of player i in gameweek t (0 fixtures = blank, 2 = double):
     Team totals: per match, Σ availability · E[G] = 0.963 · λ_team (own goals, 3.7% of goals, score for
     nobody) and Σ availability · E[A] = 0.879 · λ_team; goals of an absent player go to his team-mates.
     Cards: recent seasons weigh more (half per season back), since cards per appearance fall each season.
+    Clean sheets: P(CS | 60+) = 0.5 x model + 0.5 x bookmaker-implied chance rescaled to the observed rate
+    (held-out Brier better in all three seasons: 0.1768 -> 0.1725, 0.1907 -> 0.1850, 0.1957 -> 0.1946).
+    Availability: FPL return dates ("Expected back", "Suspended until") give 0 until the first gameweek after the
+    date, then 50/75/100% (a served ban 100% at once); unknown dates stay 0; press news needs two publishers or an
+    FPL flag to rule a player out, otherwise 75%.
     Training data excludes 2024-25 managers (Assistant Manager chip), who scored with zero minutes.
 
     xP(i,t) = Σ_f xP(i,f) · availability(i,t)   availability from official status/chance; a one-week doubt decays
@@ -98,6 +103,14 @@ stack one team.
 Baseline b: for transfers, rolling; for a chip now, the same chip next week (or the best no-chip plan).
 This is what stops a 13-player Wildcard built on small samples from beating a two-transfer fix by a
 margin smaller than its own uncertainty.
+
+**Search noise and order of decisions.** Every margin above gains 1 point (SEARCH_TOLERANCE): plan values are
+time-limited search results that differ by up to a few points between runs. The chip-vs-keep and move-vs-roll
+decisions are made first (the keep-the-chip baseline is polished once more when the verdict is within 3 points);
+keep checks then run on the surviving plan with its own chip, and a keep may not undo the decision that plan
+passed. The league tie-break only chooses among plans with the same chip, scoring title chances net of hits.
+GW8 2026-27: Wildcard now no longer clears its margin; two transfers gain 1.18 against 1.70 needed; the plan
+rolls the transfers and plays the Wildcard in GW9, keeping Haaland, Calafiori and Gross.
 
 **Keep what you own unless selling is clearly better.** For the four dearest players the best plan sells this
 week (only players good enough to start: at least the plan's weakest starter's forecast), the planner solves the
