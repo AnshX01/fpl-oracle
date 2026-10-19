@@ -1742,8 +1742,9 @@ class MultiPeriodOptimizer:
         # most from, with this week's chip unchanged. The tie-break below decides whether it is worth it.
         positions = {int(e): str(p) for e, p in zip(player_pool_df["element"], player_pool_df["position"], strict=True)}
         names_of = {int(e): str(n) for e, n in zip(player_pool_df["element"], player_pool_df["web_name"], strict=True)}
+        price_col = "selling_price" if "selling_price" in current_squad_df else "value"
         sell_price_of = dict(
-            zip(current_squad_df["element"].astype(int), current_squad_df["selling_price"].astype(float), strict=True)
+            zip(current_squad_df["element"].astype(int), current_squad_df[price_col].astype(float), strict=True)
         )
         rival_cache: dict[int, list[dict[int, float]]] = {}
         if forced:
