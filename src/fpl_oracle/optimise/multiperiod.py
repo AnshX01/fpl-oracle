@@ -150,8 +150,8 @@ class GameweekAction:
 
 
 KEEP_CHECKS = 4  # owned players sold this week that get a "keep him" re-solve, the dearest to re-buy first
-# Plans are compared on time-limited search results that differ by up to a few points between runs (GW8 2026-27:
-# the same restricted plan scored 559.16 alone and 558.53 inside the portfolio); one point of the margin is for that.
+# Extra point on every decision margin (owner's choice, about one point). Set when time-limited searches differed by
+# up to a few points between runs; solves now run to the proven best, so it is kept as a status-quo margin only.
 SEARCH_TOLERANCE = 1.0
 # Price changes (2023-24, 2024-25): over the next 4-8 gameweeks a player's price moves about 2.4 x £0.1m per unit of
 # this week's net transfers / owners (R2 0.12); a sale returns half of a rise and all of a fall.
