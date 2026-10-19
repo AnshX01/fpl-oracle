@@ -45,3 +45,12 @@ def test_a_chip_is_never_worth_more_than_it_adds_even_when_search_is_short():
         frame = proj[week["gameweek"]].set_index("element")["expected_points"]
         bench_points = sum(float(frame.get(p, 0.0)) for p in week["bench"])  # what a Bench Boost adds that week
         assert row["expected_gain"] <= bench_points + 1e-6
+
+
+def test_team_value_follows_the_sell_rule():
+    from fpl_oracle.optimise.multiperiod import team_value_gain
+
+    assert team_value_gain(0.0) == 0.0
+    assert team_value_gain(0.25) == 0.3  # a 0.6 rise: a sale keeps half
+    assert team_value_gain(-0.25) == -0.6  # a fall is taken in full
+    assert team_value_gain(5.0) == 1.5  # capped at a £0.3m move

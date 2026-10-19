@@ -129,7 +129,8 @@ def test_forced_transfers_are_real_swaps_of_owned_players(forced):
 def test_alternative_moves_are_generated():
     squad, pool, proj = scenario()
     res = evaluate(squad, pool, proj, 2, chips_available=[])
-    assert any(c["source"].startswith("alt:") for c in res["candidate_plans"])
+    # distinct week-1 alternatives: no-good cuts, or "keep him" re-solves that landed on the same moves
+    assert any(c["source"].startswith(("alt:", "keep:")) for c in res["candidate_plans"])
     moves = {
         (
             c["chip"],

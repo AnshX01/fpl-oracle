@@ -1313,6 +1313,7 @@ class FeatureEngineering:
 
         tid_to_name = {t.id: t.name for t in bootstrap.teams}
         first_gw = next((e.id for e in bootstrap.events if e.is_next), None)
+        total_managers = float(getattr(bootstrap, "total_players", 0) or 0)
         rows = []
         for elem in bootstrap.elements:
             pos_code = pos_map.get(elem.element_type, "MID")
@@ -1579,6 +1580,9 @@ class FeatureEngineering:
                     "value": float(elem.now_cost),
                     "is_2026_27": 1.0,
                     "chance_of_playing": cop,
+                    # Not a model input: this week's net transfers per owner, the planner's price-change signal
+                    "net_transfer_ratio": (float(elem.transfers_in_event or 0) - float(elem.transfers_out_event or 0))
+                    / max(float(elem.selected_by_percent or 0.0) / 100.0 * total_managers, 1000.0),
                 }
                 rows.append(row)
 
