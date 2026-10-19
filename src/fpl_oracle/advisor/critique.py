@@ -109,6 +109,8 @@ class PlanCritiqueService:
         target_gw: int,
         horizon_len: int = 5,
         chips_available: list[str] | None = None,
+        locked_in_ids: list[int] | None = None,
+        locked_out_ids: list[int] | None = None,
     ) -> PlanEvaluationResult:
         """
         Evaluates a manager proposal against the roll plan and optimal frontier alternative.
@@ -143,6 +145,8 @@ class PlanCritiqueService:
             target_gw=target_gw,
             horizon_len=horizon_len,
             chips_available=chips_available or [],
+            locked_in_ids=locked_in_ids,
+            locked_out_ids=locked_out_ids,
         )
         best_alt_xp = best_alt_plan.total_objective
 
@@ -303,6 +307,8 @@ class PlanCritiqueService:
         target_gw: int,
         horizon_len: int = 5,
         chips_available: list[str] | None = None,
+        locked_in_ids: list[int] | None = None,
+        locked_out_ids: list[int] | None = None,
     ) -> OptionComparisonReport:
         """
         Compares named alternatives side-by-side with net xP, hits, risk, and pros/cons.
@@ -331,6 +337,8 @@ class PlanCritiqueService:
                 target_gw=target_gw,
                 horizon_len=horizon_len,
                 chips_available=chips_available,
+                locked_in_ids=locked_in_ids,
+                locked_out_ids=locked_out_ids,
             )
 
             hits = max(0, len(moves) - free_transfers) if eval_res.proposed_chip not in _FREE_TRANSFER_CHIPS else 0
