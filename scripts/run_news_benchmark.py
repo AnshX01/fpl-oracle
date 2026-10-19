@@ -8,6 +8,7 @@ Generates reports/news_benchmark.json and reports/news_benchmark_results.json.
 import json
 import logging
 import sys
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
@@ -55,17 +56,15 @@ def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
     reconciler = AvailabilityReconciler(mode="shadow")
 
     case_records: list[dict[str, Any]] = []
-    tp = 0
-    fp = 0
-    fn = 0
-    tn = 0
-    false_ruled_out_count = 0
+    conf: defaultdict[str, Counter[str]] = defaultdict(Counter)  # confusion counts per case set
+    false_ruled_out: Counter[str] = Counter()
     injection_breaches = 0
     ssrf_breaches = 0
 
     for tc in HELD_OUT_BENCHMARK_CASES:
         cid = tc["id"]
         grp = tc.get("group", "general")
+        case_set = tc.get("set", "original")
 
         # SSRF Security Cases
         if grp == "ssrf":
@@ -149,7 +148,7 @@ def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
 
         # Evaluate False Ruled Out defect
         if must_not_ro and actual_cat == EvidenceCategory.RULED_OUT:
-            false_ruled_out_count += 1
+            false_ruled_out[case_set] += 1
             case_records.append(
                 {
                     "id": cid,
@@ -161,7 +160,7 @@ def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
                     "reason": f"False ruled out: player {p_name} must not be marked ruled_out",
                 }
             )
-            fp += 1
+            conf[case_set]["fp"] += 1
             continue
 
         # Category Matching
@@ -184,16 +183,16 @@ def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
 
         if is_signal_expected and is_signal_detected:
             if category_match:
-                tp += 1
+                conf[case_set]["tp"] += 1
             else:
-                fp += 1
-                fn += 1
+                conf[case_set]["fp"] += 1
+                conf[case_set]["fn"] += 1
         elif is_signal_expected and not is_signal_detected:
-            fn += 1
+            conf[case_set]["fn"] += 1
         elif not is_signal_expected and is_signal_detected:
-            fp += 1
+            conf[case_set]["fp"] += 1
         else:
-            tn += 1
+            conf[case_set]["tn"] += 1
 
         passed = category_match and quote_verified
 
@@ -213,6 +212,17 @@ def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
             }
         )
 
+    tp, fp, fn, tn = (sum(c[k] for c in conf.values()) for k in ("tp", "fp", "fn", "tn"))
+    false_ruled_out_count = sum(false_ruled_out.values())
+    by_set = {
+        name: {
+            "precision_pct": round(100.0 * c["tp"] / max(1, c["tp"] + c["fp"]), 2),
+            "recall_pct": round(100.0 * c["tp"] / max(1, c["tp"] + c["fn"]), 2),
+            "false_ruled_out": false_ruled_out[name],
+            **c,
+        }
+        for name, c in conf.items()
+    }
     total_cases = len(HELD_OUT_BENCHMARK_CASES)
     passed_cases = sum(1 for c in case_records if c["passed"])
     pass_rate_pct = round((passed_cases / total_cases) * 100.0, 2)
@@ -245,6 +255,7 @@ def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
         "false_ruled_out_count": false_ruled_out_count,
         "false_ruled_out_rate_pct": false_ro_rate_pct,
         "f1_score": f1_score,
+        "by_set": by_set,
         "confusion_matrix": {"true_positives": tp, "false_positives": fp, "false_negatives": fn, "true_negatives": tn},
         "adversarial_injection_breaches": injection_breaches,
         "prompt_injection_defense_rate_pct": 100.0 if injection_breaches == 0 else 0.0,
@@ -284,6 +295,8 @@ def run_benchmark(evidence_by_case=None, write_reports=True) -> dict[str, Any]:
         f"News Benchmark: {passed_cases}/{total_cases} PASSED ({pass_rate_pct}%) | "
         f"Precision: {precision_pct}% | Recall: {recall_pct}% | "
         f"False Ruled Out: {false_ruled_out_count} ({false_ro_rate_pct}%) | "
+        + " | ".join(f"{n}: P {m['precision_pct']}% R {m['recall_pct']}%" for n, m in by_set.items())
+        + " | "
         f"Gate Status: {'OPEN' if gate_passed else 'CLOSED'}"
     )
 
