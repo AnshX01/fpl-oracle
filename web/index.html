@@ -81,11 +81,14 @@
       </glass-card>
 
       <glass-card v-else id="decision-card" :class="{ outdated: !adviceCurrent }">
-        <p v-if="adviceBusy && adviceFrom" class="callout tone-info" role="status">Showing your advice from {{ new Date(adviceFrom).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }}. Updating it now ({{ adviceStage }}, {{ elapsedText }}).</p>
+        <p v-if="adviceBusy && adviceFrom" class="callout tone-info" role="status">Showing your advice from {{ adviceFromText }}. Updating it now ({{ adviceStage }}, {{ elapsedText }}).</p>
+        <p v-else-if="adviceError && !adviceBusy" class="callout tone-warn" role="status" data-testid="update-failed">Latest update failed: {{ adviceError }} You are seeing your advice from {{ adviceFromText || 'earlier' }}. Refresh before you act on it.</p>
         <div class="row between">
           <div class="row"><ui-badge tone="info">Gameweek {{ card.gameweek }}</ui-badge><span class="subtle num">{{ countdownText }}</span></div>
           <ui-badge v-if="card.chip.recommend" tone="warn">{{ card.chip.chip_display_name }}</ui-badge>
         </div>
+
+        <p v-if="card.backup_planner_notice" class="callout tone-warn" role="status" data-testid="backup-planner">{{ card.backup_planner_notice }} {{ card.chip.reason }}</p>
 
         <!-- 1. The decision -->
         <h2 class="hero-title" data-testid="headline">{{ card.headline }}</h2>

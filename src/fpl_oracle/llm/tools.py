@@ -4,6 +4,7 @@ Connects conversational queries directly to live ML projections, MILP optimizati
 chip strategies, news, and league simulations.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -736,12 +737,24 @@ class ToolExecutor:
             "chips_available": list(state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2),
         }
 
+    @staticmethod
+    def _manager_choices() -> dict[str, list[int]]:
+        """The manager's own "keep" / "don't buy" calls, which every what-if answer must respect too."""
+        choices = data_store.get_profile()
+        return {
+            "locked_in_ids": list(choices.keep_ids),
+            "locked_out_ids": [i for i in choices.avoid_ids if i not in choices.keep_ids],
+        }
+
     async def _tool_evaluate_plan(self, args: dict[str, Any]) -> dict[str, Any]:
         from fpl_oracle.advisor.critique import plan_critique_service
 
         ctx = await self._critique_inputs()
         ctx.pop("state")
-        res = plan_critique_service.evaluate_plan(
+        ctx.update(self._manager_choices())
+        # The solves take a minute or more: off the event loop, so the page stays responsive.
+        res = await asyncio.to_thread(
+            plan_critique_service.evaluate_plan,
             proposed_transfers=args.get("proposed_transfers", []),
             proposed_chip=args.get("proposed_chip"),
             proposed_captain=args.get("proposed_captain"),
@@ -754,7 +767,8 @@ class ToolExecutor:
 
         ctx = await self._critique_inputs()
         ctx.pop("state")
-        res = plan_critique_service.compare_options(options=args.get("options", []), **ctx)
+        ctx.update(self._manager_choices())
+        res = await asyncio.to_thread(plan_critique_service.compare_options, options=args.get("options", []), **ctx)
         return res.model_dump()
 
     async def _tool_explain_why_not(self, args: dict[str, Any]) -> dict[str, Any]:

@@ -37,11 +37,17 @@ def test_close_call_names_a_narrow_sale_in_plain_words():
     ]
 
 
-def test_kept_owned_players_are_explained():
+def test_kept_owned_players_share_one_joint_figure():
     from fpl_oracle.briefing.decision_card import _close_calls
 
-    plan = {"trajectory": [{}] * 12, "kept_owned": [dict(player="Calafiori", gain_from_selling=0.9, needed=1.2)]}
-    assert _close_calls(plan) == [
-        "Keeping Calafiori: selling him gains only 0.9 points over the next 12 gameweeks, less than the 1.2 the "
+    one = {"trajectory": [{}] * 12, "kept_owned": [dict(player="Calafiori", gain_from_selling=0.9, needed=1.2)]}
+    assert _close_calls(one) == [
+        "Kept Calafiori: selling him gains only 0.9 points over the next 12 gameweeks, less than the 1.2 the "
         "forecasts' uncertainty requires."
+    ]
+    joint = {"gain_from_selling": 2.0, "needed": 3.1}
+    three = {"trajectory": [{}] * 12, "kept_owned": [dict(player=n, **joint) for n in ("A", "B", "C")]}
+    assert _close_calls(three) == [
+        "Kept A, B and C: selling them gains only 2.0 points together over the next 12 gameweeks, less than the "
+        "3.1 the forecasts' uncertainty requires."
     ]
