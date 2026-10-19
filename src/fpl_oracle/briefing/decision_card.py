@@ -144,9 +144,14 @@ def track_record_summary() -> str | None:
 
 
 def _close_calls(rec_plan: dict[str, Any]) -> list[str]:
-    """Plain lines for players the plan sells (or skips) only narrowly: inside the forecast's uncertainty."""
+    """Plain lines for owned players kept because selling them was not clearly better, and for players the plan
+    sells (or skips) only narrowly: inside the forecast's uncertainty."""
     weeks = len(rec_plan.get("trajectory") or [])
-    lines = []
+    lines = [
+        f"Keeping {k['player']}: selling him gains only {k['gain_from_selling']:.1f} points over the next {weeks} "
+        f"gameweeks, less than the {k['needed']:.1f} the forecasts' uncertainty requires."
+        for k in rec_plan.get("kept_owned") or []
+    ]
     for c in rec_plan.get("league_cover_checks") or []:
         if c["chosen"] or not c["close"] or c["points_vs_plan"] > 0:
             continue

@@ -35,3 +35,13 @@ def test_close_call_names_a_narrow_sale_in_plain_words():
         "Selling Haaland is only slightly better: 2.7 points over the next 12 gameweeks, inside the forecast's "
         "uncertainty. Keeping him is a fair choice; your chance of finishing first would be about 22% instead of 24%."
     ]
+
+
+def test_kept_owned_players_are_explained():
+    from fpl_oracle.briefing.decision_card import _close_calls
+
+    plan = {"trajectory": [{}] * 12, "kept_owned": [dict(player="Calafiori", gain_from_selling=0.9, needed=1.2)]}
+    assert _close_calls(plan) == [
+        "Keeping Calafiori: selling him gains only 0.9 points over the next 12 gameweeks, less than the 1.2 the "
+        "forecasts' uncertainty requires."
+    ]

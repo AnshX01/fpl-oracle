@@ -243,6 +243,7 @@ class ProjectionEngine:
             "is_home",
             "opponent_team",
             "fixture_id",
+            "net_transfer_ratio",
         ]
         for col in meta_cols:
             if col in features_df.columns:
@@ -281,6 +282,7 @@ class ProjectionEngine:
                 "is_home": "first",
                 "opponent_team": "first",
                 "fixture_id": "first",
+                "net_transfer_ratio": "first",
                 "p_play": "max",
                 "exp_gc_deduction": "sum",
                 "exp_saves_pts": "sum",

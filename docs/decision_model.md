@@ -99,6 +99,17 @@ Baseline b: for transfers, rolling; for a chip now, the same chip next week (or 
 This is what stops a 13-player Wildcard built on small samples from beating a two-transfer fix by a
 margin smaller than its own uncertainty.
 
+**Keep what you own unless selling is clearly better.** For the four dearest players the best plan sells this
+week (only players good enough to start: at least the plan's weakest starter's forecast), the planner solves the
+best plan that keeps him, same chip, same polish. Greedy from the dearest: a player is kept when the plan that keeps
+him (and those kept so far) is within the confidence margin of the best plan. GW8 2026-27 without manual keeps:
+Calafiori, Saka and Palmer kept; Haaland and Groß still sold.
+
+**Team value at the plan's end.** Expected price change from this week's net transfers per owner: about 2.4 x £0.1m
+per unit of the ratio over the next 4-8 gameweeks (2023-24, 2024-25; R2 0.12). A player held at the end is worth half
+of a rise and all of a fall, priced at 0.25 points per £1m per remaining gameweek, discounted like the plan. Effects
+are small: a strongly bought player adds about +0.1 point.
+
 **Known gap: the value of waiting.** Chip-now vs keep-it compares both plans on today's forecasts, so a kept
 Wildcard gets no credit for reacting to injuries first. A scenario version (absence spells per player, both arms
 re-planned) was built and withdrawn: re-planning a 3-week window with every absence revealed at once rewards
