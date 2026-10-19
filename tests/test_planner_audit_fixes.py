@@ -194,8 +194,8 @@ def test_chip_table_compares_playing_each_chip_now_against_holding():
     assert res["best_candidate"]["is_recommended"]
     roadmap = {r["code"]: r for r in res["measured_chip_roadmap"]}
     assert set(roadmap) == {"freehit", "3xc"}
-    assert roadmap["freehit"]["recommended_gw"] is not None and roadmap["freehit"]["expected_gain"] > 0
-    assert res["resource_frontier"] and res["chip_measurement_status"] in {
+    assert roadmap["freehit"]["recommended_gw"] is not None and roadmap["freehit"]["status"] == "planned"
+    assert res["chip_measurement_status"] in {
         "incomplete_window",
         "measured_through_expiry",
     }

@@ -107,7 +107,7 @@ margin smaller than its own uncertainty.
 **Search and order of decisions.** Every solve runs to the proven best plan (relative gap 0.01%, about 0.05
 points), so the same inputs give the same advice on any machine; time-limited searches stopped wherever the clock
 and machine load left them and flipped close calls between back-to-back runs. The one-hour cap per solve is a
-safety net only (a full 12-week plan proves out in about 6 minutes alone); a run takes about an hour.
+safety net only (a full 12-week plan proves out in about 6 minutes alone); a run takes about 40 minutes.
 Every margin above still gains 1 point (SEARCH_TOLERANCE). The chip-vs-keep and move-vs-roll
 decisions are made first (the keep-the-chip baseline is polished once more when the verdict is within 3 points);
 keep checks then run on the surviving plan with its own chip, and a keep may not undo the decision that plan
