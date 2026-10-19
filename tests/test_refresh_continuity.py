@@ -88,7 +88,9 @@ def test_weekly_briefing_uses_canonical_zero_ft_bank_and_joint_action(configured
     monkeypatch.setattr(
         data_store,
         "get_profile",
-        lambda: SimpleNamespace(manager_id=None, target_league_id=None, risk_preference="balanced"),
+        lambda: SimpleNamespace(
+            manager_id=None, target_league_id=None, risk_preference="balanced", keep_ids=[], avoid_ids=[]
+        ),
     )
 
     async def run():

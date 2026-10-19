@@ -39,7 +39,8 @@ MANIFEST_PATH = MODELS_DIR / "manifest.json"
 # v4: last-match minutes features (minutes, started, subbed early, matches since last start).
 # v5: goals/assists = share of team xG on the pitch x team goals (trees correct it); match-level team totals;
 #     own goals excluded from players; no serve-only set-piece boost; managers dropped; cards recency-weighted.
-RECIPE_ID = "fpl_oracle_canonical_v5"
+# v6: clean-sheet chance half from the bookmaker-implied one (rescaled), half from the trained model.
+RECIPE_ID = "fpl_oracle_canonical_v6"
 VERSIONS_DIR = MODELS_DIR / "versions"
 REJECTED_DIR = MODELS_DIR / "rejected"
 

@@ -245,7 +245,7 @@ def test_solver_status_reaches_the_decision_scope(monkeypatch):
     assert scope["global_optimum_proven"] is False and scope["solver_max_gap"] == 0.03
     assert scope["horizon_gameweeks"] == [8, 9] and scope["fallback_used"] is False
     assert scope["ignored_inputs"] == ["rival_context"]  # named, not silently dropped
-    assert "CONFIRMED" in scope["assumptions"][0]
+    assert "assumptions" not in scope  # the post-chip transfer rule is confirmed, no caveat to show
 
 
 def test_milp_failure_is_labelled_as_beam_fallback(monkeypatch):

@@ -407,7 +407,7 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
 
         profile_patch = patch(
             "fpl_oracle.briefing.decision_card.data_store.get_profile",
-            return_value=SimpleNamespace(target_league_id=99),
+            return_value=SimpleNamespace(target_league_id=99, keep_ids=[], avoid_ids=[]),
         )
         with (
             profile_patch,
@@ -418,7 +418,10 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
             patch(
                 "fpl_oracle.league.standings.league_standings_manager.get_league_standings",
                 new=AsyncMock(
-                    return_value={"league_name": "Test League", "standings": [{"entry": 1, "rank": 1, "total": 500}]}
+                    return_value={
+                        "league_name": "Test League",
+                        "standings": [{"entry": 1, "rank": 1, "total": 500}, {"entry": 2, "rank": 2, "total": 490}],
+                    }
                 ),
             ),
             patch(

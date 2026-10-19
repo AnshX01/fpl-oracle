@@ -279,7 +279,7 @@ async def test_decision_card_missing_manager_shows_unavailable(configured_adviso
         card = await decision_card_generator.generate_decision_card()
 
     assert card["rivals"]["status"] == "unavailable"
-    assert "not found in mini-league standings" in card["rivals"]["posture_reason"].lower()
+    assert "not listed in this mini-league" in card["rivals"]["posture_reason"].lower()
     assert card["rivals"]["coverage"]["pages_fetched"] == 1
     assert card["win_prob"]["status"] == "unavailable"
 
@@ -308,8 +308,8 @@ async def test_decision_card_leader_no_close_chasers(configured_advisor):
         "coverage": {"pages_fetched": 1, "total_entries": 3, "partial": False, "reason": None},
         "standings": [
             {"entry": 101, "player_name": "Leader", "rank": 1, "total": 600},
-            {"entry": 102, "player_name": "Rival 1", "rank": 2, "total": 550},  # 50 pts behind
-            {"entry": 103, "player_name": "Rival 2", "rank": 3, "total": 540},  # 60 pts behind
+            {"entry": 102, "player_name": "Rival 1", "rank": 2, "total": 280},  # out of reach (rivals.reach_window)
+            {"entry": 103, "player_name": "Rival 2", "rank": 3, "total": 270},  # out of reach
         ],
     }
 
