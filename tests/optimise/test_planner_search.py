@@ -19,10 +19,11 @@ def test_chips_are_never_back_to_back():
 
 def test_chip_now_must_beat_keeping_it_by_more_than_the_forecast_uncertainty():
     # Free Hit now vs next week: now is better only through discounting, a gain smaller than the uncertainty
-    # of the 30 player-weeks it changes once each projection carries a 1-point estimation error
+    # of the 30 player-weeks it changes once each projection carries a 2-point estimation error (playing it now also
+    # keeps the banked transfers that keeping it spends)
     squad, pool, proj = scenario(squad_xp=0.5, pool_xp=5.0, gws=(8, 9))
     proj = with_double(with_double(proj, 8), 9)  # a Free Hit is only planned in blank / double weeks
-    held = evaluate(squad, pool, proj, 2, chips_available=["freehit"], xp_estimation_sd=1.0)
+    held = evaluate(squad, pool, proj, 2, chips_available=["freehit"], xp_estimation_sd=2.0)
     assert held["recommended_chip"] is None
     assert held["recommended_plan"]["rejected_alternative"]["chip"] == "freehit"
     played = evaluate(squad, pool, proj, 2, chips_available=["freehit"], xp_estimation_sd=0.0)

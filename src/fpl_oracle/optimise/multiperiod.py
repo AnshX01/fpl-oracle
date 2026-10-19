@@ -149,6 +149,9 @@ class GameweekAction:
 
 
 KEEP_CHECKS = 4  # owned players sold this week that get a "keep him" re-solve, the dearest to re-buy first
+# Plans are compared on time-limited search results that differ by up to a few points between runs (GW8 2026-27:
+# the same restricted plan scored 559.16 alone and 558.53 inside the portfolio); one point of the margin is for that.
+SEARCH_TOLERANCE = 1.0
 # Price changes (2023-24, 2024-25): over the next 4-8 gameweeks a player's price moves about 2.4 x £0.1m per unit of
 # this week's net transfers / owners (R2 0.12); a sale returns half of a rise and all of a fall.
 PRICE_CHANGE_PER_TRANSFER_RATIO = 2.4
@@ -541,11 +544,12 @@ class MultiPeriodOptimizer:
             prob += pulp.lpSum(x[p, t] for p in fwds) == 3
             prob += pulp.lpSum(x[p, t] for p in players) == 15
 
-            # Club cap <= 3 (or preexisting squad count if already >3)
+            # Club cap <= 3 (or preexisting squad count if already >3). Holding exactly 3 still allows a same-club
+            # swap; only an over-cap legacy squad may not add a new player from that club.
             for tm, tm_players in club_map.items():
                 init_c = init_club_counts.get(tm, 0)
                 prob += pulp.lpSum(x[p, t] for p in tm_players) <= max(3, init_c)
-                if init_c >= 3:
+                if init_c > 3:
                     for p in tm_players:
                         if p not in squad_ids:
                             prob += tin[p, t] == 0
@@ -670,7 +674,7 @@ class MultiPeriodOptimizer:
 
         # Terminal FT Concave Linearization
         t_end = horizon_gws[-1] + 1
-        prob += ft_var[t_end] - 1 <= pulp.lpSum(v)
+        prob += pulp.lpSum(v) <= ft_var[t_end] - 1  # credit only transfers actually banked past the horizon
 
         # Chip Availability and Set 1 / Set 2 legality
         t1_gws = [t for t in horizon_gws if t <= SET_1_LAST_GW]
@@ -1668,7 +1672,8 @@ class MultiPeriodOptimizer:
             wa, wb = exposure(a), exposure(b)
             sigma = sigma_est * math.sqrt(sum((wa.get(p, 0.0) - wb.get(p, 0.0)) ** 2 for p in set(wa) | set(wb)))
             delta = a["total_objective"] - b["total_objective"]
-            needed = max(stability_threshold, z * sigma)
+            # Plan values are time-limited search results, not exact: the margin also covers search noise
+            needed = max(stability_threshold, z * sigma) + SEARCH_TOLERANCE
             return {
                 "gain": round(delta, 2),
                 "uncertainty": round(sigma, 2),
@@ -1747,39 +1752,30 @@ class MultiPeriodOptimizer:
             zip(current_squad_df["element"].astype(int), current_squad_df[price_col].astype(float), strict=True)
         )
         rival_cache: dict[int, list[dict[int, float]]] = {}
-        if forced:
-            same_chip: dict[str, Any] = dict(forced_kw)
-        elif top_cand["chip"]:
-            same_chip = {"forced_w1_chip": top_cand["chip"]}
-        else:
-            same_chip = {"no_chip_w1": True}
-        # Keep what you own unless selling is clearly better: the best plan that keeps each of the most valuable
-        # players the recommendation sells this week. Decided after the solves (status quo on a forecast tie).
-        horizon_xp = {
-            int(t["element"]): sum(maps[g].get(int(t["element"]), 0.0) for g in horizon_gws)
-            for t in top_cand["transfers_out"]
-        }
-        # Only players good enough to start: worth at least the plan's weakest starter this week. A benched or
-        # injured player costs almost nothing to keep in the forecast, so a "tie" there means nothing.
-        weakest_starter = min(
-            (maps[target_gw].get(int(p), 0.0) for p in top_cand["trajectory"][0]["starters"]), default=0.0
-        )
-        keep_checks = sorted(
-            (
-                e
-                for e in horizon_xp
-                if e not in set(locked_out_ids or ()) and maps[target_gw].get(e, 0.0) >= weakest_starter
-            ),
-            key=lambda e: -float(sell_price_of.get(e, 0.0)),
-        )[:KEEP_CHECKS]
-        for e in keep_checks:
-            extra_tasks[f"keep:{e}"] = dict(same_chip, locked_in_ids=sorted(set(locked_in_ids or ()) | {e}))
+
+        def chip_of(cand: dict[str, Any]) -> dict[str, Any]:
+            """Constraints that keep a plan's week-1 chip decision unchanged in a restricted re-solve."""
+            if forced:
+                return dict(forced_kw)
+            return {"forced_w1_chip": cand["chip"]} if cand["chip"] else {"no_chip_w1": True}
+
+        def keep_candidates(cand: dict[str, Any]) -> list[int]:
+            """The dearest players a plan sells this week that are good enough to start (at least its weakest
+            starter's forecast): a benched or injured player costs almost nothing to keep, so a tie means nothing."""
+            weakest = min((maps[target_gw].get(int(q), 0.0) for q in cand["trajectory"][0]["starters"]), default=0.0)
+            sold = [int(x["element"]) for x in cand["transfers_out"]]
+            return sorted(
+                (e for e in sold if e not in set(locked_out_ids or ()) and maps[target_gw].get(e, 0.0) >= weakest),
+                key=lambda e: -float(sell_price_of.get(e, 0.0)),
+            )[:KEEP_CHECKS]
+
+        same_chip = chip_of(top_cand)
         if rival_context and rival_context.get("rivals"):
             from fpl_oracle.league.objective import league_threats
 
             mine = {int(p) for p in top_cand["trajectory"][0]["elements"]}
             for p in league_threats(rival_context["rivals"], horizon_gws, maps, positions, mine, rival_cache):
-                if p not in set(locked_out_ids or ()) and f"keep:{p}" not in extra_tasks:
+                if p not in set(locked_out_ids or ()):
                     extra_tasks[f"cover:{p}"] = dict(same_chip, locked_in_ids=sorted(set(locked_in_ids or ()) | {p}))
 
         pool2 = ThreadPoolExecutor(max_workers=max(1, min(workers, len(alt_runs) + len(chips_now) + len(extra_tasks))))
@@ -1791,13 +1787,13 @@ class MultiPeriodOptimizer:
             if extra_tasks:
                 extra = run_batch(extra_tasks, wave2_limit)
                 new_plans = {n: p for n, p in extra.items() if isinstance(p, MultiPeriodPlan)}
-                # Covers and keeps are compared with fully polished plans, so they get the same polish
+                # Covers are compared with fully polished plans, so they get the same polish
                 new_plans.update(
                     run_parallel(
                         {
                             n: (lambda n=n: self._polish(run, extra_tasks[n], new_plans[n], n, None))
                             for n in new_plans
-                            if n.startswith(("cover:", "keep:"))
+                            if n.startswith("cover:")
                         }
                     )
                 )
@@ -1809,46 +1805,19 @@ class MultiPeriodOptimizer:
             rec_plan = top_cand
             stability_note = None
 
-            def plan_keeping(e: int) -> dict[str, Any] | None:
-                """The gated, de-duplicated plan that keeps player e (an identical move may be held by another name)."""
-                name = f"keep:{e}" if f"keep:{e}" in by_name else f"cover:{e}"
-                return unique.get(move_key(by_name[name])) if name in by_name else None
-
-            # Status quo on a forecast tie: an owned player is sold only if selling beats keeping him by the plan's
-            # own confidence margin. Greedy, dearest to re-buy first: each close call is added while the plan that
-            # keeps all of them so far still sits within the margin of the best plan.
-            sold_now = {int(x["element"]) for x in top_cand["transfers_out"]}
-            candidates = sorted(
-                {e for e in keep_checks} | {int(n.split(":")[1]) for n in by_name if n.startswith("cover:")} & sold_now,
-                key=lambda e: -float(sell_price_of.get(e, 0.0)),
-            )
-            kept_ids: set[int] = set()
-            for e in candidates:
-                single = plan_keeping(e)
-                if single is None or not single["hit_allowed"] or confident(top_cand, single)["passed"]:
-                    continue
-                trial = kept_ids | {e}
-                if len(trial) == 1:
-                    plan_now: dict[str, Any] | None = single
-                else:
-                    name = "keep:" + "+".join(map(str, sorted(trial)))
-                    keep_extra = dict(same_chip, locked_in_ids=sorted(set(locked_in_ids or ()) | trial))
-                    keep_solve = run(name, keep_extra, wave2_limit)
-                    plan_now = None
-                    if isinstance(keep_solve, MultiPeriodPlan):
-                        keep_solve = self._polish(run, keep_extra, keep_solve, name, None)
-                        plans[name] = keep_solve
-                        add_plans({name: keep_solve})
-                        gate_new()
-                        plan_now = unique[move_key(by_name[name])]
-                if plan_now is not None and plan_now["hit_allowed"] and not confident(top_cand, plan_now)["passed"]:
-                    kept_ids, rec_plan = trial, plan_now
-            if kept_ids:
-                check = confident(top_cand, rec_plan)
-                rec_plan["kept_owned"] = [
-                    {"player": names_of.get(e, str(e)), "gain_from_selling": check["gain"], "needed": check["needed"]}
-                    for e in sorted(kept_ids, key=lambda e: -float(sell_price_of.get(e, 0.0)))
-                ]
+            first_look = confident(rec_plan, hold_cand) if rec_plan["chip"] and hold_cand is not None else None
+            if not forced and first_look is not None and abs(first_look["gain"] - first_look["needed"]) <= 3.0:
+                # Borderline: the keep-the-chip baseline gets one more polish so it is searched as hard as the chip
+                # plan (a clear verdict cannot flip on a few points of search, so it is not worth the minute)
+                assert hold_cand is not None
+                hold_name = hold_cand["source"]
+                repolished = self._polish(run, {"no_chip_w1": True}, plans[hold_name], f"{hold_name}:again", None)
+                if repolished.total_objective > plans[hold_name].total_objective:
+                    plans[f"{hold_name}:again"] = repolished
+                    add_plans({f"{hold_name}:again": repolished})
+                    gate_new()
+                    ranked, top_cand, hold_cand = standings()
+                    rec_plan = top_cand
             if not forced and rec_plan["chip"] and hold_cand is not None:
                 # Playing a chip now is judged against keeping it (which includes the same chip next week)
                 check = confident(rec_plan, hold_cand)
@@ -1876,6 +1845,83 @@ class MultiPeriodOptimizer:
             if stability_note:
                 rec_plan["recommendation_summary"] = stability_note
 
+            # Keep what you own unless selling is clearly better, decided on the plan that survived the chip and
+            # roll decisions: the best plan that keeps each of its dearest sales, same chip, same polish.
+            base_plan = rec_plan
+            keep_checks = keep_candidates(base_plan)
+            keep_tasks = {
+                f"keep:{e}": dict(chip_of(base_plan), locked_in_ids=sorted(set(locked_in_ids or ()) | {e}))
+                for e in keep_checks
+            }
+            if keep_tasks:
+                report_search_progress("Checking whether to keep the players it would sell")
+                solved_keeps = {
+                    n: q for n, q in run_batch(keep_tasks, wave2_limit).items() if isinstance(q, MultiPeriodPlan)
+                }
+                solved_keeps = run_parallel(
+                    {n: (lambda n=n: self._polish(run, keep_tasks[n], solved_keeps[n], n, None)) for n in solved_keeps}
+                )
+                plans.update(solved_keeps)
+                add_plans(solved_keeps)
+                gate_new()
+
+            def plan_keeping(e: int) -> dict[str, Any] | None:
+                """The gated, de-duplicated plan that keeps player e (an identical move may be held by another name)."""
+                name = f"keep:{e}" if f"keep:{e}" in by_name else f"cover:{e}"
+                found = unique.get(move_key(by_name[name])) if name in by_name else None
+                return found if found is not None and found["chip"] == base_plan["chip"] else None
+
+            # Status quo on a forecast tie: an owned player is sold only if selling beats keeping him by the plan's
+            # own confidence margin. Greedy, dearest to re-buy first: each close call is added while the plan that
+            # keeps all of them so far still sits within the margin of the best plan.
+            sold_now = {int(x["element"]) for x in base_plan["transfers_out"]}
+            candidates = sorted(
+                {e for e in keep_checks} | {int(n.split(":")[1]) for n in by_name if n.startswith("cover:")} & sold_now,
+                key=lambda e: -float(sell_price_of.get(e, 0.0)),
+            )
+            kept_ids: set[int] = set()
+            for e in candidates:
+                single = plan_keeping(e)
+                if single is None or not single["hit_allowed"] or confident(base_plan, single)["passed"]:
+                    continue
+                trial = kept_ids | {e}
+                if len(trial) == 1:
+                    plan_now: dict[str, Any] | None = single
+                else:
+                    name = "keep:" + "+".join(map(str, sorted(trial)))
+                    keep_extra = dict(chip_of(base_plan), locked_in_ids=sorted(set(locked_in_ids or ()) | trial))
+                    keep_solve = run(name, keep_extra, wave2_limit)
+                    plan_now = None
+                    if isinstance(keep_solve, MultiPeriodPlan):
+                        keep_solve = self._polish(run, keep_extra, keep_solve, name, None)
+                        plans[name] = keep_solve
+                        add_plans({name: keep_solve})
+                        gate_new()
+                        plan_now = unique[move_key(by_name[name])]
+                # A keep may not undo the decision the base plan passed: it must still beat keeping the chip
+                # (for a chip plan) or rolling (for a transfer plan) by the same margin.
+                versus = base_plan.get("decision_check", {}).get("versus")
+                still = None
+                if versus == "keeping the chip" and hold_cand is not None and plan_now is not None:
+                    still = confident(plan_now, hold_cand)
+                elif versus == "rolling" and plan_now is not None:
+                    still = confident(plan_now, cand_roll)
+                if (
+                    plan_now is not None
+                    and plan_now["hit_allowed"]
+                    and not confident(base_plan, plan_now)["passed"]
+                    and (still is None or still["passed"])
+                ):
+                    kept_ids, rec_plan = trial, plan_now
+                    if still is not None:
+                        rec_plan["decision_check"] = dict(still, versus=versus)
+            if kept_ids:
+                check = confident(base_plan, rec_plan)
+                rec_plan["kept_owned"] = [
+                    {"player": names_of.get(e, str(e)), "gain_from_selling": check["gain"], "needed": check["needed"]}
+                    for e in sorted(kept_ids, key=lambda e: -float(sell_price_of.get(e, 0.0)))
+                ]
+
             # --- mini-league tie-break (decision_model.md section 4): among plans the forecasts cannot tell
             # apart from the recommendation, take the one most likely to finish above every rival.
             if rival_context and rival_context.get("rivals"):
@@ -1901,12 +1947,16 @@ class MultiPeriodOptimizer:
                         w * maps[g].get(p, 0.0) for g, wk in zip(horizon_gws, weeks, strict=True) for p, w in wk.items()
                     )
 
-                best_points = max(raw_points(plan_weeks(c)) for c in unique.values())
+                def hit_points(cand: dict[str, Any]) -> float:
+                    return float(sum(a.get("hit_cost", 0) for a in cand["trajectory"]))
+
+                # Title chances compare points net of hits, like everything else the planner scores
+                best_points = max(raw_points(plan_weeks(c)) - hit_points(c) for c in unique.values())
                 for cand in unique.values():
                     cand["league"] = win_probability(
                         plan_weeks(cand),
                         held,
-                        best_points,
+                        best_points + hit_points(cand),
                         horizon_gws,
                         rival_context,
                         maps,
@@ -1919,6 +1969,7 @@ class MultiPeriodOptimizer:
                     for c in unique.values()
                     if c["league"] is not None
                     and c["hit_allowed"]
+                    and c["chip"] == rec_plan["chip"]  # never revive a chip decision the rules above settled
                     and (c is rec_plan or not confident(rec_plan, c)["passed"])
                     and kept_ids <= {int(p) for p in c["trajectory"][0]["elements"]}
                 ]

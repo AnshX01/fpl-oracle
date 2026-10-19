@@ -23,3 +23,12 @@ def test_outside_band_passes_only_when_no_worse_than_active_on_same_side():
     assert not gate(86.0, 84.58)[0]  # more than 1 point further from 80% than the active model
     assert not gate(85.04, 77.0)[0]  # active model was on the other side
     assert gate(82.0, 84.58)[1] == "Candidate passed all promotion gate criteria."
+
+
+def test_active_comparison_is_relative_to_each_models_own_baseline():
+    origins_ok = origins(80.0)
+    harder_tail = dict(ml_mae=1.0, base_mae=1.1, ml_rmse=1.940, base_rmse=2.150)  # baseline also 0.019 worse
+    active = dict(ml_mae=1.0, base_mae=1.1, ml_rmse=1.927, base_rmse=2.131)
+    assert check_promotion_gate(harder_tail, active_metrics=active, rolling_origins=origins_ok)[0]
+    worse = dict(harder_tail, ml_rmse=1.960)  # 0.8% worse relative to the same baseline
+    assert not check_promotion_gate(worse, active_metrics=active, rolling_origins=origins_ok)[0]
