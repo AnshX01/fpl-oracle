@@ -31,6 +31,10 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
+# Windows consoles default to a legacy code page; player names and the advice log are UTF-8.
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host " FPL Oracle 2026/27 - Decision Support and Intelligence   " -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
@@ -69,7 +73,7 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) { throw "PuLP runtime correction failed" }
 }
 & $VenvPython (Join-Path $ScriptDir "scripts/check_solver_runtime.py")
-if ($LASTEXITCODE -ne 0) { throw "CBC solve verification failed; server not started" }
+if ($LASTEXITCODE -ne 0) { throw "HiGHS solve verification failed; server not started" }
 
 # 2. Setup-only check
 & $VenvPython -c "import sys; assert sys.version_info >= (3,11); import fpl_oracle.server.main"
@@ -139,7 +143,7 @@ if (-not $NoBrowser) {
             } catch {}
         }
     }
-    $BrowserJob = Start-Job -ScriptBlock $JobScript -ArgumentList $HealthUrl, "http://127.0.0.1:$Port" | Out-Null
+    $BrowserJob = Start-Job -ScriptBlock $JobScript -ArgumentList $HealthUrl, "http://127.0.0.1:$Port"
 }
 
 # Execute server in foreground

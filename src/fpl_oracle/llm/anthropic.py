@@ -30,31 +30,32 @@ class AnthropicProvider:
         headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         convo = list(messages)
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            for _ in range(MAX_TOOL_ROUNDS):
-                payload = {
-                    "model": self.model,
-                    "system": system_prompt,
-                    "messages": convo,
-                    "tools": tools,
-                    "max_tokens": 4096,
-                }
+        for _ in range(MAX_TOOL_ROUNDS):
+            payload = {
+                "model": self.model,
+                "system": system_prompt,
+                "messages": convo,
+                "tools": tools,
+                "max_tokens": 4096,
+            }
+            # A fresh client per request: one held open across a long tool loop goes stale.
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 resp = await client.post(self.url, json=payload, headers=headers)
-                if resp.status_code != 200:
-                    # Do not log or raise API response bodies.
-                    raise RuntimeError(f"Anthropic error {resp.status_code}")
-                content = resp.json().get("content", [])
-                tool_uses = [b for b in content if b.get("type") == "tool_use"]
-                if not tool_uses:
-                    text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text").strip()
-                    if not text:
-                        raise RuntimeError("Anthropic returned no answer text")
-                    return text
-                results = []
-                for block in tool_uses:
-                    out = await tool_executor.execute(block["name"], block.get("input") or {})
-                    results.append(
-                        {"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(out, default=str)}
-                    )
-                convo += [{"role": "assistant", "content": content}, {"role": "user", "content": results}]
+            if resp.status_code != 200:
+                # Do not log or raise API response bodies.
+                raise RuntimeError(f"Anthropic error {resp.status_code}")
+            content = resp.json().get("content", [])
+            tool_uses = [b for b in content if b.get("type") == "tool_use"]
+            if not tool_uses:
+                text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text").strip()
+                if not text:
+                    raise RuntimeError("Anthropic returned no answer text")
+                return text
+            results = []
+            for block in tool_uses:
+                out = await tool_executor.execute(block["name"], block.get("input") or {})
+                results.append(
+                    {"type": "tool_result", "tool_use_id": block["id"], "content": json.dumps(out, default=str)}
+                )
+            convo += [{"role": "assistant", "content": content}, {"role": "user", "content": results}]
         raise RuntimeError("Anthropic tool-round limit reached")

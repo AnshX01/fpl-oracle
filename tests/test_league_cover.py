@@ -52,11 +52,32 @@ def test_captain_on_a_near_tie_follows_the_league():
     twin = [dict(points=130, elements=[int(e) for e in squad.element], captain=a)]
 
     def captain(user_points):
-        res = evaluate(squad, pool, proj, 1, chips_available=[], xp_estimation_sd=1.0,
-                       rival_context=dict(user_points=user_points, rivals=twin))
+        res = evaluate(
+            squad,
+            pool,
+            proj,
+            1,
+            chips_available=[],
+            xp_estimation_sd=1.0,
+            rival_context=dict(user_points=user_points, rivals=twin),
+        )
         return int(res["recommended_plan"]["trajectory"][0]["captain"]), res["recommended_plan"]
 
+    leading, led = captain(160)  # 30 ahead: matching his captain locks the lead
+    assert leading == a and led["captain_check"]["switched"] is None
     chasing, plan = captain(100)  # 30 behind a rival with the same team: copying his captain cannot catch him
-    assert chasing == b and plan["captain_check"]["switched"]["instead_of"] == plan["lineup"]["vice_captain"]["web_name"]
-    leading, plan = captain(160)  # 30 ahead: matching his captain locks the lead
-    assert leading == a and plan["captain_check"]["switched"] is None
+    assert (
+        chasing == b and plan["captain_check"]["switched"]["instead_of"] == plan["lineup"]["vice_captain"]["web_name"]
+    )
+    # the whole plan agrees with the switch: captain, vice, win chance of the pair and the points given up
+    assert plan["captain"] is plan["lineup"]["captain"] and plan["captain_id"] == plan["captain"]["element"] == b
+    assert plan["vice_captain"] is plan["lineup"]["vice_captain"] and plan["vice_captain_id"] == a
+    assert plan["vice_captain"]["reasoning"].startswith(f"Activates if {plan['captain']['web_name']} does not")
+    assert plan["captain"]["prob_outscore_next"] < 0.5  # the new captain is the lower-xP one
+    assert plan["lineup"]["captain_rankings"][0]["element"] == b
+    given_up = plan["captain_check"]["switched"]["points_given_up"]
+    assert given_up > 0 and plan["net_expected_points"] == plan["trajectory"][0]["net_xp"]
+    tie = plan["league_tiebreak"]  # a different plan than the roll, then the armband switch on top of it
+    assert plan["total_objective"] == round(led["total_objective"] - tie["points_given_up"] - given_up, 2)
+    assert tie["p_win_after"] == plan["league"]["p_win"] == plan["captain_check"]["switched"]["p_win_after"]
+    assert f"to {tie['p_win_after']:.0%}." in plan["recommendation_summary"]

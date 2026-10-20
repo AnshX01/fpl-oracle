@@ -1,15 +1,15 @@
 """
 Lineup, Captaincy, and Formation Optimizer.
-Solves the optimal starting XI, bench ordering, and captain/vice-captain
-subject to valid formation rules, autosub dynamics, and P10/P50/P90 risk distributions.
+Picks the optimal starting XI, bench ordering, and captain/vice-captain by exact enumeration of the legal
+formations (ties by player id, so identical inputs give an identical lineup), then adds the P10/P90 risk read.
 """
 
 import math
+from collections.abc import Collection, Mapping
 from typing import Any
 
 import numpy as np
 import pandas as pd
-import pulp
 
 # Baseline chance any fit starter fails to play (rotation, late knock); keeps the bench ordering
 # sensitive to formation legality even when nobody is flagged.
@@ -53,7 +53,8 @@ def _order_bench(bench_df: pd.DataFrame, starters_df: pd.DataFrame) -> pd.DataFr
         * sum(float(absent[j]) for j, s in out_starters["position"].items() if legal(r["position"], s))
         for i, r in outfield.iterrows()
     ]
-    outfield = outfield.sort_values(by=["_sub_value", "expected_points"], ascending=False).drop(columns="_sub_value")
+    outfield = outfield.sort_values(by=["_sub_value", "expected_points", "element"], ascending=[False, False, True])
+    outfield = outfield.drop(columns="_sub_value")
     return pd.concat([bench_gk, outfield]).reset_index(drop=True)
 
 
@@ -63,6 +64,72 @@ def normal_prob_greater(mu1: float, sigma1: float, mu2: float, sigma2: float) ->
     z = (mu1 - mu2) / denom
     prob = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
     return round(float(prob), 3)
+
+
+def best_lineup(
+    squad: list[int],
+    position: dict[int, str],
+    xp: dict[int, float],
+    bench_weight: float,
+    cap_score: Mapping[int, float] | None = None,
+    cap_extra: float = 1.0,
+    blocked: Collection[int] = (),
+) -> tuple[list[int], list[int], int, int | None]:
+    """
+    Exact (starters, bench, captain, vice) for a 15-man squad: best formation by
+    (1 - bench_weight) * starters + cap_extra * captain score, ties by total starter xP and then by id.
+    The captain is the best `cap_score` (default xP) among the starters; `blocked` players never start.
+    The MILP's lineup variables are continuous (integral at a vertex, but a tie can leave a fractional
+    split), so the reported lineup is rebuilt from the chosen squad instead of rounded from them.
+    """
+    score = cap_score if cap_score is not None else xp
+    ranked = {
+        pos: sorted((p for p in squad if position[p] == pos and p not in blocked), key=lambda p: (-xp.get(p, 0.0), p))
+        for pos in ("GKP", "DEF", "MID", "FWD")
+    }
+
+    def captain_of(starters: list[int]) -> int:
+        return max(starters, key=lambda p: (score.get(p, 0.0), xp.get(p, 0.0), -p))
+
+    best: tuple[tuple[float, float], list[int]] | None = None
+    for d in range(3, 6):
+        for m in range(2, 6):
+            f = 10 - d - m
+            if not 1 <= f <= 3 or not ranked["GKP"] or len(ranked["DEF"]) < d or len(ranked["MID"]) < m:
+                continue
+            if len(ranked["FWD"]) < f:
+                continue
+            starters = ranked["GKP"][:1] + ranked["DEF"][:d] + ranked["MID"][:m] + ranked["FWD"][:f]
+            total = sum(xp.get(p, 0.0) for p in starters)
+            key = ((1.0 - bench_weight) * total + cap_extra * score.get(captain_of(starters), 0.0), total)
+            if best is None or key > best[0]:
+                best = (key, starters)
+    if best is None:
+        raise RuntimeError("Could not find optimal starting lineup.")
+    starters = best[1]
+    captain = captain_of(starters)
+    rest = [p for p in starters if p != captain]
+    vice = max(rest, key=lambda p: (xp.get(p, 0.0), -p)) if rest else None
+    bench = sorted((p for p in squad if p not in starters), key=lambda p: (-xp.get(p, 0.0), p))
+    return starters, bench, captain, vice
+
+
+def outscore_probability(captain: Mapping[str, Any], vice: Mapping[str, Any]) -> float:
+    """P(captain outscores the vice-captain) from each one's xP and P10-P90 spread (normal approximation)."""
+
+    def mu_sigma(row: Mapping[str, Any]) -> tuple[float, float]:
+        mu = float(row["expected_points"])
+        spread = float(row.get("p90", mu * 1.8)) - float(row.get("p10", mu * 0.4))
+        return mu, max(1.0, spread / 2.56)
+
+    return normal_prob_greater(*mu_sigma(captain), *mu_sigma(vice))
+
+
+def vice_reasoning(captain_name: str, vice_xp: float, vice_play: float) -> str:
+    return (
+        f"Activates if {captain_name} does not feature. Best captain alternative: "
+        f"{round(vice_xp, 2)} xP, {round(vice_play * 100)}% to play."
+    )
 
 
 class LineupOptimizer:
@@ -88,12 +155,6 @@ class LineupOptimizer:
 
         df = squad_df.copy().reset_index(drop=True)
 
-        prob = pulp.LpProblem("FPL_Lineup_Optimizer", pulp.LpMaximize)
-
-        # Decision variables
-        starter = {i: pulp.LpVariable(f"starter_{i}", cat=pulp.LpBinary) for i in df.index}
-        captain = {i: pulp.LpVariable(f"captain_{i}", cat=pulp.LpBinary) for i in df.index}
-
         # Captain multiplier: 2x normally, 3x for Triple Captain
         cap_multiplier = 3.0 if is_triple_captain else 2.0
 
@@ -107,69 +168,28 @@ class LineupOptimizer:
             cap_scores = df["expected_points"] * 0.40 + p90_vals * 0.60
         else:  # balanced / points
             cap_scores = df["expected_points"]
-        starter_scores = df["expected_points"]
 
-        prob += pulp.lpSum(
-            [
-                starter_scores.loc[i] * starter[i] + cap_scores.loc[i] * (cap_multiplier - 1.0) * captain[i]
-                for i in df.index
-            ]
+        elements = df["element"].astype(int)
+        unavailable = (
+            df["simulation_unavailable"].fillna(False).astype(bool) if "simulation_unavailable" in df else None
+        )
+        blocked = {int(e) for e in elements if e in (excluded_ids or set())}
+        if unavailable is not None:
+            blocked |= {int(e) for e in elements[unavailable]}
+        starter_ids, _, cap_id, _ = best_lineup(
+            list(elements),
+            dict(zip(elements, df["position"], strict=True)),
+            dict(zip(elements, df["expected_points"].astype(float), strict=True)),
+            1.0 if is_bench_boost else 0.0,
+            dict(zip(elements, cap_scores.astype(float), strict=True)),
+            cap_multiplier - 1.0,
+            blocked,
         )
 
-        for i in df.index:
-            if int(df.loc[i, "element"]) in (excluded_ids or set()) or bool(
-                df.loc[i].get("simulation_unavailable", False)
-            ):
-                prob += starter[i] == 0
-
-        if is_bench_boost:
-            prob.setObjective(
-                prob.objective + pulp.lpSum(df.loc[i, "expected_points"] * (1 - starter[i]) for i in df.index)
-            )
-
-        # Constraint 1: Exactly 11 starters
-        prob += pulp.lpSum([starter[i] for i in df.index]) == 11
-
-        # Constraint 2: Exactly 1 goalkeeper starts
-        prob += pulp.lpSum([starter[i] for i in df.index if df.loc[i, "position"] == "GKP"]) == 1
-
-        # Constraint 3: Valid outfield formation
-        # 3 to 5 Defenders
-        def_starters = pulp.lpSum([starter[i] for i in df.index if df.loc[i, "position"] == "DEF"])
-        prob += def_starters >= 3
-        prob += def_starters <= 5
-
-        # 2 to 5 Midfielders
-        mid_starters = pulp.lpSum([starter[i] for i in df.index if df.loc[i, "position"] == "MID"])
-        prob += mid_starters >= 2
-        prob += mid_starters <= 5
-
-        # 1 to 3 Forwards
-        fwd_starters = pulp.lpSum([starter[i] for i in df.index if df.loc[i, "position"] == "FWD"])
-        prob += fwd_starters >= 1
-        prob += fwd_starters <= 3
-
-        # Constraint 4: Exactly 1 captain, and captain must be a starter
-        prob += pulp.lpSum([captain[i] for i in df.index]) == 1
-        for i in df.index:
-            prob += captain[i] <= starter[i]
-
-        solver = pulp.PULP_CBC_CMD(msg=0)
-        prob.solve(solver)
-
-        if pulp.LpStatus[prob.status] != "Optimal":
-            raise RuntimeError("Could not find optimal starting lineup.")
-
-        # Identify starters vs benched
-        starter_indices = [i for i in df.index if starter[i].varValue > 0.5]
-        bench_indices = [i for i in df.index if starter[i].varValue <= 0.5]
-
-        starters_df = df.loc[starter_indices].copy()
-        bench_df = df.loc[bench_indices].copy()
-
-        # Identify captain
-        captain_idx = [i for i in starter_indices if captain[i].varValue > 0.5][0]
-        captain_row = df.loc[captain_idx]
+        is_starter = elements.isin(starter_ids)
+        starters_df = df[is_starter].copy()
+        bench_df = df[~is_starter].copy()
+        captain_row = df[elements == cap_id].iloc[0]
 
         # Vice-captain: best alternative if the captain does not play. Rank by xP x P(plays); a vice from the
         # captain's club shares the same kickoff, so it is a weaker hedge (5% haircut).
@@ -177,7 +197,7 @@ class LineupOptimizer:
         others["_vice_score"] = others["expected_points"] * play_probability(others)
         if "team" in others.columns:
             others.loc[others["team"] == captain_row.get("team"), "_vice_score"] *= 0.95
-        others = others.sort_values(by=["_vice_score", "expected_points"], ascending=False)
+        others = others.sort_values(by=["_vice_score", "expected_points", "element"], ascending=[False, False, True])
         vice_captain_row = others.iloc[0]
         vice_play = float(play_probability(others.iloc[:1]).iloc[0])
 
@@ -197,16 +217,11 @@ class LineupOptimizer:
 
         captain_candidates = (
             starters_df.assign(_cap_score=cap_scores.loc[starters_df.index])
-            .sort_values(by=["_cap_score", "expected_points"], ascending=False)
+            .sort_values(by=["_cap_score", "expected_points", "element"], ascending=[False, False, True])
             .head(5)
         )
 
-        # Compute safe pick (highest floor P10) vs ceiling pick (highest P90)
-        safe_pick = starters_df.sort_values(by=["p10", "expected_points"], ascending=False).iloc[0]
-        ceiling_pick = starters_df.sort_values(by=["p90", "expected_points"], ascending=False).iloc[0]
-
         # Probability of outscoring next best option using scoreline simulator (WI-4.3) or analytical normal
-        cap_id = int(captain_row["element"])
         vice_id = int(vice_captain_row["element"])
         sim_success = False
         if simulate_captaincy:
@@ -220,17 +235,7 @@ class LineupOptimizer:
                 sim_success = False
 
         if not sim_success:
-            cap_mu = float(captain_row["expected_points"])
-            cap_p10 = float(captain_row.get("p10", cap_mu * 0.4))
-            cap_p90 = float(captain_row.get("p90", cap_mu * 1.8))
-            cap_sigma = max(1.0, (cap_p90 - cap_p10) / 2.56)
-
-            next_mu = float(vice_captain_row["expected_points"])
-            next_p10 = float(vice_captain_row.get("p10", next_mu * 0.4))
-            next_p90 = float(vice_captain_row.get("p90", next_mu * 1.8))
-            next_sigma = max(1.0, (next_p90 - next_p10) / 2.56)
-
-            prob_outscore = normal_prob_greater(cap_mu, cap_sigma, next_mu, next_sigma)
+            prob_outscore = outscore_probability(captain_row, vice_captain_row)
 
         # Starting points and bench points
         starters_xp = float(starters_df["expected_points"].sum())
@@ -257,18 +262,6 @@ class LineupOptimizer:
                 "p90": round(float(captain_row.get("p90", 0.0)), 2),
                 "multiplier": int(cap_multiplier),
                 "prob_outscore_next": prob_outscore,
-                "safe_alternative": {
-                    "element": int(safe_pick["element"]),
-                    "web_name": safe_pick["web_name"],
-                    "floor_p10": round(float(safe_pick.get("p10", 0.0)), 2),
-                    "expected_points": round(float(safe_pick["expected_points"]), 2),
-                },
-                "differential_alternative": {
-                    "element": int(ceiling_pick["element"]),
-                    "web_name": ceiling_pick["web_name"],
-                    "ceiling_p90": round(float(ceiling_pick.get("p90", 0.0)), 2),
-                    "expected_points": round(float(ceiling_pick["expected_points"]), 2),
-                },
             },
             "vice_captain": {
                 "element": int(vice_captain_row["element"]),
@@ -277,9 +270,8 @@ class LineupOptimizer:
                 "expected_points": round(float(vice_captain_row["expected_points"]), 2),
                 "p10": round(float(vice_captain_row.get("p10", 0.0)), 2),
                 "p90": round(float(vice_captain_row.get("p90", 0.0)), 2),
-                "reasoning": (
-                    f"Activates if {captain_row['web_name']} does not feature. Best captain alternative: "
-                    f"{round(float(vice_captain_row['expected_points']), 2)} xP, {round(vice_play * 100)}% to play."
+                "reasoning": vice_reasoning(
+                    captain_row["web_name"], float(vice_captain_row["expected_points"]), vice_play
                 ),
             },
             "captain_rankings": captain_candidates[

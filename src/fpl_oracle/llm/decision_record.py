@@ -42,7 +42,7 @@ def _clean(v: Any, depth: int = 3, items: int = 6, chars: int = 240) -> Any:
 
 def _fixtures(rows: list[dict[str, Any]] | None) -> list[str]:
     return [
-        f"GW{f.get('event')} {f.get('opp_short')}({'H' if f.get('is_home') else 'A'},fdr{f.get('difficulty')})"
+        f"gameweek {f.get('event')} {f.get('opp_short')}({'H' if f.get('is_home') else 'A'},fdr{f.get('difficulty')})"
         for f in (rows or [])[:5]
     ]
 
@@ -72,14 +72,24 @@ def _player(p: dict[str, Any], form: dict[int, dict[str, Any]]) -> dict[str, Any
     return {k: _clean(v) for k, v in out.items() if v not in (None, "", [])}
 
 
+def _names(rows: Any) -> list[str]:
+    return [p.get("web_name") for p in rows or [] if isinstance(p, dict)]
+
+
+def _flat_check(check: Any) -> Any:
+    """The planner's confidence check with its player lists reduced to names."""
+    if not isinstance(check, dict):
+        return check
+    return {k: (_names(v) if k in ("ins", "outs") else v) for k, v in check.items()}
+
+
 def _plan_option(plan: dict[str, Any]) -> dict[str, Any]:
-    names = lambda key: [p.get("web_name") for p in plan.get(key) or [] if isinstance(p, dict)]  # noqa: E731
     return _clean(
         {
             "title": plan.get("title"),
             "type": plan.get("plan_type"),
-            "in": names("transfers_in"),
-            "out": names("transfers_out"),
+            "in": _names(plan.get("transfers_in")),
+            "out": _names(plan.get("transfers_out")),
             "hits": plan.get("hits"),
             "net_xp": plan.get("net_expected_points"),
             "delta_vs_plan_a": plan.get("delta_vs_plan_a"),
@@ -120,6 +130,8 @@ def build_decision_record(result: dict[str, Any], extras: dict[str, Any] | None 
         "status": "ready",
         "gameweek": card.get("gameweek") or squad.get("target_gameweek"),
         "snapshot_id": result.get("snapshot_id"),
+        "headline": card.get("headline"),
+        "caution": card.get("caution"),
         "deadline": _clean(card.get("deadline")),
         "meta": _clean(
             {
@@ -158,39 +170,50 @@ def build_decision_record(result: dict[str, Any], extras: dict[str, Any] | None 
                 "free_transfers_left": transfers.get("ft_remaining"),
                 "free_transfers_next_gw": transfers.get("ft_next_gw"),
                 "bank_after_millions": transfers.get("bank_after"),
-                "gain_this_gw_xp": transfers.get("expected_gain_gw"),
-                "gain_vs_roll_over_horizon_xp": transfers.get("net_gain_vs_roll"),
+                "is_roll": transfers.get("is_roll"),
+                "temporary": transfers.get("temporary"),
+                "pairs": [
+                    f"{(pair.get('out') or {}).get('web_name')} → {(pair.get('in') or {}).get('web_name')}"
+                    for pair in transfers.get("pairs") or []
+                ],
+                "gain_this_gameweek_points": transfers.get("expected_gain_gw"),
+                "gain_vs_saving_over_horizon_points": transfers.get("net_gain_vs_roll"),
+                "horizon": transfers.get("horizon_label"),
+                "horizon_gameweeks": transfers.get("horizon_gameweeks"),
                 "horizon_xp": transfers.get("horizon_pts"),
-                "no_regret": transfers.get("no_regret_flag"),
                 "summary": transfers.get("action_summary"),
                 "hit_policy": card.get("hit_policy"),
                 "why": card.get("two_line_reasoning"),
                 "versus_saving": transfers.get("comparison"),
             },
-            depth=3,
+            chars=600,
         ),
+        "your_choices": card.get("your_choices"),
         "chip": _clean(
             {
                 "play_now": chip.get("recommend"),
                 "chip": chip.get("chip_display_name"),
                 "gain_vs_hold_xp": chip.get("gain_vs_hold"),
                 "comparison": chip.get("comparison"),
-                "check": chip.get("check"),
+                "check": _flat_check(chip.get("check")),
                 "later_provisional": chip.get("later"),
                 "reason": chip.get("reason"),
                 "set_1_warning": chip.get("set_1_deadline_warning"),
                 "now_vs_later": card.get("ranked_options"),
             },
             items=10,
+            chars=600,
         ),
         "lineup": {
             "formation": squad.get("formation") or card.get("formation"),
-            "captain": _clean({k: captain.get(k) for k in _ARMBAND_KEYS}),
+            "captain": _clean({k: captain.get(k) for k in (*_ARMBAND_KEYS, "as_captain_points")}),
             "vice_captain": _clean({k: vice.get(k) for k in _ARMBAND_KEYS}),
             "captain_reason": (card.get("captain") or {}).get("reason")
             or f"Highest-xP starters: {top}. Captain and vice come from the same optimiser as the XI.",
-            "xi_xp": squad.get("starters_expected_points"),
-            "total_xp_with_captain": squad.get("total_expected_points"),
+            "captain_check": _clean(card.get("captain_check")),
+            "xi_points": squad.get("starters_expected_points"),
+            "total_points_with_captain": card.get("team_points") or squad.get("total_expected_points"),
+            "minutes_note": card.get("minutes_note"),
             "xi": [_player(p, form) for p in starters],
             "bench": [_player(p, form) for p in bench],
             "bench_reason": "Bench order is the optimiser's choice; first bench player is first auto-sub.",
@@ -201,19 +224,20 @@ def build_decision_record(result: dict[str, Any], extras: dict[str, Any] | None 
             "contingency": {
                 k: _plan_option(plans[k]) for k in ("plan_a", "plan_b", "plan_c") if isinstance(plans.get(k), dict)
             },
-            "resource_frontier": _clean(card.get("resource_frontier"), depth=3, items=8),
         },
         "league": _clean(
             {
                 "rivals": card.get("rivals"),
                 "win_probability": card.get("win_prob"),
-                "scenarios": card.get("rival_scenarios"),
+                "cover_checks": card.get("league_cover_checks"),
             },
-            depth=3,
+            depth=4,
         ),
         "caveats": _clean(card.get("caveats"), items=6),
         "what_changed": card.get("what_changed"),
-        "close_calls": _clean(card.get("close_calls"), items=4),
+        "close_calls": _clean(card.get("close_calls"), items=4, chars=600),
+        "kept_owned": _clean(card.get("kept_owned")),
+        "track_record": card.get("track_record"),
         "press_signals": _clean([n.get("text") for n in card.get("press_signals") or []], items=8),
     }
 
@@ -315,9 +339,9 @@ def prompt_section(record: dict[str, Any]) -> str:
             "(optimise_transfers, captain_options, plan_chips, get_my_team) for any number you quote."
         )
     return (
-        f"## PUBLISHED DECISION RECORD (GW{record.get('gameweek')}, snapshot {str(record.get('snapshot_id'))[:12]})\n"
+        f"## PUBLISHED DECISION RECORD (gameweek {record.get('gameweek')}, snapshot {str(record.get('snapshot_id'))[:12]})\n"
         "This is exactly the advice shown to the manager in the app. It is authoritative: explain it, defend it "
-        "with its numbers, and compare the manager's ideas against it. Prices are millions, xP is projected points "
-        "for the gameweek unless named horizon, fdr is fixture difficulty. Call get_current_decision for any "
+        "with its numbers, and compare the manager's ideas against it. Prices are millions, points and xp are predicted points "
+        "for the gameweek unless the key names the horizon, fdr is fixture difficulty. Call get_current_decision for any "
         "section or the raw card.\n" + json.dumps(record, default=str, separators=(",", ":"))
     )

@@ -40,7 +40,7 @@ def analyze():
         target_gw = result.get("target_gameweek", result.get("gameweek", result.get("target_gw", "Unknown")))
         lineup = {**result, "starters": pd.DataFrame(result["starters"]), "bench": pd.DataFrame(result["bench"])}
 
-        table = Table(title=f"Optimal Starting Lineup (GW {target_gw}) - Formation: {lineup['formation']}")
+        table = Table(title=f"Optimal Starting Lineup (gameweek {target_gw}) - Formation: {lineup['formation']}")
         table.add_column("Pos", style="cyan")
         table.add_column("Player", style="bold white")
         table.add_column("Cost", justify="right")
@@ -66,7 +66,7 @@ def analyze():
 
         console.print(table)
         console.print(
-            f"[bold]Total Projected Starting Points: [green]{lineup.get('starters_expected_points', lineup.get('total_expected_points', 0)):.2f} xP[/green][/bold]"
+            f"[bold]Predicted points with captain: [green]{lineup['total_expected_points']:.1f}[/green][/bold]"
         )
 
     asyncio.run(_run())
@@ -93,7 +93,7 @@ def optimize():
         table.add_column("Plan Type", style="cyan")
         table.add_column("Summary")
         table.add_column("Net xP", justify="right", style="green")
-        table.add_column("Net Gain", justify="right")
+        table.add_column("Gain vs saving, over the plan", justify="right")
         table.add_column("Hits", justify="right")
 
         for p in opt_res.get("candidate_plans", []):
@@ -138,19 +138,14 @@ def chips():
         table = Table(title="2026/27 Chip Strategy Schedule")
         table.add_column("Chip", style="bold white")
         table.add_column("Plan week", justify="center", style="green")
-        table.add_column("Est. extra points", justify="right", style="green")
         table.add_column("Status", justify="center")
-        table.add_column("Notes")
 
         for c in chip_res.get("chip_plan_table", []):
             gw = c.get("recommended_gw")
-            gain = c.get("expected_gain")
             table.add_row(
                 str(c.get("chip", c.get("code", "?"))),
-                f"GW {gw}" if gw is not None else "No clear benefit",
-                f"{gain:+.1f} pts" if gain is not None else "n/a",
+                f"Gameweek {gw}" if gw is not None else "No clear benefit",
                 str(c.get("status", "")),
-                str(c.get("reasoning", "")),
             )
         if not chip_res.get("chip_plan_table"):
             console.print("No chip timeline: no chips left to plan, or chip timing is not ready yet.")

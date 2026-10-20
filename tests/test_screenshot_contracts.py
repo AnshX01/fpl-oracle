@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from fpl_oracle.briefing.decision_card import decision_card_generator
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.llm.agent import ExpertAgent
 from fpl_oracle.server.analysis import analysis_service
@@ -19,16 +20,44 @@ def test_chip_schedule_comes_from_selected_trajectory():
             ]
         },
         "measured_chip_roadmap": [
-            {"chip": "Wildcard", "code": "wildcard", "recommended_gw": 6, "expected_gain": 12.5},
-            {"chip": "Triple Captain", "code": "3xc", "recommended_gw": 8, "expected_gain": 5.0},
+            {"chip": "Wildcard", "code": "wildcard", "recommended_gw": 6, "expected_gain": None, "status": "planned"},
+            {"chip": "Triple Captain", "code": "3xc", "recommended_gw": 8, "expected_gain": None, "status": "planned"},
         ],
-        "chip_measurement_status": "measured_through_expiry",
+        "chip_measurement_status": "planned",
         "recommended_chip": "wildcard",
         "chip_comparison_table": [],
     }
     result = analysis_service.bind_chip_schedule({"chip_plan_table": [{"recommended_gw": 5}]}, joint)
     assert [r["recommended_gw"] for r in result["chip_plan_table"]] == [6, 8]
-    assert result["chip_plan_table"][0]["expected_gain"] == 12.5
+    assert all(r["status"] == "planned" and r["expected_gain"] is None for r in result["chip_plan_table"])
+    assert result["schedule_status"] == "planned"
+
+
+def test_chip_roadmap_renders_without_none(monkeypatch):
+    from io import StringIO
+
+    from rich.console import Console
+
+    from fpl_oracle import cli
+    from fpl_oracle.server.routes import api
+
+    rows = [{"chip": "Wildcard", "code": "wildcard", "recommended_gw": 6, "expected_gain": None, "status": "planned"}]
+    monkeypatch.setattr(api, "get_chip_strategy", AsyncMock(return_value={"chip_plan_table": rows}))
+    out = StringIO()
+    monkeypatch.setattr(cli, "console", Console(file=out, width=100))
+    cli.chips()
+    assert "None" not in out.getvalue() and "Gameweek 6" in out.getvalue() and "n/a" not in out.getvalue()
+
+
+@pytest.mark.slow
+def test_card_payload_for_the_screens(configured_advisor):
+    card = asyncio.run(decision_card_generator.generate_decision_card())
+    cap = card["captain"]
+    assert cap["reason"] and cap["as_captain_points"] == round(cap["multiplier"] * cap["expected_points"], 1)
+    assert "bench_note" in card and "minutes_note" in card
+    assert all("gain" not in later for later in card["chip"]["later"])
+    assert "None" not in str(card["chip"]["later"]) + str(card["chip"]["reason"])
+    assert card["chip"]["chip_name"] != "3xc" or cap["multiplier"] == 3
 
 
 def test_empty_chat_provider_falls_back_and_persists_nonempty():

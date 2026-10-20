@@ -20,7 +20,6 @@ from fpl_oracle.briefing.decision_card import decision_card_generator, format_de
 from fpl_oracle.briefing.review import post_gameweek_reviewer
 from fpl_oracle.briefing.weekly import weekly_briefing_generator
 from fpl_oracle.chips.planner import chip_planner
-from fpl_oracle.config import PLANNER_HORIZON
 from fpl_oracle.data.fuzzy_match import fuzzy_matcher
 from fpl_oracle.data.historical import historical_manager
 from fpl_oracle.data.store import data_store
@@ -36,7 +35,7 @@ from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.news.ingest import news_ingestion
 from fpl_oracle.optimise.contingency import contingency_engine
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.server.analysis import analysis_service, target_gameweek
+from fpl_oracle.server.analysis import PLANNER_HORIZON, analysis_service, target_gameweek
 from fpl_oracle.server.jobs import get_jobs_status, run_job_on_demand
 from fpl_oracle.server.pipeline import sync_pipeline
 from fpl_oracle.server.safe_json import SafeJSONResponse, safe_json_serialize
@@ -84,7 +83,7 @@ class ConfirmTeamRequest(BaseModel):
 async def confirm_followed_team():
     from fpl_oracle.server.advice_job import advice_publisher
 
-    publication = advice_publisher.public()
+    publication = advice_publisher.current or {}
     if publication.get("previous_result") or publication.get("status") == "refresh_required":
         raise HTTPException(409, "Team data changed. Wait for updated advice before Done.")
     from fpl_oracle.domain.team_confirmation import team_confirmation
@@ -219,7 +218,11 @@ async def get_league_validation_status():
     from fpl_oracle.league.validation import validation_summary
 
     directory = DATA_DIR / "league_forward"
-    scored = [json.loads(p.read_text()) for p in directory.glob("*.score.json")] if directory.exists() else []
+    scored = (
+        [json.loads(p.read_text(encoding="utf-8")) for p in directory.glob("*.score.json")]
+        if directory.exists()
+        else []
+    )
     summary = validation_summary(scored)
     summary["frozen_forecast_count"] = len(list(directory.glob("*.index.json"))) if directory.exists() else 0
     summary["capture_window"] = (
@@ -229,11 +232,6 @@ async def get_league_validation_status():
         "Strict cumulative leader after target GW among fixed observed manager set; not entire league or season title odds"
     )
     return safe_json_serialize(summary)
-
-
-@router.get("/research/chip-expiry")
-async def get_chip_expiry_research():
-    return safe_json_serialize(await analysis_service.expiry_sensitivity())
 
 
 @router.post("/advice/start")
@@ -247,10 +245,9 @@ async def start_advice_publication():
 async def get_advice_publication(job_id: str):
     from fpl_oracle.server.advice_job import advice_publisher
 
-    state = advice_publisher.public()
-    if state.get("id") != job_id:
+    if advice_publisher.public().get("id") != job_id:
         raise HTTPException(status_code=404, detail="Advice job unavailable or superseded")
-    return safe_json_serialize(state)
+    return safe_json_serialize(advice_publisher.poll())
 
 
 @router.get("/health")
@@ -345,7 +342,7 @@ def get_profile():
 
 
 @router.post("/profile")
-def update_profile(req: ProfileUpdateRequest):
+async def update_profile(req: ProfileUpdateRequest):
     kwargs: dict[str, Any] = {}
     if req.risk_preference is not None:
         kwargs["risk_preference"] = req.risk_preference
@@ -367,7 +364,15 @@ def update_profile(req: ProfileUpdateRequest):
         raise HTTPException(status_code=422, detail="Bank must be a finite nonnegative value")
     if req.free_transfers is not None and not 0 <= req.free_transfers <= 5:
         raise HTTPException(status_code=422, detail="Free transfers must be between 0 and 5")
+    before = data_store.get_profile()
+    choices_before = (list(before.keep_ids), list(before.avoid_ids))
     data_store.update_profile(**kwargs)
+    after = data_store.get_profile()
+    if (list(after.keep_ids), list(after.avoid_ids)) != choices_before:
+        # Keep and avoid calls bind every plan, so advice calculated on the old ones is no longer valid.
+        from fpl_oracle.server.advice_job import advice_publisher
+
+        await advice_publisher.invalidate()
     return {"status": "success", "profile": get_profile()}
 
 
@@ -460,7 +465,7 @@ async def get_squad():
     is_stale = is_stale or fixtures_stale
     team_map = {t.id: t for t in boot.teams}
 
-    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures=fixtures_list)
+    horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures=fixtures_list)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df = effective_state.to_squad_dataframe()
@@ -645,9 +650,8 @@ async def get_squad():
             "starters": starters_out,
             "bench": bench_out,
             "starters_expected_points": lineup_res.get("starters_expected_points", 0.0),
-            "captain_bonus_expected_points": lineup_res.get(
-                "captain_bonus_expected_points", lineup_res["captain"]["expected_points"]
-            ),
+            "captain_bonus_expected_points": (lineup_res["captain"]["multiplier"] - 1)
+            * lineup_res["captain"]["expected_points"],
             "total_expected_points": lineup_res["total_gameweek_expected_points"],
             "stale": is_stale or effective_state.is_stale,
             "is_stale": is_stale or effective_state.is_stale,
@@ -809,7 +813,7 @@ async def get_chip_strategy():
     target_gw = _target_gw(curr_gw, next_gw)
 
     # News adjustment path: identical across all surfaces
-    horizon_proj = await analysis_service.projections(target_gw, 8, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
     pool_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     hist = None
@@ -1111,7 +1115,7 @@ async def get_contingency_plans(detailed: bool = True):
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = _target_gw(curr_gw, next_gw)
 
-    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df)
@@ -1187,7 +1191,7 @@ async def get_rival_scenarios():
     current, target = await fpl_client.get_current_and_next_gw()
     if not target:
         raise HTTPException(status_code=409, detail="Upcoming official gameweek unavailable")
-    projections = await analysis_service.projections(target, 8, boot, fixtures)
+    projections = await analysis_service.projections(target, PLANNER_HORIZON, boot, fixtures)
     joint, _, _, _ = await _selected_advice_context(projections[target], projections, boot, current, target)
     return safe_json_serialize(await analysis_service.rival_scenarios(joint, projections, target))
 
@@ -1201,7 +1205,7 @@ async def get_contingency_matrix():
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = _target_gw(curr_gw, next_gw)
 
-    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     joint, user_squad_df, bank, free_transfers = await _selected_advice_context(
@@ -1238,7 +1242,7 @@ async def post_contingency_panic(req: PanicRequest):
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = _target_gw(curr_gw, next_gw)
 
-    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
     state = await manager_state_service.get_current_state()
     if is_stale or state.is_stale or target_df.empty:
@@ -1381,7 +1385,7 @@ async def get_pre_deadline_checklist():
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
     target_gw = _target_gw(curr_gw, next_gw)
 
-    horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
+    horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
     joint, user_squad_df, bank, free_transfers = await _selected_advice_context(

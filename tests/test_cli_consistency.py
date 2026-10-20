@@ -18,6 +18,7 @@ def test_cli_commands_render_shared_operations(monkeypatch):
         "captain": rows[0],
         "vice_captain": rows[1],
         "starters_expected_points": 33,
+        "total_expected_points": 36,
         "target_gameweek": 6,
     }
     get_squad = AsyncMock(return_value=squad)

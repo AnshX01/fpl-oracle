@@ -157,22 +157,5 @@ class HitLedger:
         self._refreshes[manager_id] = (time.monotonic(), result)
         return result
 
-    def recommend(self, manager_id, plan, target_gw):
-        if not manager_id or not plan.get("hit_cost"):
-            return
-        first = plan["trajectory"][0]
-        self.write(
-            manager_id,
-            dict(
-                kind="recommended",
-                gameweek=target_gw,
-                ins=first["transfers_in"],
-                outs=first["transfers_out"],
-                hit_cost=first["hit_cost"],
-                expected_gain=first["expected_player_gain"],
-                status="not_verified_taken",
-            ),
-        )
-
 
 hit_ledger = HitLedger()

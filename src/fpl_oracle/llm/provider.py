@@ -25,7 +25,8 @@ Operating rules:
 2. STRICT GROUNDING. Quote only names, prices, xP, probabilities and fixtures from the record or tool results. Never invent news, injuries or numbers. If data is missing or stale, say so. Label forecasts as estimates.
 3. TOOLS. Use get_current_decision for any section of the decision (or raw card). Use the other tools for anything the record lacks (other players, other transfers, price changes, news, fixtures).
 4. Earlier chat turns may refer to older advice; the record in this prompt wins.
-5. Action first. Answer the question asked; use the structured elements of the voice contract for full recommendations, not for every follow-up.
+5. Never add, subtract or average numbers yourself; quote them as given, with the weeks they cover.
+6. Action first. Answer the question asked, in plain words.
 """
 
 
@@ -119,17 +120,19 @@ class OfflineExpertProvider:
             move = "roll the free transfer"
         chip_line = f"play {chip.get('chip')}" if chip.get("play_now") else "save your chips"
         lines = [
-            f"### GW{rec.get('gameweek')} decision",
+            f"### Gameweek {rec.get('gameweek')} decision",
             f"**Decision:** {move}; captain {cap.get('web_name')} (vice {vice.get('web_name')}); {chip_line}.",
             "",
             "**Why:**",
         ]
         if t.get("why"):
             lines.append(f"- {t['why']}")
-        if t.get("gain_vs_roll_over_horizon_xp") is not None:
+        if t.get("gain_vs_saving_over_horizon_points") is not None:
+            span = f" ({t['horizon']})" if t.get("horizon") else ""
             lines.append(
-                f"- Transfers: +{t['gain_vs_roll_over_horizon_xp']} xP over the planning horizon vs rolling "
-                f"({t.get('gain_this_gw_xp')} xP this GW); horizon total {t.get('horizon_xp')} xP."
+                f"- Transfers: +{t['gain_vs_saving_over_horizon_points']} xP over the planning horizon{span} vs saving "
+                f"the transfer ({t.get('gain_this_gameweek_points')} xP in gameweek {rec.get('gameweek')}); "
+                f"horizon total {t.get('horizon_xp')} xP."
             )
         if cap:
             lines.append(
@@ -139,7 +142,8 @@ class OfflineExpertProvider:
         if chip:
             lines.append(
                 f"- Chip: {'play ' + str(chip.get('chip')) if chip.get('play_now') else 'hold'}"
-                f" (gain vs hold {chip.get('gain_vs_hold_xp')} xP). {chip.get('reason') or ''}"
+                + (f" (gain vs hold {chip['gain_vs_hold_xp']} xP)" if chip.get("gain_vs_hold_xp") is not None else "")
+                + f". {chip.get('reason') or ''}"
             )
         alt = rec.get("alternatives") or {}
         lines += ["", "**Alternatives considered:**"]
@@ -196,15 +200,15 @@ class OfflineExpertProvider:
                 lines.append(str(chip["comparison"]))
             if check:
                 lines.append(
-                    f"Measured: {check.get('gain')} predicted points versus {check.get('versus')}, against a forecast "
+                    f"The check: {check.get('gain')} predicted points versus {check.get('versus')}, against a forecast "
                     f"uncertainty of {check.get('uncertainty')} (needs {check.get('needed')} to act at "
                     f"{int(float(check.get('confidence') or 0.75) * 100)}% confidence)."
                 )
             for later in chip.get("later_provisional") or []:
                 if isinstance(later, dict):
                     lines.append(
-                        f"Pencilled in for later (re-decided every week): {later.get('chip_display_name')} in "
-                        f"gameweek {later.get('gameweek')}, about +{later.get('gain')} points."
+                        f"{later.get('chip_display_name')} is pencilled in for gameweek {later.get('gameweek')}, "
+                        "re-decided every week."
                     )
             return "\n\n".join(lines)
         if action:
@@ -361,25 +365,45 @@ class OfflineExpertProvider:
         chip_tokens = {"chip", "chips", "wildcard", "freehit", "bboost", "bb", "fh", "tc"}
         chip_phrases = ["bench boost", "free hit", "triple captain"]
         if (tokens & chip_tokens) or any(p in last_msg for p in chip_phrases):
-            res = await tool_executor.execute("plan_chips", {})
-            warning = res.get("set_1_warning", "")
-            table_rows = [
-                f"| {row['chip']} | {('GW' + str(row['recommended_gw'])) if row['recommended_gw'] is not None else 'Save'} | {row.get('expected_gain', 'Unknown')} |"
-                for row in res.get("chip_table", [])[:4]
-            ]
-            published = ""
-            if ready:
-                c = rec["chip"]
-                published = (
-                    f"Published decision: {'play ' + str(c.get('chip')) if c.get('play_now') else 'save your chips this week'}"
-                    f" (gain vs hold {c.get('gain_vs_hold_xp')} xP). Chips left: {(rec['team'] or {}).get('chips_remaining')}.\n\n"
+            from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
+            from fpl_oracle.domain.manager_state import manager_state_service
+
+            state = await manager_state_service.get_current_state()
+            chips_left = [
+                f"Chips left {label}: {', '.join(CHIP_DISPLAY_NAMES.get(c, c) for c in chips)}."
+                for chips, label in (
+                    (state.chips_remaining_set_1, "until gameweek 19"),
+                    (state.chips_remaining_set_2, "from gameweek 20"),
                 )
-            return (
-                published
-                + "### Chips\n| Chip | Week | Est. extra points |\n|---|---|---|\n"
-                + "\n".join(table_rows)
-                + ("\n" + warning if warning else "")
-            )
+                if chips
+            ]
+            if not ready:
+                why = str(rec.get("reason") or "no published decision is ready yet").rstrip(".")
+                return "\n\n".join([f"No chip plan to show yet: {why}.", *chips_left])
+            c = rec["chip"]
+            lines = [
+                "### Chips",
+                f"Published decision: {'play ' + str(c.get('chip')) if c.get('play_now') else 'save your chips this week'}.",
+                *chips_left,
+            ]
+            for key in ("reason", "comparison"):
+                if c.get(key):
+                    lines.append(str(c[key]))
+            check = c.get("check")
+            if isinstance(check, dict):
+                lines.append(f"The check: {check.get('gain')} predicted points versus {check.get('versus')}.")
+            rows = [
+                f"| {later.get('chip_display_name')} | "
+                + (f"gameweek {later['gameweek']}" if later.get("gameweek") is not None else "Not planned")
+                + " |"
+                for later in c.get("later_provisional") or []
+                if isinstance(later, dict)
+            ]
+            if rows:
+                lines.append("| Chip | Planned week |\n|---|---|\n" + "\n".join(rows))
+            if c.get("set_1_warning"):
+                lines.append(str(c["set_1_warning"]))
+            return "\n\n".join(lines)
 
         # 7. Captaincy questions
         if any(w in tokens for w in ["captain", "armband", "vice", "vc"]):
@@ -526,7 +550,7 @@ class OfflineExpertProvider:
 
             plans = res.get("candidate_plans", [])
             plan_lines = [
-                f"- **{p.get('type', p.get('plan_type'))}**: {p.get('summary', '')} (Net xP: {p.get('net_xp')}, Gain vs Roll: {p.get('gain', p.get('gain_vs_roll'))})"
+                f"- **{p.get('plan_type')}**: {p.get('summary', '')} (Net xP: {p.get('net_xp')}, Gain vs Roll over {res.get('horizon')}: {p.get('horizon_gain_vs_roll')})"
                 for p in plans
             ]
 

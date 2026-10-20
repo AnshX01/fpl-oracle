@@ -22,6 +22,8 @@ from typing import Any
 
 import numpy as np
 
+from fpl_oracle.optimise.lineup import best_lineup
+
 SD_PER_P10_P90 = 2.5631  # p90 - p10 of a normal distribution spans 2.563 standard deviations
 JOINT_DRAWS = 20000  # standard error of P(win) about 0.3 percentage points
 
@@ -43,8 +45,6 @@ def rival_weeks(
     position: dict[int, str],
     last_captain: int | None = None,
 ):
-    from fpl_oracle.optimise.multiperiod import best_lineup
-
     squad = [int(e) for e in elements if int(e) in position]
     weeks = []
     for index, gw in enumerate(gws):
@@ -77,7 +77,7 @@ def league_threats(
             for p, w in week.items():
                 if p not in mine:
                     threat[p] = threat.get(p, 0.0) + w * xp[gw].get(p, 0.0)
-    return sorted((p for p in threat if threat[p] > 0), key=lambda p: -threat[p])[:top]
+    return sorted((p for p in threat if threat[p] > 0), key=lambda p: (-threat[p], p))[:top]
 
 
 def win_probability(
@@ -124,6 +124,7 @@ def win_probability(
         )
     draws = np.random.default_rng(0).standard_normal((JOINT_DRAWS, len(means)))
     eigval, eigvec = np.linalg.eigh(cov)
-    gaps = np.array(means) + draws @ (eigvec * np.sqrt(np.clip(eigval, 0.0, None))).T
+    root = (eigvec * np.sqrt(np.clip(eigval, 0.0, None))) @ eigvec.T  # the symmetric root is unique
+    gaps = np.array(means) + draws @ root
     p_all = float((gaps > 0).all(axis=1).mean())
     return {"p_win": round(p_all, 3), "rivals": per_rival, "weeks_after_horizon": rest}

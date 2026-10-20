@@ -351,8 +351,6 @@ def test_identical_horizon_branch_comparison():
         assert p["horizon_gross_xp"] > 0
         assert p["horizon_net_xp"] == round(p["horizon_gross_xp"] - (p["horizon_hits"] * 4.0), 2)
         assert "pure_xp_gain" in p
-        assert "price_movement_gain" in p
-        assert "robustness_score" in p
 
 
 def test_greedy_vs_multi_gw_hit_avoidance():
@@ -438,7 +436,6 @@ def test_price_change_sensitivity_toggle():
 
     for p in res_pure["candidate_plans"]:
         assert "pure_xp_gain" in p
-        assert "price_movement_gain" in p
 
 
 def test_plan_stability_threshold():
