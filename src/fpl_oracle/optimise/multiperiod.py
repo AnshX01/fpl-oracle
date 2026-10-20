@@ -108,7 +108,6 @@ class MultiPeriodConfig:
     # depends on the machine and its load, so identical inputs could give different advice. The cap is a safety
     # net only (a full 12-week plan proves out in ~6 min); a solve that hits it is reported as not proven.
     time_limit_sec: int = 3600
-    mip_heuristic_effort: float = 0.7  # HiGHS primal-heuristic share; 0.7 found ~3% better incumbents than 0.05 in 60 s
     polish_window: int = 4  # weeks re-optimised together in one local-search step (step = half a window)
     # Owner rule: no back-to-back chips. Chip weeks must be at least this many gameweeks apart (1 = no rule).
     # With no blank/double gameweeks announced, flat projections otherwise bunch every chip into the first weeks.
@@ -244,7 +243,6 @@ class MultiPeriodOptimizer:
                     gapRel=self.config.mip_gap,
                     timeLimit=limit,
                     msg=False,
-                    mip_heuristic_effort=self.config.mip_heuristic_effort,
                 )
                 if highs.available():
                     return highs
@@ -386,7 +384,6 @@ class MultiPeriodOptimizer:
         forced_w1_chip: str | None = None,
         forced_chip_schedule: dict[int, str] | None = None,
         min_w1_hits: int | None = None,
-        forbidden_w1_moves: list[tuple[set[int], set[int]]] | None = None,
         hit_cooldown_until: int = 0,
         chips_by_set: dict[int, list[str] | set[str]] | None = None,
         time_limit_sec: float | None = None,
@@ -852,17 +849,6 @@ class MultiPeriodOptimizer:
             prob += fh[t0] == 0
             prob += bb[t0] == 0
             prob += tc[t0] == 0
-
-        # No-good cuts for distinct moves
-        if forbidden_w1_moves:
-            for f_in, f_out in forbidden_w1_moves:
-                prob += (
-                    pulp.lpSum(1 - tin[p, t0] for p in f_in if p in players)
-                    + pulp.lpSum(tin[p, t0] for p in players if p not in f_in)
-                    + pulp.lpSum(1 - tout[p, t0] for p in f_out if p in players)
-                    + pulp.lpSum(tout[p, t0] for p in players if p not in f_out)
-                    >= 1
-                )
 
         # --- Objective Function ---
         gamma = self.config.gamma
@@ -1717,23 +1703,7 @@ class MultiPeriodOptimizer:
 
         gate_new()
 
-        # --- wave 2: hit-free re-solves when the best plan needs a hit that the hit rule rejects, and
-        # distinct week-1 alternatives (no-good cuts) in the background
-        def moves_of(*names: str) -> list[tuple[set[int], set[int]]]:
-            return [
-                (
-                    {t["element"] for t in plans[n].recommended_action.transfers_in},
-                    {t["element"] for t in plans[n].recommended_action.transfers_out},
-                )
-                for n in names
-                if n in plans
-            ]
-
-        # Two alternatives that differ from the plans already found; identical results are merged later
-        alt_runs: dict[str, list[tuple[set[int], set[int]]]] = {}
-        if len(player_pool_df) > 30:
-            alt_runs = {"alt:0": moves_of("opt", "plan_1"), "alt:1": moves_of("opt", "plan_1", "hold", "roll")}
-
+        # --- wave 2: hit-free re-solves when the best plan needs a hit that the hit rule rejects
         ranked, top_cand, hold_cand = standings()
         extra_tasks: dict[str, dict[str, Any]] = {}
         if not ranked[0]["hit_allowed"]:
@@ -1775,354 +1745,341 @@ class MultiPeriodOptimizer:
                 if p not in set(locked_out_ids or ()):
                     extra_tasks[f"cover:{p}"] = dict(same_chip, locked_in_ids=sorted(set(locked_in_ids or ()) | {p}))
 
-        pool2 = ThreadPoolExecutor(max_workers=max(1, min(workers, len(alt_runs) + len(chips_now) + len(extra_tasks))))
-        try:
-            alt_futures = {
-                name: pool2.submit(run, name, dict(forced_kw, forbidden_w1_moves=forbidden), limit)
-                for name, forbidden in alt_runs.items()
-            }
-            if extra_tasks:
-                extra = run_batch(extra_tasks, limit)
-                new_plans = {n: p for n, p in extra.items() if isinstance(p, MultiPeriodPlan)}
-                # Covers are compared with fully polished plans, so they get the same polish
-                new_plans.update(
-                    run_parallel(
-                        {
-                            n: (lambda n=n: self._polish(run, extra_tasks[n], new_plans[n], n, None))
-                            for n in new_plans
-                            if n.startswith("cover:")
-                        }
-                    )
+        if extra_tasks:
+            extra = run_batch(extra_tasks, limit)
+            new_plans = {n: p for n, p in extra.items() if isinstance(p, MultiPeriodPlan)}
+            # Covers are compared with fully polished plans, so they get the same polish
+            new_plans.update(
+                run_parallel(
+                    {
+                        n: (lambda n=n: self._polish(run, extra_tasks[n], new_plans[n], n, None))
+                        for n in new_plans
+                        if n.startswith("cover:")
+                    }
                 )
-                plans.update(new_plans)
-                add_plans(new_plans)
+            )
+            plans.update(new_plans)
+            add_plans(new_plans)
+            gate_new()
+            ranked, top_cand, hold_cand = standings()
+
+        rec_plan = top_cand
+        stability_note = None
+
+        first_look = confident(rec_plan, hold_cand) if rec_plan["chip"] and hold_cand is not None else None
+        if not forced and first_look is not None and abs(first_look["gain"] - first_look["needed"]) <= 3.0:
+            # Borderline: the keep-the-chip baseline gets one more polish so it is searched as hard as the chip
+            # plan (a clear verdict cannot flip on a few points of search, so it is not worth the minute)
+            assert hold_cand is not None
+            hold_name = hold_cand["source"]
+            repolished = self._polish(run, {"no_chip_w1": True}, plans[hold_name], f"{hold_name}:again", None)
+            if repolished.total_objective > plans[hold_name].total_objective:
+                plans[f"{hold_name}:again"] = repolished
+                add_plans({f"{hold_name}:again": repolished})
                 gate_new()
                 ranked, top_cand, hold_cand = standings()
-
-            rec_plan = top_cand
-            stability_note = None
-
-            first_look = confident(rec_plan, hold_cand) if rec_plan["chip"] and hold_cand is not None else None
-            if not forced and first_look is not None and abs(first_look["gain"] - first_look["needed"]) <= 3.0:
-                # Borderline: the keep-the-chip baseline gets one more polish so it is searched as hard as the chip
-                # plan (a clear verdict cannot flip on a few points of search, so it is not worth the minute)
-                assert hold_cand is not None
-                hold_name = hold_cand["source"]
-                repolished = self._polish(run, {"no_chip_w1": True}, plans[hold_name], f"{hold_name}:again", None)
-                if repolished.total_objective > plans[hold_name].total_objective:
-                    plans[f"{hold_name}:again"] = repolished
-                    add_plans({f"{hold_name}:again": repolished})
-                    gate_new()
-                    ranked, top_cand, hold_cand = standings()
-                    rec_plan = top_cand
-            if not forced and rec_plan["chip"] and hold_cand is not None:
-                # Playing a chip now is judged against keeping it (which includes the same chip next week)
-                check = confident(rec_plan, hold_cand)
-                if not check["passed"]:
-                    stability_note = (
-                        f"Keep the chip: playing it now gains {check['gain']:+.2f} xP over keeping it, within the "
-                        f"{check['uncertainty']:.2f} xP uncertainty of the forecasts (needs {check['needed']:.2f})."
-                    )
-                    rejected = dict(check, chip=rec_plan["chip"], versus="keeping the chip")
-                    rec_plan = hold_cand
-                    rec_plan["rejected_alternative"] = rejected
-                else:
-                    rec_plan["decision_check"] = dict(check, versus="keeping the chip")
-            if not forced and not rec_plan["chip"] and rec_plan is not cand_roll:
-                check = confident(rec_plan, cand_roll)
-                if not check["passed"]:
-                    stability_note = (
-                        f"Roll the transfer: the best move gains {check['gain']:+.2f} xP, within the "
-                        f"{check['uncertainty']:.2f} xP uncertainty of the forecasts (needs {check['needed']:.2f})."
-                    )
-                    cand_roll["rejected_alternative"] = dict(
-                        check, versus="rolling", ins=rec_plan["transfers_in"], outs=rec_plan["transfers_out"]
-                    )
-                    rec_plan = cand_roll
-                else:
-                    rec_plan.setdefault("decision_check", dict(check, versus="rolling"))
-            if stability_note:
-                rec_plan["recommendation_summary"] = stability_note
-
-            # Keep what you own unless selling is clearly better, decided on the plan that survived the chip and
-            # roll decisions: the best plan that keeps each of its dearest sales, same chip, same polish.
-            base_plan = rec_plan
-            keep_checks = keep_candidates(base_plan)
-            keep_tasks = {
-                f"keep:{e}": dict(chip_of(base_plan), locked_in_ids=sorted(set(locked_in_ids or ()) | {e}))
-                for e in keep_checks
-            }
-            if keep_tasks:
-                report_search_progress("Checking whether to keep the players it would sell")
-                solved_keeps = {
-                    n: q for n, q in run_batch(keep_tasks, limit).items() if isinstance(q, MultiPeriodPlan)
-                }
-                solved_keeps = run_parallel(
-                    {n: (lambda n=n: self._polish(run, keep_tasks[n], solved_keeps[n], n, None)) for n in solved_keeps}
+                rec_plan = top_cand
+        if not forced and rec_plan["chip"] and hold_cand is not None:
+            # Playing a chip now is judged against keeping it (which includes the same chip next week)
+            check = confident(rec_plan, hold_cand)
+            if not check["passed"]:
+                stability_note = (
+                    f"Keep the chip: playing it now gains {check['gain']:+.2f} xP over keeping it, within the "
+                    f"{check['uncertainty']:.2f} xP uncertainty of the forecasts (needs {check['needed']:.2f})."
                 )
-                plans.update(solved_keeps)
-                add_plans(solved_keeps)
-                gate_new()
+                rejected = dict(check, chip=rec_plan["chip"], versus="keeping the chip")
+                rec_plan = hold_cand
+                rec_plan["rejected_alternative"] = rejected
+            else:
+                rec_plan["decision_check"] = dict(check, versus="keeping the chip")
+        if not forced and not rec_plan["chip"] and rec_plan is not cand_roll:
+            check = confident(rec_plan, cand_roll)
+            if not check["passed"]:
+                stability_note = (
+                    f"Roll the transfer: the best move gains {check['gain']:+.2f} xP, within the "
+                    f"{check['uncertainty']:.2f} xP uncertainty of the forecasts (needs {check['needed']:.2f})."
+                )
+                cand_roll["rejected_alternative"] = dict(
+                    check, versus="rolling", ins=rec_plan["transfers_in"], outs=rec_plan["transfers_out"]
+                )
+                rec_plan = cand_roll
+            else:
+                rec_plan.setdefault("decision_check", dict(check, versus="rolling"))
+        if stability_note:
+            rec_plan["recommendation_summary"] = stability_note
 
-            def plan_keeping(e: int) -> dict[str, Any] | None:
-                """The gated, de-duplicated plan that keeps player e (an identical move may be held by another name)."""
-                name = f"keep:{e}" if f"keep:{e}" in by_name else f"cover:{e}"
-                found = unique.get(move_key(by_name[name])) if name in by_name else None
-                return found if found is not None and found["chip"] == base_plan["chip"] else None
-
-            # Status quo on a forecast tie: an owned player is sold only if selling beats keeping him by the plan's
-            # own confidence margin. Greedy, dearest to re-buy first: each close call is added while the plan that
-            # keeps all of them so far still sits within the margin of the best plan.
-            sold_now = {int(x["element"]) for x in base_plan["transfers_out"]}
-            candidates = sorted(
-                {e for e in keep_checks} | {int(n.split(":")[1]) for n in by_name if n.startswith("cover:")} & sold_now,
-                key=lambda e: -float(sell_price_of.get(e, 0.0)),
+        # Keep what you own unless selling is clearly better, decided on the plan that survived the chip and
+        # roll decisions: the best plan that keeps each of its dearest sales, same chip, same polish.
+        base_plan = rec_plan
+        keep_checks = keep_candidates(base_plan)
+        keep_tasks = {
+            f"keep:{e}": dict(chip_of(base_plan), locked_in_ids=sorted(set(locked_in_ids or ()) | {e}))
+            for e in keep_checks
+        }
+        if keep_tasks:
+            report_search_progress("Checking whether to keep the players it would sell")
+            solved_keeps = {
+                n: q for n, q in run_batch(keep_tasks, limit).items() if isinstance(q, MultiPeriodPlan)
+            }
+            solved_keeps = run_parallel(
+                {n: (lambda n=n: self._polish(run, keep_tasks[n], solved_keeps[n], n, None)) for n in solved_keeps}
             )
-            kept_ids: set[int] = set()
-            for e in candidates:
-                single = plan_keeping(e)
-                if single is None or not single["hit_allowed"] or confident(base_plan, single)["passed"]:
-                    continue
-                trial = kept_ids | {e}
-                if len(trial) == 1:
-                    plan_now: dict[str, Any] | None = single
-                else:
-                    name = "keep:" + "+".join(map(str, sorted(trial)))
-                    keep_extra = dict(chip_of(base_plan), locked_in_ids=sorted(set(locked_in_ids or ()) | trial))
-                    keep_solve = run(name, keep_extra, limit)
-                    plan_now = None
-                    if isinstance(keep_solve, MultiPeriodPlan):
-                        keep_solve = self._polish(run, keep_extra, keep_solve, name, None)
-                        plans[name] = keep_solve
-                        add_plans({name: keep_solve})
-                        gate_new()
-                        plan_now = unique[move_key(by_name[name])]
-                # A keep may not undo the decision the base plan passed: it must still beat keeping the chip
-                # (for a chip plan) or rolling (for a transfer plan) by the same margin.
-                versus = base_plan.get("decision_check", {}).get("versus")
-                still = None
-                if versus == "keeping the chip" and hold_cand is not None and plan_now is not None:
-                    still = confident(plan_now, hold_cand)
-                elif versus == "rolling" and plan_now is not None:
-                    still = confident(plan_now, cand_roll)
-                if (
-                    plan_now is not None
-                    and plan_now["hit_allowed"]
-                    and not confident(base_plan, plan_now)["passed"]
-                    and (still is None or still["passed"])
-                ):
-                    kept_ids, rec_plan = trial, plan_now
-                    if still is not None:
-                        rec_plan["decision_check"] = dict(still, versus=versus)
-            if kept_ids:
-                check = confident(base_plan, rec_plan)
-                rec_plan["kept_owned"] = [
-                    {"player": names_of.get(e, str(e)), "gain_from_selling": check["gain"], "needed": check["needed"]}
-                    for e in sorted(kept_ids, key=lambda e: -float(sell_price_of.get(e, 0.0)))
+            plans.update(solved_keeps)
+            add_plans(solved_keeps)
+            gate_new()
+
+        def plan_keeping(e: int) -> dict[str, Any] | None:
+            """The gated, de-duplicated plan that keeps player e (an identical move may be held by another name)."""
+            name = f"keep:{e}" if f"keep:{e}" in by_name else f"cover:{e}"
+            found = unique.get(move_key(by_name[name])) if name in by_name else None
+            return found if found is not None and found["chip"] == base_plan["chip"] else None
+
+        # Status quo on a forecast tie: an owned player is sold only if selling beats keeping him by the plan's
+        # own confidence margin. Greedy, dearest to re-buy first: each close call is added while the plan that
+        # keeps all of them so far still sits within the margin of the best plan.
+        sold_now = {int(x["element"]) for x in base_plan["transfers_out"]}
+        candidates = sorted(
+            {e for e in keep_checks} | {int(n.split(":")[1]) for n in by_name if n.startswith("cover:")} & sold_now,
+            key=lambda e: -float(sell_price_of.get(e, 0.0)),
+        )
+        kept_ids: set[int] = set()
+        for e in candidates:
+            single = plan_keeping(e)
+            if single is None or not single["hit_allowed"] or confident(base_plan, single)["passed"]:
+                continue
+            trial = kept_ids | {e}
+            if len(trial) == 1:
+                plan_now: dict[str, Any] | None = single
+            else:
+                name = "keep:" + "+".join(map(str, sorted(trial)))
+                keep_extra = dict(chip_of(base_plan), locked_in_ids=sorted(set(locked_in_ids or ()) | trial))
+                keep_solve = run(name, keep_extra, limit)
+                plan_now = None
+                if isinstance(keep_solve, MultiPeriodPlan):
+                    keep_solve = self._polish(run, keep_extra, keep_solve, name, None)
+                    plans[name] = keep_solve
+                    add_plans({name: keep_solve})
+                    gate_new()
+                    plan_now = unique[move_key(by_name[name])]
+            # A keep may not undo the decision the base plan passed: it must still beat keeping the chip
+            # (for a chip plan) or rolling (for a transfer plan) by the same margin.
+            versus = base_plan.get("decision_check", {}).get("versus")
+            still = None
+            if versus == "keeping the chip" and hold_cand is not None and plan_now is not None:
+                still = confident(plan_now, hold_cand)
+            elif versus == "rolling" and plan_now is not None:
+                still = confident(plan_now, cand_roll)
+            if (
+                plan_now is not None
+                and plan_now["hit_allowed"]
+                and not confident(base_plan, plan_now)["passed"]
+                and (still is None or still["passed"])
+            ):
+                kept_ids, rec_plan = trial, plan_now
+                if still is not None:
+                    rec_plan["decision_check"] = dict(still, versus=versus)
+        if kept_ids:
+            check = confident(base_plan, rec_plan)
+            rec_plan["kept_owned"] = [
+                {"player": names_of.get(e, str(e)), "gain_from_selling": check["gain"], "needed": check["needed"]}
+                for e in sorted(kept_ids, key=lambda e: -float(sell_price_of.get(e, 0.0)))
+            ]
+
+        # --- mini-league tie-break (decision_model.md section 4): among plans the forecasts cannot tell
+        # apart from the recommendation, take the one most likely to finish above every rival.
+        if rival_context and rival_context.get("rivals"):
+            from fpl_oracle.league.objective import SD_PER_P10_P90, rival_weeks, week_weights, win_probability
+
+            sd_maps = {}
+            for g in horizon_gws:
+                frame = horizon_projections.get(g, player_pool_df)
+                spread = (
+                    frame.get("p90", frame["expected_points"]) - frame.get("p10", frame["expected_points"])
+                ).clip(lower=0)
+                sd_maps[g] = dict(zip(frame["element"].astype(int), spread / SD_PER_P10_P90, strict=True))
+            held = rival_weeks(list(current_squad_df["element"].astype(int)), horizon_gws, maps, positions)
+
+            def plan_weeks(cand: dict[str, Any]) -> list[dict[int, float]]:
+                return [
+                    week_weights(a["starters"], a.get("captain"), a.get("chip"), a["bench"])
+                    for a in cand["trajectory"]
                 ]
 
-            # --- mini-league tie-break (decision_model.md section 4): among plans the forecasts cannot tell
-            # apart from the recommendation, take the one most likely to finish above every rival.
-            if rival_context and rival_context.get("rivals"):
-                from fpl_oracle.league.objective import SD_PER_P10_P90, rival_weeks, week_weights, win_probability
+            def raw_points(weeks: list[dict[int, float]]) -> float:
+                return sum(
+                    w * maps[g].get(p, 0.0) for g, wk in zip(horizon_gws, weeks, strict=True) for p, w in wk.items()
+                )
 
-                sd_maps = {}
-                for g in horizon_gws:
-                    frame = horizon_projections.get(g, player_pool_df)
-                    spread = (
-                        frame.get("p90", frame["expected_points"]) - frame.get("p10", frame["expected_points"])
-                    ).clip(lower=0)
-                    sd_maps[g] = dict(zip(frame["element"].astype(int), spread / SD_PER_P10_P90, strict=True))
-                held = rival_weeks(list(current_squad_df["element"].astype(int)), horizon_gws, maps, positions)
+            def hit_points(cand: dict[str, Any]) -> float:
+                return float(sum(a.get("hit_cost", 0) for a in cand["trajectory"]))
 
-                def plan_weeks(cand: dict[str, Any]) -> list[dict[int, float]]:
-                    return [
-                        week_weights(a["starters"], a.get("captain"), a.get("chip"), a["bench"])
-                        for a in cand["trajectory"]
-                    ]
-
-                def raw_points(weeks: list[dict[int, float]]) -> float:
-                    return sum(
-                        w * maps[g].get(p, 0.0) for g, wk in zip(horizon_gws, weeks, strict=True) for p, w in wk.items()
-                    )
-
-                def hit_points(cand: dict[str, Any]) -> float:
-                    return float(sum(a.get("hit_cost", 0) for a in cand["trajectory"]))
-
-                # Title chances compare points net of hits, like everything else the planner scores
-                best_points = max(raw_points(plan_weeks(c)) - hit_points(c) for c in unique.values())
-                for cand in unique.values():
-                    cand["league"] = win_probability(
-                        plan_weeks(cand),
-                        held,
-                        best_points + hit_points(cand),
-                        horizon_gws,
-                        rival_context,
-                        maps,
-                        sd_maps,
-                        positions,
-                        rival_cache,
-                    )
-                tied = [
-                    c
-                    for c in unique.values()
-                    if c["league"] is not None
-                    and c["hit_allowed"]
-                    and c["chip"] == rec_plan["chip"]  # never revive a chip decision the rules above settled
-                    and (c is rec_plan or not confident(rec_plan, c)["passed"])
-                    and kept_ids <= {int(p) for p in c["trajectory"][0]["elements"]}
-                ]
-                # Inside the tie the point gap is forecast noise (the rules above just said so), so plans are
-                # compared at the recommendation's predicted points: only who owns whom may move the choice
-                rec_net = raw_points(plan_weeks(rec_plan)) - hit_points(rec_plan)
-                level = {
-                    id(c): win_probability(
-                        plan_weeks(c),
-                        held,
-                        raw_points(plan_weeks(c)) - rec_net + best_points,
-                        horizon_gws,
-                        rival_context,
-                        maps,
-                        sd_maps,
-                        positions,
-                        rival_cache,
-                    )["p_win"]
-                    for c in tied
+            # Title chances compare points net of hits, like everything else the planner scores
+            best_points = max(raw_points(plan_weeks(c)) - hit_points(c) for c in unique.values())
+            for cand in unique.values():
+                cand["league"] = win_probability(
+                    plan_weeks(cand),
+                    held,
+                    best_points + hit_points(cand),
+                    horizon_gws,
+                    rival_context,
+                    maps,
+                    sd_maps,
+                    positions,
+                    rival_cache,
+                )
+            tied = [
+                c
+                for c in unique.values()
+                if c["league"] is not None
+                and c["hit_allowed"]
+                and c["chip"] == rec_plan["chip"]  # never revive a chip decision the rules above settled
+                and (c is rec_plan or not confident(rec_plan, c)["passed"])
+                and kept_ids <= {int(p) for p in c["trajectory"][0]["elements"]}
+            ]
+            # Inside the tie the point gap is forecast noise (the rules above just said so), so plans are
+            # compared at the recommendation's predicted points: only who owns whom may move the choice
+            rec_net = raw_points(plan_weeks(rec_plan)) - hit_points(rec_plan)
+            level = {
+                id(c): win_probability(
+                    plan_weeks(c),
+                    held,
+                    raw_points(plan_weeks(c)) - rec_net + best_points,
+                    horizon_gws,
+                    rival_context,
+                    maps,
+                    sd_maps,
+                    positions,
+                    rival_cache,
+                )["p_win"]
+                for c in tied
+            }
+            choice = max(tied, key=lambda c: (level[id(c)], c["total_objective"]), default=rec_plan)
+            if (
+                choice is not rec_plan
+                and rec_plan.get("league")
+                and level[id(choice)] > level.get(id(rec_plan), rec_plan["league"]["p_win"]) + 0.005
+                and choice["league"]["p_win"] >= rec_plan["league"]["p_win"]  # never a lower title chance
+            ):
+                choice["league_tiebreak"] = {
+                    "replaced_points_plan": rec_plan["total_objective"],
+                    "points_given_up": round(rec_plan["total_objective"] - choice["total_objective"], 2),
+                    "p_win_before": rec_plan["league"]["p_win"],
+                    "p_win_after": choice["league"]["p_win"],
                 }
-                choice = max(tied, key=lambda c: (level[id(c)], c["total_objective"]), default=rec_plan)
-                if (
-                    choice is not rec_plan
-                    and rec_plan.get("league")
-                    and level[id(choice)] > level.get(id(rec_plan), rec_plan["league"]["p_win"]) + 0.005
-                    and choice["league"]["p_win"] >= rec_plan["league"]["p_win"]  # never a lower title chance
-                ):
-                    choice["league_tiebreak"] = {
-                        "replaced_points_plan": rec_plan["total_objective"],
-                        "points_given_up": round(rec_plan["total_objective"] - choice["total_objective"], 2),
+                reason = "League tie-break"
+                if str(choice.get("source", "")).startswith("cover:"):
+                    covered = int(choice["source"].split(":")[1])
+                    owners = sum(covered in r["elements"] for r in rival_context["rivals"])
+                    name = player_pool_df.loc[player_pool_df["element"] == covered, "web_name"].iloc[0]
+                    reason = f"League cover: owns {name}, like {owners} of the {len(rival_context['rivals'])} rivals in reach"
+                    choice["league_tiebreak"]["covered_player"] = name
+                choice["recommendation_summary"] = (
+                    f"{reason}. As good on predicted points (within forecast uncertainty) and raises the "
+                    f"chance of finishing first from {rec_plan['league']['p_win']:.0%} to {choice['league']['p_win']:.0%}."
+                )
+                if not choice["chip"] and choice is not cand_roll:
+                    choice["decision_check"] = dict(confident(choice, cand_roll), versus="rolling")
+                rec_plan = choice
+            # Every cover that was checked, for the card and the chat: what owning him does to the title chance
+            rec_plan["league_cover_checks"] = [
+                {
+                    "player": player_pool_df.loc[
+                        player_pool_df["element"] == int(name.split(":")[1]), "web_name"
+                    ].iloc[0],
+                    "owners": sum(int(name.split(":")[1]) in r["elements"] for r in rival_context["rivals"]),
+                    "points_vs_plan": round(by_name[name]["total_objective"] - rec_plan["total_objective"], 1),
+                    "p_win": by_name[name]["league"]["p_win"],
+                    # the recommendation already owns him this week (kept, or bought)
+                    "chosen": int(name.split(":")[1]) in {int(e) for e in rec_plan["trajectory"][0]["elements"]},
+                    "owned": int(name.split(":")[1]) in owned_now,
+                    # the recommendation does not beat this plan by its own confidence margin
+                    "close": not confident(rec_plan, by_name[name])["passed"],
+                    "margin_needed": confident(rec_plan, by_name[name])["needed"],
+                }
+                for name in by_name
+                if by_name[name].get("league")
+                and (
+                    name.startswith("cover:")
+                    or (
+                        name.startswith("keep:")
+                        and name.split(":")[1].isdigit()  # not the combined "keep:all"
+                        and any(int(name.split(":")[1]) in r["elements"] for r in rival_context["rivals"])
+                    )
+                )
+            ]
+
+            # Captain (decision_model.md section 4): among starters whose armband points sit within the forecasts'
+            # uncertainty of the top pick, the one most likely to finish first, compared at equal points like the
+            # tie-break above; never one that lowers the real title chance.
+            week0, lineup = rec_plan["trajectory"][0], rec_plan["lineup"]
+            extra = lineup["captain"]["multiplier"] - 1  # copies of his score the armband adds
+            top = int(week0["captain"])
+            cap_needed = max(stability_threshold, z * sigma_est * math.sqrt(2) * extra)
+            rec_net = raw_points(plan_weeks(rec_plan)) - hit_points(rec_plan)
+
+            def captained(p: int) -> tuple[float, dict[str, Any]]:
+                weeks = plan_weeks(rec_plan)
+                weeks[0] = week_weights(week0["starters"], p, week0.get("chip"), week0["bench"])
+                args = (horizon_gws, rival_context, maps, sd_maps, positions, rival_cache)
+                level = win_probability(weeks, held, raw_points(weeks) - rec_net + best_points, *args)
+                return level["p_win"], win_probability(weeks, held, best_points + hit_points(rec_plan), *args)
+
+            close = [
+                int(p)
+                for p in week0["starters"]
+                if (maps[target_gw].get(top, 0.0) - maps[target_gw].get(int(p), 0.0)) * extra < cap_needed
+            ]
+            scored = {p: captained(p) for p in close}
+            pick = max(close, key=lambda p: (scored[p][0], p == top))
+            owners = sum(top in r["elements"] for r in rival_context["rivals"])
+            rec_plan["captain_check"] = {"owners": owners, "rivals": len(rival_context["rivals"]), "switched": None}
+            if pick != top and scored[pick][0] > scored[top][0] + 0.005 and scored[pick][1]["p_win"] >= (
+                scored[top][1]["p_win"]
+            ):
+                rows = lineup["starters"].set_index("element")
+                old_cap = dict(lineup["captain"])
+                lineup["vice_captain"] = {
+                    k: old_cap[k] for k in ("element", "web_name", "team", "expected_points", "p10", "p90")
+                }
+                lineup["captain"] = dict(
+                    old_cap,
+                    element=pick,
+                    web_name=rows.loc[pick, "web_name"],
+                    team=rows.loc[pick, "team"],
+                    expected_points=round(float(rows.loc[pick, "expected_points"]), 2),
+                    p10=round(float(rows.loc[pick].get("p10", 0.0)), 2),
+                    p90=round(float(rows.loc[pick].get("p90", 0.0)), 2),
+                )
+                given_up = round((old_cap["expected_points"] - lineup["captain"]["expected_points"]) * extra, 2)
+                lineup["total_gameweek_expected_points"] = round(
+                    lineup["total_gameweek_expected_points"] - given_up, 2
+                )
+                week0.update(captain=pick, vice_captain=top, net_xp=round(week0["net_xp"] - given_up, 2))
+                rec_plan["captain_check"].update(
+                    owners=sum(pick in r["elements"] for r in rival_context["rivals"]),
+                    switched={
+                        "instead_of": old_cap["web_name"],
+                        "points_given_up": given_up,
+                        "needed": round(cap_needed, 2),
                         "p_win_before": rec_plan["league"]["p_win"],
-                        "p_win_after": choice["league"]["p_win"],
-                    }
-                    reason = "League tie-break"
-                    if str(choice.get("source", "")).startswith("cover:"):
-                        covered = int(choice["source"].split(":")[1])
-                        owners = sum(covered in r["elements"] for r in rival_context["rivals"])
-                        name = player_pool_df.loc[player_pool_df["element"] == covered, "web_name"].iloc[0]
-                        reason = f"League cover: owns {name}, like {owners} of the {len(rival_context['rivals'])} rivals in reach"
-                        choice["league_tiebreak"]["covered_player"] = name
-                    choice["recommendation_summary"] = (
-                        f"{reason}. As good on predicted points (within forecast uncertainty) and raises the "
-                        f"chance of finishing first from {rec_plan['league']['p_win']:.0%} to {choice['league']['p_win']:.0%}."
-                    )
-                    if not choice["chip"] and choice is not cand_roll:
-                        choice["decision_check"] = dict(confident(choice, cand_roll), versus="rolling")
-                    rec_plan = choice
-                # Every cover that was checked, for the card and the chat: what owning him does to the title chance
-                rec_plan["league_cover_checks"] = [
-                    {
-                        "player": player_pool_df.loc[
-                            player_pool_df["element"] == int(name.split(":")[1]), "web_name"
-                        ].iloc[0],
-                        "owners": sum(int(name.split(":")[1]) in r["elements"] for r in rival_context["rivals"]),
-                        "points_vs_plan": round(by_name[name]["total_objective"] - rec_plan["total_objective"], 1),
-                        "p_win": by_name[name]["league"]["p_win"],
-                        # the recommendation already owns him this week (kept, or bought)
-                        "chosen": int(name.split(":")[1]) in {int(e) for e in rec_plan["trajectory"][0]["elements"]},
-                        "owned": int(name.split(":")[1]) in owned_now,
-                        # the recommendation does not beat this plan by its own confidence margin
-                        "close": not confident(rec_plan, by_name[name])["passed"],
-                        "margin_needed": confident(rec_plan, by_name[name])["needed"],
-                    }
-                    for name in by_name
-                    if by_name[name].get("league")
-                    and (
-                        name.startswith("cover:")
-                        or (
-                            name.startswith("keep:")
-                            and name.split(":")[1].isdigit()  # not the combined "keep:all"
-                            and any(int(name.split(":")[1]) in r["elements"] for r in rival_context["rivals"])
-                        )
-                    )
-                ]
+                        "p_win_after": scored[pick][1]["p_win"],
+                    },
+                )
+                rec_plan["league"] = scored[pick][1]
+        # The gains shown are measured against the roll plan the decision used (the best-searched one),
+        # not the first roll solve, which a short search can leave far behind
+        rec_plan["horizon_gain_vs_roll"] = round(rec_plan["horizon_net_xp"] - cand_roll["horizon_net_xp"], 2)
+        rec_plan["expected_gain"] = rec_plan["pure_xp_gain"] = round(
+            rec_plan["trajectory"][0]["net_xp"] - cand_roll["trajectory"][0]["net_xp"], 2
+        )
+        rejected_hit = next((c for c in ranked if c["total_objective"] > top_cand["total_objective"]), None)
+        rec_chip = rec_plan["chip"]
 
-                # Captain (decision_model.md section 4): among starters whose armband points sit within the forecasts'
-                # uncertainty of the top pick, the one most likely to finish first, compared at equal points like the
-                # tie-break above; never one that lowers the real title chance.
-                week0, lineup = rec_plan["trajectory"][0], rec_plan["lineup"]
-                extra = lineup["captain"]["multiplier"] - 1  # copies of his score the armband adds
-                top = int(week0["captain"])
-                cap_needed = max(stability_threshold, z * sigma_est * math.sqrt(2) * extra)
-                rec_net = raw_points(plan_weeks(rec_plan)) - hit_points(rec_plan)
+        # Later chips are shown by planned week only: measuring each one's worth took four more full solves (about
+        # half the run) for a figure no decision uses
+        expiry = SET_1_LAST_GW if target_gw <= SET_1_LAST_GW else 38
+        scheduled = {a["chip"]: a["gameweek"] for a in rec_plan["trajectory"] if a["chip"] and a["chip"] != forced}
 
-                def captained(p: int) -> tuple[float, dict[str, Any]]:
-                    weeks = plan_weeks(rec_plan)
-                    weeks[0] = week_weights(week0["starters"], p, week0.get("chip"), week0["bench"])
-                    args = (horizon_gws, rival_context, maps, sd_maps, positions, rival_cache)
-                    level = win_probability(weeks, held, raw_points(weeks) - rec_net + best_points, *args)
-                    return level["p_win"], win_probability(weeks, held, best_points + hit_points(rec_plan), *args)
-
-                close = [
-                    int(p)
-                    for p in week0["starters"]
-                    if (maps[target_gw].get(top, 0.0) - maps[target_gw].get(int(p), 0.0)) * extra < cap_needed
-                ]
-                scored = {p: captained(p) for p in close}
-                pick = max(close, key=lambda p: (scored[p][0], p == top))
-                owners = sum(top in r["elements"] for r in rival_context["rivals"])
-                rec_plan["captain_check"] = {"owners": owners, "rivals": len(rival_context["rivals"]), "switched": None}
-                if pick != top and scored[pick][0] > scored[top][0] + 0.005 and scored[pick][1]["p_win"] >= (
-                    scored[top][1]["p_win"]
-                ):
-                    rows = lineup["starters"].set_index("element")
-                    old_cap = dict(lineup["captain"])
-                    lineup["vice_captain"] = {
-                        k: old_cap[k] for k in ("element", "web_name", "team", "expected_points", "p10", "p90")
-                    }
-                    lineup["captain"] = dict(
-                        old_cap,
-                        element=pick,
-                        web_name=rows.loc[pick, "web_name"],
-                        team=rows.loc[pick, "team"],
-                        expected_points=round(float(rows.loc[pick, "expected_points"]), 2),
-                        p10=round(float(rows.loc[pick].get("p10", 0.0)), 2),
-                        p90=round(float(rows.loc[pick].get("p90", 0.0)), 2),
-                    )
-                    given_up = round((old_cap["expected_points"] - lineup["captain"]["expected_points"]) * extra, 2)
-                    lineup["total_gameweek_expected_points"] = round(
-                        lineup["total_gameweek_expected_points"] - given_up, 2
-                    )
-                    week0.update(captain=pick, vice_captain=top, net_xp=round(week0["net_xp"] - given_up, 2))
-                    rec_plan["captain_check"].update(
-                        owners=sum(pick in r["elements"] for r in rival_context["rivals"]),
-                        switched={
-                            "instead_of": old_cap["web_name"],
-                            "points_given_up": given_up,
-                            "needed": round(cap_needed, 2),
-                            "p_win_before": rec_plan["league"]["p_win"],
-                            "p_win_after": scored[pick][1]["p_win"],
-                        },
-                    )
-                    rec_plan["league"] = scored[pick][1]
-            # The gains shown are measured against the roll plan the decision used (the best-searched one),
-            # not the first roll solve, which a short search can leave far behind
-            rec_plan["horizon_gain_vs_roll"] = round(rec_plan["horizon_net_xp"] - cand_roll["horizon_net_xp"], 2)
-            rec_plan["expected_gain"] = rec_plan["pure_xp_gain"] = round(
-                rec_plan["trajectory"][0]["net_xp"] - cand_roll["trajectory"][0]["net_xp"], 2
-            )
-            rejected_hit = next((c for c in ranked if c["total_objective"] > top_cand["total_objective"]), None)
-            rec_chip = rec_plan["chip"]
-
-            # Later chips are shown by planned week only: measuring each one's worth took four more full solves (about
-            # half the run) for a figure no decision uses
-            expiry = SET_1_LAST_GW if target_gw <= SET_1_LAST_GW else 38
-            scheduled = {a["chip"]: a["gameweek"] for a in rec_plan["trajectory"] if a["chip"] and a["chip"] != forced}
-            alt_results = {n: f.result() for n, f in alt_futures.items()}
-            alt_plans = {n: r for n, r in alt_results.items() if isinstance(r, MultiPeriodPlan)}
-        finally:
-            pool2.shutdown(wait=True)
-
-        plans.update(alt_plans)
-        add_plans(alt_plans)
-        gate_new()
         candidate_plans = list(unique.values())
 
         if rejected_hit is not None and rec_plan["hits"] == 0:
@@ -2191,8 +2148,6 @@ class MultiPeriodOptimizer:
         ]
 
         # --- honest solver report: a time-limited incumbent is never called proven
-        solver_rows = dict(plans)
-        decisive = [p for n, p in solver_rows.items() if not n.startswith("alt:")]
         solver = {
             "time_limit_sec": limit,
             "plans": {
@@ -2202,10 +2157,10 @@ class MultiPeriodOptimizer:
                     "is_lower_bound": p.is_lower_bound,
                     "seconds": p.solve_time_sec,
                 }
-                for n, p in solver_rows.items()
+                for n, p in plans.items()
             },
-            "max_gap": round(max((p.solver_gap for p in decisive), default=0.0), 6),
-            "global_optimum_proven": not any(p.is_lower_bound for p in decisive),
+            "max_gap": round(max((p.solver_gap for p in plans.values()), default=0.0), 6),
+            "global_optimum_proven": not any(p.is_lower_bound for p in plans.values()),
         }
 
         ft_option_value = 0.8
