@@ -21,7 +21,7 @@ from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.ml.model_registry import model_registry
-from fpl_oracle.server.analysis import analysis_service, target_gameweek
+from fpl_oracle.server.analysis import PLANNER_HORIZON, analysis_service, target_gameweek
 
 logger = logging.getLogger("fpl_oracle.briefing.decision_card")
 
@@ -143,10 +143,13 @@ def track_record_summary() -> str | None:
 
     ours, fpl = avg("FPL Oracle", "rmse"), avg("FPL ep_next", "rmse")
     top_ours, top_fpl = avg("FPL Oracle", "top20_actual_points"), avg("FPL ep_next", "top20_actual_points")
-    text = f"Track record ({len(scored)} gameweek{'s' if len(scored) > 1 else ''}): forecast error {ours}"
+    text = (
+        f"How good our forecasts have been ({len(scored)} gameweek{'s' if len(scored) > 1 else ''}): "
+        f"on average we miss a player's points by {ours}"
+    )
     if fpl is not None:
-        text += f" vs FPL's own {fpl}; our top-20 picks scored {top_ours} pts on average vs FPL's {top_fpl}"
-    return text + " (lower error and higher points are better)."
+        text += f", FPL's own forecast by {fpl}. Our top 20 picks scored {top_ours} points on average, FPL's {top_fpl}"
+    return text + ". A smaller miss and more points are better."
 
 
 def _close_calls(rec_plan: dict[str, Any]) -> list[str]:
@@ -336,7 +339,7 @@ class DecisionCardGenerator:
         # ----------------------------------------------------------------------
         # 1. Projections & Squad Resolution
         # ----------------------------------------------------------------------
-        horizon_proj = await analysis_service.projections(target_gw, 8, boot, fixtures=fixtures)
+        horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures=fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         user_squad_df = effective_state.to_squad_dataframe()
@@ -416,7 +419,7 @@ class DecisionCardGenerator:
         else:
             chip_strat = {
                 "set_1_deadline_warning": (
-                    "First-set chips expire at GW19; value beyond the loaded projection window remains unresolved."
+                    "Chips from the first half of the season expire after gameweek 19; value beyond the loaded projection window remains unresolved."
                     if target_gw <= 19 and effective_state.chips_remaining_set_1
                     else None
                 )
@@ -481,6 +484,10 @@ class DecisionCardGenerator:
             "expected_points": round(float(lineup_res["captain"]["expected_points"]), 2),
             "p10": round(float(lineup_res["captain"].get("p10", 0.0)), 2),
             "p90": round(float(lineup_res["captain"].get("p90", 0.0)), 2),
+            "multiplier": int(lineup_res["captain"]["multiplier"]),
+            "as_captain_points": round(
+                lineup_res["captain"]["multiplier"] * float(lineup_res["captain"]["expected_points"]), 1
+            ),
             "reason": _captain_reason(rec_plan),
         }
 
@@ -558,9 +565,10 @@ class DecisionCardGenerator:
             "net_gain_vs_roll": round(float(rec_plan.get("horizon_gain_vs_roll", 0.0)), 2),
             "expected_gain_gw": round(float(rec_plan.get("expected_gain", 0.0)), 2),
             "horizon_pts": round(float(rec_plan.get("horizon_net_xp", 0.0)), 2),
-            "horizon_label": f"GW{horizon_gws[0]}-{horizon_gws[-1]}" if len(horizon_gws) > 1 else f"GW{horizon_gws[0]}",
+            "horizon_label": f"gameweeks {horizon_gws[0]} to {horizon_gws[-1]}"
+            if len(horizon_gws) > 1
+            else f"gameweek {horizon_gws[0]}",
             "horizon_gameweeks": horizon_gws,
-            "no_regret_flag": bool(rec_plan.get("is_no_regret", False)),
             "pairs": _pair_moves(transfers_in, transfers_out),
             "temporary": rec_plan.get("chip") == "freehit",
         }
@@ -595,10 +603,7 @@ class DecisionCardGenerator:
             else chip_text or ("Save your chips this week." if not chip_rec_now else None),
             "comparison": chip_text,
             "check": rec_plan.get("decision_check") or rec_plan.get("rejected_alternative"),
-            "later": []
-            if no_chip_advice
-            else _later_chips(rec_plan, target_gw),
-            "next_best_window": None,
+            "later": [] if no_chip_advice else _later_chips(rec_plan, target_gw),
             "gain_vs_hold": (
                 round(float(best_cand.get("net_gain_vs_hold", 0.0)), 1)
                 if joint_res.get("normal_plan_feasible", True)
@@ -912,7 +917,7 @@ class DecisionCardGenerator:
         # 6. Two-line Reasoning, Caveats & Freshness
         # ----------------------------------------------------------------------
         n_moves = len(transfers_in)
-        hit_note = f" (-{transfers_summary['hit_cost']} point hit)" if transfers_summary["hit_cost"] else ""
+        hit_note = f" ({transfers_summary['hit_cost']} point hit)" if transfers_summary["hit_cost"] else ""
         if active_chip_code in ("wildcard", "freehit"):
             if active_chip_code == "freehit":
                 headline = f"Play your Free Hit this week: {n_moves} players change for this gameweek only"
@@ -948,8 +953,8 @@ class DecisionCardGenerator:
             )
         else:
             two_line = (
-                f"Compared with saving your transfer, this gains about {transfers_summary['expected_gain_gw']:+.1f} "
-                f"points this week and {transfers_summary['net_gain_vs_roll']:+.1f} over {transfers_summary['horizon_label']}. "
+                f"Compared with saving your transfer, this is {_better(transfers_summary['expected_gain_gw'])} this "
+                f"week and {_better(transfers_summary['net_gain_vs_roll'])} over {transfers_summary['horizon_label']}. "
                 f"Your team is predicted to score {team_pts:.1f} points this week with "
                 f"{captain_dict['web_name']} as captain."
             )
@@ -971,7 +976,11 @@ class DecisionCardGenerator:
         # One short line for the screen; the longer list above stays for the chat context.
         caution = (
             effective_state.error_message
-            or ("Chips left from the first set expire after GW19." if chip_decision["set_1_deadline_warning"] else None)
+            or (
+                "Chips from the first half of the season expire after gameweek 19."
+                if chip_decision["set_1_deadline_warning"]
+                else None
+            )
             or "Check team news before the deadline."
         )
 
@@ -1013,7 +1022,7 @@ class DecisionCardGenerator:
                 ins=[p["element"] for p in transfers_in],
                 outs=[p["element"] for p in transfers_out],
                 hit_cost=int(rec_plan.get("hits", 0) * 4),
-                expected_gain=rec_plan["trajectory"][0].get("expected_player_gain"),
+                expected_gain=rec_plan["expected_player_gain"],
                 remaining_bank=int(round(rec_plan["remaining_bank"] * 10)),
                 captain=captain_elem,
                 vice_captain=vice_elem,
@@ -1027,7 +1036,7 @@ class DecisionCardGenerator:
                 "deadline_time": game_state.deadline_time,
                 "seconds_to_deadline": round(deadline_seconds, 1),
                 "is_live": game_state.is_live,
-                "label": f"GW{target_gw} Deadline: {game_state.deadline_time or 'TBD'}",
+                "label": f"Gameweek {target_gw} deadline: {game_state.deadline_time or 'TBD'}",
             },
             "data_freshness": {
                 "projections_as_of": fpl_client.get_data_as_of("bootstrap-static"),
@@ -1038,8 +1047,6 @@ class DecisionCardGenerator:
             "model_version": active_ver.get("version", "v1.0.0"),
             "projection_snapshot_id": target_df.attrs.get("snapshot_id"),
             "decision_scope": joint_res.get("decision_scope"),
-            "rival_scenarios": joint_res.get("rival_scenarios"),
-            "resource_frontier": joint_res.get("resource_frontier"),
             "decision_readiness": joint_res.get("decision_readiness"),
             "ranked_options": [
                 {
@@ -1073,6 +1080,9 @@ class DecisionCardGenerator:
             "bench_note": _bench_note(target_df, bench_list),
             "backup_planner_notice": BACKUP_PLANNER_NOTICE if backup_planner else None,
             "close_calls": _close_calls(rec_plan),
+            "kept_owned": rec_plan.get("kept_owned"),
+            "captain_check": rec_plan.get("captain_check"),
+            "league_cover_checks": rec_plan.get("league_cover_checks"),
             "press_signals": press_notes,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
             "is_stale": is_stale,
@@ -1103,12 +1113,13 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
     else:
         for out, incoming in zip(t.get("out", []), t.get("in", []), strict=False):
             lines.append(f"- {out['web_name']} -> {incoming['web_name']}")
+    hit = f"{t['hit_cost']} points" if t.get("hit_cost") else "None"
     lines += [
-        f"Hit: {t.get('hit_cost', 0)} pts · Bank: £{t.get('bank_after', 0):.1f}m · Free transfers left: {t.get('ft_remaining', 0)}",
+        f"Points hit: {hit} · Bank: £{t.get('bank_after', 0):.1f}m · Free transfers left: {t.get('ft_remaining', 0)}",
         "",
         "## Captain and bench",
         f"Captain: {cap.get('web_name', 'Unknown')}",
-        f"Vice captain: {vice.get('web_name', 'Unknown')}",
+        f"Vice-captain: {vice.get('web_name', 'Unknown')}",
         f"Formation: {card.get('formation', 'Unknown')}",
         "",
         "| Player | Position | Predicted points |",

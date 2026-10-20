@@ -19,7 +19,16 @@ class SourceChanged(ValueError):
         self.categories = categories
 
 
+class AdviceStale(ValueError):
+    """The inputs changed under a finished calculation. The message is written for the manager to read."""
+
+
 logger = logging.getLogger("fpl_oracle.advice")
+
+REUSE_SECONDS = 30 * 60  # a finished plan stays valid this long while no source changed
+MIN_RUN_SECONDS = 2 * 3600  # a full calculation takes 30 to 90 minutes; closer to the deadline it cannot finish
+# Changes in these categories do not alter the plan's squad, bank, fixtures or deadline: publish with a notice.
+SOFT_CHANGES = {"prices", "availability"}
 
 
 def _last_path():
@@ -36,15 +45,45 @@ def load_last_advice(profile_key_value):
         return None
     if saved.get("profile_key") != json.dumps(profile_key_value, sort_keys=True, default=str):
         return None
-    deadline = (saved.get("result") or {}).get("decisionCard", {}).get("deadline")
+    if _deadline_passed(saved.get("result")):
+        return None
+    return saved
+
+
+def _deadline_passed(result):
+    deadline = ((result or {}).get("decisionCard") or {}).get("deadline")
     if isinstance(deadline, dict):
         deadline = deadline.get("deadline_time")
     try:
-        if deadline and datetime.fromisoformat(str(deadline).replace("Z", "+00:00")) <= datetime.now(UTC):
-            return None
+        return bool(deadline) and datetime.fromisoformat(str(deadline).replace("Z", "+00:00")) <= datetime.now(UTC)
     except ValueError:
-        return None
-    return saved
+        return True
+
+
+def _next_deadline(bootstrap):
+    """Deadline of the upcoming gameweek in a bootstrap-static payload, or None when it is not known."""
+    times = [
+        datetime.fromisoformat(event["deadline_time"].replace("Z", "+00:00"))
+        for event in (bootstrap or {}).get("events", [])
+        if event.get("is_next") and event.get("deadline_time")
+    ]
+    return min(times) if times else None
+
+
+def _disagreement(squad, card):
+    """Fields on which the squad screen and the decision card describe different teams."""
+
+    def view(page, points_key):
+        points = page.get(points_key)
+        return dict(
+            captain=(page.get("captain") or {}).get("element"),
+            vice_captain=(page.get("vice_captain") or {}).get("element"),
+            bench=[row["element"] for row in page.get("bench") or []],
+            points=None if points is None else round(float(points), 1),
+        )
+
+    left, right = view(squad, "total_expected_points"), view(card, "team_points")
+    return [field for field in left if left[field] != right[field]]
 
 
 def save_last_advice(profile_key_value, result):
@@ -63,53 +102,62 @@ class AdvicePublisher:
     def __init__(self):
         self.current = None
         self.task = None
-        self.expiry_task = None
-        self.expiry_cache = {}
+        self.freeze_task = None
+
+    @property
+    def running(self):
+        return bool(self.task and not self.task.done())
 
     async def invalidate(self):
-        for task in (self.task, self.expiry_task):
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+        if self.running:
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
         self.current = None
         self.task = None
-        self.expiry_task = None
-        self.expiry_cache.clear()
 
     def start(self, profile_key):
-        if self.task and not self.task.done():
-            if self.current["profile_key"] != profile_key:
-                return dict(status="busy", reason="Another profile snapshot is calculating")
-            return self.public()
-        if (
+        if self.running:
+            if self.current["profile_key"] == profile_key:
+                return self.public()
+            # The running calculation is for a team the manager no longer has.
+            self.task.cancel()
+        elif (
             self.current
             and self.current["status"] == "ready"
             and self.current["profile_key"] == profile_key
-            and time.monotonic() - self.current["created"] < 120
+            and time.monotonic() - self.current["finished"] < REUSE_SECONDS
+            and not _deadline_passed(self.current["result"])
             and self.sources_unchanged()
         ):
             return self.public()
-        if self.expiry_task and not self.expiry_task.done():
-            self.expiry_task.cancel()
         last = None
         if self.current and self.current.get("status") == "ready" and self.current["profile_key"] == profile_key:
             last = {"result": self.current["result"], "published_at": self.current.get("published_at")}
         else:
             last = load_last_advice(profile_key)
+        from fpl_oracle.api.cache import cache_manager
+
+        bootstrap = cache_manager.get_with_meta("bootstrap-static")
+        deadline = _next_deadline(bootstrap[0]) if bootstrap else None
+        too_close = deadline is not None and (deadline - datetime.now(UTC)).total_seconds() < MIN_RUN_SECONDS
         self.current = dict(
             id=uuid.uuid4().hex,
-            status="calculating",
-            stage="Loading team",
+            status="unavailable" if too_close else "calculating",
+            stage="Deadline too close" if too_close else "Loading team",
             profile_key=profile_key,
             created=time.monotonic(),
+            started_at=datetime.now(UTC).isoformat(),
             result=None,
             previous_result=last["result"] if last else None,
             previous_published_at=last["published_at"] if last else None,
         )
-        self.task = asyncio.create_task(self.run())
+        if too_close:
+            self.current["reason"] = "Deadline too close for a full calculation (it takes 30-90 minutes)"
+        else:
+            self.task = asyncio.create_task(self.run())
         return self.public()
 
     def sources_unchanged(self):
@@ -127,9 +175,17 @@ class AdvicePublisher:
     def public(self):
         if not self.current:
             return dict(status="absent")
-        return {
-            k: v for k, v in self.current.items() if k not in ("profile_key", "created", "sources", "model_version")
-        }
+        hidden = {"profile_key", "created", "finished", "sources", "model_version", "previous_sent"}
+        if self.current.get("previous_sent"):
+            hidden.add("previous_result")
+        return {k: v for k, v in self.current.items() if k not in hidden}
+
+    def poll(self):
+        """A status poll: the previous advice goes out once, not again every 1.5 seconds."""
+        state = self.public()
+        if self.current:
+            self.current["previous_sent"] = True
+        return state
 
     async def run(self):
         from fpl_oracle.api.fpl_client import fpl_client
@@ -182,24 +238,21 @@ class AdvicePublisher:
                 plans = await get_contingency_plans(detailed=False)
                 if not squad.get("captain") or not card.get("captain") or not plans.get("plan_a"):
                     raise ValueError("Core advice incomplete")
-                if squad["captain"]["element"] != card["captain"]["element"]:
-                    raise ValueError("Captain mismatch in core publication")
+                if differ := _disagreement(squad, card):
+                    raise ValueError(f"Squad and decision card disagree on {', '.join(differ)}")
                 if profile_key(data_store.get_profile()) != original_key:
-                    raise ValueError("Profile changed during calculation; refresh")
+                    raise AdviceStale("Profile changed during calculation; refresh")
                 if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
-                    raise ValueError("Model changed during core calculation; refresh")
+                    raise AdviceStale("Model changed during calculation; refresh")
                 if history_revision() != history_before:
-                    raise ValueError("History changed during calculation; refresh")
+                    raise AdviceStale("History changed during calculation; refresh")
                 if {r["element"] for r in squad.get("starters", [])} != {r["element"] for r in card.get("xi", [])}:
                     raise ValueError("Lineup mismatch in core publication")
-                context = read_context.get() or {}
-                timestamps = [stamp for _, _, stamp in context.values() if stamp is not None]
                 candidate = dict(
                     dataBasis=data_basis,
                     squadData=squad,
                     decisionCard=card,
                     contingencyPlans=plans,
-                    data_as_of=min(timestamps).isoformat() if timestamps else datetime.now(UTC).isoformat(),
                     source_revision=fpl_client.revision,
                 )
                 self.current["stage"] = "Checking the latest team data"
@@ -207,6 +260,7 @@ class AdvicePublisher:
                 # Timestamp changes alone are not changed content. Guard real facts.
                 from fpl_oracle.api.cache import cache_manager
 
+                found = []
                 for key, (value, _, _) in list(context.items()):
                     live = cache_manager.get_with_meta(key)
                     if live is None:
@@ -229,25 +283,29 @@ class AdvicePublisher:
                             "unverifiable" if live is None else "content_changed",
                             categories,
                         )
-                        raise SourceChanged(candidate, categories or ["unverifiable"])
+                        found += categories or ["unverifiable"]
+                if found and not set(found) <= SOFT_CHANGES:
+                    raise SourceChanged(candidate, sorted(set(found)))
+                if found:
+                    # Prices and team news move all the time; a finished hour-long plan is not thrown away for them.
+                    candidate["notice"] = "Team news changed while calculating. Refresh to include it."
                 # Revalidation itself may take time; owner and model must still agree.
                 if profile_key(data_store.get_profile()) != original_key:
-                    raise ValueError("Profile changed during validation; refresh")
+                    raise AdviceStale("Profile changed during validation; refresh")
                 if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
-                    raise ValueError("Model changed during validation; refresh")
+                    raise AdviceStale("Model changed during validation; refresh")
                 if history_revision() != history_before:
-                    raise ValueError("History changed during validation; refresh")
+                    raise AdviceStale("History changed during validation; refresh")
                 snapshot = hashlib.sha256(
                     json.dumps(
                         {k: decision_source(k, v[0]) for k, v in context.items()}, sort_keys=True, default=str
                     ).encode()
                 ).hexdigest()
                 bootstrap = context.get("bootstrap-static", ({}, False, None))[0]
-                next_events = [e for e in bootstrap.get("events", []) if e.get("is_next")]
-                for event in next_events:
-                    deadline = datetime.fromisoformat(event["deadline_time"].replace("Z", "+00:00"))
-                    if datetime.now(UTC) >= deadline:
-                        raise ValueError("Deadline passed during calculation; refresh")
+                deadline = _next_deadline(bootstrap)
+                if deadline and datetime.now(UTC) >= deadline:
+                    raise AdviceStale("Deadline passed during calculation; refresh")
+                candidate["data_as_of"] = datetime.now(UTC).isoformat()
                 candidate["snapshot_id"] = snapshot
                 return candidate
 
@@ -263,6 +321,7 @@ class AdvicePublisher:
                         previous_result=changed.previous,
                         changed_categories=changed.categories,
                         retry_count=attempt + 1,
+                        previous_sent=False,
                         stage="Team data changed. Updating advice",
                     )
                     if attempt == 1 or "unverifiable" in changed.categories:
@@ -274,9 +333,6 @@ class AdvicePublisher:
                     # projection caches reuse unchanged model features where safe.
                     read_context.get().clear()
                     publication_projections.get().clear()
-            from fpl_oracle.ml.model_registry import model_registry
-
-            result["expiryResearch"] = dict(status="pending")
             self.current.update(
                 status="ready",
                 stage="Ready",
@@ -284,6 +340,7 @@ class AdvicePublisher:
                 previous_result=None,
                 previous_published_at=None,
                 published_at=datetime.now(UTC).isoformat(),
+                finished=time.monotonic(),
                 sources={k: v[0] for k, v in (read_context.get() or {}).items()},
                 model_version=model_registry.get_active_version(),
             )
@@ -302,14 +359,6 @@ class AdvicePublisher:
                     "recommendation:" + team_confirmation.identity(saved_recommendation.pop("manager_id", None)),
                     saved_recommendation,
                 )
-            publication = self.current
-            cache_key = json.dumps(
-                [original_key, result.get("snapshot_id"), str(model_before), str(manifest_before)], default=str
-            )
-            if cache_key in self.expiry_cache:
-                result["expiryResearch"] = self.expiry_cache[cache_key]
-            else:
-                self.expiry_task = asyncio.create_task(self.run_expiry(publication, cache_key))
         except Exception as error:
             logger.exception(
                 "Advice job failed: type=%s stage=%s elapsed_seconds=%.1f",
@@ -320,7 +369,13 @@ class AdvicePublisher:
             from fastapi import HTTPException
 
             # A 409 is a reason the manager can act on (e.g. a saved bank that disagrees with FPL): show it.
-            reason = error.detail if isinstance(error, HTTPException) and error.status_code == 409 else None
+            reason = (
+                error.detail
+                if isinstance(error, HTTPException) and error.status_code == 409
+                else str(error)
+                if isinstance(error, AdviceStale)
+                else None
+            )
             self.current.update(
                 status="failed",
                 stage="Calculation stopped",
@@ -333,41 +388,6 @@ class AdvicePublisher:
             publication_projections.reset(projection_token)
             search_progress.reset(progress_token)
             read_context.reset(token)
-
-    async def run_expiry(self, publication, cache_key):
-        """Attach model-only research after core publication, never delay ready advice."""
-        from fpl_oracle.data.store import data_store
-        from fpl_oracle.server.analysis import analysis_service
-
-        try:
-            result = await analysis_service.expiry_sensitivity()
-            if self.current is not publication:
-                return
-            if profile_key(data_store.get_profile()) != publication["profile_key"] or not self.sources_unchanged():
-                publication["result"]["expiryResearch"] = dict(
-                    status="unavailable", reason="Sources changed; refresh advice"
-                )
-                return
-            if result.get("status") == "model_expiry_sensitivity":
-                # A separate bounded beam search, not the MILP behind the card: say whether it agrees
-                published = ((publication["result"].get("decisionCard") or {}).get("chip") or {}).get("chip_name")
-                result = dict(
-                    result,
-                    published_first_chip=published,
-                    agrees_with_published_plan=all(
-                        result.get(k, {}).get("first_chip") == published for k in ("short", "extended")
-                    ),
-                )
-            publication["result"]["expiryResearch"] = result
-            if result.get("status") == "model_expiry_sensitivity":
-                self.expiry_cache[cache_key] = result
-                if len(self.expiry_cache) > 4:
-                    self.expiry_cache.pop(next(iter(self.expiry_cache)))
-        except asyncio.CancelledError:
-            return
-        except Exception as error:
-            if self.current is publication:
-                publication["result"]["expiryResearch"] = dict(status="unavailable", reason=str(error))
 
 
 async def _freeze_for_track_record(result):

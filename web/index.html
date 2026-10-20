@@ -31,7 +31,7 @@
         <div class="brand-sub num">{{ deadlineLine }}</div>
       </div>
       <div class="top-actions">
-        <ui-button variant="primary" size="sm" icon="refresh-cw" :loading="adviceBusy" :disabled="adviceBusy" aria-label="Refresh advice" @click="refreshAll(true)"><span class="hide-sm">Refresh</span></ui-button>
+        <ui-button variant="primary" size="sm" icon="refresh-cw" :loading="adviceBusy" :disabled="adviceBusy" aria-label="Refresh advice" @click="refreshAll()"><span class="hide-sm">Refresh</span></ui-button>
         <ui-button variant="ghost" icon="siren" icon-only aria-label="A player is ruled out" @click="openPanic"></ui-button>
         <ui-button variant="ghost" icon="message-circle" icon-only aria-label="Ask about my team" @click="showChatDrawer = true"></ui-button>
         <ui-button variant="ghost" :icon="isDark ? 'sun' : 'moon'" icon-only aria-label="Toggle theme" @click="toggleTheme"></ui-button>
@@ -47,7 +47,7 @@
       <div class="stack-sm">
         <div class="callout-title">{{ b.title }}</div>
         <p class="callout-text">{{ b.text }}</p>
-        <div v-if="b.refresh" class="row"><ui-button size="sm" :disabled="adviceBusy" @click="refreshAll(true)">Refresh advice</ui-button></div>
+        <div v-if="b.refresh" class="row"><ui-button size="sm" :disabled="adviceBusy" @click="refreshAll()">Refresh advice</ui-button></div>
       </div>
     </div>
 
@@ -66,8 +66,8 @@
           <ui-skeleton width="70%" height="36px"></ui-skeleton>
           <ui-skeleton width="100%" height="20px"></ui-skeleton>
           <ui-skeleton width="85%" height="20px"></ui-skeleton>
-          <p class="muted" role="status" data-testid="advice-stage">{{ adviceStage || 'Getting started' }} ({{ elapsedText }})</p>
-          <p class="subtle">Preparing your advice takes a few minutes.</p>
+          <p class="muted" role="status" data-testid="advice-stage">{{ adviceStage || 'Getting started' }}</p>
+          <p class="subtle">Working for {{ elapsedText }}. Checking every option takes 30 to 90 minutes. You can leave this page open or come back later; your advice will be ready when you return.</p>
         </div>
       </glass-card>
 
@@ -76,25 +76,25 @@
         <p class="muted">{{ adviceError || (adviceNeedsRefresh ? 'Your team data changed while the advice was being prepared.' : 'Press Refresh to prepare your advice.') }}</p>
         <div class="row">
           <ui-button v-if="adviceFixable === 'saved_override'" variant="primary" @click="useOfficialNumbers">Use official FPL numbers</ui-button>
-          <ui-button :variant="adviceFixable ? 'ghost' : 'primary'" @click="refreshAll(true)">Refresh advice</ui-button>
+          <ui-button :variant="adviceFixable ? 'ghost' : 'primary'" @click="refreshAll()">Refresh advice</ui-button>
         </div>
       </glass-card>
 
       <glass-card v-else id="decision-card" :class="{ outdated: !adviceCurrent }">
-        <p v-if="adviceBusy && adviceFrom" class="callout tone-info" role="status">Showing your advice from {{ adviceFromText }}. Updating it now ({{ adviceStage }}, {{ elapsedText }}).</p>
-        <p v-else-if="adviceError && !adviceBusy" class="callout tone-warn" role="status" data-testid="update-failed">Latest update failed: {{ adviceError }} You are seeing your advice from {{ adviceFromText || 'earlier' }}. Refresh before you act on it.</p>
+        <div v-for="n in cardNotes" :key="n.key" class="callout" :class="'tone-' + n.tone" role="status" :data-testid="n.testid">
+          <ui-icon :name="n.icon"></ui-icon>
+          <p class="callout-text">{{ n.text }}</p>
+        </div>
         <div class="row between">
           <div class="row"><ui-badge tone="info">Gameweek {{ card.gameweek }}</ui-badge><span class="subtle num">{{ countdownText }}</span></div>
           <ui-badge v-if="card.chip.recommend" tone="warn">{{ card.chip.chip_display_name }}</ui-badge>
         </div>
 
-        <p v-if="card.backup_planner_notice" class="callout tone-warn" role="status" data-testid="backup-planner">{{ card.backup_planner_notice }} {{ card.chip.reason }}</p>
-
         <!-- 1. The decision -->
         <h2 class="hero-title" data-testid="headline">{{ card.headline }}</h2>
         <p class="muted">{{ card.two_line_reasoning }}</p>
         <div class="stats">
-          <div class="stat"><span class="stat-label">Points hit</span><span class="stat-value">{{ card.transfers.hit_cost ? '-' + card.transfers.hit_cost : 'None' }}</span></div>
+          <div class="stat"><span class="stat-label">Points hit</span><span class="stat-value">{{ card.transfers.hit_cost ? card.transfers.hit_cost + ' points' : 'None' }}</span></div>
           <div class="stat"><span class="stat-label">Bank after moves</span><span class="stat-value">£{{ card.transfers.bank_after.toFixed(1) }}m</span></div>
           <div class="stat"><span class="stat-label">Free transfers next week</span><span class="stat-value">{{ card.transfers.ft_next_gw }}</span></div>
         </div>
@@ -113,7 +113,7 @@
               <div class="pos-title">{{ g.label }}</div>
               <div v-for="p in g.players" :key="p.element" class="item-row is-new">
                 <span>In: {{ p.web_name }}<span class="meta">{{ p.team_short }}</span></span>
-                <span class="num">{{ priceText(p) }}<span class="meta">{{ p.expected_points }} pts</span></span>
+                <span class="num">{{ priceText(p) }}<span class="meta">{{ pts(p.expected_points) }} points</span></span>
                 <ui-button size="sm" :variant="choiceOf(p) === 'avoid' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(p) === 'avoid'" @click="toggleChoice(p, 'avoid')">{{ choiceOf(p) === 'avoid' ? 'Not buying ✓' : "Don't buy" }}</ui-button>
               </div>
               <div v-if="g.out.length" class="item-row is-out">
@@ -124,9 +124,9 @@
           </template>
           <div v-else-if="card.transfers.in.length" class="stack-sm">
             <div v-for="(pair, idx) in card.transfers.pairs" :key="idx" class="move">
-              <div class="item-row is-out"><span>Out: {{ pair.out ? pair.out.web_name : 'None' }}<span v-if="pair.out" class="meta">{{ pair.out.position }} · {{ pair.out.team_short }}</span></span><span v-if="pair.out" class="num">£{{ pair.out.cost.toFixed(1) }}m</span><ui-button v-if="pair.out" size="sm" :variant="choiceOf(pair.out) === 'keep' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(pair.out) === 'keep'" @click="toggleChoice(pair.out, 'keep')">{{ choiceOf(pair.out) === 'keep' ? 'Keeping ✓' : 'Keep' }}</ui-button></div>
+              <div class="item-row is-out"><span>Out: {{ pair.out ? pair.out.web_name : 'None' }}<span v-if="pair.out" class="meta">{{ joinMeta(pair.out.position, pair.out.team_short) }}</span></span><span v-if="pair.out" class="num">£{{ pair.out.cost.toFixed(1) }}m</span><ui-button v-if="pair.out" size="sm" :variant="choiceOf(pair.out) === 'keep' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(pair.out) === 'keep'" @click="toggleChoice(pair.out, 'keep')">{{ choiceOf(pair.out) === 'keep' ? 'Keeping ✓' : 'Keep' }}</ui-button></div>
               <ui-icon name="arrow-right"></ui-icon>
-              <div class="item-row is-new"><span>In: {{ pair.in ? pair.in.web_name : 'None' }}<span v-if="pair.in" class="meta">{{ pair.in.position }} · {{ pair.in.team_short }} · {{ pair.in.expected_points }} pts</span></span><span v-if="pair.in" class="num">£{{ pair.in.cost.toFixed(1) }}m</span><ui-button v-if="pair.in" size="sm" :variant="choiceOf(pair.in) === 'avoid' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(pair.in) === 'avoid'" @click="toggleChoice(pair.in, 'avoid')">{{ choiceOf(pair.in) === 'avoid' ? 'Not buying ✓' : "Don't buy" }}</ui-button></div>
+              <div class="item-row is-new"><span>In: {{ pair.in ? pair.in.web_name : 'None' }}<span v-if="pair.in" class="meta">{{ joinMeta(pair.in.position, pair.in.team_short, pts(pair.in.expected_points) + ' points') }}</span></span><span v-if="pair.in" class="num">£{{ pair.in.cost.toFixed(1) }}m</span><ui-button v-if="pair.in" size="sm" :variant="choiceOf(pair.in) === 'avoid' ? 'primary' : 'ghost'" :aria-pressed="choiceOf(pair.in) === 'avoid'" @click="toggleChoice(pair.in, 'avoid')">{{ choiceOf(pair.in) === 'avoid' ? 'Not buying ✓' : "Don't buy" }}</ui-button></div>
             </div>
           </div>
           <p v-else class="muted">No transfers this week.</p>
@@ -147,22 +147,22 @@
         <!-- 3. Captain -->
         <section class="sec">
           <h3 class="sec-title">Captain and vice-captain</h3>
-          <div class="item-row"><span><strong>{{ card.captain.web_name }}</strong><span class="mark">C</span><span class="meta">{{ card.captain.team_short }} · predicted {{ card.captain.expected_points }} points, {{ (card.captain.expected_points * 2).toFixed(1) }} as captain</span></span></div>
+          <div class="item-row"><span><strong>{{ card.captain.web_name }}</strong><span class="mark">C</span><span class="meta">{{ joinMeta(card.captain.team_short, 'predicted ' + pts(card.captain.expected_points) + ' points, ' + pts(card.captain.as_captain_points) + ' as captain') }}</span></span></div>
           <p v-if="card.captain.reason" class="subtle" data-testid="captain-reason">{{ card.captain.reason }}</p>
-          <div class="item-row"><span><strong>{{ card.vice_captain.web_name }}</strong><span class="mark vc">VC</span><span class="meta">{{ card.vice_captain.team_short }} · predicted {{ card.vice_captain.expected_points }} points</span></span></div>
+          <div class="item-row"><span><strong>{{ card.vice_captain.web_name }}</strong><span class="mark vc">VC</span><span class="meta">{{ joinMeta(card.vice_captain.team_short, 'predicted ' + pts(card.vice_captain.expected_points) + ' points') }}</span></span></div>
         </section>
 
         <!-- 4. Starting XI and bench -->
         <section class="sec">
-          <h3 class="sec-title">Starting XI and bench <span class="subtle num">{{ card.formation }} · {{ card.team_points }} predicted points</span></h3>
+          <h3 class="sec-title">Starting XI and bench <span class="subtle num">{{ card.formation }} · {{ pts(card.team_points) }} predicted points</span></h3>
           <div v-for="line in xiLines" :key="line.pos" class="xi-line">
             <span class="pos">{{ line.pos }}</span>
-            <span class="xi-players"><span v-for="p in line.players" :key="p.element" class="xi-p">{{ p.web_name }} <span class="subtle num">{{ p.expected_points }}</span><span v-if="p.is_captain" class="mark">C</span><span v-if="p.is_vice_captain" class="mark vc">VC</span></span></span>
+            <span class="xi-players"><span v-for="p in line.players" :key="p.element" class="xi-p">{{ p.web_name }} <span class="subtle num">{{ pts(p.expected_points) }}</span><span v-if="p.is_captain" class="mark">C</span><span v-if="p.is_vice_captain" class="mark vc">VC</span></span></span>
           </div>
           <div class="pos-title">Bench, in substitution order</div>
           <div v-for="p in benchLines" :key="p.element" class="xi-line">
             <span class="pos">{{ p.label }}</span>
-            <span class="xi-players"><span class="xi-p">{{ p.web_name }} <span v-if="p.position !== 'GKP'" class="subtle">{{ p.position }}</span> <span class="subtle num">{{ p.expected_points }}</span></span></span>
+            <span class="xi-players"><span class="xi-p">{{ p.web_name }} <span v-if="p.position !== 'GKP'" class="subtle">{{ p.position }}</span> <span class="subtle num">{{ pts(p.expected_points) }}</span></span></span>
           </div>
           <p v-if="card.minutes_note" class="subtle" data-testid="minutes-note">{{ card.minutes_note }}</p>
           <p v-if="card.bench_note" class="subtle" data-testid="bench-note">{{ card.bench_note }}</p>
@@ -184,10 +184,8 @@
         <!-- 6. Mini-league -->
         <section class="sec" data-testid="league-section">
           <h3 class="sec-title">Mini-league</h3>
-          <template v-if="standing">
-            <p class="muted">{{ standing.text }}</p>
-          </template>
-          <p v-else class="muted">{{ card.rivals.posture_reason || 'No mini-league is set up.' }}</p>
+          <p v-if="standing" class="muted">{{ standing.text }}</p>
+          <p v-else class="muted">{{ leagueFallback }}</p>
         </section>
 
         <!-- Basis and caution -->
@@ -206,18 +204,18 @@
         <div class="empty"><strong>{{ followedLocked ? 'Moves saved' : 'Your team is not ready' }}</strong>{{ followedLocked ? 'Your team appears again with the next advice.' : 'It appears once your advice is ready.' }}</div>
       </glass-card>
       <template v-else>
-        <glass-card :class="{ outdated: !adviceCurrent }" :title="'Your team for gameweek ' + card.gameweek" :subtitle="'After the moves above · ' + card.formation + ' · ' + card.team_points + ' predicted points'">
+        <glass-card :class="{ outdated: !adviceCurrent }" :title="'Your team for gameweek ' + card.gameweek" :subtitle="'After the moves above · ' + card.formation + ' · ' + pts(card.team_points) + ' predicted points'">
           <div class="pos-title">Starting XI</div>
           <div v-for="p in teamRows.starters" :key="p.element" class="item-row">
-            <span>{{ p.web_name }}<span v-if="p.is_captain" class="mark">C</span><span v-if="p.is_vice_captain" class="mark vc">VC</span><span class="meta">{{ p.position }} · {{ p.team_short }}<template v-if="p.price != null"> · £{{ p.price.toFixed(1) }}m</template></span>
+            <span>{{ p.web_name }}<span v-if="p.is_captain" class="mark">C</span><span v-if="p.is_vice_captain" class="mark vc">VC</span><span class="meta">{{ joinMeta(p.position, p.team_short, priceText(p)) }}</span>
               <span class="fixtures"><span v-for="f in p.fixtures" :key="f.event" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}{{ f.is_home ? '' : ' (a)' }}</span></span></span>
-            <span class="num">{{ p.expected_points }} pts<span v-if="p.flag" class="meta">{{ p.flag }}</span></span>
+            <span class="num">{{ pts(p.expected_points) }} points<span v-if="p.flag" class="meta">{{ p.flag }}</span></span>
           </div>
           <div class="pos-title">Bench</div>
           <div v-for="p in teamRows.bench" :key="p.element" class="item-row">
-            <span>{{ p.web_name }}<span class="meta">{{ p.label }} · {{ p.position }} · {{ p.team_short }}<template v-if="p.price != null"> · £{{ p.price.toFixed(1) }}m</template></span>
+            <span>{{ p.web_name }}<span class="meta">{{ joinMeta(p.label, p.position, p.team_short, priceText(p)) }}</span>
               <span class="fixtures"><span v-for="f in p.fixtures" :key="f.event" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}{{ f.is_home ? '' : ' (a)' }}</span></span></span>
-            <span class="num">{{ p.expected_points }} pts<span v-if="p.flag" class="meta">{{ p.flag }}</span></span>
+            <span class="num">{{ pts(p.expected_points) }} points<span v-if="p.flag" class="meta">{{ p.flag }}</span></span>
           </div>
         </glass-card>
 
@@ -233,8 +231,8 @@
 
         <glass-card title="Your money" subtitle="Before this week's moves" :class="{ outdated: !adviceCurrent }">
           <div class="stats">
-            <div class="stat"><span class="stat-label">Squad value</span><span class="stat-value">£{{ squad.total_squad_value }}m</span></div>
-            <div class="stat"><span class="stat-label">Selling value</span><span class="stat-value">£{{ squad.total_selling_value }}m</span></div>
+            <div class="stat"><span class="stat-label">Squad value</span><span class="stat-value">£{{ Number(squad.total_squad_value).toFixed(1) }}m</span></div>
+            <div class="stat"><span class="stat-label">Selling value</span><span class="stat-value">£{{ Number(squad.total_selling_value).toFixed(1) }}m</span></div>
             <div class="stat"><span class="stat-label">In the bank</span><span class="stat-value">£{{ Number(squad.bank_millions).toFixed(1) }}m</span></div>
             <div class="stat"><span class="stat-label">Free transfers</span><span class="stat-value">{{ squad.free_transfers }}</span></div>
           </div>
@@ -252,7 +250,7 @@
         <div class="empty"><strong>{{ followedLocked ? 'Moves saved' : 'League not ready' }}</strong>{{ followedLocked ? 'Standings appear again with the next advice.' : 'It appears once your advice is ready.' }}</div>
       </glass-card>
       <glass-card v-else-if="!standing" :title="card.rivals.league_name || 'Mini-league'">
-        <div class="empty"><strong>No standings to show</strong>{{ card.rivals.posture_reason || 'No mini-league is set up.' }}</div>
+        <div class="empty"><strong>No standings to show</strong>{{ leagueFallback }}</div>
       </glass-card>
       <template v-else>
         <glass-card :title="card.rivals.league_name" :subtitle="leagueAsOf">
@@ -290,7 +288,7 @@
           <div class="eyebrow">{{ m.role === 'user' ? 'You' : 'FPL Oracle' }}</div>
           <div class="prose-rendered" v-html="renderMarkdown(m.content)"></div>
         </div>
-        <div v-if="isChatLoading" class="bubble" aria-busy="true"><ui-skeleton width="160px"></ui-skeleton></div>
+        <div v-if="isChatLoading" class="bubble" aria-busy="true"><ui-skeleton width="160px"></ui-skeleton><p v-if="chatSlow" class="subtle">Working on it. If this needs the planner to re-run, it can take 30 to 90 minutes. You can keep the page open.</p></div>
       </div>
       <div class="chips"><ui-button v-for="p in suggestedPrompts" :key="p" size="sm" :disabled="isChatLoading" @click="sendPrompt(p)">{{ p }}</ui-button></div>
     </div>
@@ -321,7 +319,7 @@
           <p class="callout-text">{{ panicResult.recommendation }}</p>
           <p v-if="panicResult.excluded_gameweeks" class="subtle">Out for gameweek {{ panicResult.excluded_gameweeks.join(', ') }}</p>
           <p v-for="option in panicResult.chip_options || []" :key="option.chip" class="callout-text">{{ option.chip === 'wildcard' ? 'Wildcard' : 'Free Hit' }} would also give a legal team ({{ option.hit_cost }} points hit).</p>
-          <p v-if="panicResult.lineup_action" class="callout-text">Formation {{ panicResult.lineup_action.new_formation }}, captain {{ panicResult.lineup_action.captain?.web_name }}.</p>
+          <p v-if="panicResult.lineup_action" class="callout-text">Formation {{ panicResult.lineup_action.new_formation }}<template v-if="panicResult.lineup_action?.captain">, captain {{ panicResult.lineup_action.captain.web_name }}</template>.</p>
         </div>
       </div>
     </template>
@@ -330,7 +328,7 @@
   <!-- ===================== TELL US WHAT YOU DID ===================== -->
   <ui-modal :open="showConfirmTeam" title="What did you do?" wide @close="showConfirmTeam = false">
     <p class="muted">This starts from the advice. Change anything you did differently, so the next advice starts from your real team.</p>
-    <p v-if="confirmTeamData?.saved" class="subtle">{{ confirmTeamData.saved.comparison }}</p>
+    <p v-if="confirmTeamData?.saved?.comparison" class="subtle">{{ confirmTeamData.saved.comparison }}</p>
     <div class="stack-sm">
       <div class="grid cols-2">
         <ui-field v-model="confirmDelta.out" label="Player out" select><option value="">Choose</option><option v-for="r in confirmRows" :key="r.element" :value="r.element">{{ playerName(r.element) }}</option></ui-field>

@@ -5,6 +5,7 @@ chip strategies, news, and league simulations.
 """
 
 import asyncio
+import copy
 import json
 import logging
 import time
@@ -29,6 +30,19 @@ chat_tool_cache: ContextVar[dict[tuple[str, str], Any] | None] = ContextVar("cha
 
 
 MAX_TOOL_ROUNDS = 6
+
+# These re-run the full planner. One per chat turn: the second would add another 30-90 minutes.
+SOLVE_TOOLS = frozenset({"optimise_transfers", "evaluate_plan", "compare_options", "explain_why_not"})
+SOLVE_NOTE = "This re-ran the planner (about 30–90 minutes)"
+_SOLVE_USED = ("planner_re_run", "")  # marker kept in the per-turn tool cache
+_RE_RUN_NOTE = (
+    "The planner was already re-run in this chat turn (30–90 minutes each). Answer from that result "
+    "or from the published decision."
+)
+_RE_RUN_WARNING = (
+    "Re-runs the full planner: takes 30–90 minutes and honours the manager's keep and don't-buy choices. "
+    "Use only when the published decision cannot answer; at most once per chat turn."
+)
 
 _MOVE_SCHEMA = {
     "type": "object",
@@ -80,7 +94,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "optimise_transfers",
-        "description": "Run mathematical MILP transfer optimizer evaluating candidate plans (roll transfer, 1 transfer, 2 transfers with hit evaluation).",
+        "description": "Re-run the full planner on today's data and return its transfers, captain and candidate plans (roll, 1 transfer, 2 transfers with hit). "
+        + _RE_RUN_WARNING,
         "parameters": {
             "type": "object",
             "properties": {
@@ -91,7 +106,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "plan_chips",
-        "description": "Compare chip options over the loaded upcoming weeks. No full-season best-date schedule is established.",
+        "description": "The published chip decision: play now or keep, the reason, the check behind it and the weeks later chips are pencilled in. Answers from the published advice; does not re-run the planner.",
         "parameters": {"type": "object", "properties": {}},
     },
     {
@@ -152,7 +167,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "evaluate_plan",
-        "description": "Scores a manager proposed plan (transfers, chip, captain) against the frontier and best alternatives.",
+        "description": "Scores a manager proposed plan (transfers, chip, captain) against saving the transfer and the planner's best plan. "
+        + _RE_RUN_WARNING,
         "parameters": {
             "type": "object",
             "properties": {
@@ -171,7 +187,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "compare_options",
-        "description": "Compares named alternative plans side by side showing net xP, hits, and risk.",
+        "description": "Compares named alternative plans side by side showing net xP, hits, and risk. "
+        + _RE_RUN_WARNING,
         "parameters": {
             "type": "object",
             "properties": {
@@ -195,7 +212,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "explain_why_not",
-        "description": "Explains why the planner did not pick a hit or chip (wildcard, freehit, bboost, 3xc) this week, using the planner's own scored plans.",
+        "description": "Explains why the planner did not pick a hit or chip (wildcard, freehit, bboost, 3xc) this week, using the planner's own scored plans. "
+        + _RE_RUN_WARNING,
         "parameters": {
             "type": "object",
             "properties": {
@@ -245,16 +263,19 @@ class ToolExecutor:
         cache = chat_tool_cache.get()
         key = (tool_name, json.dumps(arguments, sort_keys=True))
         if cache is not None and key in cache:
-            import copy
-
             return copy.deepcopy(cache[key])
+        solving = tool_name in SOLVE_TOOLS
+        if solving and cache is not None and _SOLVE_USED in cache:
+            return {"error": _RE_RUN_NOTE}
         began = time.monotonic()
         logger.info("Chat tool started: name=%s", tool_name)
         try:
             result = await self._execute(tool_name, arguments)
+            if solving and not result.get("error"):
+                result["note"] = SOLVE_NOTE
+                if cache is not None:
+                    cache[_SOLVE_USED] = True
             if cache is not None and not result.get("error"):
-                import copy
-
                 cache[key] = copy.deepcopy(result)
             return result
         finally:
@@ -325,6 +346,7 @@ class ToolExecutor:
                 )
             squad.append(row)
         return {
+            "note": "Your current squad before the recommended moves",
             "manager_name": state.manager_name,
             "team_name": state.team_name,
             "overall_points": state.overall_points,
@@ -387,12 +409,15 @@ class ToolExecutor:
 
         return {"gameweek": target_gw, "horizon": horizon, "gameweeks": weeks, "players": results}
 
-    async def _tool_optimise_transfers(self, args: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    async def _run_planner(args: dict[str, Any]) -> dict[str, Any]:
+        """A full planner solve; the planner adds the manager's own keep and don't-buy choices."""
         from fpl_oracle.server.routes.api import OptimizeRequest, run_optimizer
 
-        result = await run_optimizer(
-            OptimizeRequest(locked_in=args.get("locked_in"), locked_out=args.get("locked_out"))
-        )
+        return await run_optimizer(OptimizeRequest(locked_in=args.get("locked_in"), locked_out=args.get("locked_out")))
+
+    async def _tool_optimise_transfers(self, args: dict[str, Any]) -> dict[str, Any]:
+        result = await self._run_planner(args)
         plan = result.get("recommended_plan", {})
         boot, _ = await fpl_client.get_bootstrap_static()
         elem_map = {int(e.id): e for e in boot.elements}
@@ -425,15 +450,18 @@ class ToolExecutor:
             for i in range(max_len):
                 in_id = t_ins[i] if i < len(t_ins) else None
                 out_id = t_outs[i] if i < len(t_outs) else None
-                # MILP trajectories carry player dicts, the beam search carries ids.
+                # MILP trajectories carry player dicts (with names), the beam search carries ids.
+                in_name = in_id.get("web_name") if isinstance(in_id, dict) else None
+                out_name = out_id.get("web_name") if isinstance(out_id, dict) else None
                 in_id = in_id.get("element") if isinstance(in_id, dict) else in_id
                 out_id = out_id.get("element") if isinstance(out_id, dict) else out_id
                 p_in = elem_map.get(in_id) if in_id else None
                 p_out = elem_map.get(out_id) if out_id else None
                 moves.append(
                     {
-                        "transfer_in": p_in.web_name if p_in else (f"Player #{in_id}" if in_id else "None"),
-                        "transfer_out": p_out.web_name if p_out else (f"Player #{out_id}" if out_id else "None"),
+                        "transfer_in": in_name or (p_in.web_name if p_in else (f"Player #{in_id}" if in_id else "None")),
+                        "transfer_out": out_name
+                        or (p_out.web_name if p_out else (f"Player #{out_id}" if out_id else "None")),
                         "cost_in": round(p_in.now_cost / 10.0, 1) if p_in else None,
                         "cost_out": round(p_out.now_cost / 10.0, 1) if p_out else None,
                     }
@@ -449,68 +477,61 @@ class ToolExecutor:
             candidate_plans_formatted.append(
                 {
                     "plan_type": cp.get("plan_type"),
-                    "type": cp.get("plan_type"),
                     "summary": cp.get("recommendation_summary"),
                     "net_xp": round(float(cp.get("net_expected_points", 0)), 2),
-                    "gain": round(float(cp.get("expected_gain", 0)), 2),
-                    "gain_vs_roll": round(float(cp.get("expected_gain", 0)), 2),
+                    "expected_gain": round(float(cp.get("expected_gain", 0)), 2),
+                    "horizon_gain_vs_roll": round(float(cp.get("horizon_gain_vs_roll") or 0), 2),
                     "hit_cost": round(float(cp.get("hit_cost", 0)), 1),
                     "transfers": format_moves(cp_step) if cp_step else [],
                 }
             )
 
-        captain_clean = clean_player(plan.get("captain", {}))
-        vice_captain_clean = clean_player(plan.get("vice_captain", {}))
-
-        roadmap_clean = []
-        for step in result.get("transfer_roadmap", []):
-            roadmap_clean.append(
-                {
-                    "gameweek": step.get("gameweek"),
-                    "action": step.get("action"),
-                    "status": step.get("status"),
-                    "banked_free_transfers": step.get("banked_free_transfers_projected", step.get("banked_ft")),
-                    "banked_free_transfers_projected": step.get(
-                        "banked_free_transfers_projected", step.get("banked_ft")
-                    ),
-                    "strategic_focus": step.get("strategic_focus"),
-                    "key_targets": step.get("key_targets", []),
-                    "captain": step.get("captain"),
-                }
-            )
+        lineup = plan.get("lineup") or {}
+        roadmap_clean = [
+            {
+                "gameweek": step.get("gameweek"),
+                "action": step.get("action"),
+                "status": step.get("status"),
+                "banked_free_transfers_projected": step.get("banked_free_transfers_projected", step.get("banked_ft")),
+                "strategic_focus": step.get("strategic_focus"),
+                "key_targets": step.get("key_targets", []),
+                "captain": step.get("captain"),
+            }
+            for step in result.get("transfer_roadmap", [])
+        ]
+        weeks = [int(a["gameweek"]) for a in plan.get("trajectory") or []]
+        horizon = (
+            f"gameweeks {weeks[0]} to {weeks[-1]}" if len(weeks) > 1 else f"gameweek {weeks[0]}" if weeks else None
+        )
 
         return {
-            **result,
             "target_gameweek": result.get("target_gameweek"),
             "decision": plan.get("recommendation_summary", plan.get("plan_type", "Unavailable")),
-            "recommended_plan": result["recommended_plan"],
             "plan_type": plan.get("plan_type"),
-            "net_expected_points": round(float(plan.get("net_expected_points", 0)), 2),
-            "expected_gain": round(float(plan.get("expected_gain", 0)), 2),
-            "hit_cost": round(float(plan.get("hit_cost", 0)), 1),
-            "bank_remaining": round(float(plan.get("bank_remaining", 0)), 2),
             "recommended_transfers": transfers_formatted,
+            "expected_gain": round(float(plan.get("expected_gain", 0)), 2),
+            "horizon": horizon,
+            "horizon_gain_vs_roll": round(float(plan.get("horizon_gain_vs_roll") or 0), 2),
+            "hit_cost": round(float(plan.get("hit_cost", 0)), 1),
             "hit_verdict": result.get("hit_verdict", "No hit recommended"),
-            "captain": captain_clean,
-            "vice_captain": vice_captain_clean,
-            "formation": plan.get("formation"),
+            "bank_remaining": round(float(plan.get("bank_remaining", 0)), 2),
+            "captain": clean_player(lineup.get("captain")),
+            "vice_captain": clean_player(lineup.get("vice_captain")),
             "candidate_plans": candidate_plans_formatted,
             "roadmap": roadmap_clean,
-            "transfer_roadmap": roadmap_clean,
-            "chip_comparison_table": result.get("chip_comparison_table", []),
-            "league_objective": result.get("league_objective"),
             "data_as_of": result.get("data_as_of"),
             "is_stale": result.get("is_stale", False),
         }
 
     async def _tool_plan_chips(self, args: dict[str, Any]) -> dict[str, Any]:
-        from fpl_oracle.server.routes.api import get_chip_strategy
-
-        result = await get_chip_strategy()
+        # The published chip decision: no planner re-run, so the answer matches the Advice screen.
+        record = await current_decision_record()
+        if record.get("status") != "ready":
+            return record
         return {
-            **result,
-            "chip_table": result.get("chip_plan_table", []),
-            "set_1_warning": result.get("set_1_deadline_warning"),
+            "gameweek": record["gameweek"],
+            **record["chip"],
+            "chips_remaining": record["team"].get("chips_remaining"),
         }
 
     async def _tool_captain_options(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -531,7 +552,11 @@ class ToolExecutor:
         boot, _ = await fpl_client.get_bootstrap_static()
         owned = {int(e.id): float(e.selected_by_percent or 0.0) for e in boot.elements}
         captain, vice = squad["captain"], squad["vice_captain"]
-        candidates = sorted(squad["starters"], key=lambda p: p.get("expected_points", 0), reverse=True)[:5]
+        pick = ((result or {}).get("decisionCard") or {}).get("captain") or {}
+        # The armband holder leads, whether the plan chose it for points or for the league.
+        candidates = sorted(
+            squad["starters"], key=lambda p: (p.get("element") != captain["element"], -p.get("expected_points", 0))
+        )[:5]
         candidates_clean = [
             {
                 "element": c.get("element"),
@@ -558,6 +583,8 @@ class ToolExecutor:
             "vice_captain_name": vice["web_name"],
             "captain": captain,
             "vice_captain": vice,
+            "captain_reason": pick.get("reason"),
+            "multiplier": pick.get("multiplier"),
             "differential_option": next(
                 (
                     c["web_name"]
@@ -746,13 +773,29 @@ class ToolExecutor:
             "locked_out_ids": [i for i in choices.avoid_ids if i not in choices.keep_ids],
         }
 
+    @staticmethod
+    async def _choice_conflict(moves: list[dict[str, Any]], choices: dict[str, list[int]]) -> dict[str, Any] | None:
+        """An error when a proposed move buys a don't-buy player or sells a kept one."""
+        bought = [m["in"] for m in moves if m.get("in") in choices["locked_out_ids"]]
+        sold = [m["out"] for m in moves if m.get("out") in choices["locked_in_ids"]]
+        if not (bought or sold):
+            return None
+        boot, _ = await fpl_client.get_bootstrap_static()
+        names = {int(e.id): e.web_name for e in boot.elements}
+        if bought:
+            return {"error": f"{names.get(bought[0], bought[0])} is on your don't-buy list"}
+        return {"error": f"{names.get(sold[0], sold[0])} is on your keep list"}
+
     async def _tool_evaluate_plan(self, args: dict[str, Any]) -> dict[str, Any]:
         from fpl_oracle.advisor.critique import plan_critique_service
 
+        choices = self._manager_choices()
+        if conflict := await self._choice_conflict(args.get("proposed_transfers") or [], choices):
+            return conflict
         ctx = await self._critique_inputs()
         ctx.pop("state")
-        ctx.update(self._manager_choices())
-        # The solves take a minute or more: off the event loop, so the page stays responsive.
+        ctx.update(choices)
+        # The solves take 30–90 minutes: off the event loop, so the page stays responsive.
         res = await asyncio.to_thread(
             plan_critique_service.evaluate_plan,
             proposed_transfers=args.get("proposed_transfers", []),
@@ -765,9 +808,13 @@ class ToolExecutor:
     async def _tool_compare_options(self, args: dict[str, Any]) -> dict[str, Any]:
         from fpl_oracle.advisor.critique import plan_critique_service
 
+        choices = self._manager_choices()
+        moves = [m for o in args.get("options") or [] for m in o.get("transfers") or []]
+        if conflict := await self._choice_conflict(moves, choices):
+            return conflict
         ctx = await self._critique_inputs()
         ctx.pop("state")
-        ctx.update(self._manager_choices())
+        ctx.update(choices)
         res = await asyncio.to_thread(plan_critique_service.compare_options, options=args.get("options", []), **ctx)
         return res.model_dump()
 
@@ -777,7 +824,7 @@ class ToolExecutor:
 
         state = await manager_state_service.get_current_state()
         # The planner's own scored plans: every candidate (hold, hits, chips) with its gain over rolling.
-        opt = await self._tool_optimise_transfers({})
+        opt = await self._run_planner({})
         plans = []
         for row in opt.get("chip_comparison_table", []):
             plan = row.get("plan") or {}
@@ -799,6 +846,8 @@ class ToolExecutor:
     async def _tool_affordability_path(self, args: dict[str, Any]) -> dict[str, Any]:
         from fpl_oracle.advisor.funding import AffordabilityPathFinder
 
+        if conflict := await self._choice_conflict([{"in": int(args["target_element"])}], self._manager_choices()):
+            return conflict
         ctx = await self._critique_inputs(horizon=1)
         finder = AffordabilityPathFinder()
         paths = finder.find_cheapest_paths(

@@ -13,14 +13,15 @@ Formulation:
   * Chip deployments (Wildcard, Free Hit, Bench Boost, Triple Captain)
   * Team value and selling price oracle (WI-1.4)
   * Terminal banked FT value V_ft and terminal bank valuation lambda_bank
-- Solvers supported: HiGHS (via highspy / pulp.HiGHS) and COIN-OR CBC (via pulp.PULP_CBC_CMD).
-- Plan comparison set generation (Roll, Best 1-transfer, Best hit, Chip plans, Top-K moves).
+- Solvers supported: HiGHS (via highspy / pulp.HiGHS, single-threaded, fixed seed) and COIN-OR CBC (via pulp.PULP_CBC_CMD).
+- Plan comparison set generation (Roll, 1- and 2-transfer, Hold, Chip plans, hit-free, keep and cover re-solves).
 - Scenario-based hit justification policy (WI-2.5).
 """
 
 import logging
 import math
 import os
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -32,6 +33,13 @@ import pandas as pd
 import pulp
 
 from fpl_oracle.optimise.hit_policy import expected_transfer_gain
+from fpl_oracle.optimise.lineup import (
+    best_lineup,
+    lineup_optimizer,
+    outscore_probability,
+    play_probability,
+    vice_reasoning,
+)
 from fpl_oracle.optimise.progress import report_search_progress
 from fpl_oracle.rules.scoring import (
     HIT_COST_POINTS,
@@ -47,40 +55,7 @@ logger = logging.getLogger(__name__)
 
 # A one-week Free Hit squad is picked from the best players of that week alone.
 FREE_HIT_PRUNING_LIMITS = {"DEF": 30, "MID": 30, "FWD": 20, "GKP": 10}
-
-
-def best_lineup(
-    squad: list[int], position: dict[int, str], xp: dict[int, float], bench_weight: float
-) -> tuple[list[int], list[int], int, int | None]:
-    """
-    Exact (starters, bench, captain, vice) for a 15-man squad: best formation by
-    (1 - bench_weight) * starters + captain, ties by total starter xP and then by id.
-    The MILP's lineup variables are continuous (integral at a vertex, but a tie can leave a fractional
-    split), so the reported lineup is rebuilt from the chosen squad instead of rounded from them.
-    """
-    ranked = {
-        pos: sorted((p for p in squad if position[p] == pos), key=lambda p: (-xp.get(p, 0.0), p))
-        for pos in ("GKP", "DEF", "MID", "FWD")
-    }
-    best: tuple[tuple[float, float], list[int]] | None = None
-    for d in range(3, 6):
-        for m in range(2, 6):
-            f = 10 - d - m
-            if not 1 <= f <= 3:
-                continue
-            starters = ranked["GKP"][:1] + ranked["DEF"][:d] + ranked["MID"][:m] + ranked["FWD"][:f]
-            total = sum(xp.get(p, 0.0) for p in starters)
-            captain = max(starters, key=lambda p: (xp.get(p, 0.0), -p))
-            key = ((1.0 - bench_weight) * total + xp.get(captain, 0.0), total)
-            if best is None or key > best[0]:
-                best = (key, starters)
-    assert best is not None
-    starters = best[1]
-    captain = max(starters, key=lambda p: (xp.get(p, 0.0), -p))
-    rest = [p for p in starters if p != captain]
-    vice = max(rest, key=lambda p: (xp.get(p, 0.0), -p)) if rest else None
-    bench = sorted((p for p in squad if p not in starters), key=lambda p: (-xp.get(p, 0.0), p))
-    return starters, bench, captain, vice
+_FH_LOCK = threading.Lock()  # one Free Hit squad solve per week, shared by the parallel plan solves
 
 
 class MilpInfeasible(RuntimeError):
@@ -119,7 +94,6 @@ class MultiPeriodConfig:
     lambda_bank: float = 0.05  # 0.05 xP per 1.0m (£0.1m = 0.005 xP)
     chip_week_ft_rule: Literal["preserve", "preserve_plus_one"] = "preserve"
     pruning_limits: dict[str, int] = field(default_factory=lambda: {"GKP": 15, "DEF": 45, "MID": 45, "FWD": 25})
-    enablers_count: int = 5
     ft_terminal_increments: tuple[float, float, float, float] = (1.0, 0.8, 0.6, 0.4)
 
 
@@ -149,8 +123,8 @@ class GameweekAction:
 
 
 KEEP_CHECKS = 4  # owned players sold this week that get a "keep him" re-solve, the dearest to re-buy first
-# Extra point on every decision margin (owner's choice, about one point). Set when time-limited searches differed by
-# up to a few points between runs; solves now run to the proven best, so it is kept as a status-quo margin only.
+# Extra point on every decision margin: a fixed one-point status-quo margin (owner's choice), not search noise,
+# since every solve runs to the proven best.
 SEARCH_TOLERANCE = 1.0
 # Price changes (2023-24, 2024-25): over the next 4-8 gameweeks a player's price moves about 2.4 x £0.1m per unit of
 # this week's net transfers / owners (R2 0.12); a sale returns half of a rise and all of a fall.
@@ -187,17 +161,10 @@ class MultiPeriodPlan:
     horizon_net_xp: float
     horizon_hits: int
     horizon_gain_vs_roll: float
-    immediate_gain: float
-    hit_verdict: str
-    hit_delta: float
-    hit_prob_gain: float
     solve_time_sec: float
     solver_status: str
     solver_gap: float = 0.0
     is_lower_bound: bool = False
-    objective_decomposition: dict[str, float] = field(default_factory=dict)
-    top_k_alternatives: list[dict[str, Any]] = field(default_factory=list)
-    chip_plans: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Integer decisions of the solve ({("x", player, gw) | (chip, gw): 0/1}), reused as a MIP start for related solves.
     integer_solution: dict[tuple[Any, ...], int] = field(default_factory=dict, repr=False)
 
@@ -234,22 +201,17 @@ class MultiPeriodOptimizer:
     def _get_solver(
         self, time_limit_sec: float | None = None, start: dict[pulp.LpVariable, float] | None = None
     ) -> pulp.LpSolver:
-        """Selects HiGHS if available and configured, else falls back to bundled CBC."""
+        """HiGHS (the default) or CBC, as configured. Both run one thread (HiGHS with a fixed seed), so the same
+        model always ends on the same plan; a missing HiGHS is an error, never a silent switch to CBC."""
         limit = self.config.time_limit_sec if time_limit_sec is None else time_limit_sec
         if self.config.solver_name == "highs":
-            try:
-                highs = _WarmStartHiGHS(
-                    start or {},
-                    gapRel=self.config.mip_gap,
-                    timeLimit=limit,
-                    msg=False,
-                )
-                if highs.available():
-                    return highs
-            except Exception as e:
-                logger.warning(f"HiGHS solver initialization failed: {e}. Falling back to CBC.")
-
-        return pulp.PULP_CBC_CMD(gapRel=self.config.mip_gap, timeLimit=limit, msg=False)
+            highs = _WarmStartHiGHS(
+                start or {}, gapRel=self.config.mip_gap, timeLimit=limit, msg=False, threads=1, random_seed=0
+            )
+            if not highs.available():
+                raise RuntimeError("HiGHS is the configured solver but highspy is not installed")
+            return highs
+        return pulp.PULP_CBC_CMD(gapRel=self.config.mip_gap, timeLimit=limit, msg=False, threads=1)
 
     def _free_hit_squad(
         self,
@@ -260,7 +222,7 @@ class MultiPeriodOptimizer:
         locked_in: set[int],
         locked_out: set[int],
         excluded_teams: set[int],
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, Any]:
         """
         Best one-week squad for a Free Hit. The FH squad is picked from scratch under the team-value
         budget and is not carried to the next week, so its value depends only on that week's xP.
@@ -296,14 +258,14 @@ class MultiPeriodOptimizer:
                 prob += sf[p] == 1
         prob += pulp.lpSum(xp.get(p, 0.0) * ((1.0 - w_bench) * sf[p] + cf[p] + w_bench * xf[p]) for p in ids)
         if prob.solve(self._get_solver(self.config.time_limit_sec)) != pulp.constants.LpStatusOptimal:
-            return None
+            raise MilpNoSolution("No optimal Free Hit squad found")
         chosen = [p for p in ids if (xf[p].varValue or 0.0) > 0.5]
         starters = [p for p in chosen if (sf[p].varValue or 0.0) > 0.5]
         captain = next((p for p in starters if (cf[p].varValue or 0.0) > 0.5), None)
         if len(chosen) != 15 or len(starters) != 11 or captain is None:
-            return None
+            raise MilpNoSolution("No complete Free Hit squad found")
         bench = [p for p in chosen if p not in starters]
-        vice = max((p for p in starters if p != captain), key=lambda p: xp.get(p, 0.0))
+        vice = max((p for p in starters if p != captain), key=lambda p: (xp.get(p, 0.0), -p))
         value = (
             sum(xp.get(p, 0.0) for p in starters) + xp.get(captain, 0.0) + w_bench * sum(xp.get(p, 0.0) for p in bench)
         )
@@ -354,12 +316,14 @@ class MultiPeriodOptimizer:
             n_keep = limits.get(pos, 30)
 
             # Top N by horizon-weighted xP
-            top_n = pos_df.sort_values(by="hw_xp", ascending=False).head(n_keep)
+            top_n = pos_df.sort_values(["hw_xp", "element"], ascending=[False, True], kind="stable").head(n_keep)
             selected_eids.update(top_n["element"].astype(int).tolist())
 
             # Cheapest enablers by xP/cost
             pos_df["eff"] = pos_df["hw_xp"] / pos_df["value"].clip(lower=38.0)
-            enablers = pos_df.sort_values(by=["value", "eff"], ascending=[True, False]).head(enablers_count)
+            enablers = pos_df.sort_values(
+                ["value", "eff", "element"], ascending=[True, False, True], kind="stable"
+            ).head(enablers_count)
             selected_eids.update(enablers["element"].astype(int).tolist())
 
         pruned = pool_df[pool_df["element"].isin(selected_eids)].copy().reset_index(drop=True)
@@ -383,7 +347,6 @@ class MultiPeriodOptimizer:
         forced_w1_transfers: int | None = None,
         forced_w1_chip: str | None = None,
         forced_chip_schedule: dict[int, str] | None = None,
-        min_w1_hits: int | None = None,
         hit_cooldown_until: int = 0,
         chips_by_set: dict[int, list[str] | set[str]] | None = None,
         time_limit_sec: float | None = None,
@@ -440,7 +403,7 @@ class MultiPeriodOptimizer:
             limits=wc_limits or self.config.pruning_limits,
         )
 
-        players = pruned_pool["element"].astype(int).tolist()
+        players = sorted(pruned_pool["element"].astype(int).tolist())
         player_dict = {int(r["element"]): dict(r) for _, r in pruned_pool.iterrows()}
 
         # Locked / excluded constraints
@@ -706,9 +669,7 @@ class MultiPeriodOptimizer:
         # Free Hit squads are solved once per week (depends only on that week's xP); weeks where a
         # Free Hit is not allowed are fixed to 0 so the plan never gets an FH it has no squad for.
         suppress_t0_chips = (
-            forced_w1_chip is None
-            and forced_chip_schedule is None
-            and (no_chip_w1 or forced_w1_transfers is not None or min_w1_hits is not None)
+            forced_w1_chip is None and forced_chip_schedule is None and (no_chip_w1 or forced_w1_transfers is not None)
         )
         fh_cache = fh_cache if fh_cache is not None else {}
         fh_plan: dict[int, dict[str, Any]] = {}
@@ -731,30 +692,31 @@ class MultiPeriodOptimizer:
                     frozenset(excluded_teams),
                     frozenset(squad_ids),
                 )
-                if cache_key not in fh_cache:
-                    df_t = horizon_projections.get(t, player_pool_df)
-                    xp_t = _xp_map(df_t)
-                    week_pool = self.prune_candidates(
-                        player_pool_df,
-                        squad_ids=squad_ids | (locked_in if at_t0 else set()),
-                        horizon_gws=[t],
-                        horizon_projections=horizon_projections,
-                        limits=FREE_HIT_PRUNING_LIMITS,
-                    )
-                    # Owned players are valued at their selling price, everyone else at market price.
-                    fh_costs = {
-                        int(e): float(squad_sell_map.get(int(e), cost))
-                        for e, cost in zip(week_pool["element"], week_pool["value"], strict=True)
-                    }
-                    fh_cache[cache_key] = self._free_hit_squad(
-                        week_pool,
-                        xp_t,
-                        fh_costs,
-                        initial_team_value,
-                        locked_in if at_t0 else set(),
-                        locked_out if at_t0 else set(),
-                        excluded_teams,
-                    )
+                with _FH_LOCK:  # parallel solves share the cache: compute each week's squad once
+                    if cache_key not in fh_cache:
+                        df_t = horizon_projections.get(t, player_pool_df)
+                        xp_t = _xp_map(df_t)
+                        week_pool = self.prune_candidates(
+                            player_pool_df,
+                            squad_ids=squad_ids | (locked_in if at_t0 else set()),
+                            horizon_gws=[t],
+                            horizon_projections=horizon_projections,
+                            limits=FREE_HIT_PRUNING_LIMITS,
+                        )
+                        # Owned players are valued at their selling price, everyone else at market price.
+                        fh_costs = {
+                            int(e): float(squad_sell_map.get(int(e), cost))
+                            for e, cost in zip(week_pool["element"], week_pool["value"], strict=True)
+                        }
+                        fh_cache[cache_key] = self._free_hit_squad(
+                            week_pool,
+                            xp_t,
+                            fh_costs,
+                            initial_team_value,
+                            locked_in if at_t0 else set(),
+                            locked_out if at_t0 else set(),
+                            excluded_teams,
+                        )
                 fh_squad = fh_cache[cache_key]
             if fh_squad is None:
                 prob += fh[t] == 0
@@ -789,8 +751,6 @@ class MultiPeriodOptimizer:
         # Forced constraints for alternative plan generation
         if forced_w1_transfers is not None:
             prob += u[t0] == forced_w1_transfers
-        if min_w1_hits is not None:
-            prob += h[t0] >= min_w1_hits
         if max_w1_hits is not None:
             prob += h[t0] <= max_w1_hits
         if forced_chip_schedule is not None:
@@ -910,7 +870,7 @@ class MultiPeriodOptimizer:
                         hw[p_id] += val
                 money = init_bank
                 clubs = dict(init_club_counts)
-                for out_p in sorted(squad_ids - locked_in, key=lambda q: hw[q])[: int(forced_w1_transfers)]:
+                for out_p in sorted(squad_ids - locked_in, key=lambda q: (hw[q], q))[: int(forced_w1_transfers)]:
                     pos, budget = player_dict[out_p]["position"], money + sell_vals[out_p]
                     options = [
                         q
@@ -925,7 +885,7 @@ class MultiPeriodOptimizer:
                     ]
                     if not options:
                         continue
-                    in_p = max(options, key=lambda q: hw[q])
+                    in_p = max(options, key=lambda q: (hw[q], -q))
                     start_squad = (start_squad - {out_p}) | {in_p}
                     money = budget - buy_costs[in_p]
                     clubs[player_dict[out_p]["team"]] -= 1
@@ -962,14 +922,17 @@ class MultiPeriodOptimizer:
         solve_status = prob.solve(solver)
         solve_time = time.perf_counter() - t_start
 
-        real_gap = 0.0
+        # Anything short of a proven optimum (an unreadable gap included) is reported as a lower bound
+        real_gap = 1.0
+        proven = False
         if hasattr(prob, "solverModel") and prob.solverModel is not None:
             try:
                 highs_m = prob.solverModel
                 model_status_str = highs_m.modelStatusToString(highs_m.getModelStatus())
-                gap_val = highs_m.getInfoValue("mip_gap")[1]
-                real_gap = float(gap_val) if gap_val is not None and not np.isnan(gap_val) else 0.0
-                if model_status_str.lower() == "optimal":
+                gap_val = float(highs_m.getInfoValue("mip_gap")[1])
+                real_gap = gap_val if np.isfinite(gap_val) else 1.0
+                proven = model_status_str.lower() == "optimal"
+                if proven:
                     status_str = f"OPTIMAL (gap={real_gap:.4%})"
                 elif "time limit" in model_status_str.lower():
                     status_str = f"TIME_LIMIT (gap={real_gap:.4%})"
@@ -977,28 +940,27 @@ class MultiPeriodOptimizer:
                     status_str = f"{model_status_str.upper()} (gap={real_gap:.4%})"
             except Exception as ex:
                 logger.debug(f"Failed extracting HiGHS solverModel stats: {ex}")
+                real_gap, proven = 1.0, False
                 status_str = f"{pulp.LpStatus[solve_status].upper()}"
         else:
             is_time_limit = solve_time >= ((time_limit_sec or self.config.time_limit_sec) - 1.5)
             has_feasible = any(x[p, t0].varValue is not None for p in players)
             if is_time_limit:
                 status_str = "TIME_LIMIT" if has_feasible else "TIME_LIMIT (no solution)"
-                real_gap = 1.0
             elif solve_status == pulp.constants.LpStatusOptimal and has_feasible:
                 status_str = f"OPTIMAL (gap<={self.config.mip_gap:.4%})"
-                real_gap = 0.0
+                real_gap, proven = 0.0, True
             elif solve_status == pulp.constants.LpStatusNotSolved or not has_feasible:
                 status_str = "TIME_LIMIT / NOT_SOLVED"
-                real_gap = 1.0
             else:
                 status_str = f"{pulp.LpStatus[solve_status].upper()}"
 
         if pulp.LpStatus[solve_status] == "Infeasible":
             raise MilpInfeasible(f"No feasible plan exists under the given rules for GW{t0}")
-        if not any(var.varValue is not None for var in x.values()) or not np.isfinite(real_gap):
+        if not any(var.varValue is not None for var in x.values()):
             raise MilpNoSolution(f"No feasible plan found within {time_limit_sec or self.config.time_limit_sec}s")
 
-        is_lower_bound = (real_gap > 1e-3) or ("TIME_LIMIT" in status_str) or ("NOT_SOLVED" in status_str)
+        is_lower_bound = not proven or real_gap > self.config.mip_gap * 1.01
 
         # Extract Trajectory
         trajectory: list[GameweekAction] = []
@@ -1115,27 +1077,6 @@ class MultiPeriodOptimizer:
 
         obj_val = float(pulp.value(prob.objective) or 0.0)
 
-        # Objective decomposition calculation (from the extracted trajectory, so FH weeks are included)
-        disc_lineup_xp = sum(gamma**i * a.lineup_xp for i, a in enumerate(trajectory))
-        disc_captain_xp = sum(gamma**i * a.captain_xp for i, a in enumerate(trajectory))
-        disc_bench_xp = sum(gamma**i * a.bench_xp for i, a in enumerate(trajectory))
-        disc_hits_cost = sum(gamma**i * a.hit_cost for i, a in enumerate(trajectory))
-
-        term_ft_val = (gamma**H) * sum(w * float(var.varValue or 0.0) for w, var in zip(v_weights, v, strict=True))
-        micro_ft_val = 1e-4 * sum(float(ft_var[t].varValue or 0.0) for t in horizon_gws + [horizon_gws[-1] + 1])
-        term_bank_val = self.config.lambda_bank * (float(bank_var[horizon_gws[-1]].varValue or 0.0) / 10.0)
-
-        decomp = {
-            "discounted_lineup_xp": round(disc_lineup_xp, 3),
-            "discounted_captain_xp": round(disc_captain_xp, 3),
-            "discounted_bench_xp": round(disc_bench_xp, 3),
-            "discounted_hits_cost": round(disc_hits_cost, 3),
-            "terminal_ft_value": round(term_ft_val, 3),
-            "terminal_bank_value": round(term_bank_val, 3),
-            "ft_banking_incentive": round(micro_ft_val, 4),
-            "total_objective": round(obj_val, 3),
-        }
-
         return MultiPeriodPlan(
             plan_type=p_type,
             target_gw=t0,
@@ -1146,15 +1087,10 @@ class MultiPeriodOptimizer:
             horizon_net_xp=round(horizon_net_xp, 2),
             horizon_hits=horizon_hits,
             horizon_gain_vs_roll=0.0,
-            immediate_gain=0.0,
-            hit_verdict="NO_HIT" if rec_action.hits == 0 else "JUSTIFIED",
-            hit_delta=0.0,
-            hit_prob_gain=1.0 if rec_action.hits == 0 else 0.75,
             solve_time_sec=round(solve_time, 2),
             solver_status=status_str,
             solver_gap=real_gap,
             is_lower_bound=is_lower_bound,
-            objective_decomposition=decomp,
             integer_solution={
                 **{("x", p, t): int(round(x[p, t].varValue or 0.0)) for p in players for t in horizon_gws},
                 **{(n, t): int(round(cv[t].varValue or 0.0)) for n, cv in chip_cols.items() for t in horizon_gws},
@@ -1164,12 +1100,13 @@ class MultiPeriodOptimizer:
     def _polish(
         self, run: Any, extra: dict[str, Any], plan: MultiPeriodPlan, name: str, bound: float | None
     ) -> MultiPeriodPlan:
-        """One fix-and-optimise sweep over overlapping windows of weeks, starting from `plan`.
+        """One fix-and-optimise sweep over overlapping windows of weeks, starting from `plan`. It only does work
+        when a solve hit the safety cap and left a gap; a proven plan is returned as it is.
 
         `bound` is the full solve's dual bound for this task; the reported gap stays relative to it, so a
         polished plan is never called proven unless that bound is met (None = no bound known)."""
         proven = bound if bound is not None else plan.total_objective * (1.0 + plan.solver_gap)
-        if plan.total_objective * (1.0 + self.config.mip_gap) >= proven:
+        if plan.total_objective * (1.0 + self.config.mip_gap * 1.01) >= proven:
             return plan  # already the proven best for this task: no window can improve it
         width = self.config.polish_window
         best = plan
@@ -1188,7 +1125,7 @@ class MultiPeriodOptimizer:
         if best is not plan or bound is None:
             gap = max(0.0, bound / best.total_objective - 1.0) if bound is not None else 1.0
             best.solver_gap = gap
-            best.is_lower_bound = gap > 1e-3
+            best.is_lower_bound = gap > self.config.mip_gap * 1.01
             best.solver_status = f"LOCAL_SEARCH (gap<={gap:.4%} vs full-solve bound)"
             best.solve_time_sec = round(plan.solve_time_sec + best.solve_time_sec, 2)
         return best
@@ -1208,8 +1145,6 @@ class MultiPeriodOptimizer:
         maps: dict[int, dict[int, float]],
     ) -> dict[str, Any]:
         """Converts a solved MultiPeriodPlan to the plan dict used by the API, CLI, briefing and chat."""
-        from fpl_oracle.optimise.lineup import lineup_optimizer
-
         act = plan.recommended_action
         h_gross = round(sum(a.lineup_xp + a.captain_xp + a.bench_xp for a in plan.trajectory), 2)
         h_net = round(h_gross - plan.horizon_hits * HIT_COST_POINTS, 2)
@@ -1291,21 +1226,22 @@ class MultiPeriodOptimizer:
         out_names = ", ".join(t.get("web_name", str(t.get("element", ""))) for t in transfers_out)
         from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
 
-        tail = f"(+{imm_gain:.2f} xP, Horizon: {gain_vs_roll:+.2f} xP)"
         if is_fh:
             rec_summary = (
                 f"Play your Free Hit in GW{act.gameweek}: buy {in_names}, sell {out_names} for this week only. "
-                f"Your current squad returns next gameweek {tail}"
+                f"Your current squad returns next gameweek."
             )
         elif act.active_chip:
             moves = f" with {act.transfers_count} transfer(s): {out_names} -> {in_names}" if act.transfers_count else ""
-            rec_summary = f"Play your {CHIP_DISPLAY_NAMES.get(act.active_chip, act.active_chip)} in GW{act.gameweek}{moves} {tail}"
+            rec_summary = (
+                f"Play your {CHIP_DISPLAY_NAMES.get(act.active_chip, act.active_chip)} in GW{act.gameweek}{moves}."
+            )
         elif act.transfers_count == 0:
             rec_summary = f"Roll transfer. Bank {act.free_transfers_next} free transfers for next gameweek."
         elif act.transfers_count == 1:
-            rec_summary = f"Transfer out {out_names} -> {in_names} {tail}"
+            rec_summary = f"Transfer out {out_names} -> {in_names}."
         else:
-            rec_summary = f"Execute {act.transfers_count} transfers: {out_names} -> {in_names} {tail}"
+            rec_summary = f"Execute {act.transfers_count} transfers: {out_names} -> {in_names}."
 
         # Owner's hit rule: raw returns of the transferred players, not captain/lineup gain
         rows_by_gw = {
@@ -1366,12 +1302,6 @@ class MultiPeriodOptimizer:
             "remaining_bank": round(float(act.bank_end) / 10.0, 2),
             "expected_gain": imm_gain,
             "pure_xp_gain": imm_gain,
-            "price_movement_gain": 0.0,
-            "robustness_score": None,
-            "is_no_regret": False,
-            "p_beat_roll": None,
-            "sigma_delta": None,
-            "mc_delta_mean": None,
             "horizon_gain_vs_roll": gain_vs_roll,
             "horizon_gross_xp": h_gross,
             "horizon_net_xp": h_net,
@@ -1390,11 +1320,6 @@ class MultiPeriodOptimizer:
             "bench_ids": bench_list,
             "fielded_squad": sorted(fielded),
             "total_objective": plan.total_objective,
-            "objective_gain_vs_roll": round(plan.total_objective - roll_plan.total_objective, 2),
-            "solver_status": plan.solver_status,
-            "solver_gap": plan.solver_gap,
-            "is_lower_bound": plan.is_lower_bound,
-            "solve_time_sec": plan.solve_time_sec,
             "trajectory": trajectory,
         }
 
@@ -1434,19 +1359,18 @@ class MultiPeriodOptimizer:
         - Hold plan: best week-1 plan without a chip (chips stay available later)
         - Optimal plan (unconstrained MILP: any transfers, hits and chips)
         - Chip plans: each available chip played now, everything else optimised
-        - Distinct week-1 alternatives via no-good cuts
         - Hit policy: hit cooldown, owner's raw-gain rule and simulated hit verdict (WI-2.5)
         The independent solves run in parallel. The recommendation is the best-objective plan that
-        passes the hit gates; solver status and gaps are returned so a time-limited incumbent is
-        never presented as proven optimal.
+        passes the hit gates; solver status and gaps are returned so a solve that hits the safety cap
+        is never presented as proven optimal.
         """
-        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         from fpl_oracle.chips.planner import CHIP_DISPLAY_NAMES
         from fpl_oracle.rules.transfers import validate_chip_legality
 
         limit = float(time_limit_sec if time_limit_sec is not None else self.config.time_limit_sec)
-        workers = os.cpu_count() or 4
+        workers = min(8, os.cpu_count() or 4)  # a fixed cap, so contention is alike on any machine
 
         # --- chip availability: never plan a chip that is not available in the set it would be played in
         all_chips = {"wildcard", "freehit", "bboost", "3xc"}
@@ -1504,12 +1428,16 @@ class MultiPeriodOptimizer:
                 futures = {name: pool.submit(job) for name, job in jobs.items()}
                 return {name: fut.result() for name, fut in futures.items()}
 
-        def run_batch(batch: dict[str, dict[str, Any]], lim: float) -> dict[str, MultiPeriodPlan | Exception]:
-            """Independent solves in parallel (HiGHS releases the GIL)."""
+        def run_batch(
+            batch: dict[str, dict[str, Any]], lim: float, label: str
+        ) -> dict[str, MultiPeriodPlan | Exception]:
+            """Independent solves in parallel (HiGHS releases the GIL); results keep submission order."""
             if not batch:
                 return {}
             with ThreadPoolExecutor(max_workers=min(len(batch), workers)) as pool:
                 futures = {name: pool.submit(run, name, extra, lim) for name, extra in batch.items()}
+                for done, _ in enumerate(as_completed(futures.values()), start=1):
+                    report_search_progress(f"{label}: {done} of {len(futures)} searches finished")
                 return {name: fut.result() for name, fut in futures.items()}
 
         # --- wave 1
@@ -1527,7 +1455,7 @@ class MultiPeriodOptimizer:
             tasks["hold"] = {"no_chip_w1": True}
             for chip in chips_now:
                 tasks[f"chip:{chip}"] = {"forced_w1_chip": chip}
-        solved = run_batch(tasks, limit)
+        solved = run_batch(tasks, limit, f"Comparing transfers and chips from Gameweek {target_gw}")
         if isinstance(solved["roll"], Exception):
             raise solved["roll"]
         plans = {n: p for n, p in solved.items() if isinstance(p, MultiPeriodPlan)}
@@ -1559,7 +1487,7 @@ class MultiPeriodOptimizer:
 
         polished = run_parallel({n: (lambda n=n: polish_task(n)) for n in tasks})
         plans.update({n: p for n, p in polished.items() if isinstance(p, MultiPeriodPlan)})
-        best_name = max(plans, key=lambda n: plans[n].total_objective)
+        best_name = max(plans, key=lambda n: (round(plans[n].total_objective, 2), n == "opt", n))
         if best_name != "opt":
             # The unrestricted plan starts from the best plan found, so the superset can never lose to its subsets.
             opt_bound = (
@@ -1570,36 +1498,6 @@ class MultiPeriodOptimizer:
             final = self._polish(run, dict(forced_kw), plans[best_name], "opt", opt_bound)
             if final.total_objective > (plans["opt"].total_objective if "opt" in plans else -math.inf):
                 plans["opt"] = final
-        # --- chip now vs the same chip later: the real alternative to playing it now. The best plan is shifted
-        # to play its week-1 chip 1, 3 and 6 weeks later (squad kept until then, clashing chips dropped) and each
-        # seed is polished as a no-chip-this-week plan, so "keep the chip" is measured against its best timing.
-        best = max(plans.values(), key=lambda p: p.total_objective)
-        chip_w1 = (best.trajectory[0].active_chip or "").lower()
-        gws_h = best.horizon_gws
-        if chip_w1 and not forced and "hold" in tasks:
-            owned_ids = set(current_squad_df["element"].astype(int))
-            spacing = self.config.min_gameweeks_between_chips
-            hold_own = plans.get("hold")
-            bound = hold_own.total_objective * (1.0 + hold_own.solver_gap) if hold_own is not None else None
-
-            def delayed(k: int) -> MultiPeriodPlan | None:
-                t_k = gws_h[k]
-                seed = dict(best.integer_solution)
-                for key in seed:
-                    if key[0] == "x" and key[2] < t_k:
-                        seed[key] = int(key[1] in owned_ids)
-                    elif key[0] != "x" and key[1] < t_k + spacing:
-                        seed[key] = 0
-                seed[(chip_w1, t_k)] = 1
-                name = f"hold_delay{k}"
-                plan = run(name, {"no_chip_w1": True, "warm_start": seed}, limit)
-                return self._polish(run, tasks[name], plan, name, bound) if isinstance(plan, MultiPeriodPlan) else None
-
-            delays = [k for k in (1, 3, 6) if k < len(gws_h)]
-            for k in delays:
-                tasks[f"hold_delay{k}"] = {"no_chip_w1": True}
-            found = run_parallel({f"hold_delay{k}": (lambda k=k: delayed(k)) for k in delays})
-            plans.update({n: p for n, p in found.items() if isinstance(p, MultiPeriodPlan)})
 
         roll_plan = plans["roll"]
         opt_plan = plans.get("opt") or max(plans.values(), key=lambda p: p.total_objective)
@@ -1616,6 +1514,24 @@ class MultiPeriodOptimizer:
                 frozenset(t["element"] for t in cand["transfers_out"]),
             )
 
+        def plan_key(cand: dict[str, Any]) -> tuple[Any, ...]:
+            """Canonical order of plans (the larger is better): value to the cent, then fewer hits, fewer transfers,
+            lower player ids, then name, so a tie never depends on solve order."""
+            ids_in = tuple(-t["element"] for t in sorted(cand["transfers_in"], key=lambda t: t["element"]))
+            ids_out = tuple(-t["element"] for t in sorted(cand["transfers_out"], key=lambda t: t["element"]))
+            return (
+                round(cand["total_objective"], 2),
+                -cand["hits"],
+                -cand["transfers_count"],
+                ids_in,
+                ids_out,
+                cand.get("source", ""),
+            )
+
+        def latest(cand: dict[str, Any]) -> dict[str, Any]:
+            """The current copy of a move (a better-solved copy of the same move replaces an older one)."""
+            return unique[move_key(cand)]
+
         def add_plans(new_plans: dict[str, MultiPeriodPlan]) -> None:
             for name, plan in new_plans.items():
                 cand = self._plan_to_dict(
@@ -1626,7 +1542,10 @@ class MultiPeriodOptimizer:
                 # Dedupe by (chip, in, out): a Free Hit / Triple Captain / Bench Boost with no transfers is
                 # not the same plan as Roll. The better-solved copy of an identical move is kept.
                 key = move_key(cand)
-                if key not in unique or cand["total_objective"] > unique[key]["total_objective"]:
+                old = unique.get(key)
+                if old is None or plan_key(cand) > plan_key(old):
+                    if old is not None:  # the verdicts already reached on this move stay with it
+                        cand.update({k: old[k] for k in ("decision_check", "rejected_alternative") if k in old})
                     unique[key] = cand
 
         report_search_progress("Checking hits and the chip options")
@@ -1655,53 +1574,63 @@ class MultiPeriodOptimizer:
             wa, wb = exposure(a), exposure(b)
             sigma = sigma_est * math.sqrt(sum((wa.get(p, 0.0) - wb.get(p, 0.0)) ** 2 for p in set(wa) | set(wb)))
             delta = a["total_objective"] - b["total_objective"]
-            # Plan values are time-limited search results, not exact: the margin also covers search noise
+            # A fixed one-point status-quo margin on top (owner's choice)
             needed = max(stability_threshold, z * sigma) + SEARCH_TOLERANCE
             return {
                 "gain": round(delta, 2),
                 "uncertainty": round(sigma, 2),
                 "needed": round(needed, 2),
-                "passed": delta >= needed,
+                "passed": round(delta, 2) >= round(needed, 2),
                 "confidence": self.config.decision_confidence,
             }
 
-        def hit_check(cand: dict[str, Any]) -> tuple[bool, str]:
-            """(allowed, verdict text). A hit needs the owner's raw-gain rule AND a confident gain over the best
-            plan without a hit (the -4 per hit is already inside the objective)."""
+        hit_versus = "best plan without a hit"
+
+        def hit_check(cand: dict[str, Any]) -> tuple[bool, str, dict[str, Any] | None]:
+            """(allowed, verdict text, check). A hit needs the owner's raw-gain rule AND a confident gain over the
+            best plan without a hit (the -4 per hit is already inside the objective)."""
             if cand["hits"] == 0:
-                return True, "No hit recommended"
+                return True, "No hit recommended", None
             if enforce_hit_gain and cand["expected_player_gain"] + 1e-9 < cand["hit_cost"]:
-                return False, (
+                return (
+                    False,
                     f"AVOID: Hit of -{cand['hit_cost']} pts is not covered by the transferred players' own "
-                    f"expected returns ({cand['expected_player_gain']:+.2f} xP)."
+                    f"expected returns ({cand['expected_player_gain']:+.2f} xP).",
+                    None,
                 )
             no_hit = [c for c in unique.values() if c["hits"] == 0 and c["chip"] == cand["chip"]]
-            base = max(no_hit, key=lambda c: c["total_objective"]) if no_hit else cand_roll
-            check = confident(cand, base)
-            cand["decision_check"] = dict(check, versus="best plan without a hit")
+            base = max(no_hit, key=plan_key) if no_hit else cand_roll
+            check = dict(confident(cand, base), versus=hit_versus)
             if check["passed"]:
-                return True, (
+                return (
+                    True,
                     f"JUSTIFIED: the -{cand['hit_cost']} hit gains {check['gain']:+.2f} xP over the best plan "
-                    f"without it, above its {check['uncertainty']:.2f} xP uncertainty."
+                    f"without it, above its {check['uncertainty']:.2f} xP uncertainty.",
+                    check,
                 )
-            return False, (
+            return (
+                False,
                 f"MARGINAL: the -{cand['hit_cost']} hit gains {check['gain']:+.2f} xP, within its "
-                f"{check['uncertainty']:.2f} xP uncertainty (needs {check['needed']:.2f}). Free transfers only."
+                f"{check['uncertainty']:.2f} xP uncertainty (needs {check['needed']:.2f}). Free transfers only.",
+                check,
             )
 
-        def gate_new() -> None:
+        def gate_all() -> None:
+            """Re-run every hit gate: a stronger no-hit plan arriving later can turn an earlier verdict stale."""
             for cand in unique.values():
-                if "hit_allowed" not in cand:
-                    cand["hit_allowed"], cand["hit_verdict"] = hit_check(cand)
+                cand["hit_allowed"], cand["hit_verdict"], check = hit_check(cand)
+                if check is not None and cand.get("decision_check", check)["versus"] == hit_versus:
+                    cand["decision_check"] = check
 
         def standings() -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any] | None]:
             """(ranked by objective, best plan passing the hit gates, best eligible plan without a chip)."""
-            ranked = sorted(unique.values(), key=lambda c: c["total_objective"], reverse=True)
-            eligible = [c for c in ranked if c["hit_allowed"]]
+            ranked = sorted(unique.values(), key=plan_key, reverse=True)
+            # without any eligible plan, the one with the fewest hits is the least bad
+            eligible = [c for c in ranked if c["hit_allowed"]] or [max(ranked, key=lambda c: (-c["hits"], plan_key(c)))]
             hold = next((c for c in eligible if c["chip"] is None), None) if not forced else None
             return ranked, eligible[0], hold
 
-        gate_new()
+        gate_all()
 
         # --- wave 2: hit-free re-solves when the best plan needs a hit that the hit rule rejects
         ranked, top_cand, hold_cand = standings()
@@ -1733,7 +1662,7 @@ class MultiPeriodOptimizer:
             sold = [int(x["element"]) for x in cand["transfers_out"]]
             return sorted(
                 (e for e in sold if e not in set(locked_out_ids or ()) and maps[target_gw].get(e, 0.0) >= weakest),
-                key=lambda e: -float(sell_price_of.get(e, 0.0)),
+                key=lambda e: (-float(sell_price_of.get(e, 0.0)), -maps[target_gw].get(e, 0.0), e),
             )[:KEEP_CHECKS]
 
         same_chip = chip_of(top_cand)
@@ -1746,7 +1675,7 @@ class MultiPeriodOptimizer:
                     extra_tasks[f"cover:{p}"] = dict(same_chip, locked_in_ids=sorted(set(locked_in_ids or ()) | {p}))
 
         if extra_tasks:
-            extra = run_batch(extra_tasks, limit)
+            extra = run_batch(extra_tasks, limit, "Checking hit-free plans and league cover")
             new_plans = {n: p for n, p in extra.items() if isinstance(p, MultiPeriodPlan)}
             # Covers are compared with fully polished plans, so they get the same polish
             new_plans.update(
@@ -1760,25 +1689,13 @@ class MultiPeriodOptimizer:
             )
             plans.update(new_plans)
             add_plans(new_plans)
-            gate_new()
+            cand_roll = latest(cand_roll)
+            gate_all()
             ranked, top_cand, hold_cand = standings()
 
         rec_plan = top_cand
         stability_note = None
 
-        first_look = confident(rec_plan, hold_cand) if rec_plan["chip"] and hold_cand is not None else None
-        if not forced and first_look is not None and abs(first_look["gain"] - first_look["needed"]) <= 3.0:
-            # Borderline: the keep-the-chip baseline gets one more polish so it is searched as hard as the chip
-            # plan (a clear verdict cannot flip on a few points of search, so it is not worth the minute)
-            assert hold_cand is not None
-            hold_name = hold_cand["source"]
-            repolished = self._polish(run, {"no_chip_w1": True}, plans[hold_name], f"{hold_name}:again", None)
-            if repolished.total_objective > plans[hold_name].total_objective:
-                plans[f"{hold_name}:again"] = repolished
-                add_plans({f"{hold_name}:again": repolished})
-                gate_new()
-                ranked, top_cand, hold_cand = standings()
-                rec_plan = top_cand
         if not forced and rec_plan["chip"] and hold_cand is not None:
             # Playing a chip now is judged against keeping it (which includes the same chip next week)
             check = confident(rec_plan, hold_cand)
@@ -1817,16 +1734,19 @@ class MultiPeriodOptimizer:
             for e in keep_checks
         }
         if keep_tasks:
-            report_search_progress("Checking whether to keep the players it would sell")
             solved_keeps = {
-                n: q for n, q in run_batch(keep_tasks, limit).items() if isinstance(q, MultiPeriodPlan)
+                n: q
+                for n, q in run_batch(keep_tasks, limit, "Checking whether to keep the players it would sell").items()
+                if isinstance(q, MultiPeriodPlan)
             }
             solved_keeps = run_parallel(
                 {n: (lambda n=n: self._polish(run, keep_tasks[n], solved_keeps[n], n, None)) for n in solved_keeps}
             )
             plans.update(solved_keeps)
             add_plans(solved_keeps)
-            gate_new()
+            gate_all()
+            cand_roll, base_plan, rec_plan = latest(cand_roll), latest(base_plan), latest(rec_plan)
+            hold_cand = latest(hold_cand) if hold_cand is not None else None
 
         def plan_keeping(e: int) -> dict[str, Any] | None:
             """The gated, de-duplicated plan that keeps player e (an identical move may be held by another name)."""
@@ -1840,7 +1760,7 @@ class MultiPeriodOptimizer:
         sold_now = {int(x["element"]) for x in base_plan["transfers_out"]}
         candidates = sorted(
             {e for e in keep_checks} | {int(n.split(":")[1]) for n in by_name if n.startswith("cover:")} & sold_now,
-            key=lambda e: -float(sell_price_of.get(e, 0.0)),
+            key=lambda e: (-float(sell_price_of.get(e, 0.0)), e),
         )
         kept_ids: set[int] = set()
         for e in candidates:
@@ -1859,8 +1779,10 @@ class MultiPeriodOptimizer:
                     keep_solve = self._polish(run, keep_extra, keep_solve, name, None)
                     plans[name] = keep_solve
                     add_plans({name: keep_solve})
-                    gate_new()
-                    plan_now = unique[move_key(by_name[name])]
+                    gate_all()
+                    cand_roll, base_plan = latest(cand_roll), latest(base_plan)
+                    hold_cand = latest(hold_cand) if hold_cand is not None else None
+                    plan_now = latest(by_name[name])
             # A keep may not undo the decision the base plan passed: it must still beat keeping the chip
             # (for a chip plan) or rolling (for a transfer plan) by the same margin.
             versus = base_plan.get("decision_check", {}).get("versus")
@@ -1882,7 +1804,7 @@ class MultiPeriodOptimizer:
             check = confident(base_plan, rec_plan)
             rec_plan["kept_owned"] = [
                 {"player": names_of.get(e, str(e)), "gain_from_selling": check["gain"], "needed": check["needed"]}
-                for e in sorted(kept_ids, key=lambda e: -float(sell_price_of.get(e, 0.0)))
+                for e in sorted(kept_ids, key=lambda e: (-float(sell_price_of.get(e, 0.0)), e))
             ]
 
         # --- mini-league tie-break (decision_model.md section 4): among plans the forecasts cannot tell
@@ -1893,16 +1815,15 @@ class MultiPeriodOptimizer:
             sd_maps = {}
             for g in horizon_gws:
                 frame = horizon_projections.get(g, player_pool_df)
-                spread = (
-                    frame.get("p90", frame["expected_points"]) - frame.get("p10", frame["expected_points"])
-                ).clip(lower=0)
+                spread = (frame.get("p90", frame["expected_points"]) - frame.get("p10", frame["expected_points"])).clip(
+                    lower=0
+                )
                 sd_maps[g] = dict(zip(frame["element"].astype(int), spread / SD_PER_P10_P90, strict=True))
             held = rival_weeks(list(current_squad_df["element"].astype(int)), horizon_gws, maps, positions)
 
             def plan_weeks(cand: dict[str, Any]) -> list[dict[int, float]]:
                 return [
-                    week_weights(a["starters"], a.get("captain"), a.get("chip"), a["bench"])
-                    for a in cand["trajectory"]
+                    week_weights(a["starters"], a.get("captain"), a.get("chip"), a["bench"]) for a in cand["trajectory"]
                 ]
 
             def raw_points(weeks: list[dict[int, float]]) -> float:
@@ -1953,7 +1874,8 @@ class MultiPeriodOptimizer:
                 )["p_win"]
                 for c in tied
             }
-            choice = max(tied, key=lambda c: (level[id(c)], c["total_objective"]), default=rec_plan)
+            choice = max(tied, key=lambda c: (level[id(c)], plan_key(c)), default=rec_plan)
+            tiebreak_reason = ""
             if (
                 choice is not rec_plan
                 and rec_plan.get("league")
@@ -1973,19 +1895,16 @@ class MultiPeriodOptimizer:
                     name = player_pool_df.loc[player_pool_df["element"] == covered, "web_name"].iloc[0]
                     reason = f"League cover: owns {name}, like {owners} of the {len(rival_context['rivals'])} rivals in reach"
                     choice["league_tiebreak"]["covered_player"] = name
-                choice["recommendation_summary"] = (
-                    f"{reason}. As good on predicted points (within forecast uncertainty) and raises the "
-                    f"chance of finishing first from {rec_plan['league']['p_win']:.0%} to {choice['league']['p_win']:.0%}."
-                )
+                tiebreak_reason = reason
                 if not choice["chip"] and choice is not cand_roll:
                     choice["decision_check"] = dict(confident(choice, cand_roll), versus="rolling")
                 rec_plan = choice
             # Every cover that was checked, for the card and the chat: what owning him does to the title chance
             rec_plan["league_cover_checks"] = [
                 {
-                    "player": player_pool_df.loc[
-                        player_pool_df["element"] == int(name.split(":")[1]), "web_name"
-                    ].iloc[0],
+                    "player": player_pool_df.loc[player_pool_df["element"] == int(name.split(":")[1]), "web_name"].iloc[
+                        0
+                    ],
                     "owners": sum(int(name.split(":")[1]) in r["elements"] for r in rival_context["rivals"]),
                     "points_vs_plan": round(by_name[name]["total_objective"] - rec_plan["total_objective"], 1),
                     "p_win": by_name[name]["league"]["p_win"],
@@ -2030,17 +1949,17 @@ class MultiPeriodOptimizer:
                 if (maps[target_gw].get(top, 0.0) - maps[target_gw].get(int(p), 0.0)) * extra < cap_needed
             ]
             scored = {p: captained(p) for p in close}
-            pick = max(close, key=lambda p: (scored[p][0], p == top))
+            pick = max(close, key=lambda p: (scored[p][0], p == top, maps[target_gw].get(p, 0.0), -p))
             owners = sum(top in r["elements"] for r in rival_context["rivals"])
             rec_plan["captain_check"] = {"owners": owners, "rivals": len(rival_context["rivals"]), "switched": None}
-            if pick != top and scored[pick][0] > scored[top][0] + 0.005 and scored[pick][1]["p_win"] >= (
-                scored[top][1]["p_win"]
+            if (
+                pick != top
+                and scored[pick][0] > scored[top][0] + 0.005
+                and scored[pick][1]["p_win"] >= (scored[top][1]["p_win"])
             ):
                 rows = lineup["starters"].set_index("element")
                 old_cap = dict(lineup["captain"])
-                lineup["vice_captain"] = {
-                    k: old_cap[k] for k in ("element", "web_name", "team", "expected_points", "p10", "p90")
-                }
+                new_vice = {k: old_cap[k] for k in ("element", "web_name", "team", "expected_points", "p10", "p90")}
                 lineup["captain"] = dict(
                     old_cap,
                     element=pick,
@@ -2050,11 +1969,29 @@ class MultiPeriodOptimizer:
                     p10=round(float(rows.loc[pick].get("p10", 0.0)), 2),
                     p90=round(float(rows.loc[pick].get("p90", 0.0)), 2),
                 )
-                given_up = round((old_cap["expected_points"] - lineup["captain"]["expected_points"]) * extra, 2)
-                lineup["total_gameweek_expected_points"] = round(
-                    lineup["total_gameweek_expected_points"] - given_up, 2
+                vice_play = float(play_probability(rows.loc[[top]]).iloc[0])
+                new_vice["reasoning"] = vice_reasoning(
+                    lineup["captain"]["web_name"], new_vice["expected_points"], vice_play
                 )
+                lineup["vice_captain"] = new_vice
+                lineup["captain"]["prob_outscore_next"] = outscore_probability(lineup["captain"], new_vice)
+                ranking = lineup["captain_rankings"]
+                picked = lineup["starters"].loc[lineup["starters"]["element"] == pick, list(ranking[0])]
+                lineup["captain_rankings"] = (picked.to_dict("records") + [r for r in ranking if r["element"] != pick])[
+                    : len(ranking)
+                ]
+                given_up = round((old_cap["expected_points"] - lineup["captain"]["expected_points"]) * extra, 2)
+                lineup["total_gameweek_expected_points"] = round(lineup["total_gameweek_expected_points"] - given_up, 2)
                 week0.update(captain=pick, vice_captain=top, net_xp=round(week0["net_xp"] - given_up, 2))
+                rec_plan.update(captain=lineup["captain"], vice_captain=new_vice, captain_id=pick, vice_captain_id=top)
+                for key in (
+                    "horizon_net_xp",
+                    "horizon_gross_xp",
+                    "net_expected_points",
+                    "gross_expected_points",
+                    "total_objective",
+                ):
+                    rec_plan[key] = round(rec_plan[key] - given_up, 2)
                 rec_plan["captain_check"].update(
                     owners=sum(pick in r["elements"] for r in rival_context["rivals"]),
                     switched={
@@ -2066,12 +2003,22 @@ class MultiPeriodOptimizer:
                     },
                 )
                 rec_plan["league"] = scored[pick][1]
-        # The gains shown are measured against the roll plan the decision used (the best-searched one),
-        # not the first roll solve, which a short search can leave far behind
-        rec_plan["horizon_gain_vs_roll"] = round(rec_plan["horizon_net_xp"] - cand_roll["horizon_net_xp"], 2)
-        rec_plan["expected_gain"] = rec_plan["pure_xp_gain"] = round(
-            rec_plan["trajectory"][0]["net_xp"] - cand_roll["trajectory"][0]["net_xp"], 2
-        )
+                if "league_tiebreak" in rec_plan:
+                    rec_plan["league_tiebreak"]["p_win_after"] = rec_plan["league"]["p_win"]
+            # Worded last, so the tie-break's before and after chances are the final ones
+            if "league_tiebreak" in rec_plan:
+                tie = rec_plan["league_tiebreak"]
+                rec_plan["recommendation_summary"] = (
+                    f"{tiebreak_reason}. As good on predicted points (within forecast uncertainty) and raises the "
+                    f"chance of finishing first from {tie['p_win_before']:.0%} to {tie['p_win_after']:.0%}."
+                )
+        # The gains shown are measured against the roll plan the decision used (the best-searched one), for
+        # every candidate, so the whole table is on one baseline
+        for cand in unique.values():
+            cand["horizon_gain_vs_roll"] = round(cand["horizon_net_xp"] - cand_roll["horizon_net_xp"], 2)
+            cand["expected_gain"] = cand["pure_xp_gain"] = round(
+                cand["trajectory"][0]["net_xp"] - cand_roll["trajectory"][0]["net_xp"], 2
+            )
         rejected_hit = next((c for c in ranked if c["total_objective"] > top_cand["total_objective"]), None)
         rec_chip = rec_plan["chip"]
 

@@ -4,6 +4,8 @@ Runs FPL Oracle backend server and serves single-page dashboard at http://localh
 Features global structured error handling, rotating file logging, and graceful lifecycle shutdown.
 """
 
+import os
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -49,6 +51,15 @@ async def lifespan(app: FastAPI):
         stop_scheduler()
     except Exception as e:
         logger.error(f"Failed to stop scheduler on shutdown: {e}", exc_info=True)
+
+    from fpl_oracle.server.advice_job import advice_publisher
+
+    if advice_publisher.running:
+        # A solver thread cannot be interrupted and would keep the process alive for up to an hour.
+        logger.info("A calculation is still running; exiting in 5 seconds.")
+        killer = threading.Timer(5, os._exit, [0])
+        killer.daemon = True
+        killer.start()
 
 
 app = FastAPI(

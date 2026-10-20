@@ -48,6 +48,7 @@ async def test_chat_grounding_chip_strategy(configured_advisor):
         user_message="When should I use my Triple Captain or Bench Boost?", session_id=f"gt_chip_{_RUN_ID}"
     )
 
+    print("CHIPANS>>>", ans)
     assert "chip" in ans.lower()
     # Must reference verified 2026/27 constraints (e.g. Set 1 / Set 2 or GW19 or Double Gameweek)
     assert any(

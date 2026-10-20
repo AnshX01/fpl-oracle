@@ -16,7 +16,7 @@ from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.league.strategy import league_strategy_advisor
 from fpl_oracle.optimise.lineup import lineup_optimizer
 from fpl_oracle.optimise.price_change import price_change_predictor
-from fpl_oracle.server.analysis import analysis_service, target_gameweek
+from fpl_oracle.server.analysis import PLANNER_HORIZON, analysis_service, target_gameweek
 from fpl_oracle.server.safe_json import safe_json_serialize
 
 
@@ -53,8 +53,7 @@ class WeeklyBriefingGenerator:
         next_event = next((e for e in boot.events if e.id == target_gw), None)
         deadline_str = next_event.deadline_time if next_event else "Unknown"
 
-        # Predictions for next 5 gameweeks
-        horizon_proj = await analysis_service.projections(target_gw, 5, boot, fixtures)
+        horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
         user_squad_df = state.to_squad_dataframe()
@@ -175,7 +174,7 @@ class WeeklyBriefingGenerator:
 
 | Captain | Vice-captain | Formation | Predicted points |
 |---|---|---|---|
-| {cap["web_name"]} | {vc["web_name"]} | {lineup_res["formation"]} | {lineup_res["total_gameweek_expected_points"]} |
+| {cap["web_name"]} | {vc["web_name"]} | {lineup_res["formation"]} | {lineup_res["total_gameweek_expected_points"]:.1f} |
 
 **Transfers:** {rec_plan.get("transfers_count", 0)} · **Hit cost:** {rec_plan.get("hit_cost", 0)} points
 """
@@ -213,14 +212,10 @@ class WeeklyBriefingGenerator:
             )
         markdown += "\n## Chips\n\n"
         if transfers_res.get("chip_measurement_status") == "measured_through_expiry" and chip_res["chip_plan_table"]:
-            markdown += "| Chip | Plan week | Alternative week | Est. extra points |\n|---|---|---|---|\n"
+            markdown += "| Chip | Plan week |\n|---|---|\n"
             for row in chip_res["chip_plan_table"]:
-                week = f"GW{row['recommended_gw']}" if row["recommended_gw"] is not None else "No clear benefit"
-                gain = f"{row['expected_gain']:+.1f}" if row["status"] == "measured" else "Search inconclusive"
-                equal_week = (
-                    f"GW{row['equal_weight_gameweek']}" if row.get("equal_weight_gameweek") is not None else "Not used"
-                )
-                markdown += f"| {row['chip']} | {week} | {equal_week} | {gain} |\n"
+                week = f"GW{row['recommended_gw']}" if row["recommended_gw"] is not None else "Not used"
+                markdown += f"| {row['chip']} | {week} |\n"
 
         else:
             markdown += (
@@ -229,7 +224,7 @@ class WeeklyBriefingGenerator:
                 else "Chip timing unavailable. Update data and try again.\n"
             )
         if measured:
-            markdown += "\n### Weekly chip comparisons\n\n| Week | Triple Captain extra pts | Bench Boost extra pts |\n|---|---|---|\n"
+            markdown += "\n### Chip simulator, week by week (separate from the plan above)\n\n| Week | Triple Captain extra pts | Bench Boost extra pts |\n|---|---|---|\n"
             for gw in sorted(horizon_proj):
                 gains = {row["chip"]: row["expected_gain"] for row in measured if row["gameweek"] == gw}
                 markdown += f"| GW{gw} | {gains.get('3xc', 'Unavailable')} | {gains.get('bboost', 'Unavailable')} |\n"

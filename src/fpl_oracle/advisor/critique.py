@@ -131,6 +131,8 @@ class PlanCritiqueService:
             horizon_len=horizon_len,
             chips_available=[],
             forced_w1_transfers=0,
+            locked_in_ids=locked_in_ids,
+            locked_out_ids=locked_out_ids,
         )
         roll_xp = roll_plan.total_objective
 
@@ -167,6 +169,8 @@ class PlanCritiqueService:
                 chips_available=[chip],
                 forced_w1_chip=chip,
                 forced_w1_transfers=None if chip in _FREE_TRANSFER_CHIPS else 0,
+                locked_in_ids=locked_in_ids,
+                locked_out_ids=locked_out_ids,
             )
             base_xp = chip_plan.total_objective
 

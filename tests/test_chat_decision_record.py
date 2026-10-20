@@ -58,7 +58,7 @@ def published_result():
         },
         "decisionCard": {
             "gameweek": 8,
-            "deadline": {"label": "GW8 Deadline: 2026-10-23T17:30:00Z"},
+            "deadline": {"label": "Gameweek 8 deadline: 2026-10-23T17:30:00Z"},
             "model_version": "v9.9",
             "transfers": {
                 "action": "SINGLE_TRANSFER",
@@ -74,13 +74,33 @@ def published_result():
                 "net_gain_vs_roll": 3.3,
                 "expected_gain_gw": 4.7,
                 "horizon_pts": 61.0,
+                "horizon_label": "gameweeks 8 to 19",
+                "horizon_gameweeks": [8, 9],
+                "temporary": False,
+                "pairs": [{"out": {"web_name": "Wood"}, "in": {"web_name": "Haaland"}}],
+                "comparison": "The best move (Wood for Haaland) is only about 0.4 points better than saving it." * 5,
             },
-            "chip": {"recommend": False, "chip_name": None, "gain_vs_hold": 0.0},
+            "headline": "Transfer Wood for Haaland",
+            "caution": "Check team news before the deadline.",
+            "team_points": 21.7,
+            "minutes_note": "Starting place not certain: Saka (50% to start).",
+            "bench_note": "Benchy (20% to play) is on your bench, so he costs little this week.",
+            "track_record": "How good our forecasts have been (3 gameweeks): on average we miss a player's points by 2.0.",
+            "your_choices": {"keep": [{"element": 1, "web_name": "Saka"}], "avoid": []},
+            "kept_owned": [{"player": "Palmer", "gain_from_selling": 0.4, "needed": 2.0}],
+            "captain_check": {"owners": 2, "rivals": 5},
+            "league_cover_checks": [{"player": "Isak", "p_win": 0.2, "close": True}],
+            "chip": {
+                "recommend": False,
+                "chip_name": None,
+                "gain_vs_hold": 0.0,
+                "check": {"gain": 1.0, "ins": [{"web_name": "Haaland", "cost": 14.0}], "outs": [{"web_name": "Wood"}]},
+            },
             "ranked_options": [
                 {"rank": 1, "chip": "HOLD", "net_gain_vs_hold": 0.0, "recommended": True},
                 {"rank": 2, "chip": "wildcard", "net_gain_vs_hold": 1.9, "recommended": False},
             ],
-            "two_line_reasoning": "Wood -> Haaland: +4.7 predicted pts this week.",
+            "two_line_reasoning": "Wood -> Haaland: about 4.7 points better this week.",
             "caveats": ["Confirm your team in FPL before the deadline."],
         },
         "contingencyPlans": {
@@ -114,10 +134,24 @@ def test_record_is_faithful_and_compact():
     )
     assert rec["gameweek"] == 8 and rec["snapshot_id"] == "abc123def456789"
     assert rec["transfers"]["in"][0]["name"] == "Haaland"
-    assert rec["transfers"]["gain_vs_roll_over_horizon_xp"] == 3.3
+    t = rec["transfers"]
+    assert t["gain_vs_saving_over_horizon_points"] == 3.3 and t["gain_this_gameweek_points"] == 4.7
+    assert t["horizon"] == "gameweeks 8 to 19" and t["horizon_gameweeks"] == [8, 9]
+    assert t["pairs"] == ["Wood → Haaland"] and t["is_roll"] is False and t["temporary"] is False
+    assert len(t["versus_saving"]) > 240 and "Wood for Haaland" in t["versus_saving"]
+    assert rec["chip"]["check"]["ins"] == ["Haaland"] and rec["chip"]["check"]["outs"] == ["Wood"]
+    assert rec["headline"] == "Transfer Wood for Haaland" and rec["caution"].startswith("Check team news")
+    assert rec["lineup"]["total_points_with_captain"] == 21.7
+    assert rec["lineup"]["minutes_note"].startswith("Starting place") and rec["lineup"]["bench_note"].startswith(
+        "Benchy"
+    )
+    assert rec["track_record"].startswith("How good") and rec["your_choices"]["keep"][0]["web_name"] == "Saka"
+    assert rec["kept_owned"][0]["player"] == "Palmer" and rec["lineup"]["captain_check"]["owners"] == 2
+    assert rec["league"]["cover_checks"][0]["player"] == "Isak"
+    assert "resource_frontier" not in rec["alternatives"] and "no_regret" not in t
     assert rec["team"]["bank_millions"] == 0.1 and rec["team"]["chips_remaining"]["set_1_gw1_19"] == ["wildcard"]
     assert rec["lineup"]["captain"]["web_name"] == "Saka"
-    assert rec["lineup"]["xi"][0]["fixtures"] == ["GW8 CHE(H,fdr3)"]
+    assert rec["lineup"]["xi"][0]["fixtures"] == ["gameweek 8 CHE(H,fdr3)"]
     assert rec["alternatives"]["contingency"]["plan_b"]["delta_vs_plan_a"] == -1.5
     assert rec["chip"]["now_vs_later"][1]["chip"] == "wildcard"
     assert len(json.dumps(rec)) < 20000
@@ -146,7 +180,7 @@ def test_decision_record_reaches_every_turn_prompt(publication, monkeypatch):
     )
     assert asyncio.run(ExpertAgent().answer("why Haaland?")) == "Haaland in, captain Saka."
     system = seen["system"]
-    assert "PUBLISHED DECISION RECORD (GW8" in system
+    assert "PUBLISHED DECISION RECORD (gameweek 8" in system
     assert "Haaland" in system and "Plan B (Injury Pivot)" in system and "Test Manager" in system
     assert "Minimal Sufficient Intervention" in system  # voice contract is loaded
     assert seen["messages"][0] == {"role": "user", "content": "hi"}

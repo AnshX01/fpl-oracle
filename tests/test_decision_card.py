@@ -72,7 +72,18 @@ def test_decision_card_generator_contract(configured_advisor):
         assert "ft_remaining" in t
         assert "hit_cost" in t
         assert "net_gain_vs_roll" in t
-        assert "no_regret_flag" in t
+        assert "no_regret_flag" not in t
+        assert not {"resource_frontier", "rival_scenarios"} & set(card)
+        assert "next_best_window" not in card["chip"]
+        assert card["captain"]["reason"]
+        assert card["captain"]["as_captain_points"] == round(
+            card["captain"]["multiplier"] * card["captain"]["expected_points"], 1
+        )
+        assert card["captain"]["multiplier"] in (2, 3)
+        assert all("gain" not in later for later in card["chip"]["later"])
+        assert card["transfers"]["horizon_label"].startswith("gameweek")
+        assert card["confirmation_recommendation"]["expected_gain"] is not None or card["transfers"]["is_roll"]
+        assert "GW" not in card["headline"] + card["deadline"]["label"] + card["two_line_reasoning"]
         assert "action_summary" in t
 
         # Starting XI
@@ -126,7 +137,7 @@ def test_decision_card_generator_contract(configured_advisor):
 def test_decision_card_api_endpoints():
     mock_card = {
         "gameweek": 6,
-        "deadline": {"label": "GW6 Deadline: Friday 18:30 UTC", "seconds_to_deadline": 7200.0, "is_live": False},
+        "deadline": {"label": "Gameweek 6 deadline: Friday 18:30 UTC", "seconds_to_deadline": 7200.0, "is_live": False},
         "data_freshness": {
             "projections_as_of": "2026-10-06T12:00:00Z",
             "news_as_of": "2026-10-06T12:00:00Z",
@@ -142,8 +153,7 @@ def test_decision_card_api_endpoints():
             "chip_display_name": None,
             "gain_vs_hold": 0.0,
             "reason": "Save chips for Double Gameweek runs.",
-            "next_best_window": 34,
-            "set_1_deadline_warning": "Set 1 chips expire GW19.",
+            "set_1_deadline_warning": "Chips from the first half of the season expire after gameweek 19.",
         },
         "transfers": {
             "is_roll": True,
@@ -159,7 +169,6 @@ def test_decision_card_api_endpoints():
             "hit_cost": 0,
             "hits_count": 0,
             "bank_after": 1.5,
-            "no_regret_flag": True,
         },
         "formation": "3-5-2",
         "captain": {
@@ -289,7 +298,7 @@ def test_decision_card_api_endpoints():
 def test_format_decision_card_markdown():
     mock_card = {
         "gameweek": 6,
-        "deadline": {"label": "GW6 Deadline: Friday 18:30 UTC", "seconds_to_deadline": 7200.0},
+        "deadline": {"label": "Gameweek 6 deadline: Friday 18:30 UTC", "seconds_to_deadline": 7200.0},
         "data_as_of": "2026-10-06T12:00:00Z",
         "model_version": "v2.1.0",
         "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
@@ -299,8 +308,7 @@ def test_format_decision_card_markdown():
             "chip_display_name": None,
             "gain_vs_hold": 0.0,
             "reason": "Save chips for Double Gameweek runs.",
-            "next_best_window": 34,
-            "set_1_deadline_warning": "Set 1 chips expire GW19.",
+            "set_1_deadline_warning": "Chips from the first half of the season expire after gameweek 19.",
         },
         "transfers": {
             "is_roll": True,
@@ -311,7 +319,6 @@ def test_format_decision_card_markdown():
             "hit_cost": 0,
             "hits_count": 0,
             "bank_after": 1.5,
-            "no_regret_flag": True,
         },
         "formation": "3-5-2",
         "captain": {"web_name": "Haaland", "team_short": "MCI", "expected_points": 7.4, "p10": 4.0, "p90": 11.2},
@@ -362,8 +369,11 @@ def test_format_decision_card_markdown():
     assert "# FPL Oracle - Gameweek 6" in md
     assert "Haaland" in md
     assert "Salah" in md
-    assert "Set 1 chips expire GW19" in md
+    assert "Chips from the first half of the season expire after gameweek 19" in md
     assert "Legends League" in md
+    assert "Vice-captain: Salah" in md and "Points hit: None" in md and "pts" not in md
+    mock_card["transfers"]["hit_cost"] = 4
+    assert "Points hit: 4 points" in format_decision_card_markdown(mock_card)
 
 
 @pytest.mark.slow
@@ -480,7 +490,13 @@ def test_card_says_why_for_bench_doubts_and_captain():
     df = pd.DataFrame({"element": [1, 2], "p_play": [0.25, 0.9]})
     bench = [{"element": 1, "web_name": "Szoboszlai"}, {"element": 2, "web_name": "White"}]
     assert _bench_note(df, bench) == "Szoboszlai (25% to play) is on your bench, so he costs little this week."
-    switched = {"instead_of": "Haaland", "points_given_up": 0.8, "needed": 0.95, "p_win_before": 0.2, "p_win_after": 0.22}
+    switched = {
+        "instead_of": "Haaland",
+        "points_given_up": 0.8,
+        "needed": 0.95,
+        "p_win_before": 0.2,
+        "p_win_after": 0.22,
+    }
     assert "raises your chance of finishing first from 20% to 22%" in _captain_reason(
         {"captain_check": {"owners": 2, "rivals": 7, "switched": switched}}
     )

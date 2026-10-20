@@ -23,6 +23,16 @@ from fpl_oracle.optimise.price_change import price_change_predictor
 
 logger = logging.getLogger("fpl_oracle.jobs")
 
+
+def advice_running(job_name: str) -> bool:
+    """A full advice run takes up to 90 minutes. Jobs that would invalidate it or take its CPU wait for it."""
+    from fpl_oracle.server.advice_job import advice_publisher
+
+    if advice_publisher.running:
+        logger.info("[Scheduler] %s skipped: a full advice calculation is running", job_name)
+    return advice_publisher.running
+
+
 scheduler = AsyncIOScheduler()
 
 
@@ -101,7 +111,7 @@ class JobExecutionTracker:
             },
             "odds_snapshot": {
                 "name": "Pre-Deadline Match Odds Snapshot",
-                "schedule": "Hourly",
+                "schedule": "Every 6 hours",
                 "status": "IDLE",
                 "last_run": None,
                 "next_run": None,
@@ -237,6 +247,8 @@ async def price_snapshot_job():
 async def retrain_trigger_job():
     job_id = "retrain_trigger"
     job_name = tracker.jobs_state[job_id]["name"]
+    if advice_running(job_name):
+        return
     start_t = datetime.now(UTC)
     run_id = data_store.record_job_start(job_id, job_name)
     tracker.update_job_start(job_id)
@@ -324,6 +336,8 @@ async def history_refresh_job():
     from fpl_oracle.data.historical import historical_manager
 
     job_id = "history_refresh"
+    if advice_running(tracker.jobs_state[job_id]["name"]):
+        return None
     start = datetime.now(UTC)
     run_id = data_store.record_job_start(job_id, tracker.jobs_state[job_id]["name"])
     tracker.update_job_start(job_id)
@@ -415,6 +429,8 @@ async def odds_snapshot_job():
     """Downloads this season's and the upcoming fixtures' bookmaker odds (free football-data.co.uk)."""
     job_id = "odds_snapshot"
     job_name = "Bookmaker Odds Refresh"
+    if advice_running(job_name):
+        return
     start_t = datetime.now(UTC)
 
     run_id = data_store.record_job_start(job_id, job_name)
@@ -531,7 +547,7 @@ def start_scheduler():
         # Job 6: Forward Holdout freeze and scoring every 15 minutes
         scheduler.add_job(holdout_forward_job, "interval", minutes=15, id="holdout_forward", replace_existing=True)
 
-        # Job 7: Pre-deadline match odds snapshotting hourly
+        # Job 7: Bookmaker odds refresh every 6 hours
         scheduler.add_job(
             odds_snapshot_job,
             "interval",
@@ -545,9 +561,6 @@ def start_scheduler():
             scheduler.start()
             logger.info("[Scheduler] All 8 automated background jobs registered and scheduler started.")
         except RuntimeError:
-            logger.warning(
-                "[Scheduler] No running asyncio event loop. Scheduler jobs registered; starting deferred until event loop starts."
-            )
             logger.warning(
                 "[Scheduler] No running asyncio event loop. Scheduler jobs registered; starting deferred until event loop starts."
             )

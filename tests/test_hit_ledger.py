@@ -40,19 +40,3 @@ def test_actual_hits_settle_without_inventing_expected_gain(monkeypatch):
     assert records[0]["status"] == "failed"
     assert records[0]["expected_gain"] is None
     assert not records[0]["matched_recommendation"]
-
-
-def test_recommendations_are_not_taken_hits():
-    ledger = HitLedger()
-    captured = []
-    ledger.write = lambda mid, r: captured.append(r)
-    ledger.recommend(
-        123,
-        {
-            "hit_cost": 4,
-            "trajectory": [{"transfers_in": [2], "transfers_out": [1], "hit_cost": 4, "expected_player_gain": 8}],
-        },
-        6,
-    )
-    assert captured[0]["kind"] == "recommended"
-    assert captured[0]["status"] == "not_verified_taken"

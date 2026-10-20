@@ -80,9 +80,13 @@ DefCon uses logit-Platt calibration (held-out Brier 0.1088; the isotonic version
 budget with selling price = purchase + ⌊(now − purchase)/2⌋, FT banking ≤ 5, one chip per week,
 chips per set (GW1–19, GW20–38), Free Hit reverts, chips at least `min_gameweeks_between_chips` apart.
 
-Solve: portfolio of restricted solves (roll, 1 and 2 transfers, no-chip, each chip now, chip next week)
-+ fix-and-optimise polishing of each; the unrestricted plan starts from the best one found. Reported gap is
-against the full solve's bound, never claimed proven unless met.
+Solve: a portfolio of restricted solves, each run to the proven best: roll, plan_1, plan_2 (one and two
+transfers), opt (unrestricted), hold (no chip now) and chip:X (each chip now); then, when needed, opt_nohit and
+hold_nohit (no first-week hit), cover:p (league cover) and keep:e (keep an owned player). Fix-and-optimise
+polishing runs only if a solve hit the safety cap, and the unrestricted plan then starts from the best plan found.
+The reported gap is against the full solve's bound, never claimed proven unless met. HiGHS runs single-threaded
+with a fixed seed, so a model always ends on the same plan. Ties in plan value (to the cent) are broken
+canonically: fewest hits, fewest transfers, lowest player ids.
 
 ## 3. Decision rule under uncertainty (the step an expert does by instinct)
 
@@ -101,6 +105,8 @@ minutes of evidence, so one value is used. z = Φ⁻¹(0.75) = 0.674 (act on a 3
 Limit: errors shared by team-mates (a mis-rated team) are not modelled, so σ_Δ is a lower bound for plans that
 stack one team.
 Baseline b: for transfers, rolling; for a chip now, the same chip next week (or the best no-chip plan).
+A hit has a second test first: the transferred players' own expected returns must cover the hit cost
+(raw gain ≥ 4 per hit), before the confidence test above is applied.
 This is what stops a 13-player Wildcard built on small samples from beating a two-transfer fix by a
 margin smaller than its own uncertainty.
 
@@ -108,9 +114,8 @@ margin smaller than its own uncertainty.
 points), so the same inputs give the same advice on any machine; time-limited searches stopped wherever the clock
 and machine load left them and flipped close calls between back-to-back runs. The one-hour cap per solve is a
 safety net only (a full 12-week plan proves out in about 6 minutes alone); a run takes about 30 minutes on a 10-core Mac.
-Every margin above still gains 1 point (SEARCH_TOLERANCE). The chip-vs-keep and move-vs-roll
-decisions are made first (the keep-the-chip baseline is polished once more when the verdict is within 3 points);
-keep checks then run on the surviving plan with its own chip, and a keep may not undo the decision that plan
+Every margin above still gains 1 point (SEARCH_TOLERANCE), a fixed status-quo margin. The chip-vs-keep and
+move-vs-roll decisions are made first; keep checks then run on the surviving plan with its own chip, and a keep may not undo the decision that plan
 passed. The league tie-break only chooses among plans with the same chip, scoring title chances net of hits.
 GW8 2026-27: Wildcard now no longer clears its margin; two transfers gain 1.18 against 1.70 needed; the plan
 rolls the transfers and plays the Wildcard in GW9, keeping Haaland, Calafiori and Gross.
@@ -130,7 +135,7 @@ are small: a strongly bought player adds about +0.1 point.
 Wildcard gets no credit for reacting to injuries first. A scenario version (absence spells per player, both arms
 re-planned) was built and withdrawn: re-planning a 3-week window with every absence revealed at once rewards
 the squad with more rotation risk (hindsight, not waiting), its estimate flipped sign across variants, and the
-honest version (reveal a week, re-plan, repeat) needs about three times the solves of a 10-minute run. The
+honest version (reveal a week, re-plan, repeat) needs about three times the solves of a 30-minute run. The
 +0.9 figure once quoted here was measured while Wildcard plans could not be polished (a Free Hit ban bug) and is
 withdrawn. Absences measured for any later attempt: regular starters start one in 8.6% of weeks; 53% last one
 match, 25% four or more.
@@ -164,7 +169,7 @@ rule of thumb, decides whether covering is worth it. The card lists each cover c
 
 Use: expected points decide (sections 2–3). Among plans the forecasts cannot tell apart from the
 recommendation (it does not beat them by its own confidence margin), the tool picks the one with the higher
-P(win) and says so on the card. Inside that tie the point gap is noise, so P(win) is compared with every plan
+P(win), by more than 0.5 percentage points, and says so on the card. Inside that tie the point gap is noise, so P(win) is compared with every plan
 set to the recommendation's predicted points (only who owns whom counts), and a switch may never lower the real
 P(win). Before this, a tied plan won on its extra predicted points alone, which undid the move-vs-roll rule
 (GW8 2026-27 with Calafiori, Groß and Haaland kept: two transfers +1.24 against 1.75 needed, then chosen anyway). Over many remaining weeks var is large and this rarely changes the move;
@@ -176,7 +181,9 @@ keeping Haaland as a cover costs 5.4 points and lowers P(win) to ≈ 19%.
 Captain = argmax xP among starters (vice = best remaining starter, preferring a different kickoff). With league
 data, every starter whose extra armband points are within max(m_min, z · σ · √2 · (multiplier − 1)) of the top
 pick is compared by P(win) at equal predicted points, as in the tie-break; a near-equal captain replaces the top
-pick only if it raises that P(win) by over half a point and does not lower the real P(win). The top pick becomes
+pick only if it raises that P(win) by more than 0.5 percentage points and does not lower the real P(win). The top pick becomes
 vice. Chasing a rival who shares your team, the less-owned captain is the only way to gain on him; leading,
 matching his captain protects the lead.
+The XI, captain and vice are chosen by exact enumeration of the legal formations (ties by player id), so the same
+squad always gives the same lineup.
 Bench order = expected autosub value given each starter's non-play probability and formation legality.

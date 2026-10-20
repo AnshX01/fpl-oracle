@@ -32,27 +32,28 @@ class OpenAIProvider:
         conv = [{"role": "system", "content": system_prompt}] + messages
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            for _ in range(MAX_TOOL_ROUNDS):
+        for _ in range(MAX_TOOL_ROUNDS):
+            # A fresh client per request: one held open across a long tool loop goes stale.
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 resp = await client.post(
                     self.url, json={"model": self.model, "messages": conv, "tools": tools}, headers=headers
                 )
-                if resp.status_code != 200:
-                    # Do not log or raise API response bodies.
-                    raise RuntimeError(f"OpenAI error {resp.status_code}")
-                msg = resp.json()["choices"][0]["message"]
-                calls = msg.get("tool_calls") or []
-                if not calls:
-                    text = (msg.get("content") or "").strip()
-                    if not text:
-                        raise RuntimeError("OpenAI returned no answer text")
-                    return text
-                conv.append(msg)
-                for call in calls:
-                    try:
-                        args = json.loads(call["function"].get("arguments") or "{}")
-                    except json.JSONDecodeError:
-                        args = {}
-                    out = await tool_executor.execute(call["function"]["name"], args)
-                    conv.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(out, default=str)})
+            if resp.status_code != 200:
+                # Do not log or raise API response bodies.
+                raise RuntimeError(f"OpenAI error {resp.status_code}")
+            msg = resp.json()["choices"][0]["message"]
+            calls = msg.get("tool_calls") or []
+            if not calls:
+                text = (msg.get("content") or "").strip()
+                if not text:
+                    raise RuntimeError("OpenAI returned no answer text")
+                return text
+            conv.append(msg)
+            for call in calls:
+                try:
+                    args = json.loads(call["function"].get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                out = await tool_executor.execute(call["function"]["name"], args)
+                conv.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(out, default=str)})
         raise RuntimeError("OpenAI tool-round limit reached")

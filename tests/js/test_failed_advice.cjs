@@ -21,6 +21,7 @@ vm.runInNewContext(fs.readFileSync('web/static/js/app.js', 'utf8'), {
   const view = new Proxy(app, { get: (t, k) => (k in t ? t[k] : config.computed[k] && config.computed[k].call(view)) });
   assert.equal(config.computed.adviceCurrent.call(view), false, 'stale advice cannot be confirmed');
   app.adviceError = '';
+  app.adviceFrom = null;
   assert.equal(config.computed.adviceCurrent.call(view), true, 'the same advice without a failure can be confirmed');
   console.log('Failed update keeps the earlier advice, shows the reason and blocks Done: passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });
