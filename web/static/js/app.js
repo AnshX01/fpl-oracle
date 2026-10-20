@@ -9,7 +9,10 @@ const { createApp } = Vue;
 const POSITIONS = [['GKP', 'Goalkeepers'], ['DEF', 'Defenders'], ['MID', 'Midfielders'], ['FWD', 'Forwards']];
 const STATUS_TEXT = { d: 'Doubtful', i: 'Injured', s: 'Suspended', u: 'Unavailable', n: 'Not available' };
 const MAX_ADVICE_HOURS = 6;
-const SOFT_ADVICE_MINUTES = 60;
+const SOFT_ADVICE_MINUTES = 180;
+const GROUPS = [...POSITIONS, ['OTH', 'Other']];
+const inGroup = (p, pos) => (pos === 'OTH' ? !POSITIONS.some(([known]) => known === p.position) : p.position === pos);
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const app = createApp({
   data() {
@@ -34,6 +37,8 @@ const app = createApp({
       adviceError: '',
       adviceFixable: null,
       adviceFrom: null,
+      advicePublishedAt: null,
+      adviceNotice: null,
       adviceNeedsRefresh: false,
       generation: 0,
       refreshPromise: null,
@@ -69,6 +74,7 @@ const app = createApp({
       chatMessages: [],
       userInput: '',
       isChatLoading: false,
+      chatSlow: false,
       suggestedPrompts: [
         'Why this captain?',
         'Why this chip decision?',
@@ -93,6 +99,10 @@ const app = createApp({
       return c && c.transfers && c.chip && c.captain && c.vice_captain ? c : null;
     },
     squad() { return (this.advice && this.advice.squadData) || {}; },
+    leagueFallback() {
+      const r = this.card.rivals;
+      return r.posture_reason || (r.league_name ? 'League standings are not available yet.' : 'No mini-league is set up.');
+    },
     standing() { return (this.card && this.card.rivals && this.card.rivals.standing) || null; },
 
     // ---- time and freshness ----
@@ -112,12 +122,14 @@ const app = createApp({
     },
     deadlineLine() {
       const s = this.secondsToDeadline;
-      const gw = this.deadlineGw ? `GW${this.deadlineGw} ` : '';
+      const gw = this.deadlineGw ? `Gameweek ${this.deadlineGw} ` : '';
       if (s === null) return gw ? gw.trim() : '';
       return s <= 0 ? `${gw}deadline passed` : `${gw}deadline in ${this.formatDuration(s)}`;
     },
     dataAsOf() { return this.advice && Date.parse(this.advice.data_as_of || '') ? Date.parse(this.advice.data_as_of) : null; },
-    adviceAgeMinutes() { return this.dataAsOf ? Math.max(0, (this.now - this.dataAsOf) / 60000) : 0; },
+    // Age counts from when the advice was published; a run that took an hour is not an hour old.
+    publishedAt() { return Date.parse(this.adviceFrom || this.advicePublishedAt || '') || this.dataAsOf; },
+    adviceAgeMinutes() { return this.publishedAt ? Math.max(0, (this.now - this.publishedAt) / 60000) : 0; },
     basis() { return (this.advice && this.advice.dataBasis) || {}; },
     dataStale() {
       return Boolean(this.card && (this.card.is_stale || this.squad.is_stale || this.basis.warning));
@@ -128,7 +140,7 @@ const app = createApp({
         b.latest_finalized_gameweek > b.form_through_gameweek;
     },
     adviceCurrent() {
-      return Boolean(this.card) && !this.adviceError && !this.deadlinePassed && !this.dataStale && this.adviceAgeMinutes < MAX_ADVICE_HOURS * 60;
+      return Boolean(this.card) && !this.adviceFrom && !this.adviceError && !this.deadlinePassed && !this.dataStale && this.adviceAgeMinutes < MAX_ADVICE_HOURS * 60;
     },
     adviceFromText() {
       return this.adviceFrom ? new Date(this.adviceFrom).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
@@ -154,6 +166,18 @@ const app = createApp({
     },
     elapsedText() {
       return this.adviceStartedAt ? this.formatDuration((this.now - this.adviceStartedAt) / 1000, true) : '';
+    },
+    cardNotes() {
+      const c = this.card, out = [];
+      if (this.adviceBusy && this.adviceFrom) {
+        out.push({ key: 'updating', tone: 'info', icon: 'info', text: `Showing your advice from ${this.adviceFromText}. Updating it now (${this.adviceStage}, ${this.elapsedText}).` });
+      } else if (this.adviceError && !this.adviceBusy) {
+        out.push({ key: 'failed', tone: 'warn', icon: 'triangle-alert', testid: 'update-failed',
+          text: `Latest update failed: ${this.adviceError} You are seeing your advice from ${this.adviceFromText || 'earlier'}. Refresh before you act on it.` });
+      }
+      if (c.backup_planner_notice) out.push({ key: 'backup', tone: 'warn', icon: 'triangle-alert', testid: 'backup-planner', text: `${c.backup_planner_notice} ${c.chip.reason}` });
+      if (this.adviceNotice) out.push({ key: 'notice', tone: 'info', icon: 'info', text: this.adviceNotice });
+      return out;
     },
     banners() {
       const out = [];
@@ -193,14 +217,14 @@ const app = createApp({
     },
     squadGroups() {
       const c = this.card;
-      return POSITIONS.map(([pos, label]) => ({
+      return GROUPS.map(([pos, label]) => ({
         pos, label,
-        players: c.transfers.in.filter(p => p.position === pos).map(p => ({ ...p, price: p.cost })),
-        out: c.transfers.out.filter(p => p.position === pos)
+        players: c.transfers.in.filter(p => inGroup(p, pos)).map(p => ({ ...p, price: p.cost })),
+        out: c.transfers.out.filter(p => inGroup(p, pos))
       })).filter(g => g.players.length || g.out.length);
     },
     xiLines() {
-      return POSITIONS.map(([pos]) => ({ pos, players: this.card.xi.filter(p => p.position === pos) })).filter(l => l.players.length);
+      return GROUPS.map(([pos]) => ({ pos, players: this.card.xi.filter(p => inGroup(p, pos)) })).filter(l => l.players.length);
     },
     benchLines() {
       let sub = 0;
@@ -237,6 +261,8 @@ const app = createApp({
       if (h > 0) return `${h}h ${m}m`;
       return withSeconds ? `${m}m ${s % 60}s` : `${m}m`;
     },
+    pts(value) { return Number(value).toFixed(1); },
+    joinMeta(...parts) { return parts.filter(Boolean).join(' · '); },
     priceText(p) { return p.price != null ? `£${Number(p.price).toFixed(1)}m` : ''; },
     playerName(id) {
       const p = ((this.confirmTeamData && this.confirmTeamData.players) || []).find(x => x.element === Number(id));
@@ -247,7 +273,7 @@ const app = createApp({
       const known = Number.isFinite(chance);
       const flagged = player.status && player.status !== 'a' || (known && chance < 100) || player.news_quote;
       if (!flagged) return { flag: '', tone: 'ok', news: '' };
-      const text = known ? `${chance}% chance` : (STATUS_TEXT[player.status] || 'Check news');
+      const text = known ? `${chance}% to play` : (STATUS_TEXT[player.status] || 'Check news');
       return { flag: text, tone: 'warn', news: player.news || player.news_quote || '' };
     },
     renderMarkdown(text) {
@@ -302,7 +328,7 @@ const app = createApp({
       const generation = ++this.generation;
       let job = null;
       Object.assign(this, { advice: null, adviceError: '', adviceFixable: null, adviceFrom: null, adviceNeedsRefresh: false, panicResult: null, adviceBusy: true,
-        adviceStage: 'Getting started', adviceStartedAt: Date.now() });
+        adviceStage: 'Getting started', adviceStartedAt: Date.now(), advicePublishedAt: null, adviceNotice: null });
       try {
         // Ask FPL for the latest picks, bank and transfers before the advice reads them.
         await fetch('/api/squad/basic?refresh=true').catch(() => null);
@@ -320,8 +346,7 @@ const app = createApp({
             return;
           }
         }
-        job = await (await fetch('/api/advice/start', { method: 'POST' })).json();
-        if (!job.id) throw new Error(job.reason || 'The advice could not start');
+        job = await this.startJob();
         while (job.status === 'calculating') {
           this.adviceStage = job.stage || this.adviceStage;
           // The last advice for this team (until its deadline) stays visible, labelled, while it updates.
@@ -329,11 +354,10 @@ const app = createApp({
             this.advice = job.previous_result;
             this.adviceFrom = job.previous_published_at || null;
           }
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          await sleep(1500);
           if (generation !== this.generation) return;
-          const response = await fetch(`/api/advice/status/${job.id}`);
-          if (!response.ok) throw new Error('The advice could not be read');
-          job = await response.json();
+          // A 404 means a newer run replaced this one: start again and follow that one.
+          job = await this.readStatus(job.id) || await this.startJob();
         }
         if (generation !== this.generation) return;
         if (job.status === 'refresh_required') { this.adviceNeedsRefresh = true; return; }
@@ -341,6 +365,8 @@ const app = createApp({
         if (job.status !== 'ready' || !result || !result.decisionCard || !result.squadData) throw new Error(job.error || 'The advice stopped early');
         this.advice = result;
         this.adviceFrom = null;
+        this.advicePublishedAt = job.published_at || null;
+        this.adviceNotice = job.notice || null;
       } catch (error) {
         if (generation !== this.generation) return;
         // A failed update must not blank the screen while an earlier valid advice exists: keep showing it, labelled.
@@ -348,11 +374,32 @@ const app = createApp({
         this.advice = earlier ? job.previous_result : null;
         this.adviceFrom = earlier ? job.previous_published_at || null : null;
         this.adviceFixable = (job && job.fixable) || null;
-        this.adviceError = (job && job.status === 'failed' && job.error && !job.error.includes('application log'))
-          ? job.error
-          : 'We could not prepare your advice. Press Refresh to try again.';
+        const said = job && ((job.status === 'failed' && job.error) || (job.status === 'unavailable' && job.reason));
+        this.adviceError = (said && !said.includes('application log'))
+          ? said
+          : error.reason || 'We could not prepare your advice. Press Refresh to try again.';
       } finally {
         if (generation === this.generation) this.adviceBusy = false;
+      }
+    },
+    async startJob() {
+      const job = await (await fetch('/api/advice/start', { method: 'POST' })).json();
+      if (!job.id) throw Object.assign(new Error('The advice could not start'), { reason: job.reason });
+      this.adviceStartedAt = Date.parse(job.started_at) || Date.now();
+      return job;
+    },
+    // The job's status; null when it was superseded. Short network failures are retried before giving up.
+    async readStatus(id) {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const response = await fetch(`/api/advice/status/${id}`);
+          if (response.status === 404) return null;
+          if (!response.ok) throw new Error('The advice could not be read');
+          return await response.json();
+        } catch (error) {
+          if (attempt >= 5) throw error;
+          await sleep(5000);
+        }
       }
     },
     choiceOf(player) {
@@ -368,13 +415,13 @@ const app = createApp({
       const ids = kind => this.draftChoices.filter(p => p.kind === kind).map(p => p.element);
       await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keep_ids: ids('keep'), avoid_ids: ids('avoid') }) });
-      this.refreshAll(true);
+      this.refreshAll();
     },
     async useOfficialNumbers() {
       // Drop saved bank / free-transfer overrides so the advice uses FPL's own figures.
       await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bank: null, free_transfers: null }) });
-      this.refreshAll(true);
+      this.refreshAll();
     },
     scheduleDeadlineRefresh(deadlineUtc) {
       if (this.deadlineTimer) clearTimeout(this.deadlineTimer);
@@ -531,6 +578,7 @@ const app = createApp({
       this.chatMessages.push({ role: 'user', content: q });
       this.userInput = '';
       this.isChatLoading = true;
+      const slow = setTimeout(() => { this.chatSlow = true; }, 10000);
       try {
         const res = await fetch('/api/chat', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -544,6 +592,8 @@ const app = createApp({
       } catch (e) {
         this.chatMessages.push({ role: 'assistant', content: 'Could not get an answer. Try again.' });
       } finally {
+        clearTimeout(slow);
+        this.chatSlow = false;
         this.isChatLoading = false;
       }
     },

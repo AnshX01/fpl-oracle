@@ -20,6 +20,9 @@ logger = logging.getLogger("fpl_oracle.server.analysis")
 
 publication_projections = ContextVar("publication_projections", default=None)
 
+# Gameweeks of projections behind every plan. One value for every screen, so they all share one cached solve.
+PLANNER_HORIZON = 8
+
 
 def target_gameweek(current_gw: int | None, next_gw: int | None) -> int:
     """The gameweek being decided. Never guessed: planning the wrong week gives wrong advice."""
@@ -45,7 +48,7 @@ class AnalysisService:
         self._chip_tasks = {}
         self._chip_plans = {}
         self._league_context_cache = {}
-        self._expiry_task = None
+        self._solve_lock = asyncio.Lock()
 
     async def invalidate(self):
         """Wait for existing inference to finish, then drop dependent served caches."""
@@ -306,104 +309,6 @@ class AnalysisService:
         ]
         return await asyncio.to_thread(compare_plan_scenarios, states, context, maps)
 
-    async def expiry_sensitivity(self):
-        if self._expiry_task is None or self._expiry_task.done():
-            self._expiry_task = asyncio.create_task(self._isolated_expiry_sensitivity())
-        return await asyncio.shield(self._expiry_task)
-
-    async def _isolated_expiry_sensitivity(self):
-        from fpl_oracle.api.read_context import read_context
-
-        token = read_context.set({})
-        try:
-            return await self._expiry_sensitivity()
-        finally:
-            read_context.reset(token)
-
-    async def _expiry_sensitivity(self):
-        """On-demand model stress through chip expiry. Never blocks core advice."""
-        from fpl_oracle.api.fpl_client import fpl_client
-        from fpl_oracle.data.store import data_store
-        from fpl_oracle.domain.manager_state import manager_state_service
-        from fpl_oracle.ml.holdout import compute_manifest_sha256
-        from fpl_oracle.optimise.transfers import transfer_optimizer
-        from fpl_oracle.server.advice_job import profile_key
-
-        model_before = model_registry.get_active_version()
-        manifest_before = compute_manifest_sha256()
-        owner_before = profile_key(data_store.get_profile())
-        state = await manager_state_service.get_current_state()
-        start = state.target_gw
-        if start > 19:
-            return dict(status="unavailable", reason="First-set expiry research applies before GW19")
-        boot, stale = await fpl_client.get_bootstrap_static()
-        fixtures, fixture_stale = await fpl_client.get_fixtures()
-        if stale or fixture_stale or state.is_stale:
-            return dict(status="unavailable", reason="Fresh sources required for expiry sensitivity")
-        projections = await self.projections(start, 20 - start, boot, fixtures)
-        kwargs = dict(
-            current_squad_df=state.to_squad_dataframe(),
-            player_pool_df=projections[start],
-            bank=state.bank_tenths,
-            free_transfers=state.free_transfers,
-            horizon_projections=projections,
-            current_gw=state.current_gw,
-            target_gw=start,
-            available_chips=state.chips_remaining_set_1,
-            chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
-            chips_already_used=[c["name"] for c in state.chips_used if c["event"] <= 19],
-            rival_context=await self.league_context(start),
-            previous_chip=next((c["name"] for c in state.chips_used if c["event"] == start - 1), None),
-            num_mc_scenarios=0,
-        )
-        short, extended = await asyncio.to_thread(
-            lambda: (
-                transfer_optimizer.evaluate_joint_transfer_and_chip_plan(**kwargs, horizon_len=min(8, 20 - start)),
-                transfer_optimizer.evaluate_joint_transfer_and_chip_plan(**kwargs, horizon_len=20 - start),
-            )
-        )
-
-        if model_registry.get_active_version() != model_before or compute_manifest_sha256() != manifest_before:
-            raise ValueError("Model changed during expiry research; result not published")
-        if profile_key(data_store.get_profile()) != owner_before:
-            raise ValueError("Profile changed during expiry research; result not published")
-        from fpl_oracle.api.cache import cache_manager
-        from fpl_oracle.api.read_context import read_context
-
-        for key, (value, _, _) in (read_context.get() or {}).items():
-            live = cache_manager.get_with_meta(key)
-            if live is None or live[0] != value:
-                raise ValueError("Sources changed during expiry research; result not published")
-
-        def summarize(plan):
-            return dict(
-                gameweeks=plan["decision_scope"]["horizon_gameweeks"],
-                first_chip=plan["recommended_chip"],
-                discounted_edge=plan["best_candidate"]["net_gain_vs_hold"],
-                trajectory=[
-                    dict(gameweek=r["gameweek"], chip=r.get("chip"), transfers_count=r["transfers_count"])
-                    for r in plan["recommended_plan"]["trajectory"]
-                ],
-                options=[
-                    dict(first_chip=c["chip_code"], discounted_edge=c["net_gain_vs_hold"])
-                    for c in plan["chip_comparison_table"]
-                ],
-                retained_resource_frontier=plan.get("resource_frontier"),
-            )
-
-        return dict(
-            status="model_expiry_sensitivity",
-            method="bounded_beam_stress_test",
-            calibrated=False,
-            promotion_allowed=False,
-            snapshot_id=projections[start].attrs.get("snapshot_id"),
-            short=summarize(short),
-            extended=summarize(extended),
-            first_chip_changes=short["recommended_chip"] != extended["recommended_chip"],
-            assumptions="Current price/minutes/form extrapolation. Unknown postponements, price moves and future news not known. Pruned search, not global optimum.",
-            unresolved="No deadline-grounded out-of-time tail calibration. Rival choices are stress assumptions, not predictions. Agreement between horizons does not prove optimality.",
-        )
-
     async def plan(self, **kwargs: Any) -> dict[str, Any]:
         """
         Authoritative planning entry point.
@@ -515,7 +420,6 @@ class AnalysisService:
                     detail=f"Predictions missing or invalid for GW{gw}. Update data; no plan published.",
                 )
         kwargs.setdefault("evaluate_rival_scenarios", False)
-        kwargs["measure_chip_values"] = True
         # Different surfaces attach different projection columns and numeric
         # dtypes to the same owned squad. Canonicalize before cache-keying so
         # they share one CPU plan instead of several identical concurrent beams.
@@ -565,7 +469,8 @@ class AnalysisService:
             return copy.deepcopy(self._plans[key])
         task = self._plan_tasks.get(key)
         if task is None:
-            task = asyncio.create_task(asyncio.to_thread(execute_authoritative_milp_plan, **kwargs))
+            self._refuse_second_solve()
+            task = asyncio.create_task(self._solve(kwargs))
             self._plan_tasks[key] = task
         try:
             result = await asyncio.shield(task)
@@ -580,6 +485,21 @@ class AnalysisService:
             if task.done():
                 self._plan_tasks.pop(key, None)
 
+    @staticmethod
+    def _refuse_second_solve():
+        """While the advice job runs, no other screen starts its own hour-long solve (the job's own calls are pinned)."""
+        from fpl_oracle.server.advice_job import advice_publisher
+
+        if advice_publisher.running and publication_projections.get() is None:
+            from fastapi import HTTPException
+
+            raise HTTPException(409, "A full calculation is already running; showing the published advice.")
+
+    async def _solve(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        # A solve runs for up to an hour and uses every core: never two at once.
+        async with self._solve_lock:
+            return await asyncio.to_thread(execute_authoritative_milp_plan, **kwargs)
+
     async def joint_plan(self, **kwargs: Any) -> dict[str, Any]:
         """Backward-compatible alias delegating directly to authoritative plan()."""
         return await self.plan(**kwargs)
@@ -587,15 +507,13 @@ class AnalysisService:
 
 # Inputs the beam search honours but the MILP does not model. They are named in the result, never silently dropped.
 MILP_UNMODELLED_INPUTS = ("evaluate_rival_scenarios",)
-# The MILP always measures chip values (it re-solves without each scheduled chip), so this flag is not an input to drop.
-MILP_ALWAYS_ON_INPUTS = ("measure_chip_values",)
 
 
 def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
     """
     Authoritative planning implementation using Multi-Period Mixed-Integer Linear Programming (MILP).
-    Full legal action set (all chips, hits, FT banking) is solved with the best incumbent kept when the
-    solver time limit is reached; solver status and gap are reported in decision_scope.
+    Full legal action set (all chips, hits, FT banking) is solved with the best incumbent kept if the
+    one-hour safety cap is reached; solver status and gap are reported in decision_scope.
     Falls back to the bounded beam search only when the MILP cannot produce a plan, and says so.
     """
     import inspect
@@ -617,7 +535,7 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
 
     params = inspect.signature(multiperiod_optimizer.evaluate_transfer_options).parameters
     accepted = set(milp_args) if any(p.kind is p.VAR_KEYWORD for p in params.values()) else set(params)
-    dropped = sorted(k for k in milp_args if k not in accepted and k not in MILP_ALWAYS_ON_INPUTS)
+    dropped = sorted(k for k in milp_args if k not in accepted)
     ignored_inputs = [
         k
         for k in dropped
@@ -660,12 +578,13 @@ def execute_authoritative_milp_plan(**kwargs: Any) -> dict[str, Any]:
         logger.warning(f"Authoritative MILP optimization failed: {e_milp}. Executing beam search fallback.")
         # The beam search has no Free Hit rule or chip spacing, so the backup plan is transfers only. A chip is kept
         # only when no legal team exists without one: then it is needed, not judged.
-        chipless = {**kwargs, "chips_by_set": None}
+        chipless = {**kwargs, "chips_by_set": None, "measure_chip_values": False}
         chipless["available_chips"] = [kwargs["forced_current_chip"]] if kwargs.get("forced_current_chip") else []
         try:
             fallback_res = beam_opt.evaluate_joint_transfer_and_chip_plan(**chipless)
-        except Exception:
-            fallback_res = beam_opt.evaluate_joint_transfer_and_chip_plan(**kwargs)
+        except Exception as e_chipless:
+            logger.warning("Chipless beam fallback failed: %s. Retrying with the chips available.", e_chipless)
+            fallback_res = beam_opt.evaluate_joint_transfer_and_chip_plan(**{**kwargs, "measure_chip_values": False})
         fallback_res["fallback_used"] = True
         fallback_res["fallback_reason"] = str(e_milp)
         scope = fallback_res.setdefault("decision_scope", {})

@@ -58,7 +58,7 @@ a:hover { text-decoration: underline; }
 .card-sub { font-size: var(--fs-sm); color: var(--text-2); margin-top: var(--s-0); }
 .eyebrow { font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: .13em; text-transform: uppercase; color: var(--text-2); }
 .hero-title { font-size: 30px; line-height: 1.12; overflow-wrap: anywhere; }
-.card.outdated .hero-title, .card.outdated .sec { opacity: .55; }
+.card.outdated .hero-title, .card.outdated .sec, .card.outdated .stats { opacity: .55; }
 .sec { display: grid; gap: var(--s-1); padding-top: var(--s-2); border-top: 1px solid var(--glass-border-soft); }
 .sec-title { font-size: var(--fs-md); }
 
@@ -150,7 +150,7 @@ select.input option { color: #151824; }
 .callout.tone-warn { background: var(--warn-soft); }
 .callout.tone-danger { background: var(--danger-soft); }
 .callout.tone-ok { background: var(--ok-soft); }
-.callout.tone-info { background: var(--info-soft); display: block; }
+.callout.tone-info { background: var(--info-soft); }
 .callout .icon { margin-top: 2px; }
 .callout-title { font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
 .callout-text { font-size: var(--fs-sm); color: var(--text-2); }
@@ -216,6 +216,7 @@ select.input option { color: #151824; }
   .grid.cols-2, .grid.cols-3 { grid-template-columns: minmax(0, 1fr); }
   .card { padding: var(--s-2); }
   .hero-title { font-size: 24px; }
+  .item-row { flex-wrap: wrap; }
   .move { grid-template-columns: minmax(0, 1fr); }
   .move .icon { transform: rotate(90deg); justify-self: center; }
   .btn, .tab { min-height: 44px; }

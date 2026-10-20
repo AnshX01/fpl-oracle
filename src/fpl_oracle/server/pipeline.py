@@ -22,7 +22,7 @@ from fpl_oracle.league.rivals import rival_analyzer
 from fpl_oracle.league.standings import league_standings_manager
 from fpl_oracle.news.analyse import news_analyzer
 from fpl_oracle.optimise.lineup import lineup_optimizer
-from fpl_oracle.server.analysis import analysis_service, target_gameweek
+from fpl_oracle.server.analysis import PLANNER_HORIZON, analysis_service, target_gameweek
 
 logger = logging.getLogger("fpl_oracle.pipeline")
 
@@ -151,7 +151,7 @@ class SyncPipeline:
             # Stage 4: Feature Engineering
             # ------------------------------------------------------------------
             await self._broadcast("features", 45, f"Engineering pre-deadline features for Gameweek {target_gw}...")
-            horizon = 5
+            horizon = PLANNER_HORIZON
 
             # ------------------------------------------------------------------
             # Stage 5: Component ML Inference

@@ -298,9 +298,13 @@ def test_profitable_replacement_hits_and_sale_prices_across_surfaces(configured_
         assert card["transfers"]["hit_cost"] == 4 * (1 - ft)
         assert card["transfers"]["ft_used"] == ft
         assert plan["remaining_bank"] == card["transfers"]["bank_after"]
-        for other in [plans["plan_a"], brief["transfers"]["recommended_plan"], chat["recommended_plan"]]:
+        for other in [plans["plan_a"], brief["transfers"]["recommended_plan"]]:
             assert other["transfers_in"] == plan["transfers_in"]
             assert other["hits"] == plan["hits"]
+        # The chat tool shows a plain summary of the same plan: same moves, same hit, same captain
+        assert [m["transfer_in"] for m in chat["recommended_transfers"]] == [p["web_name"] for p in plan["transfers_in"]]
+        assert chat["hit_cost"] == plan["hit_cost"]
+        assert chat["captain"]["element"] == plan["lineup"]["captain"]["element"]
         assert squad["total_expected_points"] == brief["lineup"]["total_gameweek_expected_points"]
 
     asyncio.run(run())
@@ -370,7 +374,8 @@ def test_constrained_chat_optimizer_agree_without_changing_default(configured_ad
         assert not constrained["recommended_plan"]["transfers_in"]
         if constraint != "exclude_team":
             chat = await tool_executor.execute("optimise_transfers", kwargs)
-            assert chat["recommended_plan"] == constrained["recommended_plan"]
+            assert chat["recommended_transfers"] == [] and chat["plan_type"] == constrained["recommended_plan"]["plan_type"]
+            assert chat["expected_gain"] == constrained["recommended_plan"]["expected_gain"]
         again = await run_optimizer(OptimizeRequest())
         assert again["recommended_plan"] == plain["recommended_plan"]
 
