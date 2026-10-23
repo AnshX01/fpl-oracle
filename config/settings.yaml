@@ -17,3 +17,7 @@ fpl:
 optimizer:
   discount_factor: 0.95  # Multi-period temporal discount factor fitted from 2023-26 seasons (WI-2.1)
   hit_penalty: 4.0  # Official FPL rule: -4 points per additional transfer (verified in tests/test_hit_policy.py)
+  ft_option_value: 1.80  # Free transfer preservation option value (Hall of Fame heuristic: ~1.75-2.0 pts)
+  anti_churn_penalty: 0.50  # Lateral transfer friction penalty (anti-churn)
+  cameo_risk_penalty: 0.75  # 5-minute cameo risk penalty on starting lineup selection
+
