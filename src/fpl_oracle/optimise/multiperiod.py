@@ -854,6 +854,12 @@ class MultiPeriodOptimizer:
         # Free Transfer Option Value across intermediate weeks (Hall of Fame liquidity heuristic)
         if self.config.ft_option_value > 0 and H > 1:
             ft_dividend = (1.0 - gamma) * (self.config.ft_option_value / 4.0)
+            # Ben Crellin rule: If an upcoming major BGW (e.g. GW26, GW29) is within the plan horizon,
+            # scale up FT dividend so the solver enters the blank week holding maximum banked FTs (3-5 FTs).
+            bgw_in_horizon = any(gw in (26, 29) for gw in horizon_gws[1:])
+            if bgw_in_horizon and chip_name != "freehit":
+                ft_dividend *= 1.5
+
             for idx, t in enumerate(horizon_gws[1:], start=1):
                 disc = gamma**idx
                 obj_terms.append(disc * ft_dividend * (ft_var[t] - 1))
