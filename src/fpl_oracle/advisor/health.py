@@ -27,6 +27,15 @@ class PlayerHealthStatus:
 
 
 @dataclass
+class CapitalEfficiencyReport:
+    dead_bench_capital_tenths: int
+    dead_bench_capital_m: float
+    bench_bloat_detected: bool
+    bench_harvest_candidates: list[dict[str, Any]] = field(default_factory=list)
+    recommendation: str = ""
+
+
+@dataclass
 class SquadHealthReport:
     player_diagnoses: dict[int, PlayerHealthStatus]
     functional_starters_count: int
@@ -35,7 +44,9 @@ class SquadHealthReport:
     healthy_core_ids: list[int] = field(default_factory=list)
     watch_ids: list[int] = field(default_factory=list)
     replace_ids: list[int] = field(default_factory=list)
+    starter_ids: list[int] = field(default_factory=list)
     thresholds_used: dict[str, Any] = field(default_factory=dict)
+    capital_efficiency: CapitalEfficiencyReport | None = None
 
 
 class SquadHealthDiagnosis:
@@ -60,6 +71,113 @@ class SquadHealthDiagnosis:
     }
     MIN_FUNCTIONAL_STARTERS_THRESHOLD = 9  # Emergency overhaul allowed only if functional starters < 9
     STRUCTURAL_DEFICIENCY_THRESHOLD = 15.0  # Or total deficiency > 15.0 xP
+    POSITION_MIN_COST_TENTHS = {"GKP": 40, "DEF": 40, "MID": 45, "FWD": 45}
+
+    def diagnose_capital_efficiency(
+        self,
+        squad_df: pd.DataFrame,
+        starter_ids: list[int] | set[int] | None = None,
+    ) -> CapitalEfficiencyReport:
+        """
+        Diagnoses bench bloat: capital trapped in non-essential bench slots (Sub 2/3 and backup GKP)
+        above position minimums (£4.0m DEF/GKP, £4.5m MID/FWD) that could fund starting XI upgrades.
+        """
+        if len(squad_df) < 15:
+            return CapitalEfficiencyReport(0, 0.0, False, [], "Squad incomplete for capital efficiency diagnosis.")
+
+        if starter_ids is None:
+            play_pct = play_probability(squad_df) * 100.0
+            rows = []
+            for n, (_, r) in enumerate(squad_df.iterrows()):
+                rows.append((int(r["element"]), str(r.get("position", "MID")), float(r.get("expected_points", 0.0)) * float(play_pct.iloc[n]) / 100.0))
+            gkps = [r for r in rows if r[1] == "GKP"]
+            defs = [r for r in rows if r[1] == "DEF"]
+            mids = [r for r in rows if r[1] == "MID"]
+            fwds = [r for r in rows if r[1] == "FWD"]
+            for g in (gkps, defs, mids, fwds):
+                g.sort(key=lambda x: x[2], reverse=True)
+            chosen = [gkps[0][0]] + [d[0] for d in defs[:3]] + [m[0] for m in mids[:2]] + [f[0] for f in fwds[:1]]
+            rem = defs[3:5] + mids[2:5] + fwds[1:3]
+            rem.sort(key=lambda x: x[2], reverse=True)
+            chosen += [x[0] for x in rem[:4]]
+            starter_set = set(chosen)
+        else:
+            starter_set = set(int(e) for e in starter_ids)
+
+        bench_df = squad_df[~squad_df["element"].astype(int).isin(starter_set)].copy()
+        if len(bench_df) != 4:
+            return CapitalEfficiencyReport(0, 0.0, False, [], "Bench could not be isolated.")
+
+        bench_gk = bench_df[bench_df["position"] == "GKP"]
+        bench_out = bench_df[bench_df["position"] != "GKP"].copy()
+        bench_out = bench_out.sort_values(by=["expected_points", "element"], ascending=[False, True])
+
+        dead_capital_tenths = 0
+        harvest_candidates = []
+
+        if not bench_gk.empty:
+            gk_row = bench_gk.iloc[0]
+            cost = int(round(float(gk_row.get("now_cost", gk_row.get("value", 40.0)))))
+            if cost > 40:
+                excess = cost - 40
+                dead_capital_tenths += excess
+                harvest_candidates.append({
+                    "element": int(gk_row["element"]),
+                    "position": "GKP",
+                    "role": "Backup GKP",
+                    "cost_tenths": cost,
+                    "releasable_tenths": excess,
+                    "releasable_m": round(excess / 10.0, 1),
+                })
+
+        for idx, (_, r) in enumerate(bench_out.iterrows(), start=1):
+            pos = str(r["position"])
+            cost = int(round(float(r.get("now_cost", r.get("value", self.POSITION_MIN_COST_TENTHS.get(pos, 40))))))
+            min_floor = self.POSITION_MIN_COST_TENTHS.get(pos, 40)
+            if idx == 1:
+                allowed_ceiling = max(min_floor, 50)
+                if cost > allowed_ceiling:
+                    excess = cost - allowed_ceiling
+                    dead_capital_tenths += excess
+                    harvest_candidates.append({
+                        "element": int(r["element"]),
+                        "position": pos,
+                        "role": f"Sub {idx}",
+                        "cost_tenths": cost,
+                        "releasable_tenths": excess,
+                        "releasable_m": round(excess / 10.0, 1),
+                    })
+            else:
+                if cost > min_floor:
+                    excess = cost - min_floor
+                    dead_capital_tenths += excess
+                    harvest_candidates.append({
+                        "element": int(r["element"]),
+                        "position": pos,
+                        "role": f"Sub {idx}",
+                        "cost_tenths": cost,
+                        "releasable_tenths": excess,
+                        "releasable_m": round(excess / 10.0, 1),
+                    })
+
+        dead_m = round(dead_capital_tenths / 10.0, 1)
+        bloat_detected = dead_capital_tenths >= 10
+
+        if bloat_detected:
+            rec = (
+                f"Bench Bloat Detected: £{dead_m:.1f}m of dead capital trapped on Sub 2/Sub 3/Backup GKP. "
+                f"Downgrading non-essential bench slots to minimum enablers unlocks funding for starting XI premium upgrades."
+            )
+        else:
+            rec = f"Capital allocation is lean: £{dead_m:.1f}m above position minimums across bench slots."
+
+        return CapitalEfficiencyReport(
+            dead_bench_capital_tenths=dead_capital_tenths,
+            dead_bench_capital_m=dead_m,
+            bench_bloat_detected=bloat_detected,
+            bench_harvest_candidates=harvest_candidates,
+            recommendation=rec,
+        )
 
     def __init__(
         self,
@@ -211,6 +329,7 @@ class SquadHealthDiagnosis:
         healthy_core = [d.element for d in diagnoses.values() if d.status == "KEEP"]
         watch_list = [d.element for d in diagnoses.values() if d.status == "WATCH"]
         replace_list = [d.element for d in diagnoses.values() if d.status == "REPLACE"]
+        cap_report = self.diagnose_capital_efficiency(squad_df, starter_ids=[s.element for s in starters[:11]])
 
         return SquadHealthReport(
             player_diagnoses=diagnoses,
@@ -220,6 +339,8 @@ class SquadHealthDiagnosis:
             healthy_core_ids=healthy_core,
             watch_ids=watch_list,
             replace_ids=replace_list,
+            starter_ids=[s.element for s in starters[:11]],
+            capital_efficiency=cap_report,
             thresholds_used={
                 "status": "[PLACEHOLDER - TO BE FITTED ON BACKTEST]",
                 "min_play_prob": self.min_play_prob,
