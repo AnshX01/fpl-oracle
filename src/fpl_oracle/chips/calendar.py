@@ -93,5 +93,69 @@ class FixtureCalendar:
             "total_fixtures": len(fixtures),
         }
 
+    PROSPECTIVE_CUP_MILESTONES = {
+        26: {
+            "type": "PROSPECTIVE_BLANK",
+            "competition": "EFL Cup Final",
+            "clash_probability": 0.90,
+            "estimated_blanking_teams": 4,
+            "description": "EFL Cup Final weekend: prospective blank for final participants and their opponents (typically 2 fixtures postponed).",
+        },
+        29: {
+            "type": "PROSPECTIVE_BLANK",
+            "competition": "FA Cup Quarter-Finals",
+            "clash_probability": 0.85,
+            "estimated_blanking_teams": 8,
+            "description": "FA Cup Quarter-Finals: historically the season's major Blank Gameweek (4-6 fixtures postponed). Ideal Free Hit or 3-5 FT accumulation window.",
+        },
+        34: {
+            "type": "PROSPECTIVE_DOUBLE",
+            "competition": "FA Cup Semi-Finals / Rescheduling Window",
+            "clash_probability": 0.85,
+            "estimated_doubling_teams": 6,
+            "description": "Major Double Gameweek: rescheduled fixtures from GW26/GW29 typically moved here. Prime Bench Boost or Triple Captain deployment target.",
+        },
+        37: {
+            "type": "PROSPECTIVE_DOUBLE",
+            "competition": "Late Season Rescheduling Window",
+            "clash_probability": 0.80,
+            "estimated_doubling_teams": 4,
+            "description": "Late Double Gameweek: secondary rescheduling buffer for remaining postponed fixtures ahead of GW38.",
+        },
+    }
+
+    def project_prospective_blank_and_double_gameweeks(
+        self,
+        current_gw: int = 1,
+        confirmed_calendar: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Ben Crellin Playbook: projects cup-clash Blank and Double Gameweeks months ahead of official FPL
+        announcements based on fixed FA Cup / EFL Cup calendar milestones.
+        """
+        confirmed_bgw_gws = set()
+        confirmed_dgw_gws = set()
+        if confirmed_calendar:
+            confirmed_bgw_gws = {b["gameweek"] for b in confirmed_calendar.get("blank_gameweeks", [])}
+            confirmed_dgw_gws = {d["gameweek"] for d in confirmed_calendar.get("double_gameweeks", [])}
+
+        prospective_blanks = []
+        prospective_doubles = []
+
+        for gw, info in sorted(self.PROSPECTIVE_CUP_MILESTONES.items()):
+            if gw < current_gw:
+                continue
+            if info["type"] == "PROSPECTIVE_BLANK" and gw not in confirmed_bgw_gws:
+                prospective_blanks.append(dict(info, gameweek=gw))
+            elif info["type"] == "PROSPECTIVE_DOUBLE" and gw not in confirmed_dgw_gws:
+                prospective_doubles.append(dict(info, gameweek=gw))
+
+        return {
+            "prospective_blank_gameweeks": prospective_blanks,
+            "prospective_double_gameweeks": prospective_doubles,
+            "bgw_target_gw": 29 if 29 >= current_gw else (next((b["gameweek"] for b in prospective_blanks), None)),
+            "dgw_target_gw": 34 if 34 >= current_gw else (next((d["gameweek"] for d in prospective_doubles), None)),
+        }
+
 
 fixture_calendar = FixtureCalendar()
