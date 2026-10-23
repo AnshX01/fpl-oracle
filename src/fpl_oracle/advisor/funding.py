@@ -253,3 +253,112 @@ class AffordabilityPathFinder:
                             return paths
 
         return paths
+
+    def find_bench_harvest_upgrades(
+        self,
+        current_squad_df: pd.DataFrame,
+        player_pool_df: pd.DataFrame,
+        bank_tenths: int = 0,
+        min_gain_xp: float = 1.0,
+        top_k: int = 3,
+    ) -> list[dict[str, Any]]:
+        """
+        Detects dead bench capital and generates 2-step moves:
+        Downgrade bloated bench player to minimum enabler -> Upgrade starting XI player with released funds.
+        """
+        from fpl_oracle.advisor.health import SquadHealthDiagnosis
+
+        diag = SquadHealthDiagnosis()
+        cap_report = diag.diagnose_capital_efficiency(current_squad_df)
+        if not cap_report.bench_bloat_detected or not cap_report.bench_harvest_candidates:
+            return []
+
+        squad_df = current_squad_df.copy()
+        squad_ids = set(squad_df["element"].astype(int).tolist())
+
+        # Determine starters vs bench
+        health_rep = diag.diagnose_squad(squad_df)
+        starter_set = set(health_rep.starter_ids)
+
+        # Minimum position costs
+        min_costs = {"GKP": 40, "DEF": 40, "MID": 45, "FWD": 45}
+
+        harvest_plans: list[dict[str, Any]] = []
+
+        for candidate in cap_report.bench_harvest_candidates:
+            c_eid = candidate["element"]
+            c_pos = candidate["position"]
+            c_releasable = candidate["releasable_tenths"]
+
+            # Find cheapest viable enabler in pool of same position
+            enablers = player_pool_df[
+                (player_pool_df["position"] == c_pos)
+                & (~player_pool_df["element"].isin(squad_ids))
+                & (player_pool_df["value"] <= min_costs.get(c_pos, 40))
+            ]
+            if enablers.empty:
+                continue
+            enabler = enablers.sort_values(by=["value", "expected_points"], ascending=[True, False]).iloc[0]
+            enabler_eid = int(enabler["element"])
+            enabler_cost = int(round(float(enabler["value"])))
+
+            # Actual released funds
+            c_row = squad_df[squad_df["element"] == c_eid].iloc[0]
+            c_sell = sell_price(
+                int(round(float(c_row.get("purchase_price", c_row["value"])))),
+                int(round(float(c_row.get("now_cost", c_row["value"]))))
+            )
+            net_released = c_sell - enabler_cost
+            if net_released <= 0:
+                continue
+
+            total_upgrade_budget = bank_tenths + net_released
+
+            # Now find starters to upgrade
+            starters_df = squad_df[squad_df["element"].isin(starter_set)]
+            for _, s_row in starters_df.iterrows():
+                s_eid = int(s_row["element"])
+                s_pos = str(s_row["position"])
+                s_xp = float(s_row.get("expected_points", 0.0))
+                s_sell = sell_price(
+                    int(round(float(s_row.get("purchase_price", s_row["value"])))),
+                    int(round(float(s_row.get("now_cost", s_row["value"]))))
+                )
+
+                max_target_cost = s_sell + total_upgrade_budget
+
+                targets = player_pool_df[
+                    (player_pool_df["position"] == s_pos)
+                    & (~player_pool_df["element"].isin(squad_ids))
+                    & (player_pool_df["value"] <= max_target_cost)
+                    & (player_pool_df["expected_points"] >= s_xp + min_gain_xp)
+                ]
+                if targets.empty:
+                    continue
+
+                best_target = targets.sort_values(by="expected_points", ascending=False).iloc[0]
+                t_eid = int(best_target["element"])
+                t_cost = int(round(float(best_target["value"])))
+                t_xp = float(best_target["expected_points"])
+                net_xp_gain = round(t_xp - s_xp, 2)
+
+                final_bank = (bank_tenths + net_released + s_sell) - t_cost
+
+                harvest_plans.append({
+                    "harvest_out_element": c_eid,
+                    "harvest_in_element": enabler_eid,
+                    "upgrade_out_element": s_eid,
+                    "upgrade_in_element": t_eid,
+                    "funds_released_m": round(net_released / 10.0, 1),
+                    "target_cost_m": round(t_cost / 10.0, 1),
+                    "remaining_bank_m": round(final_bank / 10.0, 1),
+                    "net_xp_gain": net_xp_gain,
+                    "summary": (
+                        f"Harvest £{net_released / 10:.1f}m from bench {candidate['role']} -> {enabler.get('web_name', f'E{enabler_eid}')} "
+                        f"to fund starting upgrade: {s_row.get('web_name', f'E{s_eid}')} -> {best_target.get('web_name', f'E{t_eid}')} (+{net_xp_gain} xP)."
+                    ),
+                })
+
+        # Sort plans by net_xp_gain descending and return top_k
+        harvest_plans.sort(key=lambda p: p["net_xp_gain"], reverse=True)
+        return harvest_plans[:top_k]
