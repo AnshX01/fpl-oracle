@@ -20,4 +20,14 @@ optimizer:
   ft_option_value: 1.80  # Free transfer preservation option value (Hall of Fame heuristic: ~1.75-2.0 pts)
   anti_churn_penalty: 0.50  # Lateral transfer friction penalty (anti-churn)
   cameo_risk_penalty: 0.75  # 5-minute cameo risk penalty on starting lineup selection
+  eo_hedge_weight: 0.80  # Points discount per 100% unhedged consensus EO divergence (Hall of Fame Feature 1)
+  differential_captain_hurdle: 1.20  # Minimum raw xP margin needed to bet against consensus captain (>100% EO)
+  turnaround_drag: 0.85  # Expected minutes discount for players with <72h turnaround after 75+ midweek minutes
+
+advisor:
+  price_rise_ev_value: 0.08  # Long-term points value of £0.1m purchasing power
+  injury_risk_ev_damage: 4.5  # Expected points loss from an unannounced midweek training injury
+  overperformance_xg_threshold: 2.5  # Flags chasing past points if G - xG >= 2.5 over recent matches
+  underperformance_xgi_threshold: 0.55  # Flags rage-selling if player has >= 0.55 xGI/90 but 0 recent returns
+
 
