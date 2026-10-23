@@ -1,7 +1,61 @@
 {
-  "status": "AWAITING_FORWARD_GAMEWEEKS",
-  "evaluated_gameweeks": [],
+  "status": "ACTIVE_FORWARD_EVALUATION",
+  "evaluated_gameweeks": [
+    {
+      "gameweek": 7,
+      "scored_at": "2026-10-23T17:52:28.451323+00:00",
+      "frozen_at": "2026-10-17T06:51:13.176483+00:00",
+      "model_version": "v2026.10.16.1307",
+      "git_commit": "a34122d2e52c5ea48828895f7ac4bfa3935893e8",
+      "manifest_hash": "19b65088932646498eb7d9461ee96458edfbc9d1d361a388868ad34ea02ec445",
+      "actual_source": "official_finalized_live",
+      "actuals_fetched_at": "2026-10-23T17:52:28.379416+00:00",
+      "sample_count": 667,
+      "ml_mae": 1.059,
+      "ml_rmse": 2.039,
+      "ml_spearman": 0.715,
+      "coverage_80_pct": 76.91,
+      "comparison": {
+        "players": 667,
+        "sources": {
+          "FPL Oracle": {
+            "rmse": 2.039,
+            "mae": 1.059,
+            "rmse_by_bucket": {
+              "did not play": 0.61,
+              "1-2 pts": 1.534,
+              "3-4 pts": 1.549,
+              "5+ pts": 5.532
+            },
+            "top20_actual_points": 4.65
+          },
+          "FPL ep_next": {
+            "rmse": 2.469,
+            "mae": 1.283,
+            "rmse_by_bucket": {
+              "did not play": 0.97,
+              "1-2 pts": 2.647,
+              "3-4 pts": 2.424,
+              "5+ pts": 5.58
+            },
+            "top20_actual_points": 3.15
+          },
+          "Last-5 average": {
+            "rmse": 2.195,
+            "mae": 1.229,
+            "rmse_by_bucket": {
+              "did not play": 1.01,
+              "1-2 pts": 2.219,
+              "3-4 pts": 1.492,
+              "5+ pts": 5.133
+            },
+            "top20_actual_points": 3.5
+          }
+        }
+      }
+    }
+  ],
   "note": "No forward holdout result exists yet. GW1-5 data is contaminated by prior model inspection; honest forward scoring commences once GW6 concludes.",
-  "next_scheduled_freeze_gw": 6,
-  "last_updated": "2026-10-06T19:12:53.780727+00:00"
+  "next_scheduled_freeze_gw": 8,
+  "last_updated": "2026-10-23T17:52:28.669669+00:00"
 }
