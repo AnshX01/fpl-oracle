@@ -2002,8 +2002,41 @@ class MultiPeriodOptimizer:
             ]
             scored = {p: captained(p) for p in close}
             pick = max(close, key=lambda p: (scored[p][0], p == top, maps[target_gw].get(p, 0.0), -p))
+            from fpl_oracle.league.strategy import league_strategy_advisor
+
             owners = sum(top in r["elements"] for r in rival_context["rivals"])
-            rec_plan["captain_check"] = {"owners": owners, "rivals": len(rival_context["rivals"]), "switched": None}
+            posture = str(
+                rival_context.get("strategy_mode")
+                or ("DEFENDING_LEAD" if float(rival_context.get("points_gap", 0.0) or 0.0) >= 10.0 else "BALANCED_ATTACK")
+            )
+            primary_rival = rival_context["rivals"][0] if rival_context["rivals"] else {}
+            rival_cap = primary_rival.get("captain_element") or primary_rival.get("last_captain")
+            cap_guidance = league_strategy_advisor.evaluate_captain_shadowing(
+                top_captain_id=int(lineup["captain"]["element"]),
+                starters_ids=week0["starters"],
+                rival_captain_id=rival_cap,
+                posture=posture,
+            )
+            rec_plan["captain_check"] = {
+                "owners": owners,
+                "rivals": len(rival_context["rivals"]),
+                "switched": None,
+                "shadow_guidance": cap_guidance,
+            }
+
+            # Annotate candidate plans with rival shadow adjustments
+            if primary_rival:
+                rival_elems = set(int(e) for e in primary_rival.get("elements", []))
+                for cand in unique.values():
+                    if cand.get("transfers_out"):
+                        adj, reasons = league_strategy_advisor.compute_rival_shadow_adjustment(
+                            transfers_out=cand["transfers_out"],
+                            transfers_in=cand["transfers_in"],
+                            rival_elements=rival_elems,
+                            posture=posture,
+                        )
+                        cand["rival_shadow_adjustment"] = adj
+                        cand["rival_shadow_reasons"] = reasons
             if (
                 pick != top
                 and scored[pick][0] > scored[top][0] + 0.005
