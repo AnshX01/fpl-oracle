@@ -3,7 +3,6 @@ Unit tests for Feature 3: Cameo Risk Penalty & Smart 1st Sub Guarantee (Hall of 
 """
 
 import pandas as pd
-import pytest
 
 from fpl_oracle.optimise.lineup import LineupOptimizer
 
