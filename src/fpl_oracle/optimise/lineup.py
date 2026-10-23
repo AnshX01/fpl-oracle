@@ -186,6 +186,7 @@ class LineupOptimizer:
         cameo_risk_penalty: float | None = None,
         eo_hedge_weight: float | None = None,
         differential_captain_hurdle: float | None = None,
+        midweek_data: dict[int, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
@@ -196,6 +197,12 @@ class LineupOptimizer:
             raise ValueError(f"Squad must have exactly 15 players, got {len(squad_df)}")
 
         df = squad_df.copy().reset_index(drop=True)
+
+        # Midweek European & Domestic Cup Rotation Drag (Hall of Fame Feature 4)
+        if midweek_data or "turnaround_hours" in df.columns:
+            from fpl_oracle.optimise.turnaround import turnaround_drag_service
+
+            df = turnaround_drag_service.apply_turnaround_drag(df, midweek_data)
 
         # Captain multiplier: 2x normally, 3x for Triple Captain
         cap_multiplier = 3.0 if is_triple_captain else 2.0
