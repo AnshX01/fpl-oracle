@@ -2,11 +2,8 @@
 Unit tests for Ben Crellin BGW/DGW Calendar Projection & Pre-Emptive Chip Choreography.
 """
 
-import pandas as pd
-import pytest
 
-from fpl_oracle.chips.calendar import FixtureCalendar, fixture_calendar
-from fpl_oracle.chips.planner import ChipPlanner
+from fpl_oracle.chips.calendar import FixtureCalendar
 
 
 def test_prospective_blank_and_double_gameweeks_projection():

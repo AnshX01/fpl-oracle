@@ -2,11 +2,8 @@
 Unit tests for Mini-League Game Theory: Rival Shadowing (Lead Defense) vs Divergence (Catch-up Mode).
 """
 
-import pandas as pd
-import pytest
 
 from fpl_oracle.league.strategy import LeagueStrategyAdvisor
-from fpl_oracle.optimise.multiperiod import MultiPeriodConfig, MultiPeriodOptimizer
 
 
 def test_rival_shadow_adjustment_defending_lead():

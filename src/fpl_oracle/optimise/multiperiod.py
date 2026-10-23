@@ -1369,7 +1369,6 @@ class MultiPeriodOptimizer:
             "vice_captain_id": vc_id,
             "bench_ids": bench_list,
             "fielded_squad": sorted(fielded),
-            "total_objective": plan.total_objective,
             "raw_total_objective": plan.total_objective,
             "trajectory": trajectory,
         }

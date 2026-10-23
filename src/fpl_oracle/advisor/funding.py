@@ -288,7 +288,6 @@ class AffordabilityPathFinder:
         for candidate in cap_report.bench_harvest_candidates:
             c_eid = candidate["element"]
             c_pos = candidate["position"]
-            c_releasable = candidate["releasable_tenths"]
 
             # Find cheapest viable enabler in pool of same position
             enablers = player_pool_df[

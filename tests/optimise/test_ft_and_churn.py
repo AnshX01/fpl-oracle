@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from fpl_oracle.optimise.multiperiod import MultiPeriodConfig, MultiPeriodOptimizer
 
