@@ -363,6 +363,11 @@ class ChipPlanner:
         dgw_gws = [d["gameweek"] for d in dgw_list if d["gameweek"] >= current_gw]
         bgw_gws = [b["gameweek"] for b in bgw_list if b["gameweek"] >= current_gw]
 
+        # Ben Crellin Playbook: include prospective cup-clash BGW and DGW milestones
+        prospective = fixture_calendar.project_prospective_blank_and_double_gameweeks(current_gw=current_gw, confirmed_calendar=calendar)
+        all_dgw_gws = sorted(set(dgw_gws) | {d["gameweek"] for d in prospective["prospective_double_gameweeks"]})
+        all_bgw_gws = sorted(set(bgw_gws) | {b["gameweek"] for b in prospective["prospective_blank_gameweeks"]})
+
         chip_plan_table = []
         joint_schedule = {}
 
@@ -513,8 +518,8 @@ class ChipPlanner:
             remaining_chips=set_2_remaining,
             current_squad_df=current_squad_df,
             horizon_projections=horizon_projections,
-            dgw_gws=dgw_gws,
-            bgw_gws=bgw_gws,
+            dgw_gws=all_dgw_gws,
+            bgw_gws=all_bgw_gws,
             budget=budget,
             current_gw=current_gw,
         )
