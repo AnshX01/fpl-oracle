@@ -125,6 +125,82 @@ class LeagueStrategyAdvisor:
             "top_rivals_threat_summary": top_threats,
         }
 
+    def compute_rival_shadow_adjustment(
+        self,
+        transfers_out: list[dict[str, Any]],
+        transfers_in: list[dict[str, Any]],
+        rival_elements: set[int],
+        posture: str,
+        shadow_penalty: float = 0.60,
+        differential_bonus: float = 0.40,
+    ) -> tuple[float, list[str]]:
+        """
+        Active Game Theory modifier:
+        When DEFENDING_LEAD: penalizes selling healthy players owned by the primary rival (shadowing / blocking).
+        When CHASING_PACK: rewards buying high-upside differentials NOT owned by the leader.
+        """
+        adjustment = 0.0
+        reasons = []
+
+        if posture == "DEFENDING_LEAD":
+            for t_out in transfers_out:
+                eid = int(t_out.get("element", 0))
+                if eid in rival_elements:
+                    adjustment -= shadow_penalty
+                    reasons.append(f"Rival Shadow Warning: selling player {eid} owned by your primary chaser increases variance.")
+
+        elif posture == "CHASING_PACK":
+            for t_in in transfers_in:
+                eid = int(t_in.get("element", 0))
+                if eid not in rival_elements:
+                    adjustment += differential_bonus
+                    reasons.append(f"Rival Differential Opportunity: player {eid} is not owned by the leader, providing catch-up leverage.")
+
+        return round(adjustment, 2), reasons
+
+    def evaluate_captain_shadowing(
+        self,
+        top_captain_id: int,
+        starters_ids: list[int],
+        rival_captain_id: int | None,
+        posture: str,
+    ) -> dict[str, Any]:
+        """
+        Evaluates whether to align captaincy with the rival (shielding when leading)
+        or diverge (seeking upside when chasing).
+        """
+        if rival_captain_id is None:
+            return {"action": "KEEP_TOP_PICK", "captain_id": top_captain_id, "reason": "No rival captain known.", "should_switch": False}
+
+        if posture == "DEFENDING_LEAD":
+            if rival_captain_id in starters_ids:
+                return {
+                    "action": "SHADOW_RIVAL_CAPTAIN",
+                    "captain_id": rival_captain_id,
+                    "reason": f"Defending Lead: shadowing rival's captain (element {rival_captain_id}) eliminates armband variance.",
+                    "should_switch": top_captain_id != rival_captain_id,
+                }
+            else:
+                return {
+                    "action": "DEFEND_DIFFERENTIAL",
+                    "captain_id": top_captain_id,
+                    "reason": f"Rival captain (element {rival_captain_id}) not in your XI; back top projected starter.",
+                    "should_switch": False,
+                }
+
+        elif posture == "CHASING_PACK":
+            if top_captain_id == rival_captain_id:
+                alts = [p for p in starters_ids if p != rival_captain_id]
+                alt_id = alts[0] if alts else top_captain_id
+                return {
+                    "action": "DIVERGE_FROM_RIVAL_CAPTAIN",
+                    "captain_id": alt_id,
+                    "reason": "Chasing Pack: matching leader's captain guarantees zero points gained on the armband; seek differential ceiling.",
+                    "should_switch": alt_id != top_captain_id,
+                }
+
+        return {"action": "KEEP_TOP_PICK", "captain_id": top_captain_id, "reason": "Balanced posture; back highest xP.", "should_switch": False}
+
 
 league_strategy_advisor = LeagueStrategyAdvisor()
 
