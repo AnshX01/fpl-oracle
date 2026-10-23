@@ -3,7 +3,6 @@ Unit tests for Bench Bloat Elimination & Capital Harvesting (Elite Squad Structu
 """
 
 import pandas as pd
-import pytest
 
 from fpl_oracle.advisor.funding import AffordabilityPathFinder
 from fpl_oracle.advisor.health import SquadHealthDiagnosis
