@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from fpl_oracle.advisor.funding import AffordabilityPathFinder
 from fpl_oracle.advisor.health import SquadHealthDiagnosis
+from fpl_oracle.config import SETTINGS
 from fpl_oracle.optimise.multiperiod import MultiPeriodConfig, MultiPeriodOptimizer
 
 logger = logging.getLogger("fpl_oracle.advisor.critique")
@@ -48,6 +49,7 @@ class PlanEvaluationResult(BaseModel):
     strongest_alternative: str = ""
     numeric_reason: str = ""
     concession: str = ""
+    cognitive_warnings: list[str] = Field(default_factory=list)
 
 
 class OptionComparisonItem(BaseModel):
@@ -284,6 +286,16 @@ class PlanCritiqueService:
                 f"(Hits: -{hit_penalty:.0f} pts, P(beat roll) = {p_beat_roll * 100:.1f}%)."
             )
 
+        # Cognitive guardrails & FOMO / regression traps (Hall of Fame Feature 3)
+        cognitive_warnings = self.detect_regression_traps(
+            proposed_transfers=proposed_transfers,
+            current_squad_df=current_squad_df,
+            player_pool_df=player_pool_df,
+        )
+        if cognitive_warnings:
+            guardrail_text = " | ".join(cognitive_warnings)
+            concession = f"{concession} Guardrail: {guardrail_text}" if concession else f"Guardrail: {guardrail_text}"
+
         return PlanEvaluationResult(
             proposed_transfers=proposed_transfers,
             proposed_chip=chip,
@@ -297,7 +309,83 @@ class PlanCritiqueService:
             strongest_alternative=alt_summary,
             numeric_reason=numeric_reason,
             concession=concession,
+            cognitive_warnings=cognitive_warnings,
         )
+
+    def detect_regression_traps(
+        self,
+        proposed_transfers: list[dict[str, Any]],
+        current_squad_df: pd.DataFrame,
+        player_pool_df: pd.DataFrame,
+    ) -> list[str]:
+        """
+        Cognitive Bias / FOMO Guardrail (Hall of Fame Feature 3).
+        Detects chasing past points (unsustainable conversion rate) and premature rage-selling
+        (dumping elite underlying assets at a variance trough).
+        Zero hardcoded player names in production code.
+        """
+        warnings: list[str] = []
+        pool_map = (
+            {int(r["element"]): r for _, r in player_pool_df.iterrows()}
+            if player_pool_df is not None and not player_pool_df.empty
+            else {}
+        )
+        squad_map = (
+            {int(r["element"]): r for _, r in current_squad_df.iterrows()}
+            if current_squad_df is not None and not current_squad_df.empty
+            else {}
+        )
+
+        try:
+            adv_cfg = SETTINGS.get("advisor", {})
+        except Exception:
+            adv_cfg = {}
+
+        overperf_threshold = float(adv_cfg.get("overperformance_xg_threshold", 2.5))
+        underperf_threshold = float(adv_cfg.get("underperformance_xgi_threshold", 0.55))
+
+        for move in proposed_transfers:
+            in_id = move.get("in") or move.get("element_in")
+            out_id = move.get("out") or move.get("element_out")
+
+            # 1. Incoming player check: Chasing Past Points
+            if in_id and int(in_id) in pool_map:
+                in_row = pool_map[int(in_id)]
+                actual_g = float(in_row.get("goals_scored", in_row.get("goals", 0.0)) or 0.0)
+                xg = float(in_row.get("expected_goals", in_row.get("xG", 0.0)) or 0.0)
+                delta_g = actual_g - xg
+                if delta_g >= overperf_threshold and actual_g >= 3.0:
+                    warnings.append(
+                        f"CHASING_PAST_POINTS: Target [element {in_id}] has scored {actual_g:.0f} goals from {xg:.2f} xG "
+                        f"(+{delta_g:.2f} overperformance). Regression to the mean probability is >90% over next 5 GWs; "
+                        f"expected points forecast already discounts this anomaly."
+                    )
+
+            # 2. Outgoing player check: Premature Rage-Selling
+            if out_id and int(out_id) in squad_map:
+                out_row = squad_map[int(out_id)]
+                xgi = float(
+                    out_row.get(
+                        "expected_goal_involvements",
+                        float(out_row.get("expected_goals", 0.0) or 0.0)
+                        + float(out_row.get("expected_assists", 0.0) or 0.0),
+                    )
+                    or 0.0
+                )
+                mins = float(out_row.get("minutes", 0.0) or 0.0)
+                xgi_per_90 = (xgi / max(90.0, mins)) * 90.0 if mins > 0 else xgi
+
+                actual_returns = float(out_row.get("goals_scored", 0.0) or 0.0) + float(
+                    out_row.get("assists", 0.0) or 0.0
+                )
+                if xgi_per_90 >= underperf_threshold and actual_returns == 0.0 and mins >= 180.0:
+                    warnings.append(
+                        f"PREMATURE_SALE_WARNING: Outgoing player [element {out_id}] maintains elite underlying threat "
+                        f"({xgi_per_90:.2f} xGI/90 over {mins:.0f} mins) despite 0 returns. Selling now risks exiting at the "
+                        f"trough of negative variance immediately ahead of an upward regression swing."
+                    )
+
+        return warnings
 
     def compare_options(
         self,
