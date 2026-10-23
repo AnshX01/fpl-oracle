@@ -47,12 +47,24 @@ def _order_bench(bench_df: pd.DataFrame, starters_df: pd.DataFrame) -> pd.DataFr
         return all(c[k] >= mins[k] for k in mins)
 
     play = play_probability(outfield)
-    outfield["_sub_value"] = [
-        float(play[i])
-        * float(r["expected_points"])
-        * sum(float(absent[j]) for j, s in out_starters["position"].items() if legal(r["position"], s))
-        for i, r in outfield.iterrows()
-    ]
+    sub_values = []
+    for i, r in outfield.iterrows():
+        p_play = float(play[i])
+        reliability_mult = 1.10 if p_play >= 0.99 else (0.80 if p_play <= 0.75 else 0.90)
+        if "expected_minutes" in r and pd.notna(r["expected_minutes"]):
+            exp_mins = float(r["expected_minutes"])
+            if exp_mins >= 80.0:
+                reliability_mult *= 1.05
+            elif exp_mins < 60.0:
+                reliability_mult *= max(0.1, exp_mins / 60.0)
+        val = (
+            p_play
+            * float(r["expected_points"])
+            * sum(float(absent[j]) for j, s in out_starters["position"].items() if legal(r["position"], s))
+            * reliability_mult
+        )
+        sub_values.append(val)
+    outfield["_sub_value"] = sub_values
     outfield = outfield.sort_values(by=["_sub_value", "expected_points", "element"], ascending=[False, False, True])
     outfield = outfield.drop(columns="_sub_value")
     return pd.concat([bench_gk, outfield]).reset_index(drop=True)
@@ -74,6 +86,7 @@ def best_lineup(
     cap_score: Mapping[int, float] | None = None,
     cap_extra: float = 1.0,
     blocked: Collection[int] = (),
+    starter_score: Mapping[int, float] | None = None,
 ) -> tuple[list[int], list[int], int, int | None]:
     """
     Exact (starters, bench, captain, vice) for a 15-man squad: best formation by
@@ -81,10 +94,12 @@ def best_lineup(
     The captain is the best `cap_score` (default xP) among the starters; `blocked` players never start.
     The MILP's lineup variables are continuous (integral at a vertex, but a tie can leave a fractional
     split), so the reported lineup is rebuilt from the chosen squad instead of rounded from them.
+    `starter_score` allows applying cameo risk / minutes certainty penalties when selecting the starting XI.
     """
     score = cap_score if cap_score is not None else xp
+    st_score = starter_score if starter_score is not None else xp
     ranked = {
-        pos: sorted((p for p in squad if position[p] == pos and p not in blocked), key=lambda p: (-xp.get(p, 0.0), p))
+        pos: sorted((p for p in squad if position[p] == pos and p not in blocked), key=lambda p: (-st_score.get(p, 0.0), p))
         for pos in ("GKP", "DEF", "MID", "FWD")
     }
 
@@ -100,8 +115,9 @@ def best_lineup(
             if len(ranked["FWD"]) < f:
                 continue
             starters = ranked["GKP"][:1] + ranked["DEF"][:d] + ranked["MID"][:m] + ranked["FWD"][:f]
-            total = sum(xp.get(p, 0.0) for p in starters)
-            key = ((1.0 - bench_weight) * total + cap_extra * score.get(captain_of(starters), 0.0), total)
+            total = sum(st_score.get(p, 0.0) for p in starters)
+            raw_total = sum(xp.get(p, 0.0) for p in starters)
+            key = ((1.0 - bench_weight) * total + cap_extra * score.get(captain_of(starters), 0.0), raw_total)
             if best is None or key > best[0]:
                 best = (key, starters)
     if best is None:
@@ -133,8 +149,15 @@ def vice_reasoning(captain_name: str, vice_xp: float, vice_play: float) -> str:
 
 
 class LineupOptimizer:
-    def __init__(self):
-        pass
+    def __init__(self, cameo_risk_penalty: float | None = None):
+        if cameo_risk_penalty is None:
+            try:
+                from fpl_oracle.config import SETTINGS
+                self.cameo_risk_penalty = float(SETTINGS.get("optimizer", {}).get("cameo_risk_penalty", 0.75))
+            except Exception:
+                self.cameo_risk_penalty = 0.75
+        else:
+            self.cameo_risk_penalty = float(cameo_risk_penalty)
 
     def select_lineup_and_captain(
         self,
@@ -144,6 +167,7 @@ class LineupOptimizer:
         risk_preference: str = "balanced",
         excluded_ids: set[int] | None = None,
         simulate_captaincy: bool = True,
+        cameo_risk_penalty: float | None = None,
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
@@ -176,6 +200,15 @@ class LineupOptimizer:
         blocked = {int(e) for e in elements if e in (excluded_ids or set())}
         if unavailable is not None:
             blocked |= {int(e) for e in elements[unavailable]}
+        pen = float(cameo_risk_penalty if cameo_risk_penalty is not None else self.cameo_risk_penalty)
+        play_probs = play_probability(df)
+        cameo_penalty = (1.0 - play_probs) * pen
+        if "expected_minutes" in df.columns:
+            low_mins_mask = df["expected_minutes"].notna() & (df["expected_minutes"] < 65.0)
+            mins_factor = ((65.0 - df.loc[low_mins_mask, "expected_minutes"]) / 65.0).clip(0.0, 1.0)
+            cameo_penalty.loc[low_mins_mask] += mins_factor * pen
+        starter_scores = df["expected_points"] - cameo_penalty
+
         starter_ids, _, cap_id, _ = best_lineup(
             list(elements),
             dict(zip(elements, df["position"], strict=True)),
@@ -184,6 +217,7 @@ class LineupOptimizer:
             dict(zip(elements, cap_scores.astype(float), strict=True)),
             cap_multiplier - 1.0,
             blocked,
+            starter_score=dict(zip(elements, starter_scores.astype(float), strict=True)),
         )
 
         is_starter = elements.isin(starter_ids)
@@ -246,6 +280,7 @@ class LineupOptimizer:
         if is_bench_boost:
             total_lineup_xp += bench_xp
 
+        starters_df["cameo_penalty"] = cameo_penalty.loc[starters_df.index]
         # Bench risk assessment
         bench_risk_starters = starters_df[play_probability(starters_df) < 0.75]
 
