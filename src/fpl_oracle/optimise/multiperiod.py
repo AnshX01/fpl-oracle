@@ -95,6 +95,22 @@ class MultiPeriodConfig:
     chip_week_ft_rule: Literal["preserve", "preserve_plus_one"] = "preserve"
     pruning_limits: dict[str, int] = field(default_factory=lambda: {"GKP": 15, "DEF": 45, "MID": 45, "FWD": 25})
     ft_terminal_increments: tuple[float, float, float, float] = (1.0, 0.8, 0.6, 0.4)
+    ft_option_value: float = 1.80  # Hall of Fame FT preservation value (~1.75-2.0 xP)
+    anti_churn_penalty: float = 0.50  # Lateral transfer friction penalty
+    cameo_risk_penalty: float = 0.75  # 5-minute cameo risk penalty
+
+    def __post_init__(self):
+        try:
+            from fpl_oracle.config import SETTINGS
+            opt = SETTINGS.get('optimizer', {})
+            if 'ft_option_value' in opt and self.ft_option_value == 1.80:
+                self.ft_option_value = float(opt['ft_option_value'])
+            if 'anti_churn_penalty' in opt and self.anti_churn_penalty == 0.50:
+                self.anti_churn_penalty = float(opt['anti_churn_penalty'])
+            if 'cameo_risk_penalty' in opt and self.cameo_risk_penalty == 0.75:
+                self.cameo_risk_penalty = float(opt['cameo_risk_penalty'])
+        except Exception:
+            pass
 
 
 @dataclass
@@ -835,6 +851,13 @@ class MultiPeriodOptimizer:
         ft_term = pulp.lpSum(w * var for w, var in zip(v_weights, v, strict=True))
         obj_terms.append((gamma**H) * ft_term)
 
+        # Free Transfer Option Value across intermediate weeks (Hall of Fame liquidity heuristic)
+        if self.config.ft_option_value > 0 and H > 1:
+            ft_dividend = (1.0 - gamma) * (self.config.ft_option_value / 4.0)
+            for idx, t in enumerate(horizon_gws[1:], start=1):
+                disc = gamma**idx
+                obj_terms.append(disc * ft_dividend * (ft_var[t] - 1))
+
         # Micro-incentive for maintaining maximum available banked FTs across horizon
         obj_terms.append(1e-4 * pulp.lpSum(ft_var[t] for t in horizon_gws + [horizon_gws[-1] + 1]))
 
@@ -1285,8 +1308,29 @@ class MultiPeriodOptimizer:
         # The first week is the one on screen: its XI and captain are the lineup shown above, never a second opinion
         trajectory[0].update(starters=starters_list, captain=cap_id, vice_captain=vc_id, bench=bench_list)
 
+        # Anti-churn friction penalty on lateral transfers (same pos, similar cost, both healthy)
+        churn_count = 0
+        if act.transfers_count and self.config.anti_churn_penalty > 0 and not act.active_chip:
+            pool_map = {int(r["element"]): r for _, r in player_pool_df.iterrows()}
+            for t_in, t_out in zip(transfers_in, transfers_out, strict=False):
+                e_in = pool_map.get(int(t_in.get("element", 0)))
+                e_out = pool_map.get(int(t_out.get("element", 0)))
+                if e_in is not None and e_out is not None:
+                    pos_in = e_in.get("position")
+                    pos_out = e_out.get("position")
+                    price_diff = abs(float(e_in.get("value", 0)) - float(e_out.get("value", 0)))
+                    cop_in = float(e_in.get("chance_of_playing", 100.0) or 100.0)
+                    cop_out = float(e_out.get("chance_of_playing", 100.0) or 100.0)
+                    if pos_in == pos_out and price_diff <= 7.0 and cop_in >= 75.0 and cop_out >= 75.0:
+                        churn_count += 1
+        anti_churn_pen = round(churn_count * self.config.anti_churn_penalty, 2)
+        net_obj = round(plan.total_objective - anti_churn_pen, 2)
+
         return {
             "plan_type": plan.plan_type,
+            "anti_churn_penalty": anti_churn_pen,
+            "net_objective": net_obj,
+            "total_objective": plan.total_objective,
             "recommendation_summary": rec_summary,
             "summary": rec_summary,
             "transfers_count": act.transfers_count,
@@ -1320,6 +1364,7 @@ class MultiPeriodOptimizer:
             "bench_ids": bench_list,
             "fielded_squad": sorted(fielded),
             "total_objective": plan.total_objective,
+            "raw_total_objective": plan.total_objective,
             "trajectory": trajectory,
         }
 
@@ -1570,12 +1615,13 @@ class MultiPeriodOptimizer:
                         weights[int(p)] += disc
             return weights
 
-        def confident(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+        def confident(a: dict[str, Any], b: dict[str, Any], hurdle: float | None = None) -> dict[str, Any]:
             wa, wb = exposure(a), exposure(b)
             sigma = sigma_est * math.sqrt(sum((wa.get(p, 0.0) - wb.get(p, 0.0)) ** 2 for p in set(wa) | set(wb)))
             delta = a["total_objective"] - b["total_objective"]
             # A fixed one-point status-quo margin on top (owner's choice)
-            needed = max(stability_threshold, z * sigma) + SEARCH_TOLERANCE
+            base_thresh = hurdle if hurdle is not None else stability_threshold
+            needed = max(base_thresh, z * sigma) + SEARCH_TOLERANCE
             return {
                 "gain": round(delta, 2),
                 "uncertainty": round(sigma, 2),
@@ -1710,7 +1756,13 @@ class MultiPeriodOptimizer:
             else:
                 rec_plan["decision_check"] = dict(check, versus="keeping the chip")
         if not forced and not rec_plan["chip"] and rec_plan is not cand_roll:
-            check = confident(rec_plan, cand_roll)
+            churn_pen = rec_plan.get("anti_churn_penalty", 0.0)
+            ft_hurdle = (
+                max(stability_threshold, self.config.ft_option_value) + churn_pen
+                if stability_threshold > 0
+                else churn_pen
+            )
+            check = confident(rec_plan, cand_roll, hurdle=ft_hurdle)
             if not check["passed"]:
                 stability_note = (
                     f"Roll the transfer: the best move gains {check['gain']:+.2f} xP, within the "
