@@ -2,15 +2,16 @@
   "status": "refreshed",
   "failed_player_ids": [],
   "complete": true,
-  "rows": 3883,
+  "rows": 4551,
   "finalized_gameweeks": [
     1,
     2,
     3,
     4,
     5,
-    6
+    6,
+    7
   ],
-  "refreshed_at": "2026-10-18T12:23:09.145157+00:00",
-  "sha256": "b26560e25b3d8a2165b0e080ec87582c3492c8ce695ae896548a98ac8114a9d1"
+  "refreshed_at": "2026-10-23T20:41:21.400103+00:00",
+  "sha256": "7221cf50d3a3376e5b715b2abab5f1fc0d11cd2e4171b427134a7cdce6e7e707"
 }
