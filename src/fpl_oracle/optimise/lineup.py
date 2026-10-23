@@ -149,15 +149,31 @@ def vice_reasoning(captain_name: str, vice_xp: float, vice_play: float) -> str:
 
 
 class LineupOptimizer:
-    def __init__(self, cameo_risk_penalty: float | None = None):
+    def __init__(
+        self,
+        cameo_risk_penalty: float | None = None,
+        eo_hedge_weight: float | None = None,
+        differential_captain_hurdle: float | None = None,
+    ):
+        try:
+            from fpl_oracle.config import SETTINGS
+            opt_cfg = SETTINGS.get("optimizer", {})
+        except Exception:
+            opt_cfg = {}
         if cameo_risk_penalty is None:
-            try:
-                from fpl_oracle.config import SETTINGS
-                self.cameo_risk_penalty = float(SETTINGS.get("optimizer", {}).get("cameo_risk_penalty", 0.75))
-            except Exception:
-                self.cameo_risk_penalty = 0.75
+            self.cameo_risk_penalty = float(opt_cfg.get("cameo_risk_penalty", 0.75))
         else:
             self.cameo_risk_penalty = float(cameo_risk_penalty)
+
+        if eo_hedge_weight is None:
+            self.eo_hedge_weight = float(opt_cfg.get("eo_hedge_weight", 0.80))
+        else:
+            self.eo_hedge_weight = float(eo_hedge_weight)
+
+        if differential_captain_hurdle is None:
+            self.differential_captain_hurdle = float(opt_cfg.get("differential_captain_hurdle", 1.20))
+        else:
+            self.differential_captain_hurdle = float(differential_captain_hurdle)
 
     def select_lineup_and_captain(
         self,
@@ -168,6 +184,8 @@ class LineupOptimizer:
         excluded_ids: set[int] | None = None,
         simulate_captaincy: bool = True,
         cameo_risk_penalty: float | None = None,
+        eo_hedge_weight: float | None = None,
+        differential_captain_hurdle: float | None = None,
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
@@ -187,11 +205,55 @@ class LineupOptimizer:
         p10_vals = df["p10"] if "p10" in df.columns else df["expected_points"] * 0.4
 
         if risk_preference == "conservative":
-            cap_scores = df["expected_points"] * 0.60 + p10_vals * 0.40
+            cap_scores = (df["expected_points"] * 0.60 + p10_vals * 0.40).copy()
         elif risk_preference == "aggressive":
-            cap_scores = df["expected_points"] * 0.40 + p90_vals * 0.60
+            cap_scores = (df["expected_points"] * 0.40 + p90_vals * 0.60).copy()
         else:  # balanced / points
-            cap_scores = df["expected_points"]
+            cap_scores = df["expected_points"].astype(float).copy()
+
+        # Effective Ownership (EO) Hedging & Armband Downside Shield (Hall of Fame Feature 1)
+        eo_values = pd.Series(0.0, index=df.index)
+        if "top10k_eo" in df.columns:
+            eo_values = pd.to_numeric(df["top10k_eo"], errors="coerce").fillna(0.0)
+        elif "effective_ownership" in df.columns:
+            eo_values = pd.to_numeric(df["effective_ownership"], errors="coerce").fillna(0.0)
+        elif "selected_by_percent" in df.columns:
+            own = pd.to_numeric(df["selected_by_percent"], errors="coerce").fillna(0.0)
+            eo_values = own.apply(
+                lambda x: min(190.0, float(x) * 2.2)
+                if float(x) >= 35.0
+                else (float(x) * 1.5 if float(x) >= 15.0 else float(x))
+            )
+
+        hedge_w = float(eo_hedge_weight if eo_hedge_weight is not None else self.eo_hedge_weight)
+        hurdle_val = float(
+            differential_captain_hurdle
+            if differential_captain_hurdle is not None
+            else self.differential_captain_hurdle
+        )
+
+        has_positive_eo = (eo_values > 0).any()
+        consensus_idx = eo_values.idxmax() if len(eo_values) > 0 and has_positive_eo else None
+        max_eo = float(eo_values.loc[consensus_idx]) if consensus_idx is not None else 0.0
+        consensus_element = int(df.loc[consensus_idx, "element"]) if consensus_idx is not None else None
+        consensus_xp = float(df.loc[consensus_idx, "expected_points"]) if consensus_idx is not None else 0.0
+
+        eo_shield_applied = False
+        shield_reason = "No consensus captain (EO >= 100%) in squad."
+
+        if max_eo >= 100.0 and consensus_element is not None:
+            if risk_preference not in ("aggressive", "chasing", "chasing_pack"):
+                eo_excess = (max_eo - 100.0) / 100.0
+                downside_discount = eo_excess * hedge_w
+
+                for idx, row in df.iterrows():
+                    elem = int(row["element"])
+                    if elem != consensus_element:
+                        cand_xp = float(row["expected_points"])
+                        if cand_xp - consensus_xp < hurdle_val:
+                            # Fails to clear hurdle: discount candidate score so consensus retains armband
+                            cap_scores.loc[idx] -= downside_discount + 0.50
+
 
         elements = df["element"].astype(int)
         unavailable = (
@@ -219,6 +281,31 @@ class LineupOptimizer:
             blocked,
             starter_score=dict(zip(elements, starter_scores.astype(float), strict=True)),
         )
+
+        # Determine whether EO downside shield was applied or differential cleared the hurdle
+        raw_xp_leader = (
+            int(df.loc[df["expected_points"].astype(float).idxmax(), "element"]) if len(df) > 0 else None
+        )
+        if max_eo >= 100.0 and consensus_element is not None:
+            if risk_preference not in ("aggressive", "chasing", "chasing_pack"):
+                if raw_xp_leader != consensus_element and cap_id == consensus_element:
+                    eo_shield_applied = True
+                    shield_reason = (
+                        f"EO Downside Shield active: consensus candidate (element {consensus_element}) has "
+                        f"{max_eo:.1f}% EO. Differential (element {raw_xp_leader}) was suppressed (failed +{hurdle_val:.2f} xP hurdle)."
+                    )
+                elif cap_id != consensus_element:
+                    eo_shield_applied = False
+                    shield_reason = (
+                        f"Differential cleared hurdle (+{hurdle_val:.2f} xP) against consensus candidate "
+                        f"(element {consensus_element}, {max_eo:.1f}% EO)."
+                    )
+                else:
+                    eo_shield_applied = False
+                    shield_reason = f"Consensus candidate (element {consensus_element}) is natural raw xP leader ({max_eo:.1f}% EO)."
+            else:
+                eo_shield_applied = False
+                shield_reason = "Chasing/aggressive risk preference: EO downside shield lifted to hunt differential ceiling."
 
         is_starter = elements.isin(starter_ids)
         starters_df = df[is_starter].copy()
@@ -322,6 +409,12 @@ class LineupOptimizer:
             "bench_risk_starters": bench_risk_starters[
                 [c for c in ["element", "web_name", "chance_of_playing"] if c in bench_risk_starters.columns]
             ].to_dict(orient="records"),
+            "captain_eo_shield": {
+                "consensus_element": consensus_element,
+                "consensus_eo": round(max_eo, 1),
+                "shield_applied": eo_shield_applied,
+                "reason": shield_reason,
+            },
         }
 
 
