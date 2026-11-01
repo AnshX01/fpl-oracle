@@ -33,10 +33,12 @@ class ChipSimulator:
 
         lineup = lineup_optimizer.select_lineup_and_captain(squad_df, is_bench_boost=True, simulate_captaincy=False)
         bench_gain = lineup["bench_expected_points"]
+        starters_xp = lineup.get("starters_expected_points", lineup["total_gameweek_expected_points"] - bench_gain)
         return {
             "chip": "bboost",
             "gameweek": gw,
             "expected_gain": round(bench_gain, 2),
+            "current_squad_xp": round(starters_xp, 2),
             "lineup": lineup,
             "reasoning": f"Bench Boost in GW{gw} activates your 4 substitutes for an estimated +{round(bench_gain, 2)} points.",
         }
@@ -45,6 +47,13 @@ class ChipSimulator:
         """
         Triple Captain gain = 1x expected points of top captain candidate.
         """
+        if squad_df.empty or "expected_points" not in squad_df.columns:
+            return {
+                "chip": "3xc",
+                "gameweek": gw,
+                "expected_gain": None,
+                "reasoning": f"Triple Captain in GW{gw} cannot be measured: candidate data is empty.",
+            }
         if len(squad_df) != 15:
             top_cand = squad_df.sort_values(by="expected_points", ascending=False).iloc[0]
             gain = float(top_cand["expected_points"])
@@ -60,12 +69,15 @@ class ChipSimulator:
         lineup = lineup_optimizer.select_lineup_and_captain(squad_df, is_triple_captain=True, simulate_captaincy=False)
         cap = lineup["captain"]
         gain = cap["expected_points"]  # Extra 1x points
+        baseline_xp = lineup["total_gameweek_expected_points"] - gain
         return {
             "chip": "3xc",
             "gameweek": gw,
             "expected_gain": round(gain, 2),
+            "current_squad_xp": round(baseline_xp, 2),
             "captain_name": cap["web_name"],
             "captain_expected_points": cap["expected_points"],
+            "lineup": lineup,
             "reasoning": f"Triple Captain on {cap['web_name']} in GW{gw} adds an extra +{round(gain, 2)} points (3x multiplier).",
         }
 
@@ -78,10 +90,34 @@ class ChipSimulator:
         curr_lineup = lineup_optimizer.select_lineup_and_captain(current_squad_df, simulate_captaincy=False)
         curr_xp = curr_lineup["total_gameweek_expected_points"]
 
-        # Solve dream 1-week squad
+        # Guard against undersized player pool
+        if len(player_pool_df) <= 15:
+            return {
+                "chip": "freehit",
+                "gameweek": gw,
+                "expected_gain": None,
+                "reasoning": f"Free Hit in GW{gw} cannot be measured: candidate player pool has only {len(player_pool_df)} players.",
+            }
+
+        repair_elems = set(current_squad_df["element"]) if "element" in current_squad_df else None
+        repair_prices = (
+            {
+                int(r["element"]): float(r.get("selling_price", r.get("value", 50)))
+                for _, r in current_squad_df.iterrows()
+            }
+            if repair_elems
+            else None
+        )
+
+        # Solve dream 1-week squad with retained player selling price accounting
         try:
             optimal_squad_res = squad_optimizer.solve_best_squad(
-                player_pool_df=player_pool_df, budget=budget, metric_col="expected_points"
+                player_pool_df=player_pool_df,
+                budget=budget,
+                metric_col="expected_points",
+                repair_elements=repair_elems,
+                repair_sell_prices=repair_prices,
+                repair_hit_penalty=0.0,
             )
             opt_lineup = lineup_optimizer.select_lineup_and_captain(
                 optimal_squad_res["squad"], simulate_captaincy=False
@@ -119,9 +155,34 @@ class ChipSimulator:
         """
         curr_lineup = lineup_optimizer.select_lineup_and_captain(current_squad_df, simulate_captaincy=False)
 
+        # Guard against undersized player pool
+        if len(player_pool_df) <= 15:
+            return {
+                "chip": "wildcard",
+                "gameweek": gw,
+                "expected_gain": None,
+                "reasoning": f"Wildcard in GW{gw} cannot be measured: candidate player pool has only {len(player_pool_df)} players.",
+            }
+
+        repair_elems = set(current_squad_df["element"]) if "element" in current_squad_df else None
+        repair_prices = (
+            {
+                int(r["element"]): float(r.get("selling_price", r.get("value", 50)))
+                for _, r in current_squad_df.iterrows()
+            }
+            if repair_elems
+            else None
+        )
+
+        # Solve dream wildcard squad with retained player selling price accounting
         try:
             opt_squad_res = squad_optimizer.solve_best_squad(
-                player_pool_df=player_pool_df, budget=budget, metric_col="expected_points"
+                player_pool_df=player_pool_df,
+                budget=budget,
+                metric_col="expected_points",
+                repair_elements=repair_elems,
+                repair_sell_prices=repair_prices,
+                repair_hit_penalty=0.0,
             )
             opt_lineup = lineup_optimizer.select_lineup_and_captain(opt_squad_res["squad"], simulate_captaincy=False)
             single_gw_gain = max(

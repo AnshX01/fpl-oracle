@@ -64,13 +64,64 @@ def test_midweek_congestion_increases_waiting_ev():
     assert rec_with_midweek.ev_waiting_pts > rec_no_midweek.ev_waiting_pts
 
 
+def test_linearity_of_expectation_price_loss():
+    """
+    Price loss EV must strictly follow Linearity of Expectation: E[L] = (p_rise + p_fall) * unit_loss.
+    When both target rises (0.80) and outgoing falls (0.60), loss accounts for both moves (£0.2m = 1.40 * 0.08 = 0.112 pts),
+    rather than union probability P(A or B) = 0.92 which would miss the simultaneous double move.
+    """
+    advisor = TransferTimingAdvisor(price_rise_ev_value=0.08, injury_risk_ev_damage=4.5)
+    rec = advisor.evaluate_timing(
+        bank=0.5,
+        target_rise_prob=0.80,
+        outgoing_fall_prob=0.60,
+        pressers_concluded=False,
+        midweek_matches_pending=0,
+    )
+    # injury_aversion_ev = 0.05 * 4.5 = 0.225
+    # price_loss_ev = (0.80 + 0.60) * 0.08 = 0.112
+    # ev_waiting = 0.225 - 0.112 = 0.113
+    assert abs(rec.ev_waiting_pts - 0.113) < 1e-3
+
+
+def test_parameterized_opportunity_cost_when_bank_low():
+    """
+    When bank < 0.10m, the manager faces barrier risk (priced out of the optimal plan).
+    The price loss must include the parameterized opportunity cost.
+    """
+    advisor = TransferTimingAdvisor(price_rise_ev_value=0.08, injury_risk_ev_damage=4.5)
+
+    # Low bank (0.05m < 0.10m): opportunity cost included in price loss
+    rec_low = advisor.evaluate_timing(
+        bank=0.05,
+        target_rise_prob=0.80,
+        outgoing_fall_prob=0.0,
+        opportunity_cost=2.0,
+    )
+    # price_loss_ev = 0.80 * (0.08 + 2.0) = 1.664
+    # ev_waiting = 0.225 - 1.664 = -1.439 (negative EV to wait)
+    assert abs(rec_low.ev_waiting_pts - (-1.439)) < 1e-3
+    assert rec_low.urgency == "EXECUTE_TONIGHT_PRICED_OUT"
+
+    # Sufficient bank (0.50m >= 0.10m): opportunity cost is NOT charged
+    rec_high = advisor.evaluate_timing(
+        bank=0.50,
+        target_rise_prob=0.80,
+        outgoing_fall_prob=0.0,
+        opportunity_cost=2.0,
+    )
+    # price_loss_ev = 0.80 * 0.08 = 0.064
+    # ev_waiting = 0.225 - 0.064 = 0.161 (positive EV to wait)
+    assert abs(rec_high.ev_waiting_pts - 0.161) < 1e-3
+    assert rec_high.urgency == "HOLD_FOR_PRESSERS"
+
+
 def test_no_hardcoded_player_names_in_timing_module():
     """Enforces zero hardcoded player names in src/fpl_oracle/advisor/timing.py."""
     with open("src/fpl_oracle/advisor/timing.py", encoding="utf-8") as f:
         content = f.read().lower()
 
     for forbidden in ["haaland", "salah", "palmer", "saka", "watkins", "gabriel", "son"]:
-        assert not re.search(
-            rf"\b{forbidden}\b", content
-        ), f"Forbidden hardcoded player name '{forbidden}' found in timing.py"
-
+        assert not re.search(rf"\b{forbidden}\b", content), (
+            f"Forbidden hardcoded player name '{forbidden}' found in timing.py"
+        )

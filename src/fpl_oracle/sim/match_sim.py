@@ -1,12 +1,12 @@
 """
-Scoreline-Based Match Simulator (WI-4.1, WI-4.2, WI-4.3).
+Scoreline-Based Match Simulator.
 
 Vectorized NumPy match simulator consuming:
-- Bivariate scorelines from Dixon-Coles + market odds blend (WI-3.1, WI-3.2)
-- Player attacking shares & coherent goal allocation (WI-3.3)
-- Availability & minutes distributions (WI-3.4)
-- Negative-binomial DefCon defensive actions (WI-3.5)
-- Zero-sum fixture bonus allocation under 2026/27 rules (WI-3.6)
+- Bivariate scorelines from Dixon-Coles + market odds blend
+- Player attacking shares & coherent goal allocation
+- Availability & minutes distributions
+- Negative-binomial DefCon defensive actions
+- Zero-sum fixture bonus allocation under 2026/27 rules
 
 Guarantees:
 1. Joint draws matrix S[player, sim] preserving cross-manager covariance.
@@ -96,24 +96,99 @@ class SimulationResult:
 
         total_scores = np.sum(s_scores, axis=0)
 
-        # Captain logic: if captain played > 0 mins, 2x captain; else 2x vice
-        if c_idx >= 0:
-            c_played = self.minutes[c_idx] > 0
+        # Captain logic conforming to official FPL rules:
+        # - If captain played > 0 mins: captain gets 2x points (+1x extra score).
+        # - If captain played 0 mins and vice-captain played > 0 mins: vice-captain gets 2x points (+1x extra score).
+        # - Dual-Zero Rule: If BOTH captain and vice-captain played 0 mins, NO player gets double points
+        #   (captain multiplier is lost). Autosubs replace unplayed players at 1x points; an autosub
+        #   coming on for the captain NEVER inherits the 2x multiplier.
+        c_played = (self.minutes[c_idx] > 0) if c_idx >= 0 else np.zeros(self.n_sims, dtype=bool)
+        v_played = (self.minutes[v_idx] > 0) if v_idx >= 0 else np.zeros(self.n_sims, dtype=bool)
+
+        if c_idx >= 0 and c_idx in s_idx:
             c_score = self.scores[c_idx]
-            v_score = self.scores[v_idx] if v_idx >= 0 else np.zeros(self.n_sims)
-            extra_cap = np.where(c_played, c_score, v_score)
+            v_score = self.scores[v_idx] if (v_idx >= 0 and v_idx in s_idx) else np.zeros(self.n_sims)
+            if v_idx in s_idx:
+                extra_cap = np.where(c_played, c_score, np.where(v_played, v_score, 0.0))
+            else:
+                extra_cap = np.where(c_played, c_score, 0.0)
             total_scores += extra_cap
 
-        # Bench auto-substitution for starters with 0 mins
-        for sim in range(self.n_sims):
-            unplayed_count = int(np.sum(s_mins[:, sim] == 0))
-            if unplayed_count > 0 and b_idx:
-                for b_i in b_idx:
-                    if self.minutes[b_i, sim] > 0:
-                        total_scores[sim] += self.scores[b_i, sim]
-                        unplayed_count -= 1
-                        if unplayed_count <= 0:
+        # Bench auto-substitution for starters with 0 mins conforming to official FPL rules:
+        # GKP replaced only by GKP; Outfield by Outfield preserving legal formation.
+        if b_idx:
+            starter_positions = [self.positions[i] for i in s_idx]
+            absent_sims = np.flatnonzero(np.any(s_mins == 0, axis=0))
+            for sim in absent_sims:
+                unplayed_starters = [i for i, idx in enumerate(s_idx) if s_mins[i, sim] == 0]
+                if not unplayed_starters:
+                    continue
+
+                used_bench = set()
+                # 1. GKP replacement
+                if any(starter_positions[i] == "GKP" for i in unplayed_starters):
+                    for b_i in b_idx:
+                        if self.positions[b_i] == "GKP" and self.minutes[b_i, sim] > 0:
+                            total_scores[sim] += self.scores[b_i, sim]
+                            used_bench.add(b_i)
                             break
+
+                # 2. Outfield replacement in bench order preserving legal formation
+                active_outfield = [
+                    starter_positions[i]
+                    for i, idx in enumerate(s_idx)
+                    if s_mins[i, sim] > 0 and starter_positions[i] != "GKP"
+                ]
+                pos_counts = {
+                    "DEF": sum(1 for p in active_outfield if p == "DEF"),
+                    "MID": sum(1 for p in active_outfield if p == "MID"),
+                    "FWD": sum(1 for p in active_outfield if p == "FWD"),
+                }
+                outfield_unplayed = sum(1 for i in unplayed_starters if starter_positions[i] != "GKP")
+                if outfield_unplayed > 0:
+                    subs_needed = outfield_unplayed
+                    for b_pos_idx, b_i in enumerate(b_idx):
+                        if b_i in used_bench or self.positions[b_i] == "GKP":
+                            continue
+                        if self.minutes[b_i, sim] > 0:
+                            b_pos = self.positions[b_i]
+                            new_def = pos_counts["DEF"] + (1 if b_pos == "DEF" else 0)
+                            new_mid = pos_counts["MID"] + (1 if b_pos == "MID" else 0)
+                            new_fwd = pos_counts["FWD"] + (1 if b_pos == "FWD" else 0)
+                            within_max = (new_def <= 5) and (new_mid <= 5) and (new_fwd <= 3)
+                            rem_slots = subs_needed - 1
+                            def_deficit = max(0, 3 - new_def)
+                            mid_deficit = max(0, 2 - new_mid)
+                            fwd_deficit = max(0, 1 - new_fwd)
+                            total_deficits = def_deficit + mid_deficit + fwd_deficit
+
+                            # Future available bench coverage check:
+                            future_bench = [
+                                f_i
+                                for f_i in b_idx[b_pos_idx + 1 :]
+                                if f_i not in used_bench and self.positions[f_i] != "GKP" and self.minutes[f_i, sim] > 0
+                            ]
+                            fut_def = sum(1 for f_i in future_bench if self.positions[f_i] == "DEF")
+                            fut_mid = sum(1 for f_i in future_bench if self.positions[f_i] == "MID")
+                            fut_fwd = sum(1 for f_i in future_bench if self.positions[f_i] == "FWD")
+                            can_satisfy_deficits = (
+                                def_deficit <= fut_def
+                                and mid_deficit <= fut_mid
+                                and fwd_deficit <= fut_fwd
+                                and total_deficits <= len(future_bench)
+                            )
+
+                            if within_max and total_deficits <= rem_slots and can_satisfy_deficits:
+                                total_scores[sim] += self.scores[b_i, sim]
+                                pos_counts[b_pos] += 1
+                                used_bench.add(b_i)
+                                subs_needed -= 1
+                                if subs_needed <= 0:
+                                    break
+
+                # If vice-captain was on the bench, captain played 0 mins, and VC was autosubbed in:
+                if c_idx >= 0 and not c_played[sim] and v_idx in used_bench:
+                    total_scores[sim] += self.scores[v_idx, sim]
 
         return total_scores
 
@@ -176,14 +251,52 @@ def _collapse_fixture_rows(res: SimulationResult, owner: np.ndarray, df: pd.Data
 _MEAN_MINUTES = (86.1, 52.0, 17.0)
 
 
+def sample_dixon_coles_scorelines(
+    rng: np.random.Generator,
+    lam_h: float,
+    lam_a: float,
+    rho: float = -0.10,
+    sims: int = 2000,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Draws joint (g_h, g_a) realizations from the Dixon-Coles (1997) bivariate distribution
+    with low-score correlation adjustment tau_rho.
+    Independent Poisson draws are adjusted for the low-score subset {0, 1}^2 according
+    to the exact Dixon-Coles copula weights.
+    """
+    g_h = rng.poisson(lam_h, size=sims)
+    g_a = rng.poisson(lam_a, size=sims)
+
+    if abs(rho) > 1e-6:
+        low_mask = (g_h <= 1) & (g_a <= 1)
+        n_low = int(np.sum(low_mask))
+        if n_low > 0:
+            denom = (1.0 + lam_h) * (1.0 + lam_a)
+            p00 = max(1e-6, 1.0 - lam_h * lam_a * rho) / denom
+            p01 = max(1e-6, lam_a * (1.0 + lam_h * rho)) / denom
+            p10 = max(1e-6, lam_h * (1.0 + lam_a * rho)) / denom
+            p11 = max(1e-6, lam_h * lam_a * (1.0 - rho)) / denom
+            probs = np.array([p00, p01, p10, p11], dtype=float)
+            p_sum = np.sum(probs)
+            if p_sum > 0:
+                probs /= p_sum
+            # States: 0=(0,0), 1=(0,1), 2=(1,0), 3=(1,1)
+            cats = rng.choice(4, size=n_low, p=probs)
+            g_h[low_mask] = np.where(cats >= 2, 1, 0)
+            g_a[low_mask] = np.where((cats == 1) | (cats == 3), 1, 0)
+
+    return g_h.astype(np.int32), g_a.astype(np.int32)
+
+
 class MatchSimulator:
     """
     High-performance, scoreline-based gameweek match simulator.
     """
 
-    def __init__(self, n_sims: int = 2000, seed: int = 42):
+    def __init__(self, n_sims: int = 2000, seed: int = 42, rho: float = -0.10):
         self.n_sims = n_sims
         self.seed = seed
+        self.rho = rho
 
     def simulate_gameweek(
         self,
@@ -314,14 +427,15 @@ class MatchSimulator:
 
         # 1. Group by fixtures to draw bivariate scorelines
         has_fixture_ids = "fixture_id" in df.columns or "fixture" in df.columns
+        records = df.to_dict(orient="records")
         fix_key: list[Any] = []
-        for i, row in df.iterrows():
+        for i, row in enumerate(records):
             fix_id = row.get("fixture_id", row.get("fixture"))
             fix_key.append(row.get("team", i) if fix_id is None else fix_id)
 
         fixtures: dict[Any, dict[str, Any]] = {}
         team_p_cs: dict[tuple[Any, Any], list[tuple[int, float]]] = {}
-        for i, row in df.iterrows():
+        for i, row in enumerate(records):
             fix_id = fix_key[i]
             is_home = row.get("is_home", 1.0) == 1.0
 
@@ -360,9 +474,8 @@ class MatchSimulator:
             lam_h = max(0.2, min(4.5, f_info["home_xg"]))
             lam_a = max(0.2, min(4.5, f_info["away_xg"]))
 
-            # Draw Poisson goals with slight low-scoring negative correlation (rho ~ -0.10)
-            g_h = rng.poisson(lam_h, size=sims)
-            g_a = rng.poisson(lam_a, size=sims)
+            # Draw bivariate scorelines from Dixon-Coles joint distribution (rho ~ -0.10)
+            g_h, g_a = sample_dixon_coles_scorelines(rng, lam_h, lam_a, rho=self.rho, sims=sims)
 
             f_info["lam_home"], f_info["lam_away"] = lam_h, lam_a
             fixture_scores[fix_id] = {
@@ -416,7 +529,7 @@ class MatchSimulator:
         clean_sheets = np.zeros((n_players, sims), dtype=np.int32)
         goals_conceded = np.zeros((n_players, sims), dtype=np.int32)
 
-        for i, row in df.iterrows():
+        for i, row in enumerate(records):
             fix_id = fix_key[i]
             is_home = row.get("is_home", 1.0) == 1.0
             f_res = fixture_scores.get(fix_id)
@@ -424,18 +537,17 @@ class MatchSimulator:
                 continue
 
             opp_g = f_res["away_goals"] if is_home else f_res["home_goals"]
-            opp_cs = f_res["home_clean_sheet"] if is_home else f_res["away_clean_sheet"]
 
-            # CS requires >= 60 minutes and 0 opponent goals
-            clean_sheets[i] = np.where((minutes[i] >= 60) & (opp_cs == 1), 1, 0)
-
-            # Goals conceded while on pitch: full conceded if 90 mins, proportional if subbed
+            # Goals conceded while on pitch: full conceded if 90 mins, exact binomial distribution if subbed
             gc_player = np.where(
                 minutes[i] >= 90,
                 opp_g,
-                np.where(minutes[i] > 0, np.round(opp_g * (minutes[i] / 90.0)).astype(int), 0),
+                rng.binomial(opp_g, np.clip(minutes[i] / 90.0, 0.0, 1.0)),
             )
             goals_conceded[i] = np.clip(gc_player, 0, opp_g)
+
+            # Official FPL Rule: CS awarded if player plays >= 60 mins and concedes 0 while on pitch
+            clean_sheets[i] = np.where((minutes[i] >= 60) & (goals_conceded[i] == 0), 1, 0)
 
         # 4. Goals and Assists
         goals = np.zeros((n_players, sims), dtype=np.int32)
@@ -460,7 +572,7 @@ class MatchSimulator:
         # Players of each team within each fixture (a double-gameweek team has a separate row set per fixture)
         team_player_indices: dict[tuple[Any, Any], list[int]] = {}
         for i in range(n_players):
-            team_player_indices.setdefault((fix_key[i] if has_fixture_ids else None, df["team"].iloc[i]), []).append(i)
+            team_player_indices.setdefault((fix_key[i] if has_fixture_ids else None, teams[i]), []).append(i)
 
         for fix_id, f_res in fixture_scores.items():
             f_info = fixtures[fix_id]
@@ -586,7 +698,7 @@ class MatchSimulator:
         # 8. BPS and Zero-Sum Bonus Allocation
         bonus = np.zeros((n_players, sims), dtype=np.int32)
 
-        # Compute simulated raw BPS according to 2026/27 rules (WI-3.6)
+        # Compute simulated raw BPS according to 2026/27 rules
         bps_matrix = np.zeros((n_players, sims), dtype=np.float32)
         bps_matrix += np.where(minutes >= 60, 6.0, np.where(minutes > 0, 3.0, 0.0))
         # Goal points: +24 for FWD/MID, +12 for DEF/GKP
@@ -602,17 +714,32 @@ class MatchSimulator:
         bps_matrix -= cards * 3.0
         bps_matrix -= own_goals * 6.0
         bps_matrix += defcon * 2.0
-        # Add random background play BPS (passes, tackles, recoveries) ~ Normal(10, 3)
-        background_bps = np.where(on_pitch, rng.normal(10.0, 3.0, size=(n_players, sims)), -100.0)
+        # Add random background play BPS (passes, tackles, recoveries) ~ Poisson(10)
+        # Integer Poisson noise enables natural integer ties to occur in 10-15% of simulations,
+        # triggering official FPL bonus point tie-sharing rules.
+        background_bps = np.where(on_pitch, rng.poisson(10.0, size=(n_players, sims)).astype(np.float32), -100.0)
         bps_matrix += background_bps
 
-        # Allocate 3/2/1 bonus per fixture per simulation (WI-3.6 zero-sum guarantee, vectorized)
-        fixture_player_indices = df.groupby(fix_key).groups
+        # Allocate 3/2/1 bonus per fixture per simulation (zero-sum guarantee, vectorized)
+        fixture_player_indices: dict[Any, list[int]] = {}
+        for i, fk in enumerate(fix_key):
+            fixture_player_indices.setdefault(fk, []).append(i)
 
         for _fix_id, p_indices in fixture_player_indices.items():
             fix_p = np.array(p_indices)
             k = len(fix_p)
             if k < 2:
+                # When evaluating a squad subset where only 1 player participates in this fixture,
+                # evaluate their simulated BPS against empirical baseline thresholds
+                # (e.g. >= 32 -> 3 pts, >= 26 -> 2 pts, >= 20 -> 1 pt)
+                p_bps = bps_matrix[fix_p[0]]
+                p_active = minutes[fix_p[0]] > 0
+                b_pts = np.where(
+                    p_active & (p_bps >= 32.0),
+                    3,
+                    np.where(p_active & (p_bps >= 26.0), 2, np.where(p_active & (p_bps >= 20.0), 1, 0)),
+                ).astype(np.int32)
+                bonus[fix_p[0]] = b_pts
                 continue
 
             fix_bps = bps_matrix[fix_p].copy()  # Shape: (k, sims)

@@ -7,57 +7,65 @@ def make_test_squad_and_pool():
     rows = []
     # 2 GKP
     for i in [1, 2]:
-        rows.append({
-            "element": i,
-            "web_name": f"GKP_{i}",
-            "position": "GKP",
-            "team": i,
-            "value": 50,
-            "purchase_price": 50,
-            "selling_price": 50,
-            "expected_points": 4.5,
-            "chance_of_playing": 100.0,
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"GKP_{i}",
+                "position": "GKP",
+                "team": i,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": 4.5,
+                "chance_of_playing": 100.0,
+            }
+        )
     # 5 DEF
     for i in range(3, 8):
-        rows.append({
-            "element": i,
-            "web_name": f"DEF_{i}",
-            "position": "DEF",
-            "team": i,
-            "value": 50,
-            "purchase_price": 50,
-            "selling_price": 50,
-            "expected_points": 4.5,
-            "chance_of_playing": 100.0,
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"DEF_{i}",
+                "position": "DEF",
+                "team": i,
+                "value": 50,
+                "purchase_price": 50,
+                "selling_price": 50,
+                "expected_points": 4.5,
+                "chance_of_playing": 100.0,
+            }
+        )
     # 5 MID: 8, 9, 10, 11, 12
     # Element 8 has 5.0 xP
     for i in [8, 9, 10, 11, 12]:
-        rows.append({
-            "element": i,
-            "web_name": f"MID_{i}",
-            "position": "MID",
-            "team": (i % 7) + 1,
-            "value": 65,
-            "purchase_price": 65,
-            "selling_price": 65,
-            "expected_points": 5.0,
-            "chance_of_playing": 100.0,
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"MID_{i}",
+                "position": "MID",
+                "team": (i % 7) + 1,
+                "value": 65,
+                "purchase_price": 65,
+                "selling_price": 65,
+                "expected_points": 5.0,
+                "chance_of_playing": 100.0,
+            }
+        )
     # 3 FWD: 13, 14, 15
     for i in [13, 14, 15]:
-        rows.append({
-            "element": i,
-            "web_name": f"FWD_{i}",
-            "position": "FWD",
-            "team": (i % 7) + 1,
-            "value": 75,
-            "purchase_price": 75,
-            "selling_price": 75,
-            "expected_points": 6.0,
-            "chance_of_playing": 100.0,
-        })
+        rows.append(
+            {
+                "element": i,
+                "web_name": f"FWD_{i}",
+                "position": "FWD",
+                "team": (i % 7) + 1,
+                "value": 75,
+                "purchase_price": 75,
+                "selling_price": 75,
+                "expected_points": 6.0,
+                "chance_of_playing": 100.0,
+            }
+        )
 
     squad_df = pd.DataFrame(rows).copy()
 

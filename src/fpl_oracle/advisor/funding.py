@@ -1,5 +1,5 @@
 """
-Affordability Path Finder (Phase 8 Early Slice: WI-8.3).
+Affordability Path Finder .
 Finds the cheapest legal paths to own a target player:
 - Direct swaps with specific outgoing players and remaining bank
 - Two-step funding moves (enabler downgrade + target upgrade)
@@ -43,7 +43,7 @@ class AffordabilityPath:
 
 class AffordabilityPathFinder:
     """
-    Computes cheapest legal paths to acquire any target player (WI-8.3).
+    Computes cheapest legal paths to acquire any target player .
     Enforces Principle P4: Affordability-aware.
     """
 
@@ -74,6 +74,10 @@ class AffordabilityPathFinder:
 
         squad_df = current_squad_df.copy()
         squad_ids = set(squad_df["element"].astype(int).tolist())
+        current_club_counts: dict[int, int] = {}
+        for _, r in squad_df.iterrows():
+            tm = int(r["team"])
+            current_club_counts[tm] = current_club_counts.get(tm, 0) + 1
 
         if target_element in squad_ids:
             return [
@@ -275,6 +279,10 @@ class AffordabilityPathFinder:
 
         squad_df = current_squad_df.copy()
         squad_ids = set(squad_df["element"].astype(int).tolist())
+        current_club_counts: dict[int, int] = {}
+        for _, r in squad_df.iterrows():
+            tm = int(r["team"])
+            current_club_counts[tm] = current_club_counts.get(tm, 0) + 1
 
         # Determine starters vs bench
         health_rep = diag.diagnose_squad(squad_df)
@@ -288,6 +296,10 @@ class AffordabilityPathFinder:
         for candidate in cap_report.bench_harvest_candidates:
             c_eid = candidate["element"]
             c_pos = candidate["position"]
+            c_row = squad_df[squad_df["element"] == c_eid].iloc[0]
+            c_tm = int(c_row["team"])
+            cand_club_counts = dict(current_club_counts)
+            cand_club_counts[c_tm] = max(0, cand_club_counts.get(c_tm, 0) - 1)
 
             # Find cheapest viable enabler in pool of same position
             enablers = player_pool_df[
@@ -297,7 +309,11 @@ class AffordabilityPathFinder:
             ]
             if enablers.empty:
                 continue
-            enabler = enablers.sort_values(by=["value", "expected_points"], ascending=[True, False]).iloc[0]
+
+            viable_enablers = [e for _, e in enablers.iterrows() if cand_club_counts.get(int(e["team"]), 0) + 1 <= 3]
+            if not viable_enablers:
+                continue
+            enabler = min(viable_enablers, key=lambda x: (x["value"], -float(x.get("expected_points", 0.0))))
             enabler_eid = int(enabler["element"])
             enabler_cost = int(round(float(enabler["value"])))
 
@@ -305,7 +321,7 @@ class AffordabilityPathFinder:
             c_row = squad_df[squad_df["element"] == c_eid].iloc[0]
             c_sell = sell_price(
                 int(round(float(c_row.get("purchase_price", c_row["value"])))),
-                int(round(float(c_row.get("now_cost", c_row["value"]))))
+                int(round(float(c_row.get("now_cost", c_row["value"])))),
             )
             net_released = c_sell - enabler_cost
             if net_released <= 0:
@@ -321,7 +337,7 @@ class AffordabilityPathFinder:
                 s_xp = float(s_row.get("expected_points", 0.0))
                 s_sell = sell_price(
                     int(round(float(s_row.get("purchase_price", s_row["value"])))),
-                    int(round(float(s_row.get("now_cost", s_row["value"]))))
+                    int(round(float(s_row.get("now_cost", s_row["value"])))),
                 )
 
                 max_target_cost = s_sell + total_upgrade_budget
@@ -335,7 +351,26 @@ class AffordabilityPathFinder:
                 if targets.empty:
                     continue
 
-                best_target = targets.sort_values(by="expected_points", ascending=False).iloc[0]
+                # Validate club cap <= 3
+                current_club_counts: dict[int, int] = {}
+                for _, r in squad_df.iterrows():
+                    tm = int(r["team"])
+                    current_club_counts[tm] = current_club_counts.get(tm, 0) + 1
+                current_club_counts[int(c_row["team"])] -= 1
+                current_club_counts[int(enabler.get("team", c_row["team"]))] = (
+                    current_club_counts.get(int(enabler.get("team", c_row["team"])), 0) + 1
+                )
+                current_club_counts[int(s_row["team"])] -= 1
+
+                viable_targets = []
+                for _, t_cand in targets.sort_values(by="expected_points", ascending=False).iterrows():
+                    t_team = int(t_cand["team"])
+                    if current_club_counts.get(t_team, 0) + 1 <= 3:
+                        viable_targets.append(t_cand)
+                        break
+                if not viable_targets:
+                    continue
+                best_target = viable_targets[0]
                 t_eid = int(best_target["element"])
                 t_cost = int(round(float(best_target["value"])))
                 t_xp = float(best_target["expected_points"])
@@ -343,20 +378,22 @@ class AffordabilityPathFinder:
 
                 final_bank = (bank_tenths + net_released + s_sell) - t_cost
 
-                harvest_plans.append({
-                    "harvest_out_element": c_eid,
-                    "harvest_in_element": enabler_eid,
-                    "upgrade_out_element": s_eid,
-                    "upgrade_in_element": t_eid,
-                    "funds_released_m": round(net_released / 10.0, 1),
-                    "target_cost_m": round(t_cost / 10.0, 1),
-                    "remaining_bank_m": round(final_bank / 10.0, 1),
-                    "net_xp_gain": net_xp_gain,
-                    "summary": (
-                        f"Harvest £{net_released / 10:.1f}m from bench {candidate['role']} -> {enabler.get('web_name', f'E{enabler_eid}')} "
-                        f"to fund starting upgrade: {s_row.get('web_name', f'E{s_eid}')} -> {best_target.get('web_name', f'E{t_eid}')} (+{net_xp_gain} xP)."
-                    ),
-                })
+                harvest_plans.append(
+                    {
+                        "harvest_out_element": c_eid,
+                        "harvest_in_element": enabler_eid,
+                        "upgrade_out_element": s_eid,
+                        "upgrade_in_element": t_eid,
+                        "funds_released_m": round(net_released / 10.0, 1),
+                        "target_cost_m": round(t_cost / 10.0, 1),
+                        "remaining_bank_m": round(final_bank / 10.0, 1),
+                        "net_xp_gain": net_xp_gain,
+                        "summary": (
+                            f"Harvest £{net_released / 10:.1f}m from bench {candidate['role']} -> {enabler.get('web_name', f'E{enabler_eid}')} "
+                            f"to fund starting upgrade: {s_row.get('web_name', f'E{s_eid}')} -> {best_target.get('web_name', f'E{t_eid}')} (+{net_xp_gain} xP)."
+                        ),
+                    }
+                )
 
         # Sort plans by net_xp_gain descending and return top_k
         harvest_plans.sort(key=lambda p: p["net_xp_gain"], reverse=True)

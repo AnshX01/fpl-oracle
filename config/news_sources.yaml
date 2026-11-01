@@ -14,7 +14,7 @@ rss_feeds:
     enabled: true
   - id: sky_sports
     name: "Sky Sports - Premier League"
-    url: "https://www.skysports.com/rss/12040"
+    url: "https://www.skysports.com/rss/11661"
     weight: 0.90
     enabled: true
   - id: talksport_football

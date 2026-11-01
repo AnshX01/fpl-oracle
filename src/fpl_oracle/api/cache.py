@@ -16,6 +16,15 @@ class CacheManager:
         # key -> {"data": data, "expires_at": float, "updated_at": datetime}
         self._mem_cache: dict[str, dict[str, Any]] = {}
 
+    def _candidate_keys(self, key: str) -> list[str]:
+        from fpl_oracle.utils.season import derive_season
+
+        season = derive_season(format="hyphen")
+        if key.startswith(f"{season}:"):
+            unprefixed = key[len(f"{season}:") :]
+            return [key, unprefixed] if unprefixed else [key]
+        return [key, f"{season}:{key}"]
+
     def get(self, key: str) -> Any | None:
         res = self.get_with_meta(key)
         return res[0] if res else None
@@ -23,46 +32,76 @@ class CacheManager:
     def get_with_meta(self, key: str) -> tuple[Any, datetime] | None:
         """Return (data, updated_at) if valid cache entry exists."""
         now = time.time()
-        # Check in-memory first
+        # 1. Exact match in memory
         if key in self._mem_cache:
             entry = self._mem_cache[key]
             if entry["expires_at"] > now:
                 return entry["data"], entry["updated_at"]
             del self._mem_cache[key]
 
-        # Check SQLite cache
+        # 2. Exact match in SQLite (ensures SQLite rehydration occurs when memory is invalidated)
         db_entry = data_store.get_cache_entry(key)
         if db_entry is not None:
             data, upd, exp = db_entry
-            # Rehydrate in memory preserving remaining TTL (expires_at) from SQLite
-            self._mem_cache[key] = {"data": data, "expires_at": exp.timestamp(), "updated_at": upd}
+            rehydrated = {"data": data, "expires_at": exp.timestamp(), "updated_at": upd}
+            self._mem_cache[key] = rehydrated
             return data, upd
+
+        # 3. Candidate keys fallback
+        for k in self._candidate_keys(key):
+            if k == key:
+                continue
+            if k in self._mem_cache:
+                entry = self._mem_cache[k]
+                if entry["expires_at"] > now:
+                    return entry["data"], entry["updated_at"]
+                del self._mem_cache[k]
+            db_entry = data_store.get_cache_entry(k)
+            if db_entry is not None:
+                data, upd, exp = db_entry
+                rehydrated = {"data": data, "expires_at": exp.timestamp(), "updated_at": upd}
+                self._mem_cache[key] = rehydrated
+                return data, upd
+
         return None
 
     def get_stale_with_meta(self, key: str) -> tuple[Any, datetime] | None:
         """Return (data, updated_at) for stale cached data if API is currently down."""
+        # 1. Exact match in memory
         if key in self._mem_cache:
             return self._mem_cache[key]["data"], self._mem_cache[key]["updated_at"]
-        return data_store.get_stale_cache_entry(key)
+
+        # 2. Exact match in SQLite
+        db_entry = data_store.get_stale_cache_entry(key)
+        if db_entry is not None:
+            return db_entry
+
+        # 3. Candidate keys fallback
+        for k in self._candidate_keys(key):
+            if k == key:
+                continue
+            if k in self._mem_cache:
+                return self._mem_cache[k]["data"], self._mem_cache[k]["updated_at"]
+            db_entry = data_store.get_stale_cache_entry(k)
+            if db_entry is not None:
+                return db_entry
+        return None
 
     def set(self, key: str, data: Any, ttl_seconds: int):
         now_ts = time.time()
         now_dt = datetime.now(UTC)
-        self._mem_cache[key] = {"data": data, "expires_at": now_ts + ttl_seconds, "updated_at": now_dt}
-        data_store.set_cache(key, data, ttl_seconds)
-
-    def _candidate_keys(self, key: str) -> list[str]:
-        from fpl_oracle.utils.season import derive_season
-
-        season = derive_season(format="hyphen")
-        if key.startswith(f"{season}:"):
-            return [key]
-        return [f"{season}:{key}", key]
+        entry = {"data": data, "expires_at": now_ts + ttl_seconds, "updated_at": now_dt}
+        self._mem_cache[key] = entry
+        for k in self._candidate_keys(key):
+            data_store.set_cache(k, data, ttl_seconds)
+            if k != key and k in self._mem_cache:
+                del self._mem_cache[k]
 
     def invalidate(self, key: str):
         for k in self._candidate_keys(key):
             if k in self._mem_cache:
                 del self._mem_cache[k]
+            data_store.delete_cache_entry(k)
 
     def get_cache_age_seconds(self, key: str) -> float | None:
         """Return age of cached entry in seconds, or None if not cached."""

@@ -459,7 +459,8 @@ class ToolExecutor:
                 p_out = elem_map.get(out_id) if out_id else None
                 moves.append(
                     {
-                        "transfer_in": in_name or (p_in.web_name if p_in else (f"Player #{in_id}" if in_id else "None")),
+                        "transfer_in": in_name
+                        or (p_in.web_name if p_in else (f"Player #{in_id}" if in_id else "None")),
                         "transfer_out": out_name
                         or (p_out.web_name if p_out else (f"Player #{out_id}" if out_id else "None")),
                         "cost_in": round(p_in.now_cost / 10.0, 1) if p_in else None,

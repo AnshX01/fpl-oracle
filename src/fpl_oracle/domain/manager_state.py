@@ -461,18 +461,17 @@ class ManagerStateService:
                 )
             )
 
-        # Chip sets calculation
+        # Chip sets calculation: Wildcard has 2 sets; FH, BB, and TC are single-use per season
         all_chips = ["wildcard", "freehit", "3xc", "bboost"]
-        rem_set_1 = [
-            c
-            for c in all_chips
-            if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) <= 19]
-        ]
-        rem_set_2 = [
-            c
-            for c in all_chips
-            if c not in [c_item.get("name", "").lower() for c_item in chips_used_list if c_item.get("event", 0) > 19]
-        ]
+        season_used = {c_item.get("name", "").lower() for c_item in chips_used_list}
+        set1_used = {
+            c_item.get("name", "").lower() for c_item in chips_used_list if int(c_item.get("event", 0) or 0) <= 19
+        }
+        set2_used = {
+            c_item.get("name", "").lower() for c_item in chips_used_list if int(c_item.get("event", 0) or 0) > 19
+        }
+        rem_set_1 = [c for c in all_chips if (c not in set1_used if c == "wildcard" else c not in season_used)]
+        rem_set_2 = [c for c in all_chips if (c not in set2_used if c == "wildcard" else c not in season_used)]
 
         # If squad is incomplete (e.g. no manager ID and no manual squad yet)
         if len(squad_players) < 15:

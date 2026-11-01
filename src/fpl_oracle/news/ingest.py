@@ -28,6 +28,12 @@ def is_safe_ip(ip_str: str) -> bool:
     """Validate whether an IP address is safe (not private, loopback, metadata, or reserved)."""
     try:
         ip = ipaddress.ip_address(ip_str)
+        # RFC 6052: Well-Known NAT64 prefix (64:ff9b::/96) embeds an IPv4 address.
+        # If in NAT64 range, validate the safety of the underlying IPv4 target.
+        if ip.version == 6 and ip in ipaddress.ip_network("64:ff9b::/96"):
+            embedded_v4 = ipaddress.IPv4Address(ip.packed[-4:])
+            return is_safe_ip(str(embedded_v4))
+
         if (
             ip.is_private
             or ip.is_loopback
@@ -78,6 +84,108 @@ def is_safe_external_url(url: str, resolve_dns: bool = True) -> bool:
         return True
     except Exception:
         return False
+
+
+NON_FOOTBALL_PATH_SEGMENTS = {
+    "rugby-union",
+    "rugby-league",
+    "rugby",
+    "darts",
+    "cricket",
+    "formula1",
+    "formula-1",
+    "f1",
+    "motorsport",
+    "motor-racing",
+    "golf",
+    "boxing",
+    "mma",
+    "ufc",
+    "tennis",
+    "cycling",
+    "horse-racing",
+    "racing",
+    "snooker",
+    "athletics",
+    "nfl",
+    "nba",
+    "mlb",
+    "nhl",
+    "basketball",
+    "baseball",
+    "ice-hockey",
+    "badminton",
+    "table-tennis",
+    "swimming",
+    "winter-sports",
+}
+
+
+def is_football_article(url: str, title: str = "", summary: str = "") -> bool:
+    """Validate that an article belongs to association football / Premier League, not other sports."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        path_parts = [p.lower() for p in parsed.path.strip("/").split("/") if p]
+        if any(seg in NON_FOOTBALL_PATH_SEGMENTS for seg in path_parts):
+            return False
+
+        full_text = f"{title} {summary}".lower()
+        non_football_markers = [
+            "rugby",
+            "six nations",
+            "darts",
+            "pga tour",
+            "grand prix",
+            "ufc",
+            "t20",
+            "ashes",
+            "test match",
+            "wickets",
+            "tries",
+            "conversions",
+            "formula 1",
+            "drivers' championship",
+            "nba",
+            "quarterback",
+            "touchdown",
+            "clippers",
+            "thunder's",
+            "sandpapergate",
+        ]
+        football_markers = [
+            "premier league",
+            "football",
+            "fpl",
+            "arsenal",
+            "chelsea",
+            "liverpool",
+            "man city",
+            "man utd",
+            "spurs",
+            "tottenham",
+            "newcastle",
+            "aston villa",
+            "bournemouth",
+            "brighton",
+            "everton",
+            "fulham",
+            "leeds",
+            "nottingham forest",
+            "brentford",
+            "crystal palace",
+            "coventry",
+            "sunderland",
+            "hull city",
+            "ipswich",
+        ]
+
+        has_non_football = any(m in full_text for m in non_football_markers)
+        has_football = any(m in full_text for m in football_markers)
+        if has_non_football and not has_football:
+            return False
+        return True
+    except Exception:
+        return True
 
 
 class NewsIngestion:
@@ -187,6 +295,9 @@ class NewsIngestion:
                             summary = getattr(entry, "summary", "").strip()
                             link = getattr(entry, "link", "").strip()
                             published = getattr(entry, "published", None)
+
+                            if not is_football_article(link, title, summary):
+                                continue
 
                             # Deduplication by content hash
                             content_str = f"{link}|{title}|{summary}"

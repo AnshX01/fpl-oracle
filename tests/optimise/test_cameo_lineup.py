@@ -10,19 +10,89 @@ from fpl_oracle.optimise.lineup import LineupOptimizer
 def make_squad(mid_a_cop: float = 100.0, mid_a_mins: float = 90.0):
     rows = [
         # GKP (2)
-        {"element": 1, "web_name": "GKP_1", "position": "GKP", "expected_points": 4.5, "chance_of_playing": 100.0, "team": 1},
-        {"element": 2, "web_name": "GKP_2", "position": "GKP", "expected_points": 1.5, "chance_of_playing": 100.0, "team": 2},
+        {
+            "element": 1,
+            "web_name": "GKP_1",
+            "position": "GKP",
+            "expected_points": 4.5,
+            "chance_of_playing": 100.0,
+            "team": 1,
+        },
+        {
+            "element": 2,
+            "web_name": "GKP_2",
+            "position": "GKP",
+            "expected_points": 1.5,
+            "chance_of_playing": 100.0,
+            "team": 2,
+        },
         # DEF (5)
-        {"element": 3, "web_name": "DEF_1", "position": "DEF", "expected_points": 5.0, "chance_of_playing": 100.0, "team": 3},
-        {"element": 4, "web_name": "DEF_2", "position": "DEF", "expected_points": 5.0, "chance_of_playing": 100.0, "team": 4},
-        {"element": 5, "web_name": "DEF_3", "position": "DEF", "expected_points": 5.0, "chance_of_playing": 100.0, "team": 5},
-        {"element": 6, "web_name": "DEF_4", "position": "DEF", "expected_points": 2.0, "chance_of_playing": 100.0, "team": 6},
-        {"element": 7, "web_name": "DEF_5", "position": "DEF", "expected_points": 1.5, "chance_of_playing": 100.0, "team": 7},
+        {
+            "element": 3,
+            "web_name": "DEF_1",
+            "position": "DEF",
+            "expected_points": 5.0,
+            "chance_of_playing": 100.0,
+            "team": 3,
+        },
+        {
+            "element": 4,
+            "web_name": "DEF_2",
+            "position": "DEF",
+            "expected_points": 5.0,
+            "chance_of_playing": 100.0,
+            "team": 4,
+        },
+        {
+            "element": 5,
+            "web_name": "DEF_3",
+            "position": "DEF",
+            "expected_points": 5.0,
+            "chance_of_playing": 100.0,
+            "team": 5,
+        },
+        {
+            "element": 6,
+            "web_name": "DEF_4",
+            "position": "DEF",
+            "expected_points": 2.0,
+            "chance_of_playing": 100.0,
+            "team": 6,
+        },
+        {
+            "element": 7,
+            "web_name": "DEF_5",
+            "position": "DEF",
+            "expected_points": 1.5,
+            "chance_of_playing": 100.0,
+            "team": 7,
+        },
         # MID (5)
         # MID_8: 6.0 xP, nailed
-        {"element": 8, "web_name": "MID_1", "position": "MID", "expected_points": 6.0, "chance_of_playing": 100.0, "team": 8},
-        {"element": 9, "web_name": "MID_2", "position": "MID", "expected_points": 6.0, "chance_of_playing": 100.0, "team": 9},
-        {"element": 10, "web_name": "MID_3", "position": "MID", "expected_points": 6.0, "chance_of_playing": 100.0, "team": 10},
+        {
+            "element": 8,
+            "web_name": "MID_1",
+            "position": "MID",
+            "expected_points": 6.0,
+            "chance_of_playing": 100.0,
+            "team": 8,
+        },
+        {
+            "element": 9,
+            "web_name": "MID_2",
+            "position": "MID",
+            "expected_points": 6.0,
+            "chance_of_playing": 100.0,
+            "team": 9,
+        },
+        {
+            "element": 10,
+            "web_name": "MID_3",
+            "position": "MID",
+            "expected_points": 6.0,
+            "chance_of_playing": 100.0,
+            "team": 10,
+        },
         # MID_11: 4.5 xP, doubtful/cameo risk
         {
             "element": 11,
@@ -44,9 +114,30 @@ def make_squad(mid_a_cop: float = 100.0, mid_a_mins: float = 90.0):
             "team": 12,
         },
         # FWD (3)
-        {"element": 13, "web_name": "FWD_1", "position": "FWD", "expected_points": 7.0, "chance_of_playing": 100.0, "team": 13},
-        {"element": 14, "web_name": "FWD_2", "position": "FWD", "expected_points": 7.0, "chance_of_playing": 100.0, "team": 14},
-        {"element": 15, "web_name": "FWD_3", "position": "FWD", "expected_points": 7.0, "chance_of_playing": 100.0, "team": 15},
+        {
+            "element": 13,
+            "web_name": "FWD_1",
+            "position": "FWD",
+            "expected_points": 7.0,
+            "chance_of_playing": 100.0,
+            "team": 13,
+        },
+        {
+            "element": 14,
+            "web_name": "FWD_2",
+            "position": "FWD",
+            "expected_points": 7.0,
+            "chance_of_playing": 100.0,
+            "team": 14,
+        },
+        {
+            "element": 15,
+            "web_name": "FWD_3",
+            "position": "FWD",
+            "expected_points": 7.0,
+            "chance_of_playing": 100.0,
+            "team": 15,
+        },
     ]
     return pd.DataFrame(rows)
 

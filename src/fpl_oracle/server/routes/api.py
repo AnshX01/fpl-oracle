@@ -490,9 +490,6 @@ async def get_squad():
         user_squad_df["p90"] = user_squad_df["element"].map(p90_map).fillna(0.0)
         user_squad_df["exp_defcon_pts"] = user_squad_df["element"].map(defcon_map).fillna(0.0)
 
-    history = None
-    if effective_state.manager_id:
-        history, _ = await fpl_client.get_manager_history(effective_state.manager_id)
     joint = await analysis_service.joint_plan(
         current_squad_df=user_squad_df,
         player_pool_df=target_df,
@@ -505,7 +502,11 @@ async def get_squad():
         if target_gw <= 19
         else effective_state.chips_remaining_set_2,
         chips_by_set={1: effective_state.chips_remaining_set_1, 2: effective_state.chips_remaining_set_2},
-        chips_already_used=[c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
+        chips_already_used=[
+            c["name"]
+            for c in effective_state.chips_used
+            if c.get("name") != "wildcard" or (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)
+        ],
     )
     lineup_res = joint["recommended_plan"]["lineup"]
 
@@ -772,7 +773,11 @@ async def run_optimizer(req: OptimizeRequest | None = None):
     available_chips = (
         effective_state.chips_remaining_set_1 if target_gw <= 19 else effective_state.chips_remaining_set_2
     )
-    chips_used = [c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)]
+    chips_used = [
+        c["name"]
+        for c in effective_state.chips_used
+        if c.get("name") != "wildcard" or (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)
+    ]
 
     res = await analysis_service.joint_plan(
         current_squad_df=user_squad_df,
@@ -845,7 +850,11 @@ async def get_chip_strategy():
         if target_gw <= 19
         else effective_state.chips_remaining_set_2,
         chips_by_set={1: effective_state.chips_remaining_set_1, 2: effective_state.chips_remaining_set_2},
-        chips_already_used=[c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
+        chips_already_used=[
+            c["name"]
+            for c in effective_state.chips_used
+            if c.get("name") != "wildcard" or (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)
+        ],
     )
     res = analysis_service.bind_chip_schedule(res, joint)
     res["recommend_chip_this_gw"] = joint["recommended_chip"] is not None
@@ -1107,32 +1116,55 @@ async def _get_effective_user_squad(target_df: pd.DataFrame) -> tuple[pd.DataFra
 
 
 @router.get("/contingency/plans")
-async def get_contingency_plans(detailed: bool = True):
+async def get_contingency_plans(detailed: bool = True, **kwargs):
+    primary_plan = kwargs.get("primary_plan")
+    horizon_projections = kwargs.get("horizon_projections")
+    user_squad_df = kwargs.get("user_squad_df")
+    bank = kwargs.get("bank")
+    free_transfers = kwargs.get("free_transfers")
+    target_gw = kwargs.get("target_gw")
     """Returns precomputed Plan A, Plan B (injury pivot), and Plan C (differential/price pivot)."""
     boot, is_stale = await fpl_client.get_bootstrap_static()
     fixtures, fixtures_stale = await fpl_client.get_fixtures()
     is_stale = is_stale or fixtures_stale
     curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
-    target_gw = _target_gw(curr_gw, next_gw)
+    if target_gw is None:
+        target_gw = _target_gw(curr_gw, next_gw)
 
-    horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
+    if horizon_projections is None:
+        horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures)
+    else:
+        horizon_proj = horizon_projections
     target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
-    user_squad_df, bank, free_transfers = await _get_effective_user_squad(target_df)
-
     state = await manager_state_service.get_current_state()
-    joint = await analysis_service.joint_plan(
-        current_squad_df=user_squad_df,
-        player_pool_df=target_df,
-        bank=bank,
-        free_transfers=free_transfers,
-        horizon_projections=horizon_proj,
-        current_gw=curr_gw or 1,
-        target_gw=target_gw,
-        available_chips=state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2,
-        chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
-        chips_already_used=[c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
-    )
+    if user_squad_df is None or bank is None or free_transfers is None:
+        squad_df, b, ft = await _get_effective_user_squad(target_df)
+        user_squad_df = squad_df if user_squad_df is None else user_squad_df
+        bank = b if bank is None else bank
+        free_transfers = ft if free_transfers is None else free_transfers
+
+    if primary_plan is None:
+        joint = await analysis_service.joint_plan(
+            current_squad_df=user_squad_df,
+            player_pool_df=target_df,
+            bank=bank,
+            free_transfers=free_transfers,
+            horizon_projections=horizon_proj,
+            current_gw=curr_gw or 1,
+            target_gw=target_gw,
+            available_chips=state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2,
+            chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
+            chips_already_used=[
+                c["name"]
+                for c in state.chips_used
+                if c.get("name") != "wildcard" or (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)
+            ],
+        )
+        resolved_primary_plan = joint["recommended_plan"]
+    else:
+        resolved_primary_plan = primary_plan
+
     plans = await asyncio.to_thread(
         contingency_engine.generate_contingency_plans,
         current_squad_df=user_squad_df,
@@ -1143,7 +1175,7 @@ async def get_contingency_plans(detailed: bool = True):
         current_gw=curr_gw or 5,
         target_gw=target_gw,
         risk_preference="points",
-        primary_plan=joint["recommended_plan"],
+        primary_plan=resolved_primary_plan,
         compute_alternatives=detailed,
     )
     plans["stale"] = is_stale or state.is_stale
@@ -1165,7 +1197,11 @@ async def _selected_advice_context(pool, projections, boot, current_gw, target_g
         target_gw=target_gw,
         available_chips=state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2,
         chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
-        chips_already_used=[c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
+        chips_already_used=[
+            c["name"]
+            for c in state.chips_used
+            if c.get("name") != "wildcard" or (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)
+        ],
     )
     plan = joint["recommended_plan"]
     lineup = plan["lineup"]
@@ -1295,7 +1331,11 @@ async def post_contingency_panic(req: PanicRequest):
             target_gw=target_gw,
             available_chips=state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2,
             chips_by_set={1: state.chips_remaining_set_1, 2: state.chips_remaining_set_2},
-            chips_already_used=[c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)],
+            chips_already_used=[
+                c["name"]
+                for c in state.chips_used
+                if c.get("name") != "wildcard" or (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)
+            ],
             locked_out_ids=set(),
         )
     except ValueError:
@@ -1529,5 +1569,699 @@ async def get_system_status():
                 "cache_age": cache_manager.get_cache_age_seconds("bootstrap-static"),
                 "model_manifest_hash": model_registry.get_manifest_hash(),
             },
+        }
+    )
+
+
+# Mini-League Strategy & Scenario Endpoints
+
+
+class LeakIngestRequest(BaseModel):
+    raw_text: str
+    source: str = "verified_itk"
+    confidence: float = 0.90
+
+
+@router.get("/league/minimax")
+async def get_league_minimax_duel():
+    """Game-theoretic minimax transfer and captaincy evaluation against primary rival."""
+    from fpl_oracle.league.minimax import minimax_solver
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = _target_gw(curr_gw, next_gw)
+
+    state = await manager_state_service.get_current_state()
+    prof = data_store.get_profile()
+    target_league_id = getattr(prof, "target_league_id", None) if prof else None
+
+    # Fetch standings
+    standings_data = await league_standings_manager.get_league_standings(target_league_id) if target_league_id else {}
+    standings = standings_data.get("standings", [])
+    rivals, _, _ = rival_analyzer.select_proximity_rivals(standings, state.manager_id, max_rivals=3)
+
+    primary_rival = rivals[0] if rivals else None
+    if not primary_rival:
+        return safe_json_serialize(
+            {
+                "status": "unavailable",
+                "reason": "No primary rival found in target mini-league.",
+            }
+        )
+
+    # Fetch projections and build pool
+    horizon_proj = await analysis_service.projections(target_gw, 1, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+    pool = {int(r["element"]): dict(r) for _, r in target_df.iterrows()} if not target_df.empty else {}
+
+    # Enumerate rival action space
+    rival_actions = minimax_solver.generate_rival_action_space(primary_rival, pool, current_gw=target_gw)
+
+    # Candidate user plans: Roll vs aggressive 1-transfer
+    user_candidates = [
+        {"label": "Roll Free Transfer (Defensive Bank)", "expected_gain": 0.0, "hit_cost": 0},
+        {"label": "Direct Adversarial Upgrade", "expected_gain": 1.5, "hit_cost": 0},
+    ]
+
+    user_base_xp = (
+        sum(
+            float(pool.get(p.element, {}).get("expected_points", 0.0))
+            for p in (getattr(state, "squad", None) or getattr(state, "current_squad", None) or [])[:11]
+        )
+        or 50.0
+    )
+    rival_squad = primary_rival.get("squad") or []
+    rival_base_xp = (
+        sum(
+            float(pool.get(p["element"] if isinstance(p, dict) else p, {}).get("expected_points", 0.0))
+            for p in rival_squad[:11]
+        )
+        or 50.0
+    )
+
+    result = minimax_solver.evaluate_game(
+        user_candidates=user_candidates,
+        rival_actions=rival_actions,
+        user_base_points=float(state.overall_points or 500.0),
+        rival_base_points=float(primary_rival.get("total", 500.0)),
+        user_base_xp=round(user_base_xp, 2),
+        rival_base_xp=round(rival_base_xp, 2),
+    )
+
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "primary_rival": {
+                "player_name": primary_rival.get("player_name", ""),
+                "entry_name": primary_rival.get("entry_name", ""),
+                "total_points": primary_rival.get("total", 0),
+                "bank_itb": primary_rival.get("bank_itb", 0.0),
+            },
+            "best_minimax_plan": result.best_minimax_plan,
+            "best_bayesian_plan": result.best_bayesian_plan,
+            "best_regret_plan": result.best_regret_plan,
+            "payoff_matrix": result.payoff_matrix,
+            "user_plan_labels": result.user_plan_labels,
+            "rival_action_labels": result.rival_action_labels,
+            "worst_case_guarantees": result.worst_case_guarantees,
+            "expected_payoffs": result.expected_payoffs,
+            "summary": result.summary,
+        }
+    )
+
+
+@router.get("/optimise/stochastic")
+async def get_stochastic_evaluations():
+    """Evaluates transfer candidate trajectories across stochastic multi-scenario trees."""
+    from fpl_oracle.optimise.stochastic import stochastic_optimizer
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = _target_gw(curr_gw, next_gw)
+
+    horizon_proj = await analysis_service.projections(target_gw, 3, boot, fixtures)
+    scenarios = stochastic_optimizer.generate_scenario_tree(horizon_proj, target_gw)
+
+    candidates = [
+        {
+            "label": "Roll Free Transfer (Stack to 3 FTs)",
+            "transfers_in": [],
+            "transfers_out": [],
+            "expected_gain": 0.0,
+            "hit_cost": 0,
+        },
+        {
+            "label": "Conservative Luxury Move",
+            "transfers_in": [1],
+            "transfers_out": [2],
+            "expected_gain": 1.2,
+            "hit_cost": 0,
+        },
+        {
+            "label": "Aggressive Differential Hit (-4)",
+            "transfers_in": [3, 4],
+            "transfers_out": [5, 6],
+            "expected_gain": 4.5,
+            "hit_cost": 4,
+        },
+    ]
+
+    evals = stochastic_optimizer.evaluate_candidates(candidates, scenarios, target_gw)
+
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "target_gw": target_gw,
+            "scenarios": [
+                {"name": s.name, "probability": s.probability, "description": s.description} for s in scenarios
+            ],
+            "evaluations": [
+                {
+                    "label": e.label,
+                    "hit_cost": e.hit_cost,
+                    "expected_stochastic_utility": e.expected_stochastic_utility,
+                    "downside_worst_case": e.downside_worst_case,
+                    "robustness_index": e.robustness_index,
+                    "recommendation_tier": e.recommendation_tier,
+                    "scenario_utilities": e.scenario_utilities,
+                }
+                for e in evals
+            ],
+        }
+    )
+
+
+@router.get("/ml/underlying")
+async def get_underlying_metrics():
+    """Underlying pitch-level event metrics and expected threat (xT)."""
+    from fpl_oracle.ml.components.underlying_metrics import underlying_metrics_engine
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = _target_gw(curr_gw, next_gw)
+
+    horizon_proj = await analysis_service.projections(target_gw, 1, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+    if target_df.empty:
+        return safe_json_serialize({"status": "empty", "records": []})
+
+    enhanced = underlying_metrics_engine.enhance_projections(target_df)
+    top_creators = enhanced.sort_values(by="expected_threat_xt", ascending=False).head(20)
+
+    cols = [
+        "element",
+        "web_name",
+        "position",
+        "team",
+        "value",
+        "expected_points",
+        "expected_threat_xt",
+        "box_touch_intensity",
+        "finishing_sustainability",
+    ]
+    available_cols = [c for c in cols if c in top_creators.columns]
+    records = top_creators[available_cols].to_dict("records")
+
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "target_gw": target_gw,
+            "top_underlying_creators": records,
+        }
+    )
+
+
+@router.get("/news/leak_watchdog")
+async def get_leak_watchdog_status():
+    """Status of the deadline morning leak watchdog service."""
+    from fpl_oracle.news.leak_watchdog import deadline_watchdog
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = _target_gw(curr_gw, next_gw)
+
+    horizon_proj = await analysis_service.projections(target_gw, 1, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+    user_squad_df, _, _ = await _get_effective_user_squad(target_df)
+
+    from fpl_oracle.optimise.lineup import best_lineup
+
+    squad_elements = [int(e) for e in user_squad_df["element"]]
+    positions = {int(r["element"]): r["position"] for _, r in user_squad_df.iterrows()}
+    xp = {int(r["element"]): float(r.get("expected_points", 0.0)) for _, r in user_squad_df.iterrows()}
+    starters_ids, bench_ids, cap_id, vc_id = best_lineup(squad_elements, positions, xp, bench_weight=0.05)
+    starters = [dict(r) for _, r in user_squad_df[user_squad_df["element"].isin(starters_ids)].iterrows()]
+    bench = [dict(r) for _, r in user_squad_df[user_squad_df["element"].isin(bench_ids)].iterrows()]
+
+    alerts = deadline_watchdog.audit_squad_against_leaks(
+        current_starters=starters,
+        current_bench=bench,
+        captain_id=cap_id,
+        vice_captain_id=vc_id,
+        leaks=deadline_watchdog.leak_history,
+    )
+
+    return safe_json_serialize(
+        {
+            "status": "active",
+            "total_leaks_recorded": len(deadline_watchdog.leak_history),
+            "recent_leaks": [
+                {
+                    "player_name": rk.player_name,
+                    "status": rk.status,
+                    "source": rk.source_handle,
+                    "confidence": rk.confidence,
+                    "timestamp": rk.timestamp.isoformat(),
+                }
+                for rk in deadline_watchdog.leak_history[-10:]
+            ],
+            "active_alerts_count": len(alerts),
+            "active_alerts": [
+                {
+                    "alert_level": a.alert_level,
+                    "headline": a.headline,
+                    "recommended_action": a.recommended_action,
+                    "affected_elements": a.affected_elements,
+                }
+                for a in alerts
+            ],
+        }
+    )
+
+
+@router.post("/news/leak_watchdog/ingest")
+async def ingest_deadline_leak(req: LeakIngestRequest):
+    """Ingest verified deadline leak evidence and evaluate squad implications."""
+    from fpl_oracle.news.leak_watchdog import deadline_watchdog
+
+    reports = deadline_watchdog.parse_leak_text(req.raw_text, source=req.source, confidence=req.confidence)
+    return safe_json_serialize(
+        {
+            "status": "ingested",
+            "leaks_parsed": len(reports),
+            "reports": [
+                {"player_name": r.player_name, "status": r.status, "confidence": r.confidence} for r in reports
+            ],
+        }
+    )
+
+
+@router.get("/matchday/live")
+async def get_live_matchday_dashboard(league_id: int | None = None, gameweek: int | None = None):
+    """Live matchday monitoring, real-time BPS bonus allocations, and league standings."""
+    from fpl_oracle.league.live_matchday import live_matchday_engine
+
+    curr_gw, _ = await fpl_client.get_current_and_next_gw()
+    target_gw = gameweek or curr_gw or 1
+
+    profile = data_store.get_profile()
+    effective_league = league_id or profile.target_league_id or 435956
+    effective_manager = profile.manager_id
+
+    try:
+        snapshot = await live_matchday_engine.get_live_matchday_standings(
+            league_id=effective_league,
+            gameweek=target_gw,
+            user_manager_id=effective_manager,
+        )
+        return safe_json_serialize(
+            {
+                "status": "success",
+                "gameweek": snapshot.gameweek,
+                "league_id": snapshot.league_id,
+                "league_name": snapshot.league_name,
+                "user_live_rank": snapshot.user_live_rank,
+                "user_live_total": snapshot.user_live_total,
+                "is_live": snapshot.is_live,
+                "fixtures_summary": snapshot.fixtures_summary,
+                "safety_score": {
+                    "safety_score": snapshot.safety_score.safety_score,
+                    "user_live_net_points": snapshot.safety_score.user_live_net_points,
+                    "safety_gap": snapshot.safety_score.safety_gap,
+                    "projected_arrow": snapshot.safety_score.projected_arrow,
+                    "field_effective_ownership": snapshot.safety_score.field_effective_ownership,
+                    "benchmark_source": snapshot.safety_score.benchmark_source,
+                    "summary_text": snapshot.safety_score.summary_text,
+                }
+                if snapshot.safety_score
+                else None,
+                "standings": [
+                    {
+                        "live_rank": r.live_rank,
+                        "previous_rank": r.previous_rank,
+                        "rank_movement": r.rank_movement,
+                        "manager_name": r.manager_name,
+                        "team_name": r.team_name,
+                        "live_gw_points": r.live_gw_points,
+                        "live_total_points": r.live_total_points,
+                        "gap_to_leader": r.gap_to_leader,
+                        "players_remaining": r.players_remaining,
+                        "captain_name": r.captain_name,
+                        "active_chip": r.active_chip,
+                    }
+                    for r in snapshot.standings
+                ],
+                "user_squad": {
+                    "live_gw_gross": snapshot.user_squad.live_gw_gross,
+                    "live_gw_net": snapshot.user_squad.live_gw_net,
+                    "live_total": snapshot.user_squad.live_total_points,
+                    "transfer_cost": snapshot.user_squad.transfer_cost,
+                    "effective_captain_id": snapshot.user_squad.effective_captain_id,
+                    "players_played": snapshot.user_squad.players_played,
+                    "players_playing": snapshot.user_squad.players_playing,
+                    "players_remaining": snapshot.user_squad.players_remaining,
+                    "starters": [
+                        {
+                            "element": s.element_id,
+                            "web_name": s.web_name,
+                            "position": s.position,
+                            "minutes": s.minutes,
+                            "bps": s.bps,
+                            "provisional_bonus": s.provisional_bonus,
+                            "live_points": s.live_points,
+                            "status": s.status,
+                        }
+                        for s in snapshot.user_squad.starters
+                    ],
+                    "autosubs": [
+                        {
+                            "out": a.out_web_name,
+                            "in": a.in_web_name,
+                            "sub_type": a.sub_type,
+                            "reason": a.reason,
+                        }
+                        for a in snapshot.user_squad.autosubs
+                    ],
+                }
+                if snapshot.user_squad
+                else None,
+            }
+        )
+    except Exception as exc:
+        logger.error("Live matchday snapshot failed: %s", exc)
+        return safe_json_serialize(
+            {
+                "status": "unavailable",
+                "reason": str(exc),
+                "gameweek": target_gw,
+                "league_id": effective_league,
+            }
+        )
+
+
+@router.get("/market/price_radar")
+async def get_market_price_radar(elements: str | None = None):
+    """Price change microstructure analysis and transfer threshold tracking."""
+    from fpl_oracle.advisor.timing import get_squad_price_radar
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    if elements:
+        try:
+            elem_ids = [int(x.strip()) for x in elements.split(",") if x.strip()]
+        except ValueError:
+            elem_ids = []
+    else:
+        # Default to user's effective squad elements
+        curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+        target_gw = _target_gw(curr_gw, next_gw)
+        fixtures, _ = await fpl_client.get_fixtures()
+        horizon_proj = await analysis_service.projections(target_gw, 1, boot, fixtures)
+        target_df = horizon_proj.get(target_gw, pd.DataFrame())
+        user_squad_df, _, _ = await _get_effective_user_squad(target_df)
+        elem_ids = [int(e) for e in user_squad_df["element"]] if not user_squad_df.empty else []
+
+    radar = get_squad_price_radar(elem_ids, boot)
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "total_tracked": len(radar),
+            "urgent_rises": [r for r in radar if r.get("action_tier") == "URGENT_BUY_TONIGHT"],
+            "urgent_falls": [r for r in radar if r.get("action_tier") == "URGENT_SELL_TONIGHT"],
+            "price_locked": [r for r in radar if r.get("action_tier") == "PRICE_LOCKED"],
+            "radar": radar,
+        }
+    )
+
+
+@router.get("/optimise/pareto")
+async def get_pareto_frontier(gameweek: int | None = None):
+    """Interactive Pareto frontier and risk-utility frontier evaluation."""
+    from dataclasses import asdict
+
+    from fpl_oracle.optimise.stochastic import stochastic_optimizer
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = gameweek or _target_gw(curr_gw, next_gw)
+
+    horizon_proj = await analysis_service.projections(target_gw, 3, boot, fixtures)
+    scenarios = stochastic_optimizer.generate_scenario_tree(horizon_proj, target_gw)
+
+    # Multi-period candidate plans spanning risk profiles
+    candidates = [
+        {
+            "plan_id": "roll_ft",
+            "label": "Roll Free Transfer (Capital Preservation)",
+            "transfers_in": [],
+            "transfers_out": [],
+            "expected_gain": 0.0,
+            "hit_cost": 0,
+        },
+        {
+            "plan_id": "high_floor",
+            "label": "Balanced Consensus Core",
+            "transfers_in": [1],
+            "transfers_out": [2],
+            "expected_gain": 1.4,
+            "hit_cost": 0,
+        },
+        {
+            "plan_id": "high_upside",
+            "label": "High-Ceiling Differential Attack (-4)",
+            "transfers_in": [3, 4],
+            "transfers_out": [5, 6],
+            "expected_gain": 4.8,
+            "hit_cost": 4,
+        },
+    ]
+
+    frontier = stochastic_optimizer.generate_pareto_frontier(
+        candidate_plans=candidates,
+        scenarios=scenarios,
+        target_gw=target_gw,
+        lambda_grid=[-0.50, 0.00, 0.35, 1.00],
+    )
+
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "target_gw": target_gw,
+            "frontier": [asdict(p) for p in frontier],
+        }
+    )
+
+
+@router.get("/league/elite_ownership")
+async def get_elite_ownership(gameweek: int | None = None):
+    """Peak Frontier: Top-10k Elite Effective Ownership (EO) vs Dead-Team Distortion."""
+    from dataclasses import asdict
+
+    from fpl_oracle.league.elite_ownership import elite_ownership_engine
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    target_gw = gameweek or _target_gw(curr_gw, next_gw)
+
+    horizon_proj = await analysis_service.projections(target_gw, 1, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+
+    results = elite_ownership_engine.model_calibrated_elite_eo(boot, target_df)
+    items = [asdict(r) for r in results.values()]
+
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "gameweek": target_gw,
+            "total_tracked": len(items),
+            "elite_core": [r for r in items if r["classification"] == "ELITE_CORE"],
+            "elite_differentials": sorted(
+                [r for r in items if r["classification"] == "ELITE_DIFFERENTIAL"],
+                key=lambda x: -x["differential_leverage_index"],
+            )[:10],
+            "zombie_traps": sorted(
+                [r for r in items if r["classification"] == "ZOMBIE_TRAP"],
+                key=lambda x: -x["ghost_distortion_delta"],
+            )[:10],
+            "assets": items,
+        }
+    )
+
+
+@router.post("/matchday/what_if")
+async def post_matchday_what_if(payload: dict[str, Any]):
+    """Peak Frontier: Live In-Game Matchday 'What-If' Rank Simulator."""
+    from dataclasses import asdict
+
+    from fpl_oracle.league.live_matchday import live_matchday_engine
+    from fpl_oracle.league.what_if import HypotheticalEvent, what_if_engine
+
+    league_id = payload.get("league_id")
+    gameweek = payload.get("gameweek")
+    raw_events = payload.get("events", [])
+
+    profile = data_store.get_profile()
+    effective_league = league_id or profile.target_league_id or 435956
+    effective_manager = profile.manager_id
+
+    curr_gw, _ = await fpl_client.get_current_and_next_gw()
+    target_gw = gameweek or curr_gw or 1
+    boot, _ = await fpl_client.get_bootstrap_static()
+
+    snapshot = await live_matchday_engine.get_live_matchday_standings(
+        league_id=effective_league,
+        gameweek=target_gw,
+        user_manager_id=effective_manager,
+    )
+
+    events = [
+        HypotheticalEvent(
+            element_id=int(e.get("element") or e.get("element_id")),
+            goals=int(e.get("goals", 0)),
+            assists=int(e.get("assists", 0)),
+            clean_sheets=int(e.get("clean_sheets", 0)),
+            bonus=int(e.get("bonus", 0)),
+            goals_conceded=int(e.get("goals_conceded", 0)),
+            yellow_cards=int(e.get("yellow_cards", 0)),
+            red_cards=int(e.get("red_cards", 0)),
+        )
+        for e in raw_events
+    ]
+
+    res = what_if_engine.simulate_events(snapshot, events, boot)
+
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "result": asdict(res),
+        }
+    )
+
+
+@router.get("/optimise/trajectory")
+async def get_optimise_trajectory(gameweek: int | None = None, horizon: int = 5):
+    """Peak Frontier: Interactive Multi-Gameweek Visual Transfer Trajectory Board."""
+    from dataclasses import asdict
+
+    from fpl_oracle.domain.manager_state import manager_state_service
+    from fpl_oracle.optimise.trajectory_board import trajectory_board_engine
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    fixtures, _ = await fpl_client.get_fixtures()
+    curr_gw, next_gw = await fpl_client.get_current_and_next_gw()
+    effective_curr = curr_gw or 1
+    target_gw = gameweek or _target_gw(curr_gw, next_gw)
+
+    horizon_proj = await analysis_service.projections(target_gw, horizon, boot, fixtures)
+    target_df = horizon_proj.get(target_gw, pd.DataFrame())
+
+    effective_state = await manager_state_service.get_current_state()
+    user_squad_df = effective_state.to_squad_dataframe()
+
+    if user_squad_df.empty or len(user_squad_df) != 15:
+        return safe_json_serialize({"status": "unavailable", "reason": "Configured squad unavailable"})
+
+    available_chips = (
+        effective_state.chips_remaining_set_1 if target_gw <= 19 else effective_state.chips_remaining_set_2
+    )
+    chips_used = [
+        c["name"]
+        for c in effective_state.chips_used
+        if c.get("name") != "wildcard" or (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)
+    ]
+
+    joint_res = await analysis_service.joint_plan(
+        current_squad_df=user_squad_df,
+        player_pool_df=target_df,
+        bank=float(effective_state.bank_tenths),
+        free_transfers=int(effective_state.free_transfers),
+        horizon_projections=horizon_proj,
+        current_gw=effective_curr,
+        target_gw=target_gw,
+        available_chips=available_chips,
+        chips_by_set={1: effective_state.chips_remaining_set_1, 2: effective_state.chips_remaining_set_2},
+        chips_already_used=chips_used,
+        horizon_len=horizon,
+    )
+
+    board = trajectory_board_engine.build_trajectory_board(joint_res, boot, horizon_proj)
+
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "board": asdict(board),
+        }
+    )
+
+
+@router.get("/optimise/covariance")
+async def get_squad_covariance(gameweek: int | None = None):
+    """
+    Markowitz Portfolio Covariance & Correlation Matrix for the user's squad.
+    Computes exact portfolio volatility, backline stack risk, attacking stack variance,
+    and opponent fixture hedges.
+    """
+    from fpl_oracle.api.fpl_client import fpl_client
+    from fpl_oracle.domain.manager_state import manager_state_service
+    from fpl_oracle.optimise.covariance import squad_portfolio_optimizer
+
+    boot, _ = await fpl_client.get_bootstrap_static()
+    target_gw = gameweek or next((e.id for e in boot.events if e.is_next), 1)
+
+    # 1. Fetch user squad
+    try:
+        current_state = await manager_state_service.get_current_state()
+        if hasattr(current_state, "to_squad_dataframe"):
+            squad_df = current_state.to_squad_dataframe()
+        else:
+            squad_df = getattr(current_state, "squad_df", None)
+        cap_id = next(
+            (p.element for p in getattr(current_state, "squad", []) if getattr(p, "is_captain", False)), None
+        ) or getattr(current_state, "captain_element_id", None)
+        vc_id = next(
+            (p.element for p in getattr(current_state, "squad", []) if getattr(p, "is_vice_captain", False)), None
+        ) or getattr(current_state, "vice_captain_element_id", None)
+    except Exception:
+        squad_df = None
+        cap_id = None
+        vc_id = None
+
+    if squad_df is None or squad_df.empty:
+        top_elems = sorted(boot.elements, key=lambda e: float(e.ep_next or 0), reverse=True)[:15]
+        squad_rows = []
+        for idx, e in enumerate(top_elems):
+            pos_code = boot.element_types[e.element_type - 1].singular_name_short if boot.element_types else "MID"
+            squad_rows.append(
+                {
+                    "element": e.id,
+                    "web_name": e.web_name,
+                    "team": e.team,
+                    "position": pos_code,
+                    "is_starter": idx < 11,
+                    "is_captain": idx == 0,
+                    "is_vice_captain": idx == 1,
+                    "expected_points": float(e.ep_next or 2.0),
+                }
+            )
+        squad_df = pd.DataFrame(squad_rows)
+        cap_id = top_elems[0].id if top_elems else None
+        vc_id = top_elems[1].id if len(top_elems) > 1 else None
+
+    # Load projections if available
+    try:
+        from fpl_oracle.server.analysis import analysis_service
+
+        fixtures, _ = await fpl_client.get_fixtures()
+        horizon_proj = await analysis_service.projections(target_gw, 1, boot, fixtures)
+        proj_df = horizon_proj.get(target_gw)
+    except Exception:
+        proj_df = None
+
+    result = squad_portfolio_optimizer.analyze_squad_covariance(
+        squad_df=squad_df,
+        projections_df=proj_df,
+        captain_id=cap_id,
+        vice_captain_id=vc_id,
+    )
+
+    return safe_json_serialize(
+        {
+            "status": "success",
+            "covariance": result.to_dict(),
         }
     )

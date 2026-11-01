@@ -22,9 +22,16 @@ def current_manager_rank(standings_data, manager_id):
         return {"current_league_rank": None, "league_rank_status": "manager_unconfigured"}
     for row in standings_data.get("standings", []):
         if row.get("entry") == manager_id:
-            rank = row.get("rank")
+            # Official FPL uses rank_sort for deterministic tiebroken ranking by fewest transfers
+            rank = row.get("rank_sort") or row.get("rank")
             if isinstance(rank, int) and not isinstance(rank, bool) and rank > 0:
-                return {"current_league_rank": rank, "league_rank_status": "available"}
+                res = {
+                    "current_league_rank": rank,
+                    "league_rank_status": "available",
+                }
+                if "rank_sort" in row:
+                    res["tied_display_rank"] = row.get("rank")
+                return res
             return {"current_league_rank": None, "league_rank_status": "unavailable"}
     partial = standings_data.get("coverage", {}).get("partial", False)
     return {"current_league_rank": None, "league_rank_status": "unavailable" if partial else "not_listed"}

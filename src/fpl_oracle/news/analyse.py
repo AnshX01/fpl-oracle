@@ -60,19 +60,52 @@ class NewsAnalyzer:
                             candidate_players=roster_batch,
                             target_gw=target_gw,
                         )
-                        if "429" in (extracted_payload.raw_response_snippet or ""):
+                        if (
+                            "429" in (extracted_payload.raw_response_snippet or "")
+                            or "blocked" in (extracted_payload.raw_response_snippet or "").lower()
+                            or "budget" in (extracted_payload.raw_response_snippet or "").lower()
+                        ):
                             is_gemini_ready = False
-                        for ev in extracted_payload.evidences:
-                            if index.club_ok(ev.player_id, full):
-                                ev.published_at = art["published_dt"]
-                                ev.source_url = ev.source_url or art.get("link", "")
-                                candidate_evidences.append(ev)
+                        if extracted_payload.evidences:
+                            for ev in extracted_payload.evidences:
+                                if index.club_ok(ev.player_id, full):
+                                    ev.published_at = art["published_dt"]
+                                    ev.source_url = ev.source_url or art.get("link", "")
+                                    candidate_evidences.append(ev)
+                        elif extracted_payload.raw_response_snippet != "Success":
+                            # Gemini failed or returned no evidence; execute deterministic fallback
+                            try:
+                                candidate_evidences.extend(press.extract_article_evidence(art, body, index))
+                            except Exception as fb_err:
+                                logger.warning(f"Error in deterministic fallback extraction: {fb_err}")
                     except Exception as e:
                         logger.warning(f"Error extracting evidence via Gemini: {e}")
-                        is_gemini_ready = False
+                        # Fall back to deterministic extraction for this article
+                        try:
+                            candidate_evidences.extend(press.extract_article_evidence(art, body, index))
+                        except Exception as fb_err:
+                            logger.warning(f"Error in deterministic fallback extraction: {fb_err}")
+                        if (
+                            "429" in str(e)
+                            or "quota" in str(e).lower()
+                            or "auth" in str(e).lower()
+                            or "api_key" in str(e).lower()
+                        ):
+                            is_gemini_ready = False
                 else:
                     try:
                         candidate_evidences.extend(press.extract_article_evidence(art, body, index))
+                        from fpl_oracle.news.local_nlp import local_nlp_engine
+
+                        full_text = " ".join([art["title"], art.get("summary", ""), body])
+                        calibrated = local_nlp_engine.extract_calibrated_evidence(
+                            article_text=full_text,
+                            article_url=art.get("link", ""),
+                            published_dt=art.get("published_dt"),
+                            candidate_roster=roster_batch,
+                            target_gw=target_gw,
+                        )
+                        candidate_evidences.extend(calibrated)
                     except Exception as e:
                         logger.warning(f"Error in deterministic fallback extraction: {e}")
         except Exception as e:

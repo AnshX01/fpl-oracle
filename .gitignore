@@ -12,10 +12,15 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
 
 # Testing & coverage
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.json
 htmlcov/
 
 # Environment & local credentials
@@ -23,14 +28,26 @@ htmlcov/
 
 # Runtime database, user profile & caches
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
 *.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.sqlite3-journal
 data/profile.json
 data/cache/
 data/cache/*
 data/snapshots/*
 !data/cache/.gitkeep
 !data/snapshots/.gitkeep
+data/holdout/*
+!data/holdout/.gitkeep
+data/season_*_transfers.json
 data/models/versions/*
 !data/models/versions/v2026.10.19.0657/
 !data/models/versions/v2026.10.19.0657/**
@@ -52,12 +69,18 @@ scratch/
 tmp/
 temp/
 reports/evidence_postcommit/
+audit.zip
+audit/
+audit2/
 
 # IDE & OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+desktop.ini
+*.swp
+*.swo
 
 # Durable local runtime retrain state (not a shared project artifact)
 data/retraining_state.json

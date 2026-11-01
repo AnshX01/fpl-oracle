@@ -94,9 +94,7 @@ class SyncPipeline:
         try:
             logger.info(">>> Starting FPL Oracle Orchestration Pipeline <<<")
 
-            # ------------------------------------------------------------------
             # Stage 1: Upstream API Sync
-            # ------------------------------------------------------------------
             await self._broadcast(
                 "sync_upstream", 10, "Fetching live Premier League API bootstrap, fixtures, and event status..."
             )
@@ -119,9 +117,7 @@ class SyncPipeline:
                 await self._broadcast("complete", 100, "Done. Next advice after the deadline.", done=True)
                 return
 
-            # ------------------------------------------------------------------
             # Stage 2: Live Rules Verification & Game State
-            # ------------------------------------------------------------------
             await self._broadcast(
                 "rules_and_gamestate",
                 20,
@@ -133,9 +129,7 @@ class SyncPipeline:
             target_gw = target_gameweek(curr_gw, next_gw)
             effective_curr_gw = curr_gw or (target_gw - 1 if target_gw > 1 else 1)
 
-            # ------------------------------------------------------------------
             # Stage 3: News Evidence Ingestion & Single Reconciliation
-            # ------------------------------------------------------------------
             await self._broadcast(
                 "news", 30, "Ingesting official risks and extracting factual availability evidence..."
             )
@@ -147,15 +141,11 @@ class SyncPipeline:
 
             # Extract unified reconciled availability map (N1)
 
-            # ------------------------------------------------------------------
             # Stage 4: Feature Engineering
-            # ------------------------------------------------------------------
             await self._broadcast("features", 45, f"Engineering pre-deadline features for Gameweek {target_gw}...")
             horizon = PLANNER_HORIZON
 
-            # ------------------------------------------------------------------
             # Stage 5: Component ML Inference
-            # ------------------------------------------------------------------
             await self._broadcast(
                 "ml_inference",
                 55,
@@ -166,9 +156,7 @@ class SyncPipeline:
             )
             target_df = projections.get(target_gw)
 
-            # ------------------------------------------------------------------
             # Stage 5: Transfer & Lineup Optimization
-            # ------------------------------------------------------------------
             await self._broadcast(
                 "optimization", 65, "Solving mathematical MILP for squad, starting XI, and transfer roadmap..."
             )
@@ -226,9 +214,7 @@ class SyncPipeline:
                 manager_history=history_obj,
             )
 
-            # ------------------------------------------------------------------
             # Stage 7: Mini-League Monte Carlo Simulation
-            # ------------------------------------------------------------------
             await self._broadcast(
                 "league", 85, "Simulating mini-league trajectories and rival differential ownership..."
             )
@@ -261,9 +247,7 @@ class SyncPipeline:
             except Exception as e:
                 logger.warning("Monte Carlo simulation warning: %s", e)
 
-            # ------------------------------------------------------------------
             # Stage 8: Weekly Briefing Generation
-            # ------------------------------------------------------------------
             await self._broadcast(
                 "briefing", 98, f"Synthesizing Gameweek {target_gw} executive intelligence briefing..."
             )

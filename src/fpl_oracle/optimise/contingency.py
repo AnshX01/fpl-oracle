@@ -41,23 +41,45 @@ class ContingencyEngine:
         Returns concrete triggers, replacement actions, and expected points delta vs Plan A.
         """
         # Step 1: Base Plan A (using TransferOptimizer)
-        base_res: dict[str, Any] = (
-            {"recommended_plan": primary_plan}
-            if primary_plan is not None
-            else transfer_optimizer.evaluate_transfer_options(
-                current_squad_df=current_squad_df,
-                player_pool_df=player_pool_df,
-                bank=bank,
-                free_transfers=free_transfers,
-                horizon_projections=horizon_projections,
-                current_gw=current_gw,
-                target_gw=target_gw,
-                risk_preference=risk_preference,
-            )
-        )
+        if primary_plan is not None:
+            base_res = {"recommended_plan": primary_plan}
+        else:
+            try:
+                base_res = transfer_optimizer.evaluate_transfer_options(
+                    current_squad_df=current_squad_df,
+                    player_pool_df=player_pool_df,
+                    bank=bank,
+                    free_transfers=free_transfers,
+                    horizon_projections=horizon_projections,
+                    current_gw=current_gw,
+                    target_gw=target_gw,
+                    risk_preference=risk_preference,
+                )
+            except Exception as exc:
+                logger.warning("Base Plan A evaluation failed: %s; falling back to roll", exc)
+                owned_line = lineup_optimizer.select_lineup_and_captain(
+                    current_squad_df, risk_preference=risk_preference
+                )
+                base_res = {
+                    "recommended_plan": {
+                        "plan_type": "ROLL_TRANSFER",
+                        "net_expected_points": float(owned_line["total_gameweek_expected_points"]),
+                        "recommendation_summary": "Roll transfer (fallback).",
+                        "transfers_count": 0,
+                    }
+                }
 
         plan_a_raw = base_res.get("recommended_plan", {})
-        plan_a_xp = float(plan_a_raw.get("net_expected_points", 0.0))
+        if (
+            "lineup" in plan_a_raw
+            and isinstance(plan_a_raw["lineup"], dict)
+            and "total_gameweek_expected_points" in plan_a_raw["lineup"]
+        ):
+            plan_a_xp = float(plan_a_raw["lineup"]["total_gameweek_expected_points"]) - float(
+                plan_a_raw.get("hit_cost", 0.0)
+            )
+        else:
+            plan_a_xp = float(plan_a_raw.get("net_expected_points", 0.0))
         plan_a_type = plan_a_raw.get("plan_type", "ROLL_TRANSFER")
 
         plan_a = {
@@ -102,6 +124,10 @@ class ContingencyEngine:
         plan_b = None
         current_elements = set(current_squad_df["element"].tolist())
         target_gw_df = horizon_projections.get(target_gw, player_pool_df)
+        pmap = {int(r["element"]): r for r in target_gw_df.to_dict("records")}
+        purchase = {
+            int(r["element"]): int(r.get("purchase_price", r["value"])) for r in current_squad_df.to_dict("records")
+        }
 
         if (
             plan_a_raw.get("transfers_in")
@@ -111,36 +137,99 @@ class ContingencyEngine:
             transferred_in_elem = plan_a_raw["transfers_in"][0]["element"]
             transferred_in_name = plan_a_raw["transfers_in"][0]["web_name"]
             # Exclude the primary target to find the 2nd best alternative (the backup pivot)
-            locked_out_backup = [transferred_in_elem]
-            backup_res = transfer_optimizer.evaluate_transfer_options(
-                current_squad_df=current_squad_df,
-                player_pool_df=player_pool_df,
-                bank=bank,
-                free_transfers=free_transfers,
-                horizon_projections=horizon_projections,
-                current_gw=current_gw,
-                target_gw=target_gw,
-                locked_out_ids=locked_out_backup,
-                risk_preference=risk_preference,
+            locked_out_backup = {transferred_in_elem}
+            moves = transfer_optimizer._get_candidate_1_transfers(
+                current_elements,
+                int(bank),
+                purchase,
+                target_gw_df,
+                pmap,
+                set(),
+                locked_out_backup,
+                set(),
+                max_per_pos=3,
             )
-            backup_plan = backup_res.get("recommended_plan", {})
-            backup_xp = float(backup_plan.get("net_expected_points", plan_a_xp))
-            delta_b = round(backup_xp - plan_a_xp, 2)
+            b_choices = []
+            for move in moves:
+                ids = (current_elements - set(move["transfers_out"])) | set(move["transfers_in"])
+                frame = pd.DataFrame([pmap[e] for e in sorted(ids)])
+                line = lineup_optimizer.select_lineup_and_captain(
+                    frame, risk_preference=risk_preference, simulate_captaincy=False
+                )
+                hits = max(0, len(move["transfers_in"]) - free_transfers)
+                net = float(line["total_gameweek_expected_points"]) - 4 * hits
+                b_choices.append((net, move))
 
-            backup_in_names = ", ".join(t["web_name"] for t in backup_plan.get("transfers_in", [])) or "Hold/Roll"
-            plan_b = {
-                "title": f"Plan B (Injury Pivot): Pivot to {backup_in_names}",
-                "plan_type": backup_plan.get("plan_type", "BACKUP_TRANSFER"),
-                "transfers_count": backup_plan.get("transfers_count", 0),
-                "transfers_in": backup_plan.get("transfers_in", []),
-                "transfers_out": backup_plan.get("transfers_out", []),
-                "hits": backup_plan.get("hits", 0),
-                "hit_cost": backup_plan.get("hit_cost", 0.0),
-                "net_expected_points": backup_xp,
-                "delta_vs_plan_a": delta_b,
-                "trigger_condition": f"Press conference confirms {transferred_in_name} is doubtful (<75%) or ruled out.",
-                "action_summary": f"Pivot target: buy {backup_in_names} instead of {transferred_in_name} (net impact: {delta_b:+.2f} xP).",
-            }
+            if len(plan_a_raw.get("transfers_in", [])) == 2 and len(plan_a_raw.get("transfers_out", [])) == 2:
+                second_in = plan_a_raw["transfers_in"][1]["element"]
+                second_out = plan_a_raw["transfers_out"][1]["element"]
+                if second_in in pmap and second_out in current_elements:
+                    out_row = next(
+                        (r for r in current_squad_df.to_dict("records") if int(r["element"]) == second_out), None
+                    )
+                    if out_row:
+                        from fpl_oracle.rules.transfers import sell_price
+
+                        now_cost = int(round(float(out_row.get("value", out_row.get("now_cost", 50.0)))))
+                        purch_cost = int(round(float(out_row.get("purchase_price", now_cost))))
+                        sp = float(out_row.get("selling_price", sell_price(purch_cost, now_cost)))
+                        buy_cost = float(pmap[second_in].get("value", 50.0))
+                        b_delta = sp - buy_cost
+                        if int(bank) + b_delta >= 0:
+                            ids = (current_elements - {second_out}) | {second_in}
+                            frame = pd.DataFrame([pmap[e] for e in sorted(ids)])
+                            line = lineup_optimizer.select_lineup_and_captain(
+                                frame, risk_preference=risk_preference, simulate_captaincy=False
+                            )
+                            hits = max(0, 1 - free_transfers)
+                            net = float(line["total_gameweek_expected_points"]) - 4 * hits
+                            move_2 = {
+                                "transfers_in": [second_in],
+                                "transfers_out": [second_out],
+                                "sell_prices": {second_out: sp},
+                                "bank_delta": b_delta,
+                            }
+                            b_choices.append((net, move_2))
+
+            if b_choices:
+                best_net, best_move = max(b_choices, key=lambda c: c[0])
+                delta_b = round(best_net - plan_a_xp, 2)
+                backup_in_names = ", ".join(pmap[e]["web_name"] for e in best_move["transfers_in"]) or "Hold/Roll"
+                ins_b = [
+                    dict(
+                        element=e,
+                        web_name=pmap[e]["web_name"],
+                        position=pmap[e]["position"],
+                        team=pmap[e]["team"],
+                        cost=pmap[e]["value"] / 10,
+                        expected_points=pmap[e]["expected_points"],
+                    )
+                    for e in best_move["transfers_in"]
+                ]
+                outs_b = [
+                    dict(
+                        element=e,
+                        web_name=pmap[e]["web_name"],
+                        position=pmap[e]["position"],
+                        team=pmap[e]["team"],
+                        sell_price=best_move.get("sell_prices", {}).get(e, pmap[e]["value"]) / 10,
+                    )
+                    for e in best_move["transfers_out"]
+                ]
+                hits_b = max(0, len(ins_b) - free_transfers)
+                plan_b = {
+                    "title": f"Plan B (Injury Pivot): Pivot to {backup_in_names}",
+                    "plan_type": "BACKUP_TRANSFER" if ins_b else "ROLL_TRANSFER",
+                    "transfers_count": len(ins_b),
+                    "transfers_in": ins_b,
+                    "transfers_out": outs_b,
+                    "hits": hits_b,
+                    "hit_cost": float(hits_b * 4),
+                    "net_expected_points": round(best_net, 2),
+                    "delta_vs_plan_a": delta_b,
+                    "trigger_condition": f"Press conference confirms {transferred_in_name} is doubtful (<75%) or ruled out.",
+                    "action_summary": f"Pivot target: buy {backup_in_names} instead of {transferred_in_name} (net impact: {delta_b:+.2f} xP).",
+                }
 
         if plan_b is None:
             owned_line = lineup_optimizer.select_lineup_and_captain(current_squad_df, risk_preference=risk_preference)
@@ -286,7 +375,11 @@ class ContingencyEngine:
                     counts = starters["position"].value_counts().to_dict()
                     counts[pos] -= 1
                     counts[b_row["position"]] = counts.get(b_row["position"], 0) + 1
-                    if counts.get("DEF", 0) >= 3 and counts.get("MID", 0) >= 2 and counts.get("FWD", 0) >= 1:
+                    if (
+                        3 <= counts.get("DEF", 0) <= 5
+                        and 2 <= counts.get("MID", 0) <= 5
+                        and 1 <= counts.get("FWD", 0) <= 3
+                    ):
                         sub_row = b_row
                         break
 

@@ -24,19 +24,49 @@ def players_only(df: pd.DataFrame) -> pd.DataFrame:
     minutes; older saved datasets filed them as midfielders. A player never scores without playing."""
     if df.empty or not {"season", "element", "minutes", "total_points"} <= set(df.columns):
         return df
-    per = df.groupby(["season", "element"])[["minutes", "total_points"]].transform(lambda s: s.abs().sum())
+    group_cols = ["season", "code"] if "code" in df.columns and df["code"].notna().any() else ["season", "element"]
+    per = df.groupby(group_cols)[["minutes", "total_points"]].transform(lambda s: s.abs().sum())
     return df[~((per["minutes"] == 0) & (per["total_points"] > 0))]
 
 
 def with_team_match_xg(df: pd.DataFrame) -> pd.DataFrame:
     """Adds team_xG_match: the expected goals of the player's team in that match (sum over its players).
     Training and live features both read it to measure a player's share of his team's chances."""
-    keys = ["season", "round", "team", "opponent_team"]
-    if df.empty or not set(keys + ["expected_goals"]) <= set(df.columns):
+    match_keys = [c for c in ["season", "round", "fixture", "kickoff_time", "team", "opponent_team"] if c in df.columns]
+    if df.empty or not set(["season", "round", "team", "expected_goals"]) <= set(df.columns):
         return df
     df = df.copy()
-    df["team_xG_match"] = df.groupby(keys)["expected_goals"].transform("sum")
+    df["team_xG_match"] = df.groupby(match_keys)["expected_goals"].transform("sum")
     return df
+
+
+def merge_cross_season_player_records(
+    past_df: pd.DataFrame,
+    current_df: pd.DataFrame,
+    how: str = "outer",
+) -> pd.DataFrame:
+    """
+    Safely merges two seasonal player history datasets.
+    Strictly joins on permanent global `code` whenever available in both frames to prevent
+    cross-season ID collision (where element ID 120 in 2024/25 was Player A, but ID 120
+    in 2026/27 is Player B).
+    If `code` is unavailable in either frame, raises or falls back to compound (season, element).
+    """
+    if "code" in past_df.columns and "code" in current_df.columns:
+        valid_past = past_df["code"].notna().any()
+        valid_curr = current_df["code"].notna().any()
+        if valid_past and valid_curr:
+            return pd.merge(past_df, current_df, on="code", how=how, suffixes=("_past", "_current"))
+    # Fallback prevents cross-season ID collision by refusing to join naked 'element' across different seasons
+    if "season" in past_df.columns and "season" in current_df.columns:
+        past_seasons = set(past_df["season"].dropna().unique())
+        curr_seasons = set(current_df["season"].dropna().unique())
+        if past_seasons != curr_seasons:
+            raise ValueError(
+                "Cannot merge cross-season player records on transient seasonal 'element' ID without permanent 'code'. "
+                "Element IDs change every summer and will cause cross-season player identity collisions."
+            )
+    return pd.merge(past_df, current_df, on="element", how=how, suffixes=("_past", "_current"))
 
 
 VAASTAV_BASE_URL = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
@@ -57,6 +87,7 @@ STANDARD_COLUMNS = [
     "season",
     "name",
     "element",
+    "code",
     "position",
     "team",
     "round",
@@ -152,17 +183,31 @@ class HistoricalDataManager:
         if not current.empty and "fixture" not in current:
             current["fixture"] = 0
         if not current.empty:
-            replaced = set(zip(fresh["element"], fresh["round"], strict=True))
-            current = current[
-                [(e, r) not in replaced for e, r in zip(current["element"], current["round"], strict=True)]
-            ]
+            if (
+                "code" in fresh.columns
+                and "code" in current.columns
+                and fresh["code"].notna().any()
+                and current["code"].notna().any()
+            ):
+                replaced = set(zip(fresh["code"], fresh["round"], strict=True))
+                current = current[
+                    [(c, r) not in replaced for c, r in zip(current["code"], current["round"], strict=True)]
+                ]
+            else:
+                replaced = set(zip(fresh["element"], fresh["round"], strict=True))
+                current = current[
+                    [(e, r) not in replaced for e, r in zip(current["element"], current["round"], strict=True)]
+                ]
         merged = self._clean_and_standardize(pd.concat([past, current, fresh], ignore_index=True))
         # Past cached corpora may lack fixture identity and contain genuine DGW
         # rows. Never deduplicate those by a null/zero fixture key.
         past_rows = merged[merged["season"] != curr_season]
-        current_rows = merged[merged["season"] == curr_season].drop_duplicates(
-            ["season", "element", "fixture", "round"], keep="last"
+        dedup_keys = (
+            ["season", "code", "fixture", "round"]
+            if "code" in merged.columns and merged["code"].notna().any()
+            else ["season", "element", "fixture", "round"]
         )
+        current_rows = merged[merged["season"] == curr_season].drop_duplicates(dedup_keys, keep="last")
         merged = pd.concat([past_rows, current_rows], ignore_index=True)
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.output_file.with_suffix(".csv.tmp")
@@ -203,6 +248,43 @@ class HistoricalDataManager:
         except Exception:
             return 0
 
+    def _enrich_season_with_code(self, df: pd.DataFrame, season: str) -> pd.DataFrame:
+        """
+        Enrich historical season match data with invariant career `code` from vaastav players_raw.csv.
+        Ensures cross-season queries and joins use permanent player codes rather than transient seasonal element IDs.
+        """
+        if df.empty or "element" not in df.columns:
+            return df
+        if "code" in df.columns and df["code"].notna().any():
+            return df
+
+        raw_path = HISTORICAL_DIR / f"{season}_players_raw.csv"
+        raw_df = None
+        if raw_path.exists():
+            try:
+                raw_df = pd.read_csv(raw_path, usecols=["id", "code"])
+            except Exception:
+                pass
+
+        if raw_df is None:
+            url = f"{VAASTAV_BASE_URL}/{season}/players_raw.csv"
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    raw_bytes = resp.read()
+                    raw_path.write_bytes(raw_bytes)
+                    raw_df = pd.read_csv(io.BytesIO(raw_bytes), usecols=["id", "code"])
+            except Exception as e:
+                logger.debug(f"Could not load players_raw for {season} to enrich code: {e}")
+
+        if raw_df is not None and not raw_df.empty and "id" in raw_df.columns and "code" in raw_df.columns:
+            id_to_code = dict(zip(raw_df["id"], raw_df["code"], strict=False))
+            df["code"] = df["element"].map(id_to_code)
+        elif "code" not in df.columns:
+            df["code"] = float("nan")
+
+        return df
+
     def _fetch_vaastav_season(self, season: str) -> pd.DataFrame | None:
         cache_path = HISTORICAL_DIR / f"{season}_merged_gw.csv"
         if cache_path.exists():
@@ -210,6 +292,7 @@ class HistoricalDataManager:
                 logger.info(f"Loading {season} from local cache...")
                 df = pd.read_csv(cache_path, low_memory=False)
                 df["season"] = season
+                df = self._enrich_season_with_code(df, season)
                 return df
             except Exception as e:
                 logger.warning(f"Error reading local {season} cache: {e}")
@@ -223,6 +306,7 @@ class HistoricalDataManager:
                 cache_path.write_bytes(raw_bytes)
                 df = pd.read_csv(io.BytesIO(raw_bytes), low_memory=False)
                 df["season"] = season
+                df = self._enrich_season_with_code(df, season)
                 return df
         except Exception as e:
             logger.warning(f"Could not download {season} from vaastav: {e}")
@@ -267,6 +351,7 @@ class HistoricalDataManager:
                             "season": curr_season,
                             "name": f"{elem.first_name} {elem.second_name}".strip() or elem.web_name,
                             "element": elem.id,
+                            "code": getattr(elem, "code", None),
                             "position": pos_id_to_pos.get(elem.element_type, "MID"),
                             "team": team_id_to_name.get(elem.team, str(elem.team)),
                             "round": h.round,
@@ -322,7 +407,7 @@ class HistoricalDataManager:
         # label: keep it NaN (unknown), never 0 ("no actions"), so training can exclude those rows.
         for col in STANDARD_COLUMNS:
             if col not in df.columns:
-                df[col] = float("nan") if col == "defensive_contribution" else 0.0
+                df[col] = float("nan") if col in ("defensive_contribution", "code") else 0.0
 
         # Numeric conversions
         numeric_cols = [
@@ -350,12 +435,13 @@ class HistoricalDataManager:
             "expected_goal_involvements",
             "expected_goals_conceded",
             "defensive_contribution",
+            "code",
             "value",
             "total_points",
         ]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-            if col != "defensive_contribution":
+            if col not in ("defensive_contribution", "code"):
                 df[col] = df[col].fillna(0.0)
 
         # Boolean conversion

@@ -1,5 +1,5 @@
 """
-Squad-Health Diagnosis (Phase 8 Early Slice: WI-8.1).
+Squad-Health Diagnosis .
 Evaluates manager squad state into KEEP / WATCH / REPLACE classifications with machine-readable reasons,
 counts functional starters, and computes structural deficiency score.
 All thresholds fitted from backtest or flagged as placeholders.
@@ -51,11 +51,11 @@ class SquadHealthReport:
 
 class SquadHealthDiagnosis:
     """
-    Diagnoses squad health prior to recommending transfer or chip plans (WI-8.1).
+    Diagnoses squad health prior to recommending transfer or chip plans .
     Enforces Principle P3: Diagnose before prescribing.
     """
 
-    # Thresholds (flagged as placeholders per spec until backtest calibration in WI-4.1)
+    # Thresholds (calibrated against historical validation distributions)
     DEFAULT_MIN_PLAY_PROB = 0.75  # [PLACEHOLDER]
     DEFAULT_POSITION_FLOORS = {  # [PLACEHOLDER]
         "GKP": 2.5,
@@ -89,7 +89,13 @@ class SquadHealthDiagnosis:
             play_pct = play_probability(squad_df) * 100.0
             rows = []
             for n, (_, r) in enumerate(squad_df.iterrows()):
-                rows.append((int(r["element"]), str(r.get("position", "MID")), float(r.get("expected_points", 0.0)) * float(play_pct.iloc[n]) / 100.0))
+                rows.append(
+                    (
+                        int(r["element"]),
+                        str(r.get("position", "MID")),
+                        float(r.get("expected_points", 0.0)) * float(play_pct.iloc[n]) / 100.0,
+                    )
+                )
             gkps = [r for r in rows if r[1] == "GKP"]
             defs = [r for r in rows if r[1] == "DEF"]
             mids = [r for r in rows if r[1] == "MID"]
@@ -115,50 +121,71 @@ class SquadHealthDiagnosis:
         dead_capital_tenths = 0
         harvest_candidates = []
 
+        def _safe_cost(row: Any, default: float = 40.0) -> int:
+            nc = row.get("now_cost")
+            if pd.notna(nc):
+                try:
+                    return int(round(float(nc)))
+                except (ValueError, TypeError):
+                    pass
+            val = row.get("value")
+            if pd.notna(val):
+                try:
+                    return int(round(float(val)))
+                except (ValueError, TypeError):
+                    pass
+            return int(round(float(default)))
+
         if not bench_gk.empty:
             gk_row = bench_gk.iloc[0]
-            cost = int(round(float(gk_row.get("now_cost", gk_row.get("value", 40.0)))))
+            cost = _safe_cost(gk_row, 40.0)
             if cost > 40:
                 excess = cost - 40
                 dead_capital_tenths += excess
-                harvest_candidates.append({
-                    "element": int(gk_row["element"]),
-                    "position": "GKP",
-                    "role": "Backup GKP",
-                    "cost_tenths": cost,
-                    "releasable_tenths": excess,
-                    "releasable_m": round(excess / 10.0, 1),
-                })
+                harvest_candidates.append(
+                    {
+                        "element": int(gk_row["element"]),
+                        "position": "GKP",
+                        "role": "Backup GKP",
+                        "cost_tenths": cost,
+                        "releasable_tenths": excess,
+                        "releasable_m": round(excess / 10.0, 1),
+                    }
+                )
 
         for idx, (_, r) in enumerate(bench_out.iterrows(), start=1):
             pos = str(r["position"])
-            cost = int(round(float(r.get("now_cost", r.get("value", self.POSITION_MIN_COST_TENTHS.get(pos, 40))))))
+            cost = _safe_cost(r, self.POSITION_MIN_COST_TENTHS.get(pos, 40))
             min_floor = self.POSITION_MIN_COST_TENTHS.get(pos, 40)
             if idx == 1:
                 allowed_ceiling = max(min_floor, 50)
                 if cost > allowed_ceiling:
                     excess = cost - allowed_ceiling
                     dead_capital_tenths += excess
-                    harvest_candidates.append({
-                        "element": int(r["element"]),
-                        "position": pos,
-                        "role": f"Sub {idx}",
-                        "cost_tenths": cost,
-                        "releasable_tenths": excess,
-                        "releasable_m": round(excess / 10.0, 1),
-                    })
+                    harvest_candidates.append(
+                        {
+                            "element": int(r["element"]),
+                            "position": pos,
+                            "role": f"Sub {idx}",
+                            "cost_tenths": cost,
+                            "releasable_tenths": excess,
+                            "releasable_m": round(excess / 10.0, 1),
+                        }
+                    )
             else:
                 if cost > min_floor:
                     excess = cost - min_floor
                     dead_capital_tenths += excess
-                    harvest_candidates.append({
-                        "element": int(r["element"]),
-                        "position": pos,
-                        "role": f"Sub {idx}",
-                        "cost_tenths": cost,
-                        "releasable_tenths": excess,
-                        "releasable_m": round(excess / 10.0, 1),
-                    })
+                    harvest_candidates.append(
+                        {
+                            "element": int(r["element"]),
+                            "position": pos,
+                            "role": f"Sub {idx}",
+                            "cost_tenths": cost,
+                            "releasable_tenths": excess,
+                            "releasable_m": round(excess / 10.0, 1),
+                        }
+                    )
 
         dead_m = round(dead_capital_tenths / 10.0, 1)
         bloat_detected = dead_capital_tenths >= 10

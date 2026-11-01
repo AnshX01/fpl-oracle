@@ -15,7 +15,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from fpl_oracle.news.extract import surname_token, text_extractor
-from fpl_oracle.news.ingest import is_safe_external_url
+from fpl_oracle.news.ingest import is_football_article, is_safe_external_url
 from fpl_oracle.news.models import EvidenceCategory, PlayerEvidence
 from fpl_oracle.news.reconcile import extract_publisher_domain, get_trusted_publishers, normalize_publisher_group
 
@@ -29,6 +29,8 @@ _BODY_CACHE: dict[str, str] = {}  # url -> body text ("" = fetch failed); proces
 COMMON_WORDS = {
     "young", "king", "cook", "gray", "grey", "white", "brown", "wood", "mount", "bell", "hall", "long", "reed",
     "rice", "green", "ward", "love", "strand", "back", "best", "fish", "gap", "case", "page", "ball", "will",
+    "smith", "jones", "johnson", "williams", "taylor", "davies", "evans", "thomas", "roberts", "walker",
+    "wright", "robinson", "clarke", "burn", "charles", "david", "lewis", "pope",
 }  # fmt: skip
 
 CLUB_ALIASES = {
@@ -37,12 +39,23 @@ CLUB_ALIASES = {
     "spurs": ["tottenham hotspur", "tottenham", "spurs"],
     "nott'm forest": ["nottingham forest", "nott'm forest", "forest"],
     "wolves": ["wolverhampton wanderers", "wolverhampton", "wolves"],
-    "newcastle": ["newcastle united", "newcastle"],
-    "brighton": ["brighton and hove albion", "brighton & hove albion", "brighton"],
+    "newcastle": ["newcastle united", "newcastle", "magpies"],
+    "brighton": ["brighton and hove albion", "brighton & hove albion", "brighton", "seagulls"],
     "leeds": ["leeds united", "leeds"],
-    "west ham": ["west ham united", "west ham"],
+    "west ham": ["west ham united", "west ham", "hammers"],
     "aston villa": ["aston villa", "villa"],
-    "crystal palace": ["crystal palace", "palace"],
+    "crystal palace": ["crystal palace", "palace", "eagles"],
+    "coventry city": ["coventry city", "coventry", "sky blues"],
+    "hull city": ["hull city", "hull", "tigers"],
+    "ipswich town": ["ipswich town", "ipswich", "tractor boys"],
+    "bournemouth": ["afc bournemouth", "bournemouth", "cherries"],
+    "brentford": ["brentford", "bees"],
+    "arsenal": ["arsenal", "gunners"],
+    "chelsea": ["chelsea", "blues"],
+    "liverpool": ["liverpool", "reds"],
+    "everton": ["everton", "toffees"],
+    "fulham": ["fulham", "cottagers"],
+    "sunderland": ["sunderland", "black cats"],
 }
 
 _SENT_RE = re.compile(r"[^.!?\n]+(?:[.!?\n]+|$)")
@@ -148,7 +161,13 @@ class PlayerIndex:
         if not team:
             return []
         name = _norm(team.name)
-        return CLUB_ALIASES.get(name, [name]) + [_norm(team.short_name)] * (len(team.short_name) > 3)
+        terms = list(CLUB_ALIASES.get(name, [name]))
+        root = re.sub(r" (city|town|fc|afc)$", "", name).strip()
+        if root and root not in terms:
+            terms.append(root)
+        if len(team.short_name) > 3:
+            terms.append(_norm(team.short_name))
+        return terms
 
     def club_mentioned(self, team_id: int, text: str) -> bool:
         low = _norm(text)
@@ -215,11 +234,22 @@ def extract_article_evidence(article: dict[str, Any], body: str, index: PlayerIn
     """Deterministic evidence for every roster player named in title + summary + body."""
     title = text_extractor.clean_html(article.get("title", ""))
     summary = text_extractor.clean_html(article.get("summary", ""))
+    link = article.get("link", "")
+    if link and not is_football_article(link, title, summary):
+        return []
     sents = [title] if title else []
     sents += sentences(summary) + sentences(body)
     full = " ".join([title, summary, body])
     out: dict[tuple[int, str], PlayerEvidence] = {}
     for sent in sents:
+        if "?" in sent or sent.strip().endswith("?"):
+            continue
+        sent_low = sent.lower()
+        if (
+            any(cup in sent_low for cup in ["carabao cup", "efl cup", "league cup", "fa cup"])
+            and "premier league" not in sent_low
+        ):
+            continue
         for key in set(re.findall(r"[a-z]{3,}", _norm(sent))) & index.by_key.keys():
             for player in index.resolve(key, full, sent):
                 if _other_given_name(sent, key, player) or _speaker_or_coach(sent, key):

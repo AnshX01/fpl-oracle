@@ -1,28 +1,1 @@
-"""Chronological expanding folds with indivisible season/GW blocks."""
-
-import numpy as np
-
-
-def temporal_folds(X, n_splits=3):
-    meta = X.attrs.get("meta")
-    if meta is None or "season" not in meta or "round" not in meta:
-        raise ValueError("Temporal calibration requires aligned season/round metadata")
-    meta = (
-        meta.loc[X.index]
-        if X.index.is_unique and meta.index.is_unique and all(i in meta.index for i in X.index)
-        else meta
-    )
-    if len(meta) != len(X):
-        raise ValueError("Temporal calibration metadata length mismatch")
-    groups = list(zip(meta["season"].astype(str), meta["round"].astype(int), strict=True))
-    ordered = sorted(set(groups))
-    if len(ordered) < n_splits + 1:
-        raise ValueError("Insufficient chronological gameweeks for calibration")
-    blocks = np.array_split(np.arange(len(ordered)), n_splits + 1)
-    for i in range(1, len(blocks)):
-        cutoff = ordered[int(blocks[i][0])]
-        upper = ordered[int(blocks[i][-1])]
-        train = np.array([j for j, group in enumerate(groups) if group < cutoff])
-        test = np.array([j for j, group in enumerate(groups) if cutoff <= group <= upper])
-        if len(train) and len(test):
-            yield train, test
+"""Chronological expanding folds with indivisible season/GW blocks."""import reimport numpy as npdef _season_round_sort_key(group: tuple[str, int]) -> tuple[int, int]:    """    Extract integer chronological sort key (start_year, round) from (season_str, round_int).    Handles standard formats: '2025-26', '2025/26', '2025', '25-26'.    """    season_str, round_num = group    match = re.search(r"(\d{4})", str(season_str))    if match:        start_year = int(match.group(1))    else:        # Fallback for 2-digit years or missing years        match2 = re.search(r"(\d{2})", str(season_str))        start_year = 2000 + int(match2.group(1)) if match2 else 0    return (start_year, int(round_num))def temporal_folds(X, n_splits=3):    """    Chronological expanding window cross-validation generator.    Yields (train_indices, test_indices) where all matches in train strictly precede    test gameweeks, and each gameweek block is indivisible.    """    meta = X.attrs.get("meta")    if meta is None or "season" not in meta or "round" not in meta:        raise ValueError("Temporal calibration requires aligned season/round metadata")    if len(meta) != len(X):        if hasattr(X, "index") and hasattr(meta, "index"):            common_idx = X.index.intersection(meta.index)            if len(common_idx) == len(X):                meta = meta.loc[X.index]    if len(meta) != len(X):        raise ValueError("Temporal calibration metadata length mismatch")    groups = list(zip(meta["season"].astype(str), meta["round"].astype(int), strict=True))    unique_groups = set(groups)    ordered = sorted(unique_groups, key=_season_round_sort_key)    if len(ordered) < n_splits + 1:        raise ValueError("Insufficient chronological gameweeks for calibration")    rank_map = {g: r for r, g in enumerate(ordered)}    group_ranks = np.array([rank_map[g] for g in groups], dtype=int)    blocks = np.array_split(np.arange(len(ordered)), n_splits + 1)    for i in range(1, len(blocks)):        cutoff_rank = int(blocks[i][0])        upper_rank = int(blocks[i][-1])        train = np.flatnonzero(group_ranks < cutoff_rank)        test = np.flatnonzero((group_ranks >= cutoff_rank) & (group_ranks <= upper_rank))        if len(train) and len(test):            yield train, test

@@ -191,23 +191,15 @@ class ScoringEnsemble:
         cop_scale = (
             np.clip(X["chance_of_playing"].values / 100.0, 0.0, 1.0) if "chance_of_playing" in X.columns else 1.0
         )
-        p_min60 = p_min60 * cop_scale
-        p_starts = p_starts * cop_scale
-        exp_mins = exp_mins * cop_scale
-        if "news_start_probability" in X:
-            start = X["news_start_probability"].to_numpy(dtype=float)
-            valid = np.isfinite(start)
-            p_starts = np.where(valid, np.minimum(p_starts, start * cop_scale), p_starts)
-            p_min60 = np.minimum(p_min60, p_starts)
+        base_exp_mins = exp_mins.copy() if hasattr(exp_mins, "copy") else exp_mins
         limit_ratio: np.ndarray | float = 1.0
         if "news_minutes_limit" in X:
             limit = X["news_minutes_limit"].to_numpy(dtype=float)
             valid = np.isfinite(limit)
-            ratio = np.where(valid, np.minimum(1.0, limit / np.maximum(exp_mins, 1e-9)), 1.0)
+            # Scale against conditional base minutes to prevent algebraic cancellation with cop_scale
+            ratio = np.where(valid, np.minimum(1.0, limit / np.maximum(base_exp_mins, 1e-9)), 1.0)
             limit_ratio = ratio
-            exp_mins = exp_mins * ratio
             p_min60 = np.where(valid & (limit < 60), 0.0, p_min60)
-            # Scale unconditional point components once for explicit minutes restriction.
             components = dict(components)
             for key in (
                 "expected_goals",
@@ -223,6 +215,15 @@ class ScoringEnsemble:
             ):
                 if key in components:
                     components[key] = components[key] * ratio
+
+        exp_mins = base_exp_mins * limit_ratio * cop_scale
+        p_min60 = p_min60 * cop_scale
+        p_starts = p_starts * cop_scale
+        if "news_start_probability" in X:
+            start = X["news_start_probability"].to_numpy(dtype=float)
+            valid = np.isfinite(start)
+            p_starts = np.where(valid, np.minimum(p_starts, start * cop_scale), p_starts)
+            p_min60 = np.minimum(p_min60, p_starts)
 
         # Probability of playing (at least 1 minute)
         # Bounded coherently: p_play >= p_min60
@@ -290,7 +291,7 @@ class ScoringEnsemble:
         exp_pen_saves = components.get("expected_penalties_saved", np.zeros(n))
         exp_pen_saves_pts = exp_pen_saves * float(PENALTY_SAVE_POINTS) * pos_gkp * cop_scale
 
-        # 11. Own goals (-2 pts per own goal, WI-1.2)
+        # 11. Own goals (-2 pts per own goal)
         if "expected_own_goals" in components:
             exp_og = np.asarray(components["expected_own_goals"], dtype=float)
         elif "roll_own_goals_5" in X.columns:
@@ -301,7 +302,7 @@ class ScoringEnsemble:
             exp_og = pos_def * 0.008 + pos_gkp * 0.003 + pos_mid * 0.002 + pos_fwd * 0.001
         exp_og_deduction = exp_og * float(abs(OWN_GOAL_POINTS)) * p_play  # p_play already carries availability
 
-        # 12. Penalties missed (-2 pts per penalty missed, WI-1.2)
+        # 12. Penalties missed (-2 pts per penalty missed)
         # Expectation = P(takes penalty) * P(penalty awarded) * miss_rate, shrunk to positional prior
         if "expected_penalties_missed" in components:
             exp_pm = np.asarray(components["expected_penalties_missed"], dtype=float)
@@ -348,7 +349,7 @@ class ScoringEnsemble:
         xP = raw_xP
 
         exp_blend_adj = np.zeros(n)
-        # Apply learned validation blend with heuristic baselines (WI-3.10)
+        # Apply learned validation blend with heuristic baselines
         has_baseline_features = (
             "roll_points_5" in X.columns and "roll_starts_ratio_5" in X.columns and "opponent_difficulty" in X.columns
         )
@@ -412,6 +413,10 @@ class ScoringEnsemble:
         p10 = np.where(zero_mask, 0.0, np.maximum(0.0, xP + q10_off))
         p90 = np.where(zero_mask, 0.0, np.maximum(p50 + 1.0, xP + q90_off))
 
+        # Enforce quantile monotonicity: p10 <= p50 <= p90 unconditionally
+        p50 = np.maximum(p50, p10)
+        p90 = np.maximum(p90, p50)
+
         variance = sigma**2
 
         r_app = np.round(appearance_pts, 2)
@@ -460,6 +465,7 @@ class ScoringEnsemble:
                 "exp_cs_pts": r_cs,
                 "exp_defcon_pts": r_defcon,
                 "exp_bonus_pts": r_bonus,
+                "expected_minutes": np.round(exp_mins, 1),
                 "p_starts": np.round(p_starts, 3),
                 "p_min60": np.round(p_min60, 3),
                 "p_clean_sheet": np.round(components.get("p_clean_sheet", np.full(n, 0.30)), 4),

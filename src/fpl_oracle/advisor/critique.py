@@ -1,5 +1,5 @@
 """
-Plan Critique, What-If Sensitivity, and Decision Defense (Phase 8: WI-8.6).
+Plan Critique, What-If Sensitivity, and Decision Defense .
 Critiques manager-proposed transfers, chips, and captaincy choices against the efficient frontier,
 evaluates regret in expected points and P(beat roll), provides numeric reasons,
 identifies the strongest alternative, and offers concessions when proposals have qualitative merit.
@@ -83,7 +83,7 @@ def _normal_cdf(x: float) -> float:
 
 class PlanCritiqueService:
     """
-    Evaluates and critiques manager proposals, providing what-if sensitivity analysis (WI-8.6).
+    Evaluates and critiques manager proposals, providing what-if sensitivity analysis .
     Enforces Principle P8: Decisive expert voice with numbers.
     """
 
@@ -185,31 +185,41 @@ class PlanCritiqueService:
         pool_map = {int(r["element"]): r for _, r in player_pool_df.iterrows()}
         squad_map = {int(r["element"]): r for _, r in current_squad_df.iterrows()}
 
+        from fpl_oracle.rules.transfers import sell_price
+
         # Verify legality and budget
         net_bank = float(bank)
         for move in proposed_transfers:
             out_id = move.get("out")
             in_id = move.get("in")
             if out_id and out_id in squad_map:
-                net_bank += float(squad_map[out_id].get("selling_price", squad_map[out_id].get("value", 50)))
+                o_row = squad_map[out_id]
+                if "selling_price" in o_row and pd.notnull(o_row["selling_price"]):
+                    s_price = float(o_row["selling_price"])
+                else:
+                    buy_p = int(round(float(o_row.get("purchase_price", o_row.get("value", 50)))))
+                    now_p = int(round(float(o_row.get("now_cost", o_row.get("value", buy_p)))))
+                    s_price = float(sell_price(buy_p, now_p))
+                net_bank += s_price
             if in_id and in_id in pool_map:
-                net_bank -= float(pool_map[in_id].get("value", 50))
+                net_bank -= float(pool_map[in_id].get("now_cost", pool_map[in_id].get("value", 50)))
 
         # Wildcard/Free Hit rebuild the squad under the planner's own budget check.
         is_budget_legal = net_bank >= -0.001 or chip in _FREE_TRANSFER_CHIPS
 
         # Calculate estimated horizon xP for proposed plan
         # Base from roll plan adjusted for diff in transfer xPs across horizon
+        gamma = 0.95
         transfer_delta_xp = 0.0
         for move in [] if chip in _FREE_TRANSFER_CHIPS else proposed_transfers:
             out_id = move.get("out")
             in_id = move.get("in")
-            for gw in range(target_gw, target_gw + horizon_len):
+            for step, gw in enumerate(range(target_gw, target_gw + horizon_len)):
                 gw_df = horizon_projections.get(gw, player_pool_df)
                 gw_dict = {int(r["element"]): float(r.get("expected_points", 0.0)) for _, r in gw_df.iterrows()}
                 in_xp = gw_dict.get(int(in_id), 0.0) if in_id else 0.0
                 out_xp = gw_dict.get(int(out_id), 0.0) if out_id else 0.0
-                transfer_delta_xp += in_xp - out_xp
+                transfer_delta_xp += (gamma**step) * (in_xp - out_xp)
 
         # Captain adjustment
         captain_delta = 0.0
@@ -286,7 +296,7 @@ class PlanCritiqueService:
                 f"(Hits: -{hit_penalty:.0f} pts, P(beat roll) = {p_beat_roll * 100:.1f}%)."
             )
 
-        # Cognitive guardrails & FOMO / regression traps (Hall of Fame Feature 3)
+        # Cognitive guardrails & regression traps
         cognitive_warnings = self.detect_regression_traps(
             proposed_transfers=proposed_transfers,
             current_squad_df=current_squad_df,
@@ -319,7 +329,7 @@ class PlanCritiqueService:
         player_pool_df: pd.DataFrame,
     ) -> list[str]:
         """
-        Cognitive Bias / FOMO Guardrail (Hall of Fame Feature 3).
+        Cognitive Bias & Regression Trap Guardrail.
         Detects chasing past points (unsustainable conversion rate) and premature rage-selling
         (dumping elite underlying assets at a variance trough).
         Zero hardcoded player names in production code.

@@ -113,11 +113,11 @@ class LiveRulesChecker:
         set1_chips = [c for c in chips if c.stop_event == 19]
         set2_chips = [c for c in chips if c.stop_event == 38]
 
-        if len(chips) != 8:
-            mismatches.append(f"Total chips mismatch: live API has {len(chips)} chips, expected 8")
+        if len(chips) not in (5, 8):
+            mismatches.append(f"Total chips mismatch: live API has {len(chips)} chips, expected 5 (or 8)")
         if "manager" in chip_names or "assistant_manager" in chip_names:
             mismatches.append("Assistant Manager chip unexpectedly present in live 2026/27 API")
-        if len(set1_chips) != 4 or len(set2_chips) != 4:
+        if len(chips) == 8 and (len(set1_chips) != 4 or len(set2_chips) != 4):
             mismatches.append(
                 f"Chip sets mismatch: Set 1 has {len(set1_chips)} chips, Set 2 has {len(set2_chips)} chips (expected 4 each)"
             )

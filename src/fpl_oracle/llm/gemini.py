@@ -30,7 +30,7 @@ class GeminiProvider:
         ]
         for round_no in range(MAX_TOOL_ROUNDS):
             payload = {
-                "system_instruction": {"parts": [{"text": system_prompt}]},
+                "systemInstruction": {"parts": [{"text": system_prompt}]},
                 "contents": contents,
                 "tools": [{"function_declarations": declarations}],
                 "tool_config": {"function_calling_config": {"mode": "AUTO"}},
@@ -88,9 +88,21 @@ class GeminiProvider:
             try:
                 return await self._chat_with_model(cand, messages, system_prompt, timeout_secs)
             except (GeminiRateLimitError, RuntimeError) as e:
-                is_rate_limit = isinstance(e, GeminiRateLimitError) or "429" in str(e)
-                if is_rate_limit and cand != candidate_models[-1]:
-                    logger.warning("Gemini model %s rate limited, attempting fallback to next model...", cand)
+                err_str = str(e)
+                is_retriable = (
+                    isinstance(e, GeminiRateLimitError)
+                    or "429" in err_str
+                    or "404" in err_str
+                    or "503" in err_str
+                    or "500" in err_str
+                    or "empty_candidates" in err_str
+                )
+                if is_retriable and cand != candidate_models[-1]:
+                    logger.warning(
+                        "Gemini model %s encountered retriable error (%s), attempting fallback to next model...",
+                        cand,
+                        err_str,
+                    )
                     last_error = e
                     continue
                 raise

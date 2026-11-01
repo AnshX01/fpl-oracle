@@ -4,6 +4,7 @@ Picks the optimal starting XI, bench ordering, and captain/vice-captain by exact
 formations (ties by player id, so identical inputs give an identical lineup), then adds the P10/P90 risk read.
 """
 
+import itertools
 import math
 from collections.abc import Collection, Mapping
 from typing import Any
@@ -39,12 +40,13 @@ def _order_bench(bench_df: pd.DataFrame, starters_df: pd.DataFrame) -> pd.DataFr
     absent = (1.0 - play_probability(out_starters)).clip(lower=BASE_ABSENCE_RISK)
     counts = out_starters["position"].value_counts().to_dict()
     mins = {"DEF": 3, "MID": 2, "FWD": 1}
+    maxs = {"DEF": 5, "MID": 5, "FWD": 3}
 
     def legal(sub_pos: str, out_pos: str) -> bool:
         c = {k: counts.get(k, 0) for k in mins}
         c[out_pos] -= 1
         c[sub_pos] += 1
-        return all(c[k] >= mins[k] for k in mins)
+        return all(mins[k] <= c[k] <= maxs[k] for k in mins)
 
     play = play_probability(outfield)
     sub_values = []
@@ -57,15 +59,34 @@ def _order_bench(bench_df: pd.DataFrame, starters_df: pd.DataFrame) -> pd.DataFr
                 reliability_mult *= 1.05
             elif exp_mins < 60.0:
                 reliability_mult *= max(0.1, exp_mins / 60.0)
-        val = (
-            p_play
-            * float(r["expected_points"])
-            * sum(float(absent[j]) for j, s in out_starters["position"].items() if legal(r["position"], s))
-            * reliability_mult
-        )
+        coverage_weight = 0.0
+        for j, s in out_starters["position"].items():
+            if legal(r["position"], s):
+                p_abs = float(absent[j])
+                # Formation-locked eligibility priority:
+                # When a starting position is at its minimum requirement (e.g. 3 DEFs, 2 MIDs, 1 FWD),
+                # an absence in that position strictly requires a same-position bench replacement.
+                # Prioritize position eligibility so rotation risk at minimum requirements places
+                # the only legal cover at Sub 1.
+                if counts.get(s, 0) == mins.get(s, 0) and r["position"] == s:
+                    if p_abs > BASE_ABSENCE_RISK:
+                        coverage_weight += p_abs * 2.5
+                    else:
+                        coverage_weight += p_abs * 1.5
+                else:
+                    coverage_weight += p_abs
+
+        val = p_play * float(r["expected_points"]) * coverage_weight * reliability_mult
         sub_values.append(val)
     outfield["_sub_value"] = sub_values
-    outfield = outfield.sort_values(by=["_sub_value", "expected_points", "element"], ascending=[False, False, True])
+    pos_mask = outfield["expected_points"] > 0
+    pos_df = outfield[pos_mask].sort_values(
+        by=["_sub_value", "expected_points", "element"], ascending=[False, False, True]
+    )
+    neg_df = outfield[~pos_mask].sort_values(
+        by=["expected_points", "_sub_value", "element"], ascending=[False, True, True]
+    )
+    outfield = pd.concat([pos_df, neg_df]).reset_index(drop=True)
     outfield = outfield.drop(columns="_sub_value")
     return pd.concat([bench_gk, outfield]).reset_index(drop=True)
 
@@ -87,6 +108,10 @@ def best_lineup(
     cap_extra: float = 1.0,
     blocked: Collection[int] = (),
     starter_score: Mapping[int, float] | None = None,
+    allow_blocked_fallback: bool = False,
+    team: Mapping[int, int | str] | None = None,
+    covariance_weight: float = 0.0,
+    cost: Mapping[int, float] | None = None,
 ) -> tuple[list[int], list[int], int, int | None]:
     """
     Exact (starters, bench, captain, vice) for a 15-man squad: best formation by
@@ -95,16 +120,59 @@ def best_lineup(
     The MILP's lineup variables are continuous (integral at a vertex, but a tie can leave a fractional
     split), so the reported lineup is rebuilt from the chosen squad instead of rounded from them.
     `starter_score` allows applying cameo risk / minutes certainty penalties when selecting the starting XI.
+    `covariance_weight` & `team` apply Markowitz portfolio backline covariance regularization (penalizing
+    high-correlation defensive double-ups sharing clean-sheet wipeout risk when close alternatives exist).
     """
     score = cap_score if cap_score is not None else xp
     st_score = starter_score if starter_score is not None else xp
     ranked = {
-        pos: sorted((p for p in squad if position[p] == pos and p not in blocked), key=lambda p: (-st_score.get(p, 0.0), p))
+        pos: sorted(
+            (p for p in squad if position[p] == pos and p not in blocked), key=lambda p: (-st_score.get(p, 0.0), p)
+        )
         for pos in ("GKP", "DEF", "MID", "FWD")
     }
+    # Emergency fallback: if injury crisis leaves fewer fit players than formation minimum
+    # or fewer than 10 total outfielders, backfill with blocked players
+    outfield_count = len(ranked["DEF"]) + len(ranked["MID"]) + len(ranked["FWD"])
+    if allow_blocked_fallback or outfield_count < 10 or len(ranked["GKP"]) < 1:
+        min_formation = {"GKP": 1, "DEF": 3, "MID": 2, "FWD": 1}
+        for pos, req in min_formation.items():
+            if len(ranked[pos]) < req:
+                blocked_pos = sorted(
+                    (p for p in squad if position[p] == pos and p in blocked and p not in ranked[pos]),
+                    key=lambda p: (-st_score.get(p, 0.0), p),
+                )
+                ranked[pos].extend(blocked_pos)
+        outfield_count = len(ranked["DEF"]) + len(ranked["MID"]) + len(ranked["FWD"])
+        if outfield_count < 10:
+            for pos in ("DEF", "MID", "FWD"):
+                blocked_pos = sorted(
+                    (p for p in squad if position[p] == pos and p in blocked and p not in ranked[pos]),
+                    key=lambda p: (-st_score.get(p, 0.0), p),
+                )
+                ranked[pos].extend(blocked_pos)
 
     def captain_of(starters: list[int]) -> int:
         return max(starters, key=lambda p: (score.get(p, 0.0), xp.get(p, 0.0), -p))
+
+    def def_stack_penalty(starters: list[int]) -> float:
+        if not covariance_weight or not team:
+            return 0.0
+        backline = [p for p in starters if position.get(p) in ("DEF", "GKP")]
+        pen = 0.0
+        n_back = len(backline)
+        for i in range(n_back):
+            p_i = backline[i]
+            t_i = team.get(p_i)
+            if not t_i:
+                continue
+            sigma_i = max(1.0, xp.get(p_i, 3.5) * 0.5)
+            for j in range(i + 1, n_back):
+                p_j = backline[j]
+                if team.get(p_j) == t_i:
+                    sigma_j = max(1.0, xp.get(p_j, 3.5) * 0.5)
+                    pen += covariance_weight * (0.45 * sigma_i * sigma_j)
+        return pen
 
     best: tuple[tuple[float, float], list[int]] | None = None
     for d in range(3, 6):
@@ -114,19 +182,50 @@ def best_lineup(
                 continue
             if len(ranked["FWD"]) < f:
                 continue
-            starters = ranked["GKP"][:1] + ranked["DEF"][:d] + ranked["MID"][:m] + ranked["FWD"][:f]
-            total = sum(st_score.get(p, 0.0) for p in starters)
-            raw_total = sum(xp.get(p, 0.0) for p in starters)
-            key = ((1.0 - bench_weight) * total + cap_extra * score.get(captain_of(starters), 0.0), raw_total)
-            if best is None or key > best[0]:
-                best = (key, starters)
+
+            gkp_pick = ranked["GKP"][:1]
+            mid_picks = ranked["MID"][:m]
+            fwd_picks = ranked["FWD"][:f]
+
+            def_pool = ranked["DEF"][: min(len(ranked["DEF"]), d + 2)]
+            def_combos = (
+                list(itertools.combinations(def_pool, d))
+                if (covariance_weight > 0.0 and team and len(def_pool) > d)
+                else [ranked["DEF"][:d]]
+            )
+
+            for d_starters in def_combos:
+                starters = gkp_pick + list(d_starters) + mid_picks + fwd_picks
+                cov_pen = def_stack_penalty(starters)
+                total = sum(st_score.get(p, 0.0) for p in starters) - cov_pen
+                raw_total = sum(xp.get(p, 0.0) for p in starters)
+                cap_val = score.get(captain_of(starters), 0.0)
+                formation_obj = (1.0 - bench_weight) * total + cap_extra * cap_val
+                capital_val = sum(cost.get(p, 0.0) for p in starters) if cost else 0.0
+
+                if best is None:
+                    best = ((formation_obj, raw_total, capital_val), starters)
+                else:
+                    best_obj, best_raw, best_cap = best[0]
+                    diff = formation_obj - best_obj
+                    if diff > 0.10:
+                        best = ((formation_obj, raw_total, capital_val), starters)
+                    elif diff >= -0.10:
+                        # Statistically indistinguishable within noise band (<= 0.10 xP):
+                        # break tie by fielding higher active team capital (talismans over budget defenders)
+                        if (capital_val, formation_obj, raw_total) > (best_cap, best_obj, best_raw):
+                            best = ((formation_obj, raw_total, capital_val), starters)
     if best is None:
         raise RuntimeError("Could not find optimal starting lineup.")
     starters = best[1]
     captain = captain_of(starters)
     rest = [p for p in starters if p != captain]
     vice = max(rest, key=lambda p: (xp.get(p, 0.0), -p)) if rest else None
-    bench = sorted((p for p in squad if p not in starters), key=lambda p: (-xp.get(p, 0.0), p))
+    bench_gk = [p for p in squad if p not in starters and position.get(p) == "GKP"]
+    bench_outfield = sorted(
+        (p for p in squad if p not in starters and position.get(p) != "GKP"), key=lambda p: (-xp.get(p, 0.0), p)
+    )
+    bench = bench_gk + bench_outfield
     return starters, bench, captain, vice
 
 
@@ -157,6 +256,7 @@ class LineupOptimizer:
     ):
         try:
             from fpl_oracle.config import SETTINGS
+
             opt_cfg = SETTINGS.get("optimizer", {})
         except Exception:
             opt_cfg = {}
@@ -187,6 +287,7 @@ class LineupOptimizer:
         eo_hedge_weight: float | None = None,
         differential_captain_hurdle: float | None = None,
         midweek_data: dict[int, dict[str, Any]] | None = None,
+        covariance_weight: float | None = None,
     ) -> dict[str, Any]:
         """
         Given a 15-player squad, selects optimal starting XI, captain, vice-captain, and bench order.
@@ -198,7 +299,7 @@ class LineupOptimizer:
 
         df = squad_df.copy().reset_index(drop=True)
 
-        # Midweek European & Domestic Cup Rotation Drag (Hall of Fame Feature 4)
+        # Midweek European & Domestic Cup Rotation Drag
         if midweek_data or "turnaround_hours" in df.columns:
             from fpl_oracle.optimise.turnaround import turnaround_drag_service
 
@@ -218,7 +319,7 @@ class LineupOptimizer:
         else:  # balanced / points
             cap_scores = df["expected_points"].astype(float).copy()
 
-        # Effective Ownership (EO) Hedging & Armband Downside Shield (Hall of Fame Feature 1)
+        # Effective Ownership (EO) Hedging & Armband Downside Shield
         eo_values = pd.Series(0.0, index=df.index)
         if "top10k_eo" in df.columns:
             eo_values = pd.to_numeric(df["top10k_eo"], errors="coerce").fillna(0.0)
@@ -227,16 +328,16 @@ class LineupOptimizer:
         elif "selected_by_percent" in df.columns:
             own = pd.to_numeric(df["selected_by_percent"], errors="coerce").fillna(0.0)
             eo_values = own.apply(
-                lambda x: min(190.0, float(x) * 2.2)
-                if float(x) >= 35.0
-                else (float(x) * 1.5 if float(x) >= 15.0 else float(x))
+                lambda x: (
+                    min(190.0, float(x) * 2.2)
+                    if float(x) >= 35.0
+                    else (float(x) * 1.5 if float(x) >= 15.0 else float(x))
+                )
             )
 
         hedge_w = float(eo_hedge_weight if eo_hedge_weight is not None else self.eo_hedge_weight)
         hurdle_val = float(
-            differential_captain_hurdle
-            if differential_captain_hurdle is not None
-            else self.differential_captain_hurdle
+            differential_captain_hurdle if differential_captain_hurdle is not None else self.differential_captain_hurdle
         )
 
         has_positive_eo = (eo_values > 0).any()
@@ -252,15 +353,10 @@ class LineupOptimizer:
             if risk_preference not in ("aggressive", "chasing", "chasing_pack"):
                 eo_excess = (max_eo - 100.0) / 100.0
                 downside_discount = eo_excess * hedge_w
-
-                for idx, row in df.iterrows():
-                    elem = int(row["element"])
-                    if elem != consensus_element:
-                        cand_xp = float(row["expected_points"])
-                        if cand_xp - consensus_xp < hurdle_val:
-                            # Fails to clear hurdle: discount candidate score so consensus retains armband
-                            cap_scores.loc[idx] -= downside_discount + 0.50
-
+                cand_mask = (df["element"].astype(int) != consensus_element) & (
+                    df["expected_points"].astype(float) - consensus_xp < hurdle_val
+                )
+                cap_scores.loc[cand_mask] -= downside_discount + 0.50
 
         elements = df["element"].astype(int)
         unavailable = (
@@ -273,26 +369,82 @@ class LineupOptimizer:
         play_probs = play_probability(df)
         cameo_penalty = (1.0 - play_probs) * pen
         if "expected_minutes" in df.columns:
-            low_mins_mask = df["expected_minutes"].notna() & (df["expected_minutes"] < 65.0)
-            mins_factor = ((65.0 - df.loc[low_mins_mask, "expected_minutes"]) / 65.0).clip(0.0, 1.0)
-            cameo_penalty.loc[low_mins_mask] += mins_factor * pen
+            # 5-Substitution Auto-Sub Blocking Opportunity Cost Engine:
+            # Unimodal substitute probability model peaking at low substitute minutes (M ~ 15 min):
+            # p_cameo = p_play_val * exp(-((exp_m - 15)^2) / (2 * 12^2)) for exp_m <= 55.0.
+            # Eliminates step discontinuities and double-counting with baseline minutes penalties.
+            sorted_xp = df["expected_points"].astype(float).sort_values(ascending=False)
+            bench_baseline_xp = float(sorted_xp.iloc[11]) if len(sorted_xp) >= 12 else 3.50
+            block_loss = max(0.0, bench_baseline_xp - 1.0)
+
+            exp_m = pd.to_numeric(df["expected_minutes"], errors="coerce")
+            cameo_mask = exp_m.notna() & (exp_m <= 55.0)
+            if cameo_mask.any():
+                m_sub = exp_m[cameo_mask].to_numpy()
+                p_sub = play_probs[cameo_mask].to_numpy()
+                p_cameo = p_sub * np.exp(-((m_sub - 15.0) ** 2) / (2.0 * (12.0**2)))
+                add_pen = np.round(p_cameo * block_loss * 0.5, 2)
+                cameo_penalty.loc[cameo_mask] += add_pen
         starter_scores = df["expected_points"] - cameo_penalty
 
-        starter_ids, _, cap_id, _ = best_lineup(
-            list(elements),
-            dict(zip(elements, df["position"], strict=True)),
-            dict(zip(elements, df["expected_points"].astype(float), strict=True)),
-            1.0 if is_bench_boost else 0.0,
-            dict(zip(elements, cap_scores.astype(float), strict=True)),
-            cap_multiplier - 1.0,
-            blocked,
-            starter_score=dict(zip(elements, starter_scores.astype(float), strict=True)),
-        )
+        # Markowitz Backline Covariance Weight:
+        # Calibrated to manager's risk preference: conservative strongly avoids correlated defensive collapse,
+        # balanced/points applies mild diversification regularization, aggressive allows raw ceiling stacks.
+        if covariance_weight is None:
+            if risk_preference == "conservative":
+                cov_weight = 0.35
+            elif risk_preference in ("points", "aggressive", "chasing", "chasing_pack"):
+                cov_weight = 0.0
+            else:
+                cov_weight = 0.15
+        else:
+            cov_weight = float(covariance_weight)
+
+        team_map = dict(zip(elements, df["team"], strict=False)) if "team" in df.columns else None
+        cost_series = None
+        for cand_col in ("now_cost", "value", "cost"):
+            if cand_col in df.columns:
+                s = pd.to_numeric(df[cand_col], errors="coerce").fillna(0.0)
+                if (s > 0).any():
+                    if cost_series is None:
+                        cost_series = s.copy()
+                    else:
+                        cost_series = cost_series.mask(cost_series <= 0, s)
+        cost_map = dict(zip(elements, cost_series.astype(float), strict=False)) if cost_series is not None else None
+
+        try:
+            starter_ids, _, cap_id, _ = best_lineup(
+                list(elements),
+                dict(zip(elements, df["position"], strict=True)),
+                dict(zip(elements, df["expected_points"].astype(float), strict=True)),
+                1.0 if is_bench_boost else 0.0,
+                dict(zip(elements, cap_scores.astype(float), strict=True)),
+                cap_multiplier - 1.0,
+                blocked,
+                starter_score=dict(zip(elements, starter_scores.astype(float), strict=True)),
+                allow_blocked_fallback=False,
+                team=team_map,
+                covariance_weight=cov_weight,
+                cost=cost_map,
+            )
+        except RuntimeError:
+            starter_ids, _, cap_id, _ = best_lineup(
+                list(elements),
+                dict(zip(elements, df["position"], strict=True)),
+                dict(zip(elements, df["expected_points"].astype(float), strict=True)),
+                1.0 if is_bench_boost else 0.0,
+                dict(zip(elements, cap_scores.astype(float), strict=True)),
+                cap_multiplier - 1.0,
+                blocked,
+                starter_score=dict(zip(elements, starter_scores.astype(float), strict=True)),
+                allow_blocked_fallback=True,
+                team=team_map,
+                covariance_weight=cov_weight,
+                cost=cost_map,
+            )
 
         # Determine whether EO downside shield was applied or differential cleared the hurdle
-        raw_xp_leader = (
-            int(df.loc[df["expected_points"].astype(float).idxmax(), "element"]) if len(df) > 0 else None
-        )
+        raw_xp_leader = int(df.loc[df["expected_points"].astype(float).idxmax(), "element"]) if len(df) > 0 else None
         if max_eo >= 100.0 and consensus_element is not None:
             if risk_preference not in ("aggressive", "chasing", "chasing_pack"):
                 if raw_xp_leader != consensus_element and cap_id == consensus_element:
@@ -312,22 +464,31 @@ class LineupOptimizer:
                     shield_reason = f"Consensus candidate (element {consensus_element}) is natural raw xP leader ({max_eo:.1f}% EO)."
             else:
                 eo_shield_applied = False
-                shield_reason = "Chasing/aggressive risk preference: EO downside shield lifted to hunt differential ceiling."
+                shield_reason = (
+                    "Chasing/aggressive risk preference: EO downside shield lifted to hunt differential ceiling."
+                )
 
         is_starter = elements.isin(starter_ids)
         starters_df = df[is_starter].copy()
         bench_df = df[~is_starter].copy()
         captain_row = df[elements == cap_id].iloc[0]
 
-        # Vice-captain: best alternative if the captain does not play. Rank by xP x P(plays); a vice from the
-        # captain's club shares the same kickoff, so it is a weaker hedge (5% haircut).
+        # Vice-captain: best alternative if the captain does not play. Rank by xP x P(plays).
+        # A vice from the captain's club shares the same kickoff and postponement risk,
+        # so we apply a 15% discount to strongly prefer an insurance hedge from a distinct fixture.
         others = starters_df[starters_df["element"] != captain_row["element"]].copy()
-        others["_vice_score"] = others["expected_points"] * play_probability(others)
-        if "team" in others.columns:
-            others.loc[others["team"] == captain_row.get("team"), "_vice_score"] *= 0.95
-        others = others.sort_values(by=["_vice_score", "expected_points", "element"], ascending=[False, False, True])
-        vice_captain_row = others.iloc[0]
-        vice_play = float(play_probability(others.iloc[:1]).iloc[0])
+        if others.empty:
+            vice_captain_row = captain_row
+            vice_play = 1.0
+        else:
+            others["_vice_score"] = others["expected_points"] * play_probability(others)
+            if "team" in others.columns:
+                others.loc[others["team"] == captain_row.get("team"), "_vice_score"] *= 0.85
+            others = others.sort_values(
+                by=["_vice_score", "expected_points", "element"], ascending=[False, False, True]
+            )
+            vice_captain_row = others.iloc[0]
+            vice_play = float(play_probability(others.iloc[:1]).iloc[0])
 
         ordered_bench = _order_bench(bench_df, starters_df)
 
@@ -378,6 +539,32 @@ class LineupOptimizer:
         # Bench risk assessment
         bench_risk_starters = starters_df[play_probability(starters_df) < 0.75]
 
+        # Formation eligibility analysis for bench ordering advice
+        mins_req = {"DEF": 3, "MID": 2, "FWD": 1}
+        locked_positions = [
+            pos for pos, req in mins_req.items() if len(starters_df[starters_df["position"] == pos]) == req
+        ]
+        at_risk_locked = [
+            pos
+            for pos in locked_positions
+            if not starters_df[(starters_df["position"] == pos) & (play_probability(starters_df) < 0.90)].empty
+        ]
+        outfield_bench = ordered_bench[ordered_bench["position"] != "GKP"]
+        sub1 = outfield_bench.iloc[0] if len(outfield_bench) > 0 else None
+        bench_notes = []
+        if at_risk_locked and sub1 is not None:
+            for pos in at_risk_locked:
+                if sub1["position"] == pos:
+                    bench_notes.append(
+                        f"Formation-locked {pos} requirement ({mins_req[pos]} {pos}s): {sub1['position']} "
+                        f"prioritized at Sub 1 to guarantee autosub eligibility for at-risk starting {pos}."
+                    )
+                else:
+                    bench_notes.append(
+                        f"Notice: Starting formation is at minimum {pos} requirement ({mins_req[pos]} {pos}s) with rotation risk. "
+                        f"Eligible {pos} coverage is recommended on the bench to prevent autosub skips."
+                    )
+
         return {
             "formation": formation,
             "starters": starters_df,
@@ -416,6 +603,13 @@ class LineupOptimizer:
             "bench_risk_starters": bench_risk_starters[
                 [c for c in ["element", "web_name", "chance_of_playing"] if c in bench_risk_starters.columns]
             ].to_dict(orient="records"),
+            "bench_ordering_advice": {
+                "sub_1_element": int(sub1["element"]) if sub1 is not None else None,
+                "sub_1_position": str(sub1["position"]) if sub1 is not None else None,
+                "locked_min_positions": locked_positions,
+                "at_risk_locked_positions": at_risk_locked,
+                "notes": bench_notes,
+            },
             "captain_eo_shield": {
                 "consensus_element": consensus_element,
                 "consensus_eo": round(max_eo, 1),

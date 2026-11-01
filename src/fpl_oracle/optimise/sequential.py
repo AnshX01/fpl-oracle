@@ -310,9 +310,17 @@ def search_sequences(
                                 }
                             )
                         try:
+                            owned_sells = {
+                                e: optimizer.calculate_selling_price(state["purchase"][e], int(maps[gw][e]["value"]))
+                                for e in state["elements"]
+                                if e in state.get("purchase", {}) and e in maps[gw]
+                            }
                             solve_cache[key] = squad_optimizer.solve_best_squad(
                                 frame,
                                 budget,
+                                repair_elements=state["elements"],
+                                repair_sell_prices=owned_sells,
+                                repair_hit_penalty=0.0,
                                 locked_in_ids=list(locked_in),
                                 locked_out_ids=list(locked_out),
                                 excluded_team_ids=list(excluded),

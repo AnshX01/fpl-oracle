@@ -47,18 +47,21 @@ async def retrain_finalized_gameweeks():
         boot, stale = await fpl_client.get_bootstrap_static(force_refresh=True)
         if stale:
             raise RuntimeError("Finalization requires fresh official event data")
+        from fpl_oracle.utils.season import derive_season
+
+        current_season = derive_season(format="hyphen")
         finalized = sorted(e.id for e in boot.events if e.finished and e.data_checked)
         trained_through = _trained_through_current_season()
         pending = [
             g
             for g in finalized
             if g > trained_through
-            and state["gameweeks"].get(f"2026-27:{g}", {}).get("status") not in ("promoted", "rejected")
+            and state["gameweeks"].get(f"{current_season}:{g}", {}).get("status") not in ("promoted", "rejected")
         ]
         if not pending:
             return "No new finalized gameweek"
         # One refresh can contain several previously completed GWs; one candidate covers them.
-        key = f"2026-27:{pending[-1]}"
+        key = f"{current_season}:{pending[-1]}"
         previous = state["gameweeks"].get(key, {})
         active = model_registry.get_active_version()
         operation_id = previous.get("operation_id")
@@ -74,7 +77,7 @@ async def retrain_finalized_gameweeks():
                 completed_at=datetime.now(UTC).isoformat(),
             )
             for g in previous.get("covered_gameweeks", pending):
-                state["gameweeks"][f"2026-27:{g}"] = recovered
+                state["gameweeks"][f"{current_season}:{g}"] = recovered
             _save(state)
             return "Recovered completed model promotion after interruption"
         retry_at = previous.get("retry_after")
@@ -110,7 +113,7 @@ async def retrain_finalized_gameweeks():
                 "active_version": model_registry.get_active_version().get("version"),
             }
             for g in pending:
-                state["gameweeks"][f"2026-27:{g}"] = record
+                state["gameweeks"][f"{current_season}:{g}"] = record
             _save(state)
             from fpl_oracle.server.analysis import analysis_service
 

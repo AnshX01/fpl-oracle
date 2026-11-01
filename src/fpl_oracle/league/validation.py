@@ -49,8 +49,17 @@ def score_forecast(record, finalized_scores):
     owner = record["owner_manager_id"]
     if not set(ids).issubset(scores):
         raise ValueError("Missing outcome for observed rival set")
-    # Forecast event is strict first place; ties are not silently counted as wins.
-    outcome = int(all(scores[owner] > scores[r] for r in ids if r != owner))
+    # Forecast event is strict first place; ties are broken by fewest transfers made.
+    transfers = finalized_scores.get("transfers", {})
+
+    def _is_owner_ahead(r_id: int) -> bool:
+        if scores[owner] > scores[r_id]:
+            return True
+        if scores[owner] == scores[r_id] and transfers:
+            return transfers.get(owner, 0) < transfers.get(r_id, 0)
+        return False
+
+    outcome = int(all(_is_owner_ahead(r) for r in ids if r != owner))
     p = float(record["probability"])
     return dict(
         status="scored",

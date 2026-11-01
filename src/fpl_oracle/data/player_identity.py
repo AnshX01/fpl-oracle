@@ -87,20 +87,32 @@ class PlayerIdentityResolver:
             if "norm_name" not in df.columns:
                 df["norm_name"] = df["name"].apply(normalize_player_name)
 
-            for idx, (_, row) in enumerate(df.iterrows()):
-                season = str(row.get("season", ""))
+            codes = df["code"] if "code" in df.columns else [None] * len(df)
+            elements = df["element"] if "element" in df.columns else [0] * len(df)
+            seasons = df["season"] if "season" in df.columns else [""] * len(df)
+            for idx, (season, elem_raw, norm_name, code_raw) in enumerate(
+                zip(seasons, elements, df["norm_name"], codes, strict=False)
+            ):
                 try:
-                    elem_id = int(row.get("element", 0))
+                    elem_id = int(elem_raw)
                 except (ValueError, TypeError):
                     continue
 
-                canonical = str(row.get("norm_name", ""))
+                canonical = str(norm_name or "")
                 if not canonical:
                     continue
 
                 # Map (season, element) -> canonical
-                self._season_elem_to_canonical[(season, elem_id)] = canonical
+                self._season_elem_to_canonical[(str(season), elem_id)] = canonical
                 self._canonical_to_indices.setdefault(canonical, []).append(int(idx))
+
+                if pd.notna(code_raw):
+                    try:
+                        code_val = int(code_raw)
+                        if code_val > 0:
+                            self._code_to_canonical[code_val] = canonical
+                    except (ValueError, TypeError):
+                        pass
 
         # Register bootstrap elements (from current active season, e.g. 2026-27)
         if bootstrap_elements:
@@ -166,17 +178,17 @@ class PlayerIdentityResolver:
         if code is not None and int(code) in self._code_to_canonical:
             return self._code_to_canonical[int(code)]
 
-        # 2. By (season, elem_id)
+        # 2. By full name (authoritative across seasons when matching known canonical players)
+        if full_name:
+            norm_full = normalize_player_name(full_name)
+            if norm_full and norm_full in self._canonical_to_indices:
+                return norm_full
+
+        # 3. By (season, elem_id)
         if elem_id is not None:
             key = (str(season), int(elem_id))
             if key in self._season_elem_to_canonical:
                 return self._season_elem_to_canonical[key]
-
-        # 3. By full name
-        if full_name:
-            norm_full = normalize_player_name(full_name)
-            if norm_full in self._canonical_to_indices:
-                return norm_full
 
         # 4. By web name
         if web_name:
@@ -209,6 +221,19 @@ class PlayerIdentityResolver:
 
         if self._history_df is None or self._history_df.empty:
             return pd.DataFrame()
+
+        # Direct invariant code query when permanent code exists in historical dataset
+        if code is not None and "code" in self._history_df.columns:
+            try:
+                c_int = int(code)
+                code_mask = self._history_df["code"] == c_int
+                if code_mask.any():
+                    p_df = self._history_df[code_mask].copy()
+                    if "season" in p_df.columns and "round" in p_df.columns:
+                        p_df = p_df.sort_values(by=["season", "round"])
+                    return p_df
+            except (ValueError, TypeError):
+                pass
 
         canonical = self.resolve_canonical_id(
             elem_id=elem_id,

@@ -25,7 +25,7 @@ from typing import Any
 
 import httpx
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import brentq, minimize
 from scipy.stats import poisson
 
 from fpl_oracle.config import DATA_DIR
@@ -50,9 +50,11 @@ ALIASES = {
     "tottenham hotspur": "spurs",
     "nottingham forest": "nott'm forest",
     "newcastle united": "newcastle",
+    "wolverhampton": "wolves",
     "wolverhampton wanderers": "wolves",
     "west ham united": "west ham",
     "brighton and hove albion": "brighton",
+    "brighton & hove albion": "brighton",
     "sheffield united": "sheffield utd",
     "leeds united": "leeds",
     "leicester city": "leicester",
@@ -62,32 +64,75 @@ ALIASES = {
 
 
 def team_key(name: str) -> str:
-    """Comparable team name: lower case, FPL spelling, no 'City'/'Town' suffix."""
+    """Comparable team name: lower case, FPL spelling, no 'City'/'Town' suffix (except Man City)."""
     key = re.sub(r"\s+", " ", str(name).strip().lower())
     key = ALIASES.get(key, key)
+    if key in ("man city", "manchester city"):
+        return "man city"
     return re.sub(r" (city|town|fc|afc)$", "", key)
+
+
+def shin_implied_probabilities(odds: list[float] | np.ndarray) -> np.ndarray:
+    """
+    Compute margin-free fair implied probabilities using Shin's method (Shin 1992, 1993;
+    Jullien & Salanié 1994).
+    Accounts for bookmaker overround and the presence of informed/insider traders (parameter z),
+    eliminating the favorite-longshot bias present in naive proportional normalization.
+    """
+    odds_arr = np.asarray(odds, dtype=float)
+    if len(odds_arr) == 0:
+        return np.array([], dtype=float)
+    inv = 1.0 / odds_arr
+    total_inv = float(np.sum(inv))
+    if total_inv <= 1.0 or not np.all(np.isfinite(inv)):
+        return inv / np.maximum(total_inv, 1e-12)
+
+    def diff(z: float) -> float:
+        term = z**2 + 4.0 * (1.0 - z) * (inv**2) / total_inv
+        p = (np.sqrt(np.maximum(0.0, term)) - z) / (2.0 * (1.0 - z))
+        return float(np.sum(p) - 1.0)
+
+    try:
+        z_star = brentq(diff, 0.0, 1.0 - 1e-7, xtol=1e-10)
+        term = z_star**2 + 4.0 * (1.0 - z_star) * (inv**2) / total_inv
+        p_fair = (np.sqrt(np.maximum(0.0, term)) - z_star) / (2.0 * (1.0 - z_star))
+        p_fair = np.maximum(0.0, p_fair)
+        s = float(np.sum(p_fair))
+        return p_fair / s if s > 0 else inv / total_inv
+    except Exception:
+        return inv / total_inv
 
 
 def implied_goals(home: Any, draw: Any, away: Any, over: Any, under: Any) -> tuple[float, float] | None:
     """Poisson goal rates (home, away) matching margin-free 1X2 and over/under-2.5 probabilities."""
     try:
-        inv = [1 / float(o) for o in (home, draw, away)]
-        ou = [1 / float(over), 1 / float(under)]
+        odds_1x2 = [float(home), float(draw), float(away)]
+        odds_ou = [float(over), float(under)]
     except (TypeError, ValueError, ZeroDivisionError):
         return None
-    if not all(math.isfinite(v) and v > 0 for v in inv + ou):
+    if not all(math.isfinite(v) and v > 0 for v in odds_1x2 + odds_ou):
         return None
-    p_h, p_d, p_a = (v / sum(inv) for v in inv)
-    p_over = ou[0] / sum(ou)
+    if any(float(o) <= 1.0 for o in odds_1x2 + odds_ou):
+        return None
+
+    # Apply Shin's method for bookmaker overround removal, eliminating favorite-longshot bias
+    probs_1x2 = shin_implied_probabilities(odds_1x2)
+    p_h, p_d, p_a = float(probs_1x2[0]), float(probs_1x2[1]), float(probs_1x2[2])
+
+    probs_ou = shin_implied_probabilities(odds_ou)
+    p_over = float(probs_ou[0])
+
     goals = np.arange(11)
     lower = np.tril(np.ones((11, 11)), -1).astype(bool)  # home goals > away goals
+    upper = np.triu(np.ones((11, 11)), 1).astype(bool)  # away goals > home goals
     low_total = np.add.outer(goals, goals) <= 2
 
     def loss(rates):
         joint = np.outer(poisson.pmf(goals, rates[0]), poisson.pmf(goals, rates[1]))
         home_win, drawn = joint[lower].sum(), np.trace(joint)
+        away_win = joint[upper].sum()
         over = 1.0 - joint[low_total].sum()
-        return (home_win - p_h) ** 2 + (drawn - p_d) ** 2 + (1 - home_win - drawn - p_a) ** 2 + (over - p_over) ** 2
+        return (home_win - p_h) ** 2 + (drawn - p_d) ** 2 + (away_win - p_a) ** 2 + (over - p_over) ** 2
 
     fit = minimize(loss, x0=[1.4, 1.1], bounds=[(0.1, 5.0), (0.1, 5.0)], method="L-BFGS-B")
     return (float(fit.x[0]), float(fit.x[1])) if fit.success else None

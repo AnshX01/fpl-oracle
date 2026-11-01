@@ -53,9 +53,62 @@
           }
         }
       }
+    },
+    {
+      "gameweek": 8,
+      "scored_at": "2026-10-31T11:03:12.803931+00:00",
+      "frozen_at": "2026-10-18T14:13:34.297242+00:00",
+      "model_version": "v2026.10.18.1352",
+      "git_commit": "17a9f8fea6f6c81ba0e6a5f49de2d4c1cc4544ed",
+      "manifest_hash": "f6b4c97c8bbca3fc70a95ff150cf876cf45e8a9c6dceef17561e0fffdbc4a486",
+      "actual_source": "official_finalized_live",
+      "actuals_fetched_at": "2026-10-31T11:03:12.724089+00:00",
+      "sample_count": 667,
+      "ml_mae": 1.19,
+      "ml_rmse": 2.158,
+      "ml_spearman": 0.668,
+      "coverage_80_pct": 79.46,
+      "comparison": {
+        "players": 667,
+        "sources": {
+          "FPL Oracle": {
+            "rmse": 2.158,
+            "mae": 1.19,
+            "rmse_by_bucket": {
+              "did not play": 1.014,
+              "1-2 pts": 1.784,
+              "3-4 pts": 1.531,
+              "5+ pts": 5.464
+            },
+            "top20_actual_points": 2.85
+          },
+          "FPL ep_next": {
+            "rmse": 2.464,
+            "mae": 1.295,
+            "rmse_by_bucket": {
+              "did not play": 0.881,
+              "1-2 pts": 2.275,
+              "3-4 pts": 2.086,
+              "5+ pts": 6.184
+            },
+            "top20_actual_points": 3.0
+          },
+          "Last-5 average": {
+            "rmse": 2.321,
+            "mae": 1.286,
+            "rmse_by_bucket": {
+              "did not play": 1.053,
+              "1-2 pts": 2.267,
+              "3-4 pts": 1.846,
+              "5+ pts": 5.529
+            },
+            "top20_actual_points": 3.65
+          }
+        }
+      }
     }
   ],
   "note": "No forward holdout result exists yet. GW1-5 data is contaminated by prior model inspection; honest forward scoring commences once GW6 concludes.",
-  "next_scheduled_freeze_gw": 8,
-  "last_updated": "2026-10-23T17:52:28.669669+00:00"
+  "next_scheduled_freeze_gw": 9,
+  "last_updated": "2026-10-31T11:03:13.026566+00:00"
 }

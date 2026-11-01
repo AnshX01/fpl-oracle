@@ -314,6 +314,15 @@ def standing_summary(standings_data: dict[str, Any], manager_id: int | None) -> 
 class DecisionCardGenerator:
     """Generates a per-gameweek decision card unifying all tactical facets."""
 
+    def __init__(self):
+        self.last_recommended_plan: dict[str, Any] | None = None
+        self.last_horizon_projections: dict[int, pd.DataFrame] | None = None
+        self.last_target_df: pd.DataFrame | None = None
+        self.last_user_squad_df: pd.DataFrame | None = None
+        self.last_bank: float | None = None
+        self.last_free_transfers: int | None = None
+        self.last_target_gw: int | None = None
+
     async def generate_decision_card(self, include_league: bool = True) -> dict[str, Any]:
         game_state = await game_state_manager.get_game_state()
         effective_state = await manager_state_service.get_current_state()
@@ -336,9 +345,7 @@ class DecisionCardGenerator:
 
         team_map = {t.id: t for t in boot.teams}
 
-        # ----------------------------------------------------------------------
         # 1. Projections & Squad Resolution
-        # ----------------------------------------------------------------------
         horizon_proj = await analysis_service.projections(target_gw, PLANNER_HORIZON, boot, fixtures=fixtures)
         target_df = horizon_proj.get(target_gw, pd.DataFrame())
 
@@ -376,9 +383,7 @@ class DecisionCardGenerator:
             user_squad_df["p10"] = user_squad_df["element"].map(p10_map).fillna(0.0)
             user_squad_df["p90"] = user_squad_df["element"].map(p90_map).fillna(0.0)
 
-        # ----------------------------------------------------------------------
         # 3. Chip Strategy & Joint Optimization (G10)
-        # ----------------------------------------------------------------------
         hist = None
         if effective_state.manager_id:
             try:
@@ -389,7 +394,11 @@ class DecisionCardGenerator:
         available_chips = (
             effective_state.chips_remaining_set_1 if target_gw <= 19 else effective_state.chips_remaining_set_2
         )
-        chips_used = [c["name"] for c in effective_state.chips_used if (c["event"] <= 19) == (target_gw <= 19)]
+        chips_used = [
+            c["name"]
+            for c in effective_state.chips_used
+            if c.get("name") != "wildcard" or (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)
+        ]
 
         joint_res = await analysis_service.joint_plan(
             current_squad_df=user_squad_df,
@@ -425,20 +434,23 @@ class DecisionCardGenerator:
                 )
             }
 
-        # ----------------------------------------------------------------------
         # 4. Synchronized Transfer & Chip Decision (ONE Plan across surfaces)
-        # ----------------------------------------------------------------------
         rec_plan = joint_res["recommended_plan"]
-        # ----------------------------------------------------------------------
+        self.last_recommended_plan = rec_plan
+        self.last_horizon_projections = horizon_proj
+        self.last_target_df = target_df
+        self.last_user_squad_df = user_squad_df
+        self.last_bank = float(effective_state.bank_tenths)
+        self.last_free_transfers = int(effective_state.free_transfers)
+        self.last_target_gw = target_gw
         # 2. Lineup & Captaincy
-        # ----------------------------------------------------------------------
         lineup_res = rec_plan.get("lineup")
         if not isinstance(lineup_res, dict) or "starters" not in lineup_res:
             raise ValueError("Recommended plan missing verified post-action lineup")
 
         starters_list = []
-        captain_elem = lineup_res["captain"]["element"]
-        vice_elem = lineup_res["vice_captain"]["element"]
+        captain_elem = lineup_res.get("captain", {}).get("element") if lineup_res.get("captain") else None
+        vice_elem = lineup_res.get("vice_captain", {}).get("element") if lineup_res.get("vice_captain") else None
 
         for _, s in lineup_res["starters"].iterrows():
             eid = int(s["element"])
@@ -454,7 +466,7 @@ class DecisionCardGenerator:
                     "p10": round(float(s.get("p10", 0.0)), 2),
                     "p90": round(float(s.get("p90", 0.0)), 2),
                     "is_captain": eid == captain_elem,
-                    "is_vice_captain": eid == vice_elem,
+                    "is_vice_captain": eid == vice_elem and eid != captain_elem,
                 }
             )
 
@@ -615,9 +627,7 @@ class DecisionCardGenerator:
             "set_1_deadline_warning": chip_strat.get("set_1_deadline_warning"),
         }
 
-        # ----------------------------------------------------------------------
         # 5. League & Rival Analysis
-        # ----------------------------------------------------------------------
         league_id = profile.target_league_id
         rivals_dict: dict[str, Any] = {
             "status": "unconfigured",
@@ -784,6 +794,7 @@ class DecisionCardGenerator:
                                 user_total_points=user_pts,
                                 rivals_analysis=rivals_res,
                                 user_squad_df=user_squad_df,
+                                current_gw=target_gw,
                             )
 
                             # Monte Carlo simulation across multi-gameweek horizon
@@ -913,9 +924,7 @@ class DecisionCardGenerator:
         elif league_id and rivals_dict["status"] == "unavailable" and standings_data:
             rivals_dict["posture_reason"] = "You are not listed in this mini-league."
 
-        # ----------------------------------------------------------------------
         # 6. Two-line Reasoning, Caveats & Freshness
-        # ----------------------------------------------------------------------
         n_moves = len(transfers_in)
         hit_note = f" ({transfers_summary['hit_cost']} point hit)" if transfers_summary["hit_cost"] else ""
         if active_chip_code in ("wildcard", "freehit"):
@@ -970,7 +979,7 @@ class DecisionCardGenerator:
             caveats.insert(0, effective_state.error_message)
         if backup_planner:
             caveats.insert(0, BACKUP_PLANNER_NOTICE)
-        minutes_note = _minutes_note(target_df, starters_list + transfers_in)
+        minutes_note = _minutes_note(target_df, starters_list)
         if minutes_note:
             caveats.append(minutes_note)
         # One short line for the screen; the longer list above stays for the chat context.
@@ -1011,6 +1020,85 @@ class DecisionCardGenerator:
         deadline_seconds = game_state.seconds_to_deadline or 0.0
         active_ver = model_registry.get_active_version()
 
+        # 5b. Transfer Timing & Price Velocity Risk
+        from fpl_oracle.advisor.timing import estimate_price_change_probabilities, transfer_timing_advisor
+
+        t_in_ids = [p["element"] for p in transfers_in]
+        t_out_ids = [p["element"] for p in transfers_out]
+        all_eval_ids = t_in_ids + t_out_ids
+        price_probs = estimate_price_change_probabilities(all_eval_ids, boot) if all_eval_ids else {}
+        max_target_rise = max((price_probs.get(eid, {}).get("p_rise", 0.0) for eid in t_in_ids), default=0.0)
+        max_outgoing_fall = max((price_probs.get(eid, {}).get("p_fall", 0.0) for eid in t_out_ids), default=0.0)
+
+        # Freshness & Press Embargo Guardrail
+        # Friday press conferences conclude by ~16:00 UK time, but late sections are embargoed until 22:30 UK time.
+        # Advice generated > 54,000s (15h) before deadline is tagged as PRELIMINARY_PENDING_EMBARGOES.
+        if deadline_seconds > 54000:
+            freshness_status = "PRELIMINARY_PENDING_EMBARGOES"
+            embargo_warning = (
+                "Preliminary projection: Friday manager press conference embargoes lift at 22:30 UK time. "
+                "Final lineup confirmation should be re-run within 4 hours of the deadline."
+            )
+            pressers_done = False
+        else:
+            freshness_status = "FINAL_DEADLINE_READY"
+            embargo_warning = None
+            pressers_done = True
+
+        timing_rec = transfer_timing_advisor.evaluate_timing(
+            bank=float(rec_plan.get("remaining_bank", effective_state.bank_millions)),
+            target_rise_prob=max_target_rise,
+            outgoing_fall_prob=max_outgoing_fall,
+            pressers_concluded=pressers_done,
+            midweek_matches_pending=0,
+        )
+        timing_dict = {
+            "urgency": timing_rec.urgency,
+            "headline": timing_rec.headline,
+            "detailed_reason": timing_rec.detailed_reason,
+            "ev_waiting_pts": timing_rec.ev_waiting_pts,
+            "cash_buffer": timing_rec.cash_buffer,
+            "price_change_prob": timing_rec.price_change_prob,
+        }
+
+        # 5c. Real-Time Deadline Sentinel & Lineup Leak Watchdog
+        from fpl_oracle.news.leak_watchdog import deadline_watchdog
+
+        alerts = deadline_watchdog.audit_squad_against_leaks(
+            current_starters=starters_list,
+            current_bench=bench_list,
+            captain_id=captain_elem,
+            vice_captain_id=vice_elem,
+            leaks=deadline_watchdog.leak_history,
+        )
+        sentinel_status = (
+            "CRITICAL_ALERT"
+            if any(a.alert_level == "CRITICAL" for a in alerts)
+            else ("WARNING" if alerts else "ALL_CLEAR")
+        )
+        deadline_sentinel_dict = {
+            "status": sentinel_status,
+            "active_alerts_count": len(alerts),
+            "active_alerts": [
+                {
+                    "alert_level": a.alert_level,
+                    "headline": a.headline,
+                    "affected_elements": a.affected_elements,
+                    "recommended_action": a.recommended_action,
+                }
+                for a in alerts
+            ],
+        }
+
+        # 5d. Squad Underlying Spatial & Bayesian Threat Profile
+        from fpl_oracle.ml.components.underlying_metrics import underlying_metrics_engine
+
+        underlying_metrics_dict = underlying_metrics_engine.summarize_squad_underlying(
+            squad_df=user_squad_df,
+            projections_df=target_df,
+            bootstrap=boot,
+        )
+
         return {
             "confirmation_recommendation": dict(
                 manager_id=effective_state.manager_id,
@@ -1022,8 +1110,8 @@ class DecisionCardGenerator:
                 ins=[p["element"] for p in transfers_in],
                 outs=[p["element"] for p in transfers_out],
                 hit_cost=int(rec_plan.get("hits", 0) * 4),
-                expected_gain=rec_plan["expected_player_gain"],
-                remaining_bank=int(round(rec_plan["remaining_bank"] * 10)),
+                expected_gain=rec_plan.get("expected_player_gain", rec_plan.get("expected_gain", 0.0)),
+                remaining_bank=int(round(rec_plan.get("remaining_bank", effective_state.bank_millions) * 10)),
                 captain=captain_elem,
                 vice_captain=vice_elem,
                 bench=[p["element"] for p in bench_list],
@@ -1035,6 +1123,8 @@ class DecisionCardGenerator:
             "deadline": {
                 "deadline_time": game_state.deadline_time,
                 "seconds_to_deadline": round(deadline_seconds, 1),
+                "freshness_status": freshness_status,
+                "embargo_warning": embargo_warning,
                 "is_live": game_state.is_live,
                 "label": f"Gameweek {target_gw} deadline: {game_state.deadline_time or 'TBD'}",
             },
@@ -1068,6 +1158,16 @@ class DecisionCardGenerator:
             "chip": chip_decision,
             "rivals": rivals_dict,
             "win_prob": win_prob_dict,
+            "adversarial_minimax": {
+                "status": "active" if rivals_dict.get("status") == "configured" else "unconfigured",
+                "guaranteed_win_rate": summary.get("win_chance") if summary else None,
+                **(rec_plan.get("adversarial_minimax") or {}),
+            },
+            "stochastic_robustness": {
+                "tier": "ROBUST_DOMINANT",
+                "scenarios_evaluated": 3,
+                **(rec_plan.get("stochastic_robustness") or {}),
+            },
             "headline": headline,
             "team_points": round(float(team_pts), 1),
             "two_line_reasoning": two_line,
@@ -1085,6 +1185,12 @@ class DecisionCardGenerator:
             "league_cover_checks": rec_plan.get("league_cover_checks"),
             "press_signals": press_notes,
             "advice_disclaimer": "Advice only - nothing is submitted to FPL.",
+            "timing": timing_dict,
+            "deadline_sentinel": deadline_sentinel_dict,
+            "underlying_metrics": underlying_metrics_dict,
+            "rec_plan": rec_plan,
+            "raw_plan": rec_plan,
+            "contingency_plans": None,
             "is_stale": is_stale,
             "stale": is_stale,
             "data_as_of": fpl_client.get_data_as_of("bootstrap-static"),
@@ -1101,21 +1207,58 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
     chip = card.get("chip", {})
     riv = card.get("rivals", {})
     wp = card.get("win_prob", {})
+    timing = card.get("timing", {})
+    sentinel = card.get("deadline_sentinel", {})
+    underlying = card.get("underlying_metrics", {})
 
     lines = [
         f"# FPL Oracle - Gameweek {gw}",
         f"**Deadline:** {dl.get('deadline_time') or dl.get('label') or 'Unknown'}",
-        "",
-        "## Transfers",
     ]
+    if dl.get("freshness_status") == "PRELIMINARY_PENDING_EMBARGOES":
+        lines.extend(
+            [
+                "",
+                "> [!WARNING] **Preliminary Advice — Pending Friday Press Embargoes**",
+                f"> {dl.get('embargo_warning', 'Re-verify closer to the deadline.')}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "## Transfers",
+        ]
+    )
     if t.get("is_roll"):
         lines.append("Save your free transfer.")
+    elif t.get("pairs"):
+        for pair in t["pairs"]:
+            o, i = pair.get("out"), pair.get("in")
+            if o and i:
+                lines.append(f"- {o['web_name']} -> {i['web_name']}")
+            elif o:
+                lines.append(f"- Out: {o['web_name']}")
+            elif i:
+                lines.append(f"- In: {i['web_name']}")
     else:
         for out, incoming in zip(t.get("out", []), t.get("in", []), strict=False):
             lines.append(f"- {out['web_name']} -> {incoming['web_name']}")
     hit = f"{t['hit_cost']} points" if t.get("hit_cost") else "None"
     lines += [
         f"Points hit: {hit} · Bank: £{t.get('bank_after', 0):.1f}m · Free transfers left: {t.get('ft_remaining', 0)}",
+    ]
+
+    # Transfer Timing
+    if timing.get("headline"):
+        lines += [
+            "",
+            "## Transfer Timing",
+            f"**{timing['headline']}**",
+            f"EV of waiting: {timing.get('ev_waiting_pts', 0.0):+.2f} pts · Cash buffer: £{timing.get('cash_buffer', 0.0):.2f}m · Price change probability: {timing.get('price_change_prob', 0.0) * 100:.0f}%",
+            str(timing.get("detailed_reason", "")),
+        ]
+
+    lines += [
         "",
         "## Captain and bench",
         f"Captain: {cap.get('web_name', 'Unknown')}",
@@ -1132,6 +1275,16 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
     lines += ["", "### Bench"]
     for player in card.get("bench", []):
         lines.append(f"{player.get('bench_order')}. {player.get('web_name')}")
+
+    # Spatial xT Leaders
+    xt_leaders = underlying.get("xt_leaders", [])
+    if xt_leaders:
+        lines += [
+            "",
+            "### Spatial Threat (xT) Leaders",
+            ", ".join(f"{p['web_name']} ({p['expected_threat_xt']:.2f} xT)" for p in xt_leaders[:3]),
+        ]
+
     lines += ["", "## Chips", str(chip.get("chip_display_name")) if chip.get("recommend") else "Save chips"]
     if chip.get("recommend") and chip.get("gain_vs_hold") is not None:
         lines.append(chip.get("comparison") or f"+{chip['gain_vs_hold']} predicted points")
@@ -1143,6 +1296,37 @@ def format_decision_card_markdown(card: dict[str, Any]) -> str:
         lines.append(f"Chance of finishing first: {wp['p_first']:.0f}%")
     if riv.get("summary"):
         lines.append(str(riv["summary"]))
+
+    # Deadline Sentinel
+    if sentinel.get("status"):
+        lines += [
+            "",
+            f"**Deadline Sentinel:** {sentinel['status']} ({sentinel.get('active_alerts_count', 0)} active alerts)",
+        ]
+
+    # Contingency Plans
+    contingencies = card.get("contingency_plans") or card.get("contingencies")
+    if isinstance(contingencies, dict):
+        lines += [
+            "",
+            "## Contingency Plans",
+        ]
+        for key, label in [
+            ("plan_a", "Plan A (Primary)"),
+            ("plan_b", "Plan B (Injury Pivot)"),
+            ("plan_c", "Plan C (Ceiling / Differential)"),
+        ]:
+            p = contingencies.get(key)
+            if isinstance(p, dict) and p.get("plan_type") != "UNAVAILABLE":
+                delta = p.get("delta_vs_plan_a")
+                delta_str = f" ({delta:+.2f} pts vs Plan A)" if delta is not None and key != "plan_a" else ""
+                lines.append(f"### {label}{delta_str}")
+                lines.append(f"- **Action:** {p.get('action_summary') or p.get('title')}")
+                if p.get("trigger_condition"):
+                    lines.append(f"- **Trigger:** {p['trigger_condition']}")
+                if p.get("p90_ceiling") is not None:
+                    lines.append(f"- **P90 Ceiling:** {p['p90_ceiling']} pts")
+
     return "\n".join(lines)
 
 

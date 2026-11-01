@@ -10,19 +10,38 @@ import pandas as pd
 
 
 class LeagueStrategyAdvisor:
-    def determine_risk_posture(self, points_gap: float, win_probability_pct: float | None = None) -> str:
+    def determine_risk_posture(
+        self,
+        points_gap: float,
+        win_probability_pct: float | None = None,
+        current_gw: int | None = None,
+        user_rank: int | None = None,
+    ) -> str:
         """
         Determines risk posture:
-        - DEFENDING_LEAD: Points lead >= 10 pts or win probability >= 60%
+        - DEFENDING_LEAD: Leading the league (rank == 1 or points_gap > 0) or high win probability.
         - CHASING_PACK: Points deficit > 25 pts or win probability <= 20%
-        - BALANCED_ATTACK: In contention (-25 to +9 pts)
+        - BALANCED_ATTACK: In contention (chasing by small margin)
         """
-        if points_gap >= 10.0 or (win_probability_pct is not None and win_probability_pct >= 60.0):
+        if user_rank == 1:
             return "DEFENDING_LEAD"
-        elif points_gap < -25.0 or (win_probability_pct is not None and win_probability_pct <= 20.0):
-            return "CHASING_PACK"
+
+        is_early_mid = current_gw is not None and current_gw <= 20
+        if is_early_mid:
+            if points_gap >= 15.0 or (
+                points_gap >= 10.0 and win_probability_pct is not None and win_probability_pct >= 75.0
+            ):
+                return "DEFENDING_LEAD"
         else:
-            return "BALANCED_ATTACK"
+            if points_gap >= 10.0 or (win_probability_pct is not None and win_probability_pct >= 60.0):
+                return "DEFENDING_LEAD"
+
+        if points_gap <= 0 and (
+            points_gap < -25.0 or (win_probability_pct is not None and win_probability_pct <= 20.0)
+        ):
+            return "CHASING_PACK"
+
+        return "BALANCED_ATTACK"
 
     def evaluate_strategy(
         self,
@@ -31,6 +50,7 @@ class LeagueStrategyAdvisor:
         rivals_analysis: dict[str, Any],
         user_squad_df: pd.DataFrame,
         win_probability_pct: float | None = None,
+        current_gw: int | None = None,
     ) -> dict[str, Any]:
         """
         Formulate tailored strategy mode (DEFENDING_LEAD, CHASING_PACK, BALANCED_ATTACK).
@@ -52,7 +72,9 @@ class LeagueStrategyAdvisor:
         below = [user_total_points - r["total_points"] for r in rival_squads if r["total_points"] < user_total_points]
 
         user_elements = set(user_squad_df["element"].tolist())
-        mode = self.determine_risk_posture(pts_gap, win_probability_pct=win_probability_pct)
+        mode = self.determine_risk_posture(
+            pts_gap, win_probability_pct=win_probability_pct, current_gw=current_gw, user_rank=user_rank
+        )
 
         if pts_gap > 0:
             standing = f"You lead {top['player_name']} by {pts_gap} points."
@@ -129,32 +151,55 @@ class LeagueStrategyAdvisor:
         self,
         transfers_out: list[dict[str, Any]],
         transfers_in: list[dict[str, Any]],
-        rival_elements: set[int],
+        rival_elements: set[int] | list[dict[str, Any]] | list[set[int]],
         posture: str,
         shadow_penalty: float = 0.60,
         differential_bonus: float = 0.40,
     ) -> tuple[float, list[str]]:
         """
         Active Game Theory modifier:
-        When DEFENDING_LEAD: penalizes selling healthy players owned by the primary rival (shadowing / blocking).
-        When CHASING_PACK: rewards buying high-upside differentials NOT owned by the leader.
+        When DEFENDING_LEAD: penalizes selling healthy players owned by primary/tracked chasers (shadowing / blocking).
+        When CHASING_PACK: rewards buying high-upside differentials NOT owned by the leader/chasers.
+        Supports single rival set[int] or a list of tracked rival dicts with threat aggregation.
         """
         adjustment = 0.0
         reasons = []
 
+        elem_weights: dict[int, float] = {}
+        if isinstance(rival_elements, (list, tuple)):
+            for r in rival_elements:
+                if isinstance(r, dict):
+                    pts_gap = abs(float(r.get("points_gap", 0.0) or 0.0))
+                    w = 1.0 / (1.0 + pts_gap / 15.0)
+                    for eid in r.get("elements", []):
+                        elem_weights[int(eid)] = elem_weights.get(int(eid), 0.0) + w
+                elif isinstance(r, (set, list, tuple)):
+                    for eid in r:
+                        elem_weights[int(eid)] = elem_weights.get(int(eid), 0.0) + 1.0
+        elif isinstance(rival_elements, (set, frozenset)):
+            for eid in rival_elements:
+                elem_weights[int(eid)] = 1.0
+
         if posture == "DEFENDING_LEAD":
             for t_out in transfers_out:
                 eid = int(t_out.get("element", 0))
-                if eid in rival_elements:
-                    adjustment -= shadow_penalty
-                    reasons.append(f"Rival Shadow Warning: selling player {eid} owned by your primary chaser increases variance.")
+                if eid in elem_weights:
+                    weight = min(2.0, elem_weights[eid])
+                    pen = round(shadow_penalty * max(1.0, weight), 2)
+                    adjustment -= pen
+                    chaser_str = "your immediate chasers" if weight > 1.0 else "your primary chaser"
+                    reasons.append(
+                        f"Rival Shadow Warning: selling player {eid} owned by {chaser_str} increases variance (-{pen} xP)."
+                    )
 
         elif posture == "CHASING_PACK":
             for t_in in transfers_in:
                 eid = int(t_in.get("element", 0))
-                if eid not in rival_elements:
+                if eid not in elem_weights:
                     adjustment += differential_bonus
-                    reasons.append(f"Rival Differential Opportunity: player {eid} is not owned by the leader, providing catch-up leverage.")
+                    reasons.append(
+                        f"Rival Differential Opportunity: player {eid} is not owned by the leader, providing catch-up leverage (+{differential_bonus} xP)."
+                    )
 
         return round(adjustment, 2), reasons
 
@@ -170,7 +215,12 @@ class LeagueStrategyAdvisor:
         or diverge (seeking upside when chasing).
         """
         if rival_captain_id is None:
-            return {"action": "KEEP_TOP_PICK", "captain_id": top_captain_id, "reason": "No rival captain known.", "should_switch": False}
+            return {
+                "action": "KEEP_TOP_PICK",
+                "captain_id": top_captain_id,
+                "reason": "No rival captain known.",
+                "should_switch": False,
+            }
 
         if posture == "DEFENDING_LEAD":
             if rival_captain_id in starters_ids:
@@ -191,7 +241,9 @@ class LeagueStrategyAdvisor:
         elif posture == "CHASING_PACK":
             if top_captain_id == rival_captain_id:
                 alts = [p for p in starters_ids if p != rival_captain_id]
-                alt_id = alts[0] if alts else top_captain_id
+                # Avoid defaulting to starters_ids[0] (which is the goalkeeper).
+                # In standard formation order [GKP, DEF..., MID..., FWD...], reverse prefers forwards/mids.
+                alt_id = alts[-1] if alts else top_captain_id
                 return {
                     "action": "DIVERGE_FROM_RIVAL_CAPTAIN",
                     "captain_id": alt_id,
@@ -199,7 +251,12 @@ class LeagueStrategyAdvisor:
                     "should_switch": alt_id != top_captain_id,
                 }
 
-        return {"action": "KEEP_TOP_PICK", "captain_id": top_captain_id, "reason": "Balanced posture; back highest xP.", "should_switch": False}
+        return {
+            "action": "KEEP_TOP_PICK",
+            "captain_id": top_captain_id,
+            "reason": "Balanced posture; back highest xP.",
+            "should_switch": False,
+        }
 
 
 league_strategy_advisor = LeagueStrategyAdvisor()

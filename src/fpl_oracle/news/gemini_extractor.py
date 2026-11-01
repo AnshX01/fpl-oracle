@@ -154,7 +154,7 @@ class GeminiEvidenceExtractor:
         self,
         article_text: str,
         article_url: str = "",
-        published_at: str | None = None,
+        published_at: str | datetime | None = None,
         candidate_players: list[dict[str, Any]] | None = None,
         target_gw: int | None = None,
     ) -> ExtractedNewsPayload:
@@ -166,16 +166,22 @@ class GeminiEvidenceExtractor:
         import hashlib
 
         now_iso = datetime.now(UTC).isoformat()
+        published_str = (
+            published_at.isoformat()
+            if hasattr(published_at, "isoformat")
+            else (str(published_at) if published_at is not None else None)
+        )
         cache_key = hashlib.sha256(
             json.dumps(
                 [
                     article_text,
                     article_url,
-                    published_at,
+                    published_str,
                     target_gw,
                     os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
                 ],
                 sort_keys=True,
+                default=str,
             ).encode()
         ).hexdigest()
         cached = self._get_cached_payload(cache_key)
@@ -189,7 +195,7 @@ class GeminiEvidenceExtractor:
             return ExtractedNewsPayload(
                 article_url=article_url,
                 article_hash=article_hash,
-                published_at=published_at,
+                published_at=published_str,
                 fetched_at=now_iso,
                 evidences=[],
                 raw_response_snippet=f"Skipped: {reason}",
@@ -201,7 +207,7 @@ class GeminiEvidenceExtractor:
             return ExtractedNewsPayload(
                 article_url=article_url,
                 article_hash=article_hash,
-                published_at=published_at,
+                published_at=published_str,
                 fetched_at=now_iso,
                 evidences=[],
                 raw_response_snippet=f"Blocked by budget: {budget_reason}",
@@ -261,12 +267,13 @@ class GeminiEvidenceExtractor:
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "temperature": 0.0,
-                "maxOutputTokens": 1000,
+                "maxOutputTokens": 2500,
             },
         }
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            timeout_secs = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "30.0"))
+            async with httpx.AsyncClient(timeout=timeout_secs) as client:
                 resp = await gemini_gate.post(client, url, json=request_body, headers={"x-goog-api-key": api_key})
 
                 if resp.status_code == 429:
@@ -276,7 +283,7 @@ class GeminiEvidenceExtractor:
                     return ExtractedNewsPayload(
                         article_url=article_url,
                         article_hash=article_hash,
-                        published_at=published_at,
+                        published_at=published_str,
                         fetched_at=now_iso,
                         evidences=[],
                         raw_response_snippet="HTTP 429: Rate limited",
@@ -286,15 +293,63 @@ class GeminiEvidenceExtractor:
                     return ExtractedNewsPayload(
                         article_url=article_url,
                         article_hash=article_hash,
-                        published_at=published_at,
+                        published_at=published_str,
                         fetched_at=now_iso,
                         evidences=[],
                         raw_response_snippet=f"HTTP {resp.status_code}",
                     )
 
                 data = resp.json()
-                text_out = data["candidates"][0]["content"]["parts"][0]["text"]
-                parsed_json = json.loads(text_out)
+                candidates = data.get("candidates") or []
+                if not candidates:
+                    logger.debug("Gemini returned no candidates (possible safety filter or blank response)")
+                    return ExtractedNewsPayload(
+                        article_url=article_url,
+                        article_hash=article_hash,
+                        published_at=published_str,
+                        fetched_at=now_iso,
+                        evidences=[],
+                        raw_response_snippet="No candidates returned",
+                    )
+                parts = candidates[0].get("content", {}).get("parts", [])
+                text_out = "\n".join(p.get("text", "") for p in parts if "text" in p).strip()
+                if not text_out:
+                    logger.debug("Gemini candidate has no text parts")
+                    return ExtractedNewsPayload(
+                        article_url=article_url,
+                        article_hash=article_hash,
+                        published_at=published_str,
+                        fetched_at=now_iso,
+                        evidences=[],
+                        raw_response_snippet="Empty text parts in candidate",
+                    )
+                # Robust JSON sanitation: strip markdown fences
+                clean_text = text_out.strip()
+                if clean_text.startswith("```"):
+                    lines = clean_text.splitlines()
+                    if lines and lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    clean_text = "\n".join(lines).strip()
+                if not (clean_text.startswith("[") or clean_text.startswith("{")):
+                    start_b = clean_text.find("[")
+                    end_b = clean_text.rfind("]")
+                    if start_b != -1 and end_b != -1 and end_b > start_b:
+                        clean_text = clean_text[start_b : end_b + 1]
+
+                try:
+                    parsed_json = json.loads(clean_text)
+                except json.JSONDecodeError as jde:
+                    logger.warning("Failed to decode JSON from Gemini response: %s", jde)
+                    return ExtractedNewsPayload(
+                        article_url=article_url,
+                        article_hash=article_hash,
+                        published_at=published_str,
+                        fetched_at=now_iso,
+                        evidences=[],
+                        raw_response_snippet=f"JSONDecodeError: {jde}",
+                    )
 
                 from fpl_oracle.data.fuzzy_match import strip_accents
                 from fpl_oracle.news.reconcile import is_safe_quote
@@ -386,7 +441,7 @@ class GeminiEvidenceExtractor:
                 result = ExtractedNewsPayload(
                     article_url=article_url,
                     article_hash=article_hash,
-                    published_at=published_at,
+                    published_at=published_str,
                     fetched_at=now_iso,
                     evidences=evidences,
                     raw_response_snippet="Success",
@@ -401,7 +456,7 @@ class GeminiEvidenceExtractor:
             return ExtractedNewsPayload(
                 article_url=article_url,
                 article_hash=article_hash,
-                published_at=published_at,
+                published_at=published_str,
                 fetched_at=now_iso,
                 evidences=[],
                 raw_response_snippet="HTTP 429: Rate limited"

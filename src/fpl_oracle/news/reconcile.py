@@ -55,11 +55,12 @@ def _return_gameweek(element: Any, events: Sequence[Any]) -> int | None:
     if not m or not events:
         return None
     deadlines = [(e.id, datetime.fromisoformat(e.deadline_time.replace("Z", "+00:00"))) for e in events]
-    # The text has no year: the season starts in July or later, so earlier months fall in the next calendar year.
-    year = min(d for _, d in deadlines).year
+    min_d = min(d for _, d in deadlines)
+    season_start_year = min_d.year - 1 if min_d.month < 7 else min_d.year
     try:
         month = datetime.strptime(m.group(2).title(), "%b").month
-        due = datetime(year + (month < 7), month, int(m.group(1)), tzinfo=UTC)
+        due_year = season_start_year + (1 if month < 7 else 0)
+        due = datetime(due_year, month, int(m.group(1)), tzinfo=UTC)
     except ValueError:
         return None
     return next((gw for gw, d in deadlines if d > due), None)
@@ -115,7 +116,8 @@ _NUMBER_WORDS = {
     "ten": 10,
 }
 _ABSENCE_RE = re.compile(
-    r"\b(?:out\s+for|miss(?:\s+the\s+next)?)\s+(?:at\s+least\s+|about\s+)?"
+    r"\b(?:out\s+for|miss(?:\s+the\s+next)?|sidelined\s+for|facing|faces|set\s+for|unavailable\s+for)\s+"
+    r"(?:at\s+least\s+|about\s+|up\s+to\s+)?"
     r"(?:(?P<month>a\s+month)|(?P<n>\d+|" + "|".join(_NUMBER_WORDS) + r")\s+(?P<unit>weeks?|months?|games?|matches))\b",
     re.IGNORECASE,
 )
@@ -185,6 +187,16 @@ def is_safe_quote(quote: str | None) -> tuple[bool, str]:
     for ch in q_str:
         if ch in ("\u200b", "\u200c", "\u200d", "\ufeff"):
             return False, "Zero-width hidden characters detected in quote"
+    # Reject interrogative / speculative question headlines and inquiry phrasing
+    q_clean = q_str.strip()
+    if "?" in q_clean:
+        return False, "Speculative or interrogative question headline"
+    if re.match(
+        r"^(?:which\s+game|will\s+\w+\s+(?:miss|play|start)|could\s+\w+\s+(?:miss|play|start)|why\s+is\s+\w+\s+(?:out|missing))\b",
+        q_clean,
+        re.IGNORECASE,
+    ):
+        return False, "Speculative question phrasing detected in quote"
     return True, "Safe"
 
 
@@ -491,6 +503,8 @@ class AvailabilityReconciler:
         if getattr(element, "news_added", None):
             try:
                 news_added = datetime.fromisoformat(str(element.news_added).replace("Z", "+00:00"))
+                if news_added.tzinfo is None:
+                    news_added = news_added.replace(tzinfo=UTC)
             except ValueError:
                 pass
         valid: list[PlayerEvidence] = []
@@ -499,6 +513,54 @@ class AvailabilityReconciler:
                 continue
             safe, why = is_safe_quote(ev.quote)
             pub = ev.published_at
+            if pub is not None and pub.tzinfo is None:
+                pub = pub.replace(tzinfo=UTC)
+            q_lower = (ev.quote or "").lower()
+            url_lower = (ev.source_url or "").lower()
+            is_cup = (
+                bool(ev.match_context)
+                or bool(
+                    re.search(
+                        r"\b(?:carabao(?:\s+cup)?|efl\s+cup|league\s+cup|fa\s+cup|champions\s+league|europa\s+league|conference\s+league|efl\s+trophy)\b",
+                        q_lower,
+                    )
+                )
+                or bool(
+                    re.search(
+                        r"(?:carabao|efl-cup|league-cup|fa-cup|champions-league|europa-league|conference-league)",
+                        url_lower,
+                    )
+                )
+            ) and "premier league" not in q_lower
+
+            is_suspension = (
+                bool(re.search(r"\b(?:suspen\w*|red\s*card|banned|ban\b|sent\s+off|ineligible)\b", q_lower))
+                or ev.category == EvidenceCategory.INELIGIBLE
+            ) and getattr(element, "status", "a") != "s"
+
+            is_recap = bool(
+                re.search(
+                    r"\b(?:season-opener|came on for (?:his )?debut|made (?:his )?debut|debut in|in their (?:first|second|third) match|earlier this season|last season|former club|signed in the summer|arrived from)\b",
+                    q_lower,
+                )
+            ) and not bool(
+                re.search(
+                    r"\b(?:this weekend|tonight|tomorrow|saturday|sunday|monday|tuesday|wednesday|thursday|friday|next (?:game|match|fixture|round)|gw|gameweek)\b",
+                    q_lower,
+                )
+            )
+
+            is_affirming_available = bool(
+                re.search(
+                    r"\b(?:will\s+be\s+available|available\s+to\s+face|fit\s+to\s+face|ready\s+to\s+face|cleared\s+to\s+face|available\s+for\s+selection)\b",
+                    q_lower,
+                )
+                or re.search(
+                    r"\b(?:while|although|though)\b.*\b(?:will\s+miss|misses|out\s+for|sidelined)\b.*\b(?:will\s+be\s+available|available\s+to|fit\s+to|ready\s+to)\b",
+                    q_lower,
+                )
+            )
+
             reason = (
                 why
                 if not safe
@@ -515,7 +577,13 @@ class AvailabilityReconciler:
                 else "low confidence"
                 if ev.confidence < 0.65
                 else "cup context"
-                if ev.match_context
+                if is_cup
+                else "suspension unconfirmed by official FPL status 's'"
+                if is_suspension
+                else "historical narrative recap"
+                if is_recap
+                else "quote confirms availability for upcoming match"
+                if is_affirming_available
                 else "other gameweek"
                 if ev.target_gw not in (None, target_gw)
                 else ""
@@ -527,11 +595,49 @@ class AvailabilityReconciler:
         newest_fit = max(
             (e.published_at for e in valid if e.category in FIT_CATEGORIES and e.published_at), default=None
         )
+        newest_ruled_out = max(
+            (e.published_at for e in valid if e.category in RULED_OUT_CATEGORIES and e.published_at), default=None
+        )
         zero_ok = (
             getattr(element, "status", "a") != "a"
             or baseline_cop < 100.0
             or count_independent_sources([e for e in valid if e.category in RULED_OUT_CATEGORIES]) >= 2
         )
+        # Check for authoritative manager confirmation of fitness/starting that clears FPL doubt
+        confirmed_fit: PlayerEvidence | None = None
+        for ev in valid:
+            if ev.category in FIT_CATEGORIES and getattr(ev, "confidence", 1.0) >= 0.85:
+                q_low = ev.quote.lower() if ev.quote else ""
+                if any(
+                    kw in q_low
+                    for kw in (
+                        "will start",
+                        "fit to start",
+                        "starts tomorrow",
+                        "available to start",
+                        "ready to start",
+                        "100% fit",
+                    )
+                ):
+                    if confirmed_fit is None or (
+                        ev.published_at
+                        and (not confirmed_fit.published_at or ev.published_at > confirmed_fit.published_at)
+                    ):
+                        confirmed_fit = ev
+
+        if confirmed_fit is not None and (
+            not newest_ruled_out
+            or (confirmed_fit.published_at and newest_ruled_out and confirmed_fit.published_at >= newest_ruled_out)
+        ):
+            # Authoritative press conference confirms player starts; clears FPL doubt
+            return (
+                confirmed_fit,
+                100.0,
+                1.0,
+                self.prob_settings.prob_start_high_base,
+                None,
+            )
+
         best: tuple[float, PlayerEvidence, float | None] | None = None
         for ev in valid:
             if ev.category in FIT_CATEGORIES:
@@ -558,11 +664,19 @@ class AvailabilityReconciler:
             return None
         chance, ev, cap = best
         if cap is not None and baseline_cop > 0:
+            if cap <= 30.0:
+                limit_p_start = 0.05
+            elif cap <= 45.0:
+                limit_p_start = 0.20
+            elif cap <= 60.0:
+                limit_p_start = 0.50
+            else:
+                limit_p_start = self.prob_settings.prob_start_minutes_limit
             return (
                 ev,
                 baseline_cop,
                 baseline_cop / 100.0,
-                min(baseline_p_start, self.prob_settings.prob_start_minutes_limit),
+                min(baseline_p_start, limit_p_start),
                 cap,
             )
         if cap is None and chance < baseline_cop:
@@ -656,12 +770,73 @@ class AvailabilityReconciler:
                     continue
 
                 # 2. Filter out cup-only quotes for Premier League planning
-                if ev.match_context and any(
-                    cup in ev.match_context.lower() for cup in ["carabao", "fa cup", "champions league", "europa"]
-                ):
-                    rejected_signals.append(
-                        f"Cup competition quote ('{ev.match_context}') does not apply to PL GW {target_gw}"
+                q_lower = (ev.quote or "").lower()
+                is_cup_quote = (
+                    (
+                        ev.match_context
+                        and any(
+                            cup in ev.match_context.lower()
+                            for cup in ["carabao", "fa cup", "champions league", "europa"]
+                        )
                     )
+                    or any(
+                        cup in q_lower
+                        for cup in [
+                            "carabao cup",
+                            "efl cup",
+                            "league cup",
+                            "fa cup",
+                            "champions league",
+                            "europa league",
+                        ]
+                    )
+                ) and "premier league" not in q_lower
+                if is_cup_quote:
+                    rejected_signals.append(
+                        f"Cup competition quote ('{ev.match_context or ev.quote[:30]}') does not apply to PL GW {target_gw}"
+                    )
+                    continue
+
+                # 2b. Suspension unconfirmed by official FPL status 's'
+                is_suspension = (
+                    bool(re.search(r"\b(?:suspen\w*|red\s*card|banned|ban\b|sent\s+off|ineligible)\b", q_lower))
+                    or ev.category == EvidenceCategory.INELIGIBLE
+                ) and getattr(element, "status", "a") != "s"
+                if is_suspension:
+                    rejected_signals.append(
+                        f"Press suspension claim rejected: official FPL status is '{getattr(element, 'status', 'a')}', not 's'"
+                    )
+                    continue
+
+                # 2c. Historical narrative recap
+                is_recap = bool(
+                    re.search(
+                        r"\b(?:season-opener|came on for (?:his )?debut|made (?:his )?debut|debut in|in their (?:first|second|third) match|earlier this season|last season|former club|signed in the summer|arrived from)\b",
+                        q_lower,
+                    )
+                ) and not bool(
+                    re.search(
+                        r"\b(?:this weekend|tonight|tomorrow|saturday|sunday|monday|tuesday|wednesday|thursday|friday|next (?:game|match|fixture|round)|gw|gameweek)\b",
+                        q_lower,
+                    )
+                )
+                if is_recap:
+                    rejected_signals.append(f"Historical narrative recap rejected: '{ev.quote[:40]}'")
+                    continue
+
+                # 2d. Contrastive or affirmative availability for upcoming match
+                is_affirming_available = bool(
+                    re.search(
+                        r"\b(?:will\s+be\s+available|available\s+to\s+face|fit\s+to\s+face|ready\s+to\s+face|cleared\s+to\s+face|available\s+for\s+selection)\b",
+                        q_lower,
+                    )
+                    or re.search(
+                        r"\b(?:while|although|though)\b.*\b(?:will\s+miss|misses|out\s+for|sidelined)\b.*\b(?:will\s+be\s+available|available\s+to|fit\s+to|ready\s+to)\b",
+                        q_lower,
+                    )
+                )
+                if is_affirming_available:
+                    rejected_signals.append(f"Quote confirms availability for match: '{ev.quote[:40]}'")
                     continue
 
                 # 3. Filter out negated updates ("not ruled out") - abstain from ruling out

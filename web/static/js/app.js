@@ -44,6 +44,15 @@ const app = createApp({
       refreshPromise: null,
       gameState: {},
 
+      // Peak Frontier enhancements
+      priceRadar: null,
+      paretoFrontier: [],
+      selectedPareto: null,
+      liveMatchday: null,
+      trajectoryBoard: null,
+      eliteOwnership: null,
+      squadCovariance: null,
+
       // Overlays and feedback
       showChatDrawer: false,
       showPanicModal: false,
@@ -100,7 +109,7 @@ const app = createApp({
     },
     squad() { return (this.advice && this.advice.squadData) || {}; },
     leagueFallback() {
-      const r = this.card.rivals;
+      const r = (this.card && this.card.rivals) || {};
       return r.posture_reason || (r.league_name ? 'League standings are not available yet.' : 'No mini-league is set up.');
     },
     standing() { return (this.card && this.card.rivals && this.card.rivals.standing) || null; },
@@ -161,7 +170,7 @@ const app = createApp({
         ? `Gameweek ${cur} is being played now. Its results count once it finishes.` : '';
     },
     leagueAsOf() {
-      const gw = this.card && this.card.rivals.standings_after_gameweek;
+      const gw = this.card && this.card.rivals && this.card.rivals.standings_after_gameweek;
       return gw ? `Points after gameweek ${gw}${this.liveNote ? ` (gameweek ${this.gameState.current_gw} still being played)` : ''}` : '';
     },
     elapsedText() {
@@ -367,6 +376,12 @@ const app = createApp({
         this.adviceFrom = null;
         this.advicePublishedAt = job.published_at || null;
         this.adviceNotice = job.notice || null;
+        this.loadPriceRadar();
+        this.loadParetoFrontier();
+        this.loadLiveMatchday();
+        this.loadTrajectoryBoard();
+        this.loadEliteOwnership();
+        this.loadSquadCovariance();
       } catch (error) {
         if (generation !== this.generation) return;
         // A failed update must not blank the screen while an earlier valid advice exists: keep showing it, labelled.
@@ -377,7 +392,7 @@ const app = createApp({
         const said = job && ((job.status === 'failed' && job.error) || (job.status === 'unavailable' && job.reason));
         this.adviceError = (said && !said.includes('application log'))
           ? said
-          : error.reason || 'We could not prepare your advice. Press Refresh to try again.';
+          : error.message || error.reason || 'We could not prepare your advice. Press Refresh to try again.';
       } finally {
         if (generation === this.generation) this.adviceBusy = false;
       }
@@ -422,6 +437,69 @@ const app = createApp({
       await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bank: null, free_transfers: null }) });
       this.refreshAll();
+    },
+    async loadLiveMatchday() {
+      try {
+        const resp = await fetch('/api/matchday/live');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status === 'success') this.liveMatchday = data;
+        }
+      } catch (e) {
+        // Non-blocking
+      }
+    },
+    async loadPriceRadar() {
+      try {
+        const resp = await fetch('/api/market/price_radar');
+        if (resp.ok) this.priceRadar = await resp.json();
+      } catch (e) {
+        // Non-blocking
+      }
+    },
+    async loadParetoFrontier() {
+      try {
+        const resp = await fetch('/api/optimise/pareto');
+        if (resp.ok) {
+          const data = await resp.json();
+          this.paretoFrontier = data.frontier || [];
+        }
+      } catch (e) {
+        // Non-blocking
+      }
+    },
+    async loadTrajectoryBoard() {
+      try {
+        const resp = await fetch('/api/optimise/trajectory');
+        if (resp.ok) {
+          const data = await resp.json();
+          this.trajectoryBoard = data.board || null;
+        }
+      } catch (e) {
+        // Non-blocking
+      }
+    },
+    async loadEliteOwnership() {
+      try {
+        const resp = await fetch('/api/league/elite_ownership');
+        if (resp.ok) {
+          const data = await resp.json();
+          this.eliteOwnership = data || null;
+        }
+      } catch (e) {
+        // Non-blocking
+      }
+    },
+    async loadSquadCovariance() {
+      try {
+        const resp = await fetch('/api/optimise/covariance');
+        if (resp.ok) {
+          const data = await resp.json();
+          this.squadCovariance = data.covariance || null;
+        }
+      } catch (e) {
+        // Non-blocking
+      }
     },
     scheduleDeadlineRefresh(deadlineUtc) {
       if (this.deadlineTimer) clearTimeout(this.deadlineTimer);

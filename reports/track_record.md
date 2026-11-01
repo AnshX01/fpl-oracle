@@ -4,6 +4,14 @@ Predictions frozen before each deadline, scored after FPL finalises the gameweek
 source. Lower error is better; 'Top 20' is the average points actually scored by each source's 20
 highest-predicted players (higher is better). Buckets follow the OpenFPL paper (arXiv 2508.09992).
 
+## Gameweek 8 (model v2026.10.18.1352, 667 players)
+
+| Source | Error (RMSE) | Did not play | 1-2 pts | 3-4 pts | 5+ pts | Top 20 scored |
+|---|---|---|---|---|---|---|
+| FPL Oracle | 2.158 | 1.014 | 1.784 | 1.531 | 5.464 | 2.85 |
+| FPL ep_next | 2.464 | 0.881 | 2.275 | 2.086 | 6.184 | 3.0 |
+| Last-5 average | 2.321 | 1.053 | 2.267 | 1.846 | 5.529 | 3.65 |
+
 ## Gameweek 7 (model v2026.10.16.1307, 667 players)
 
 | Source | Error (RMSE) | Did not play | 1-2 pts | 3-4 pts | 5+ pts | Top 20 scored |
