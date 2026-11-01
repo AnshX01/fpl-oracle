@@ -499,7 +499,7 @@ class ManagerStateService:
             chips_used=chips_used_list,
             chips_remaining_set_1=rem_set_1,
             chips_remaining_set_2=rem_set_2,
-            active_chip=published_lineup.active_chip,
+            active_chip=published_lineup.active_chip if target_gw == current_gw else None,
             current_gw=current_gw,
             target_gw=target_gw,
             deadline_utc=deadline_utc,

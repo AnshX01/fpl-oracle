@@ -347,7 +347,10 @@ class AnalysisService:
             kwargs["available_chips"] = list(set(kwargs.get("available_chips", [])) | {state.active_chip})
         if "previous_chip" not in kwargs:
             kwargs["previous_chip"] = next(
-                (c["name"] for c in state.chips_used if c["event"] == kwargs["target_gw"] - 1), None
+                (c["name"] for c in state.chips_used if c["event"] == kwargs["target_gw"] - 1),
+                getattr(state.published_lineup, "active_chip", None)
+                if state.current_gw == kwargs["target_gw"] - 1
+                else None,
             )
         if "rival_context" not in kwargs:
             try:
