@@ -81,6 +81,25 @@ class TextExtractor:
         if not cleaned:
             return []
 
+        # 1b. Speculative or interrogative question headline defense
+        cleaned_strip = cleaned.strip()
+        if "?" in cleaned_strip or re.match(
+            r"^(?:which\s+game|will\s+\w+\s+(?:miss|play|start)|could\s+\w+\s+(?:miss|play|start)|why\s+is\s+\w+\s+(?:out|missing))\b",
+            cleaned_strip,
+            re.IGNORECASE,
+        ):
+            return [
+                PlayerEvidence(
+                    player_id=player_id,
+                    player_name=player_name,
+                    category=EvidenceCategory.UNKNOWN,
+                    quote=cleaned[:80],
+                    confidence=0.20,
+                    ambiguity_notes="Speculative or interrogative question headline discarded",
+                    extracted_at=datetime.now(UTC),
+                )
+            ]
+
         # 2. Extract player name tokens for subject matching
         last_name = surname_token(player_name)
 
@@ -92,12 +111,16 @@ class TextExtractor:
 
         # 4. Match Context (Cup competition filtering)
         match_context = None
-        if re.search(r"\b(?:carabao\s+cup|efl\s+cup|league\s+cup)\b", cleaned, re.IGNORECASE):
+        if re.search(r"\b(?:carabao\s+cup|carabao|efl\s+cup|league\s+cup)\b", cleaned, re.IGNORECASE):
             match_context = "Carabao Cup"
         elif re.search(r"\b(?:fa\s+cup)\b", cleaned, re.IGNORECASE):
             match_context = "FA Cup"
         elif re.search(r"\b(?:champions\s+league|ucl)\b", cleaned, re.IGNORECASE):
             match_context = "Champions League"
+        elif re.search(r"\b(?:europa\s+league)\b", cleaned, re.IGNORECASE):
+            match_context = "Europa League"
+        elif re.search(r"\b(?:conference\s+league)\b", cleaned, re.IGNORECASE):
+            match_context = "Conference League"
         elif re.search(r"\b(?:nations\s+league)\b", cleaned, re.IGNORECASE):
             match_context = "Nations League"
 
@@ -121,7 +144,7 @@ class TextExtractor:
             # Contrast and subordinate clauses: "A started when B was ruled out" says nothing about A
             delims = list(
                 re.finditer(
-                    r"\b(?:but|while|whereas|when|after|because|as|since|although|though|until)\b|;",
+                    r"\b(?:but|while|whereas|when|after|because|as|since|although|though|until|amid|amidst|following|with)\b|;",
                     sent_text,
                     re.IGNORECASE,
                 )
@@ -173,6 +196,14 @@ class TextExtractor:
                     }
                     for i, c in enumerate(clauses):
                         if i != player_clause_idx:
+                            # Check if another clause mentions an injury/knock to another named entity
+                            m_subj_inj = re.search(
+                                r"\b(?:after|when|as|because|since|with)\s+([A-Z][a-z]+)\s+(?:picked up|suffered|sustained|underwent|had|got)\s+(?:an?\s+)?(?:injury|knock|blow|tear|surgery|problem)\b",
+                                c,
+                            )
+                            if m_subj_inj and m_subj_inj.group(1).lower() != last_name.lower():
+                                other_clause_has_other_player = True
+                                break
                             words = [w.strip(".,;:!?()\"'") for w in c.split()]
                             cap_words = [
                                 w
@@ -291,10 +322,52 @@ class TextExtractor:
             ]
         )
 
+        # Check for substitute / replacement patterns: player came on / played
+        is_substitute_feature = bool(
+            re.search(
+                r"\b(?:came on (?:for|as)|replaced|deputised for|filled in for)\b",
+                clause_lower,
+            )
+        )
+
+        # Check for contrastive availability: "while X will miss [Match A], he will be available for [Match B]"
+        is_contrastive_available = bool(
+            re.search(
+                r"\b(?:will\s+be\s+available|available\s+to\s+face|fit\s+to\s+face|ready\s+to\s+face|cleared\s+to\s+face|available\s+for\s+selection)\b",
+                cleaned[q_start:q_end].lower(),
+            )
+            or re.search(
+                r"\b(?:while|although|though)\b.*\b(?:will\s+miss|misses|out\s+for|sidelined)\b.*\b(?:will\s+be\s+available|available\s+to|fit\s+to|ready\s+to)\b",
+                cleaned[q_start:q_end].lower(),
+            )
+        )
+
+        # Check for historical narrative recap
+        is_historical_recap = bool(
+            re.search(
+                r"\b(?:season-opener|came on for (?:his )?debut|made (?:his )?debut|debut in|in their (?:first|second|third) match|earlier this season|last season|former club|signed in the summer|arrived from)\b",
+                clause_lower,
+            )
+        ) and not bool(
+            re.search(
+                r"\b(?:this weekend|tonight|tomorrow|saturday|sunday|monday|tuesday|wednesday|thursday|friday|next (?:game|match|fixture|round)|gw|gameweek)\b",
+                clause_lower,
+            )
+        )
+
         # Category Determination
         if is_unverified or is_colloquial_or_transfer:
             category = EvidenceCategory.UNKNOWN
             conf = 0.40
+        elif is_contrastive_available:
+            category = EvidenceCategory.AVAILABLE
+            conf = 0.95
+        elif is_historical_recap:
+            category = EvidenceCategory.UNKNOWN
+            conf = 0.30
+        elif is_substitute_feature:
+            category = EvidenceCategory.AVAILABLE
+            conf = 0.85
         elif _has(
             clause_lower,
             "ineligible",
@@ -391,9 +464,23 @@ class TextExtractor:
                 "swollen",
                 "assessed tomorrow",
             )
-            or re.search(r"\bhopeful\b", clause_lower)
+            or re.search(r"\bhopeful\s+(?:of|that|he|they|to)\s+(?:be|return|play|feature|fit)\b", clause_lower)
             or _has(
-                clause_lower, "minor knock", "knock", "knocks", "knocked", "not at 100%", "precaution", "precautionary"
+                clause_lower,
+                "minor knock",
+                "a knock",
+                "the knock",
+                "took a knock",
+                "suffered a knock",
+                "picked up a knock",
+                "carrying a knock",
+                "nursing a knock",
+                "heavy knock",
+                "slight knock",
+                "knocks",
+                "not at 100%",
+                "precaution",
+                "precautionary",
             )
             or (is_negated and _has(clause_lower, "ruled out"))
         ):

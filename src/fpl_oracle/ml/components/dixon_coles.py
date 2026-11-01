@@ -21,6 +21,20 @@ logger = logging.getLogger(__name__)
 HISTORICAL_CSV_PATH = HISTORICAL_DIR / "master_history.csv"
 
 
+def _smooth_log_tau(tau: np.ndarray, eps: float = 1e-4) -> np.ndarray:
+    """
+    Smooth, twice-differentiable C2 lower boundary continuation of log(tau) for tau < eps.
+    Replaces crude non-smooth clamping with a quadratic barrier penalty to ensure positive-definite
+    Hessian and continuous gradient dynamics during L-BFGS-B optimization.
+    """
+    is_safe = tau >= eps
+    safe_tau = np.where(is_safe, tau, eps)
+    log_safe = np.log(safe_tau)
+    delta = (tau - eps) / eps
+    quad_ext = np.log(eps) + delta - 0.5 * (delta**2)
+    return np.where(is_safe, log_safe, quad_ext)
+
+
 class DixonColesModel:
     """
     Dixon-Coles bivariate Poisson model with low-score correlation adjustment tau_rho.
@@ -32,19 +46,22 @@ class DixonColesModel:
         ridge_lambda: float = 0.05,
         default_gamma: float = 0.20,
         default_rho: float = -0.10,
+        default_mu_0: float = 0.0,
     ):
         self.xi = xi
         self.ridge_lambda = ridge_lambda
         self.default_gamma = default_gamma
         self.default_rho = default_rho
+        self.default_mu_0 = default_mu_0
 
         self.alphas: dict[str, float] = {}
         self.deltas: dict[str, float] = {}
         self.gamma: float = default_gamma
         self.rho: float = default_rho
+        self.mu_0: float = default_mu_0
 
         # Pooled promoted team prior:
-        # Sign convention: log lambda = alpha_h - delta_a + gamma, log mu = alpha_a - delta_h.
+        # Sign convention: log lambda = mu_0 + alpha_h - delta_a + gamma, log mu = mu_0 + alpha_a - delta_h.
         # Higher delta decreases opponent scoring -> +delta represents stronger defence, -delta represents weaker defence.
         # Promoted clubs concede significantly more goals -> delta_promoted must be negative.
         # Fitted from historical 2023-26 promoted clubs (Luton, Sheffield Utd, Burnley, Ipswich, Leicester, Southampton):
@@ -151,42 +168,60 @@ class DixonColesModel:
         n_matches = len(matches)
 
         def nll(params: np.ndarray) -> float:
-            raw_alphas = params[:n_teams]
-            deltas = params[n_teams : 2 * n_teams]
-            gamma = params[2 * n_teams]
-            rho = params[2 * n_teams + 1]
+            mu_0 = params[0]
+            u = params[1:n_teams]
+            v = params[n_teams : 2 * n_teams - 1]
+            gamma = params[2 * n_teams - 1]
+            rho = params[2 * n_teams]
 
-            # Zero-mean identifiability constraint on attack parameters
-            alphas = raw_alphas - np.mean(raw_alphas)
+            # Exact zero-sum identifiability constraints on attack and defense parameters
+            # Parameter space is strictly identifiable: eliminates flat zero-eigenvalue Hessian direction
+            alphas = np.empty(n_teams, dtype=float)
+            alphas[0] = -np.sum(u)
+            alphas[1:] = u
 
-            log_lam = alphas[h_idx] - deltas[a_idx] + gamma
-            log_mu = alphas[a_idx] - deltas[h_idx]
+            deltas = np.empty(n_teams, dtype=float)
+            deltas[0] = -np.sum(v)
+            deltas[1:] = v
+
+            log_lam = mu_0 + alphas[h_idx] - deltas[a_idx] + gamma
+            log_mu = mu_0 + alphas[a_idx] - deltas[h_idx]
             lam = np.exp(np.clip(log_lam, -3.0, 3.0))
             mu = np.exp(np.clip(log_mu, -3.0, 3.0))
 
             log_p = h_goals * np.log(lam) - lam + a_goals * np.log(mu) - mu
 
-            tau_vals = np.ones(n_matches)
-            tau_vals[m00] = np.maximum(1e-6, 1.0 - lam[m00] * mu[m00] * rho)
-            tau_vals[m01] = np.maximum(1e-6, 1.0 + lam[m01] * rho)
-            tau_vals[m10] = np.maximum(1e-6, 1.0 + mu[m10] * rho)
-            tau_vals[m11] = np.maximum(1e-6, 1.0 - rho)
+            tau_vals = np.ones(n_matches, dtype=float)
+            tau_vals[m00] = 1.0 - lam[m00] * mu[m00] * rho
+            tau_vals[m01] = 1.0 + lam[m01] * rho
+            tau_vals[m10] = 1.0 + mu[m10] * rho
+            tau_vals[m11] = 1.0 - rho
 
-            log_lik = log_p + np.log(tau_vals)
+            log_lik = log_p + _smooth_log_tau(tau_vals)
             ridge = self.ridge_lambda * (np.sum(alphas**2) + np.sum(deltas**2))
             return float(-np.sum(weights * log_lik) + ridge)
 
-        init_params = np.zeros(2 * n_teams + 2)
-        init_params[2 * n_teams] = self.default_gamma
-        init_params[2 * n_teams + 1] = self.default_rho
+        init_params = np.zeros(2 * n_teams + 1)
+        init_params[0] = 0.20
+        init_params[2 * n_teams - 1] = self.default_gamma
+        init_params[2 * n_teams] = self.default_rho
 
-        bounds = [(-2.0, 2.0)] * (2 * n_teams) + [(0.0, 0.6), (-0.5, 0.4)]
+        bounds = (
+            [(-1.5, 1.5)] + [(-2.0, 2.0)] * (n_teams - 1) + [(-2.0, 2.0)] * (n_teams - 1) + [(0.0, 0.6), (-0.5, 0.4)]
+        )
         res = minimize(nll, init_params, method="L-BFGS-B", bounds=bounds, options={"maxiter": 250})
 
-        fitted_alphas = res.x[:n_teams] - np.mean(res.x[:n_teams])
-        fitted_deltas = res.x[n_teams : 2 * n_teams]
-        self.gamma = float(res.x[2 * n_teams])
-        self.rho = float(res.x[2 * n_teams + 1])
+        self.mu_0 = float(res.x[0])
+        u_fit = res.x[1:n_teams]
+        v_fit = res.x[n_teams : 2 * n_teams - 1]
+        fitted_alphas = np.empty(n_teams, dtype=float)
+        fitted_alphas[0] = -np.sum(u_fit)
+        fitted_alphas[1:] = u_fit
+        fitted_deltas = np.empty(n_teams, dtype=float)
+        fitted_deltas[0] = -np.sum(v_fit)
+        fitted_deltas[1:] = v_fit
+        self.gamma = float(res.x[2 * n_teams - 1])
+        self.rho = float(res.x[2 * n_teams])
 
         self.alphas = {t: float(fitted_alphas[i]) for i, t in enumerate(self.teams)}
         self.deltas = {t: float(fitted_deltas[i]) for i, t in enumerate(self.teams)}
@@ -214,8 +249,8 @@ class DixonColesModel:
                 d_h = self.deltas.get(h_team, self.promoted_delta)
                 a_a = self.alphas.get(a_team, self.promoted_alpha)
                 d_a = self.deltas.get(a_team, self.promoted_delta)
-                l_lam = float(np.exp(np.clip(a_h - d_a + self.gamma, -3.0, 2.0)))
-                l_mu = float(np.exp(np.clip(a_a - d_h, -3.0, 2.0)))
+                l_lam = float(np.exp(np.clip(self.mu_0 + a_h - d_a + self.gamma, -3.0, 2.0)))
+                l_mu = float(np.exp(np.clip(self.mu_0 + a_a - d_h, -3.0, 2.0)))
                 raw_h = float(np.clip(math.exp(-l_mu), 0.01, 0.95))
                 raw_a = float(np.clip(math.exp(-l_lam), 0.01, 0.95))
                 cal_preds.extend([raw_h, raw_a])
@@ -254,8 +289,8 @@ class DixonColesModel:
         alpha_h, delta_h = self.get_team_parameters(home_team)
         alpha_a, delta_a = self.get_team_parameters(away_team)
 
-        log_lam = alpha_h - delta_a + self.gamma
-        log_mu = alpha_a - delta_h
+        log_lam = self.mu_0 + alpha_h - delta_a + self.gamma
+        log_mu = self.mu_0 + alpha_a - delta_h
         lam = float(np.exp(np.clip(log_lam, -3.0, 2.0)))
         mu = float(np.exp(np.clip(log_mu, -3.0, 2.0)))
 

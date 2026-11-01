@@ -13,7 +13,7 @@ def expected_floor_div(rate: float, divisor: int, max_k: int | None = None, tol:
     Accounts for the Jensen inequality gap between floor(E[K]/divisor) and E[floor(K/divisor)].
     Uses dynamic upper bound when max_k is None, summing until residual mass < tol.
     """
-    if rate <= 0.0 or divisor <= 0:
+    if rate <= 0.0 or divisor <= 0 or math.isnan(rate):
         return 0.0
 
     cap = max(100, int(rate + 10 * math.sqrt(rate) + 20)) if max_k is None else max_k

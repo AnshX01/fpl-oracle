@@ -125,3 +125,19 @@ def test_scorer_prices_older_than_a_week_are_ignored(tmp_path, monkeypatch):
     assert odds.scorer_probabilities() == {}
     save(None)
     assert odds.scorer_probabilities() == {}
+
+
+def test_shin_implied_probabilities_favorite_longshot_bias():
+    """Verify Shin's method removes bookmaker overround and corrects favorite-longshot bias."""
+    # Odds: strong favorite (1.50), draw (4.0), longshot (8.0)
+    market_odds = [1.50, 4.0, 8.0]
+    inv = [1.0 / o for o in market_odds]
+    naive_p = [v / sum(inv) for v in inv]
+
+    shin_p = odds.shin_implied_probabilities(market_odds)
+    assert abs(sum(shin_p) - 1.0) < 1e-6
+    # Under favorite-longshot bias, the longshot has inflated bookmaker margin,
+    # so fair Shin probability for the longshot must be strictly lower than naive normalization
+    assert shin_p[2] < naive_p[2], f"Shin longshot {shin_p[2]} should be < naive {naive_p[2]}"
+    # Favorite's true probability is higher than naive normalization
+    assert shin_p[0] > naive_p[0], f"Shin favorite {shin_p[0]} should be > naive {naive_p[0]}"

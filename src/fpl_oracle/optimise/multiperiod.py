@@ -1,5 +1,5 @@
 """
-Multi-Period Mixed-Integer Linear Programming (MILP) Transfer Optimizer (WI-2.1 to WI-2.5).
+Multi-Period Mixed-Integer Linear Programming (MILP) Transfer Optimizer .
 
 Formulation:
 - Exact multi-gameweek horizon T = {t0, ..., t0 + H - 1} (H=1..12, default 8).
@@ -11,11 +11,11 @@ Formulation:
   * Free transfer banking (1 to 5 FTs, Rule R4)
   * Hit penalties (-4 points per extra transfer)
   * Chip deployments (Wildcard, Free Hit, Bench Boost, Triple Captain)
-  * Team value and selling price oracle (WI-1.4)
+  * Team value and selling price oracle
   * Terminal banked FT value V_ft and terminal bank valuation lambda_bank
 - Solvers supported: HiGHS (via highspy / pulp.HiGHS, single-threaded, fixed seed) and COIN-OR CBC (via pulp.PULP_CBC_CMD).
 - Plan comparison set generation (Roll, 1- and 2-transfer, Hold, Chip plans, hit-free, keep and cover re-solves).
-- Scenario-based hit justification policy (WI-2.5).
+- Scenario-based hit justification policy .
 """
 
 import logging
@@ -87,28 +87,30 @@ class MultiPeriodConfig:
     # Owner rule: no back-to-back chips. Chip weeks must be at least this many gameweeks apart (1 = no rule).
     # With no blank/double gameweeks announced, flat projections otherwise bunch every chip into the first weeks.
     min_gameweeks_between_chips: int = 2
+    allow_wc_bb_adjacency: bool = False
     # Decision rule: act only if P(true gain > 0) >= this, given the model's fitted estimation error
     # (docs/decision_model.md section 3). 0.75 = act on a 3-to-1 edge; set before looking at any live result.
     decision_confidence: float = 0.75
     w_bench_mean: float = 0.05  # flat weight on every bench player; bench order is chosen after the solve
     lambda_bank: float = 0.05  # 0.05 xP per 1.0m (£0.1m = 0.005 xP)
     chip_week_ft_rule: Literal["preserve", "preserve_plus_one"] = "preserve"
-    pruning_limits: dict[str, int] = field(default_factory=lambda: {"GKP": 15, "DEF": 45, "MID": 45, "FWD": 25})
+    pruning_limits: dict[str, int] = field(default_factory=lambda: dict(GKP=10, DEF=25, MID=30, FWD=18))
     ft_terminal_increments: tuple[float, float, float, float] = (1.0, 0.8, 0.6, 0.4)
-    ft_option_value: float = 1.80  # Hall of Fame FT preservation value (~1.75-2.0 xP)
+    ft_option_value: float = 1.80  # Free transfer preservation value (~1.75-2.0 xP)
     anti_churn_penalty: float = 0.50  # Lateral transfer friction penalty
     cameo_risk_penalty: float = 0.75  # 5-minute cameo risk penalty
 
     def __post_init__(self):
         try:
             from fpl_oracle.config import SETTINGS
-            opt = SETTINGS.get('optimizer', {})
-            if 'ft_option_value' in opt and self.ft_option_value == 1.80:
-                self.ft_option_value = float(opt['ft_option_value'])
-            if 'anti_churn_penalty' in opt and self.anti_churn_penalty == 0.50:
-                self.anti_churn_penalty = float(opt['anti_churn_penalty'])
-            if 'cameo_risk_penalty' in opt and self.cameo_risk_penalty == 0.75:
-                self.cameo_risk_penalty = float(opt['cameo_risk_penalty'])
+
+            opt = SETTINGS.get("optimizer", {})
+            if "ft_option_value" in opt and self.ft_option_value == 1.80:
+                self.ft_option_value = float(opt["ft_option_value"])
+            if "anti_churn_penalty" in opt and self.anti_churn_penalty == 0.50:
+                self.anti_churn_penalty = float(opt["anti_churn_penalty"])
+            if "cameo_risk_penalty" in opt and self.cameo_risk_penalty == 0.75:
+                self.cameo_risk_penalty = float(opt["cameo_risk_penalty"])
         except Exception:
             pass
 
@@ -208,11 +210,12 @@ class _WarmStartHiGHS(pulp.HiGHS):  # type: ignore[misc,name-defined]
 
 class MultiPeriodOptimizer:
     """
-    Mixed-Integer Linear Programming Multi-Period Optimizer for FPL (WI-2.1 to WI-2.5).
+    Mixed-Integer Linear Programming Multi-Period Optimizer for FPL .
     """
 
     def __init__(self, config: MultiPeriodConfig | None = None) -> None:
         self.config = config or MultiPeriodConfig()
+        self._fh_cache: dict[Any, Any] = {}
 
     def _get_solver(
         self, time_limit_sec: float | None = None, start: dict[pulp.LpVariable, float] | None = None
@@ -420,7 +423,7 @@ class MultiPeriodOptimizer:
         )
 
         players = sorted(pruned_pool["element"].astype(int).tolist())
-        player_dict = {int(r["element"]): dict(r) for _, r in pruned_pool.iterrows()}
+        player_dict = {int(r["element"]): r for r in pruned_pool.to_dict(orient="records")}
 
         # Locked / excluded constraints
         locked_in = set(locked_in_ids or [])
@@ -431,10 +434,16 @@ class MultiPeriodOptimizer:
         init_bank = float(bank)
         buy_costs = {p: float(player_dict[p]["value"]) for p in players}
 
-        squad_sell_map = {
-            int(r["element"]): float(sell_price(int(round(float(r["purchase_price"]))), int(round(float(r["value"])))))
-            for _, r in squad_df.iterrows()
-        }
+        squad_sell_map = {}
+        for r in squad_df.to_dict(orient="records"):
+            eid = int(r["element"])
+            now_val = int(round(float(r.get("value", r.get("now_cost", 50.0)))))
+            if "selling_price" in r and pd.notna(r["selling_price"]):
+                squad_sell_map[eid] = float(r["selling_price"])
+            elif "purchase_price" in r and pd.notna(r["purchase_price"]):
+                squad_sell_map[eid] = float(sell_price(int(round(float(r["purchase_price"]))), now_val))
+            else:
+                squad_sell_map[eid] = float(now_val)
         sell_vals = {p: squad_sell_map.get(p, buy_costs[p]) for p in players}
 
         # Positions & clubs
@@ -475,7 +484,7 @@ class MultiPeriodOptimizer:
         h = {t: pulp.LpVariable(f"h_{t}", lowBound=0, upBound=15, cat=pulp.LpContinuous) for t in horizon_gws}
         bank_var = {t: pulp.LpVariable(f"bank_{t}", lowBound=0, cat=pulp.LpContinuous) for t in horizon_gws}
         ft_var = {
-            t: pulp.LpVariable(f"ft_{t}", lowBound=0, upBound=MAX_BANKED_FREE_TRANSFERS, cat=pulp.LpInteger)
+            t: pulp.LpVariable(f"ft_{t}", lowBound=1, upBound=MAX_BANKED_FREE_TRANSFERS, cat=pulp.LpInteger)
             for t in horizon_gws + [horizon_gws[-1] + 1]
         }
         z = {t: pulp.LpVariable(f"z_{t}", cat=pulp.LpBinary) for t in horizon_gws}
@@ -545,6 +554,17 @@ class MultiPeriodOptimizer:
                 prob += tcc[p, t] <= c[p, t]
                 prob += bb_b[p, t] <= b[p, t]
 
+            # Ruled-out / unavailable players cannot start or captain in gameweek t
+            gw_df = horizon_projections.get(t) if horizon_projections else None
+            if gw_df is not None and "simulation_unavailable" in gw_df.columns:
+                gw_unavail = set(
+                    gw_df[gw_df["simulation_unavailable"].fillna(False).astype(bool)]["element"].astype(int)
+                )
+                for p in players:
+                    if p in gw_unavail:
+                        prob += s[p, t] == 0
+                        prob += c[p, t] == 0
+
             # Formation: 1 GKP, 3-5 DEF, 2-5 MID, 1-3 FWD, 11 Starters, 1 Captain
             prob += pulp.lpSum(s[p, t] for p in players) == 11 * not_fh
             prob += pulp.lpSum(b[p, t] for p in players) == 4 * not_fh
@@ -562,7 +582,7 @@ class MultiPeriodOptimizer:
             prob += pulp.lpSum(bb_b[p, t] for p in players) == 4 * bb[t]
 
             if is_wc_w1 and idx == 0:
-                # Dedicated Wildcard formulation for t0 (WI-8.4, Item 3)
+                # Dedicated Wildcard formulation for t0
                 for p in players:
                     if p in squad_ids:
                         prob += tout[p, t] == 1 - x[p, t]
@@ -629,6 +649,8 @@ class MultiPeriodOptimizer:
                 # Hits: h[t] >= u[t] - ft[t] - 15 * wc[t]. (A Free Hit week has u = 0, so it needs no waiver;
                 # leaving fh[t] out stops a fractional FH from waiving hits in the LP relaxation.)
                 prob += h[t] >= u[t] - ft_var[t] - 15 * wc[t]
+                # Maximum 2 hits (-8 pts) per normal gameweek unless Wildcard is active
+                prob += h[t] <= 2 + 15 * wc[t]
                 if t < hit_cooldown_until:
                     # Hit-ledger guard: no paid transfers until the cooldown has passed
                     prob += h[t] == 0
@@ -641,13 +663,14 @@ class MultiPeriodOptimizer:
                 # z[t] == 1 if u[t] > ft_var[t]
                 prob += u[t] - ft_var[t] <= 15 * z[t]
                 # Normal week: if u <= ft, ft_next <= ft - u + 1; if u > ft, ft_next <= 1
-                prob += ft_var[next_t] <= ft_var[t] - u[t] + 1 + 5 * z[t] + 5 * wc[t]
-                prob += ft_var[next_t] <= 1 + 5 * (1 - z[t]) + 5 * wc[t]
+                chip_relax = 25 * (wc[t] + fh[t])
+                prob += ft_var[next_t] <= ft_var[t] - u[t] + 1 + 25 * z[t] + chip_relax
+                prob += ft_var[next_t] <= 1 + 25 * (1 - z[t]) + chip_relax
                 # Chip week: preserve
                 if self.config.chip_week_ft_rule == "preserve_plus_one":
-                    prob += ft_var[next_t] <= ft_var[t] + 1 + 5 * (1 - wc[t] - fh[t])
+                    prob += ft_var[next_t] <= ft_var[t] + 1 + 25 * (1 - wc[t] - fh[t])
                 else:
-                    prob += ft_var[next_t] <= ft_var[t] + 5 * (1 - wc[t] - fh[t])
+                    prob += ft_var[next_t] <= ft_var[t] + 25 * (1 - wc[t] - fh[t])
 
         # Terminal FT Concave Linearization
         t_end = horizon_gws[-1] + 1
@@ -672,22 +695,54 @@ class MultiPeriodOptimizer:
                 for chip_name, chip_vars in (("wildcard", wc), ("freehit", fh), ("bboost", bb), ("3xc", tc)):
                     prob += pulp.lpSum(chip_vars[t] for t in gws) <= (1 if chip_name in avail else 0)
 
+        # Single chip per gameweek constraint
+        for t in horizon_gws:
+            prob += wc[t] + fh[t] + bb[t] + tc[t] <= 1
+
+        # Single-use season-long chips: freehit, bboost, 3xc can be deployed at most once across entire horizon
+        for chip_vars in (fh, bb, tc):
+            prob += pulp.lpSum(chip_vars[t] for t in horizon_gws) <= 1
+
         spacing = self.config.min_gameweeks_between_chips
+        allow_wc_bb = getattr(self.config, "allow_wc_bb_adjacency", False)
+        if forced_chip_schedule:
+            for t in horizon_gws[:-1]:
+                next_t = t + 1
+                if (
+                    str(forced_chip_schedule.get(t, "")).lower() == "wildcard"
+                    and str(forced_chip_schedule.get(next_t, "")).lower() == "bboost"
+                ):
+                    allow_wc_bb = True
+
         if spacing > 1:
             for idx in range(H):
                 window_gws = horizon_gws[idx : idx + spacing]
-                prob += pulp.lpSum(wc[t] + fh[t] + bb[t] + tc[t] for t in window_gws) <= 1
+                if allow_wc_bb and len(window_gws) == 2:
+                    t1, t2 = window_gws[0], window_gws[1]
+                    # Synergistic exception: Allow Wildcard at t1 into Bench Boost at t2.
+                    # All other chip pairs remain mutually exclusive within the spacing window.
+                    prob += (fh[t1] + bb[t1] + tc[t1]) + (wc[t2] + fh[t2] + bb[t2] + tc[t2]) <= 1
+                    prob += wc[t1] + fh[t2] <= 1
+                    prob += wc[t1] + tc[t2] <= 1
+                    prob += wc[t1] + wc[t2] <= 1
+                else:
+                    prob += pulp.lpSum(wc[t] + fh[t] + bb[t] + tc[t] for t in window_gws) <= 1
             if previous_chip and forced_w1_chip is None:
-                # A chip played last gameweek blocks chips until the spacing has passed
+                # A chip played last gameweek blocks chips until spacing passes,
+                # except Wildcard into Bench Boost when allowed.
+                prev_is_wc = str(previous_chip).lower() in ("wildcard", "wc")
                 for t in horizon_gws[: spacing - 1]:
-                    prob += wc[t] + fh[t] + bb[t] + tc[t] == 0
+                    if allow_wc_bb and prev_is_wc:
+                        prob += wc[t] + fh[t] + tc[t] == 0
+                    else:
+                        prob += wc[t] + fh[t] + bb[t] + tc[t] == 0
 
         # Free Hit squads are solved once per week (depends only on that week's xP); weeks where a
         # Free Hit is not allowed are fixed to 0 so the plan never gets an FH it has no squad for.
         suppress_t0_chips = (
             forced_w1_chip is None and forced_chip_schedule is None and (no_chip_w1 or forced_w1_transfers is not None)
         )
-        fh_cache = fh_cache if fh_cache is not None else {}
+        fh_cache = self._fh_cache if fh_cache is None else fh_cache
         fh_plan: dict[int, dict[str, Any]] = {}
         for t in horizon_gws:
             fh_possible = (
@@ -851,13 +906,14 @@ class MultiPeriodOptimizer:
         ft_term = pulp.lpSum(w * var for w, var in zip(v_weights, v, strict=True))
         obj_terms.append((gamma**H) * ft_term)
 
-        # Free Transfer Option Value across intermediate weeks (Hall of Fame liquidity heuristic)
+        # Free Transfer Option Value across intermediate weeks
         if self.config.ft_option_value > 0 and H > 1:
             ft_dividend = (1.0 - gamma) * (self.config.ft_option_value / 4.0)
             # Ben Crellin rule: If an upcoming major BGW (e.g. GW26, GW29) is within the plan horizon,
             # scale up FT dividend so the solver enters the blank week holding maximum banked FTs (3-5 FTs).
             bgw_in_horizon = any(gw in (26, 29) for gw in horizon_gws[1:])
-            if bgw_in_horizon and chip_name != "freehit":
+            w1_chip = (forced_w1_chip or "").lower().strip()
+            if bgw_in_horizon and w1_chip != "freehit":
                 ft_dividend *= 1.5
 
             for idx, t in enumerate(horizon_gws[1:], start=1):
@@ -937,6 +993,41 @@ class MultiPeriodOptimizer:
                     start.setdefault(x[p, t], 0.0)
                 for chip_dict in chip_cols.values():
                     start.setdefault(chip_dict[t], 0.0)
+
+            # Primal MIP warm-start for starting XI, bench and captain to eliminate root LP search
+            active_squad = [p for p in players if (warm_start.get(("x", p, t0), 0) > 0.5 or p in squad_ids)]
+            if len(active_squad) == 15:
+                for t in horizon_gws:
+                    t_df = horizon_projections.get(t, player_pool_df)
+                    t_xp = _xp_map(t_df)
+                    by_pos_t = {
+                        pos: sorted(
+                            [p for p in active_squad if player_dict[p]["position"] == pos],
+                            key=lambda p: t_xp.get(p, 0.0),
+                            reverse=True,
+                        )
+                        for pos in ("GKP", "DEF", "MID", "FWD")
+                    }
+                    if (
+                        len(by_pos_t["GKP"]) >= 1
+                        and len(by_pos_t["DEF"]) >= 3
+                        and len(by_pos_t["MID"]) >= 2
+                        and len(by_pos_t["FWD"]) >= 1
+                    ):
+                        starters_t = (
+                            by_pos_t["GKP"][:1] + by_pos_t["DEF"][:3] + by_pos_t["MID"][:2] + by_pos_t["FWD"][:1]
+                        )
+                        rem = by_pos_t["DEF"][3:] + by_pos_t["MID"][2:] + by_pos_t["FWD"][1:]
+                        rem.sort(key=lambda p: t_xp.get(p, 0.0), reverse=True)
+                        starters_t += rem[: 11 - len(starters_t)]
+                        cap_t = max(starters_t, key=lambda p: t_xp.get(p, 0.0))
+                        for p in players:
+                            if (p, t) in s:
+                                start[s[p, t]] = 1.0 if p in starters_t else 0.0
+                            if (p, t) in b:
+                                start[b[p, t]] = 1.0 if (p in active_squad and p not in starters_t) else 0.0
+                            if (p, t) in c:
+                                start[c[p, t]] = 1.0 if p == cap_t else 0.0
 
         if fix_except_gws is not None and warm_start:
             x_gws = set(horizon_gws)
@@ -1042,11 +1133,25 @@ class MultiPeriodOptimizer:
                 t_squad = list(fh_week["squad"])
             else:
                 t_squad = [p for p in players if (x[p, t].varValue or 0.0) > 0.5]
+                gw_df = horizon_projections.get(t) if horizon_projections else None
+                if gw_df is not None and "simulation_unavailable" in gw_df.columns:
+                    t_unavail = set(
+                        gw_df[gw_df["simulation_unavailable"].fillna(False).astype(bool)]["element"].astype(int)
+                    )
+                else:
+                    t_unavail = set()
+                t_cost = {
+                    p: player_dict[p].get("now_cost", player_dict[p].get("value", buy_costs.get(p, 50.0)))
+                    for p in t_squad
+                }
                 t_starters, t_bench, t_cap, t_vc = best_lineup(
                     t_squad,
                     {p: player_dict[p]["position"] for p in t_squad},
                     gw_xp,
                     1.0 if gw_chip_name == "bboost" else w_bench,
+                    blocked=t_unavail,
+                    allow_blocked_fallback=True,
+                    cost=t_cost,
                 )
 
             t_hits = int(round(h[t].varValue or 0))
@@ -1152,7 +1257,11 @@ class MultiPeriodOptimizer:
             if isinstance(result, MultiPeriodPlan) and result.total_objective > best.total_objective + 1e-6:
                 best = result
         if best is not plan or bound is None:
-            gap = max(0.0, bound / best.total_objective - 1.0) if bound is not None else 1.0
+            gap = (
+                max(0.0, bound / best.total_objective - 1.0)
+                if (bound is not None and abs(best.total_objective) > 1e-6)
+                else 1.0
+            )
             best.solver_gap = gap
             best.is_lower_bound = gap > self.config.mip_gap * 1.01
             best.solver_status = f"LOCAL_SEARCH (gap<={gap:.4%} vs full-solve bound)"
@@ -1190,7 +1299,7 @@ class MultiPeriodOptimizer:
         incoming = player_pool_df[player_pool_df["element"].isin(fielded - owned_ids)].copy()
         for col in retained.columns:
             if col not in incoming.columns:
-                if col in ("purchase_price", "selling_price"):
+                if col in ("purchase_price", "selling_price", "now_cost", "cost"):
                     incoming[col] = incoming.get("value", 50.0)
                 elif col == "chance_of_playing":
                     incoming[col] = 100.0
@@ -1213,7 +1322,7 @@ class MultiPeriodOptimizer:
 
         def player_rows(ids: set[int], price_key: str) -> list[dict[str, Any]]:
             rows = fielded_df if price_key == "cost" else current_squad_df
-            lookup = {int(r["element"]): r for _, r in rows.iterrows()}
+            lookup = {int(r["element"]): r for r in rows.to_dict(orient="records")}
             out = []
             for e in sorted(ids):
                 r = lookup.get(e)
@@ -1317,7 +1426,7 @@ class MultiPeriodOptimizer:
         # Anti-churn friction penalty on lateral transfers (same pos, similar cost, both healthy)
         churn_count = 0
         if act.transfers_count and self.config.anti_churn_penalty > 0 and not act.active_chip:
-            pool_map = {int(r["element"]): r for _, r in player_pool_df.iterrows()}
+            pool_map = {int(r["element"]): r for r in player_pool_df.to_dict(orient="records")}
             for t_in, t_out in zip(transfers_in, transfers_out, strict=False):
                 e_in = pool_map.get(int(t_in.get("element", 0)))
                 e_out = pool_map.get(int(t_out.get("element", 0)))
@@ -1327,6 +1436,10 @@ class MultiPeriodOptimizer:
                     price_diff = abs(float(e_in.get("value", 0)) - float(e_out.get("value", 0)))
                     cop_in = float(e_in.get("chance_of_playing", 100.0) or 100.0)
                     cop_out = float(e_out.get("chance_of_playing", 100.0) or 100.0)
+                    if cop_in <= 1.0:
+                        cop_in *= 100.0
+                    if cop_out <= 1.0:
+                        cop_out *= 100.0
                     if pos_in == pos_out and price_diff <= 7.0 and cop_in >= 75.0 and cop_out >= 75.0:
                         churn_count += 1
         anti_churn_pen = round(churn_count * self.config.anti_churn_penalty, 2)
@@ -1409,7 +1522,7 @@ class MultiPeriodOptimizer:
         - Hold plan: best week-1 plan without a chip (chips stay available later)
         - Optimal plan (unconstrained MILP: any transfers, hits and chips)
         - Chip plans: each available chip played now, everything else optimised
-        - Hit policy: hit cooldown, owner's raw-gain rule and simulated hit verdict (WI-2.5)
+        - Hit policy: hit cooldown, owner's raw-gain rule and simulated hit verdict
         The independent solves run in parallel. The recommendation is the best-objective plan that
         passes the hit gates; solver status and gaps are returned so a solve that hits the safety cap
         is never presented as proven optimal.
@@ -1426,7 +1539,6 @@ class MultiPeriodOptimizer:
         all_chips = {"wildcard", "freehit", "bboost", "3xc"}
         target_set = 1 if target_gw <= SET_1_LAST_GW else 2
         forced = forced_current_chip.lower().strip() if forced_current_chip else None
-        used = {str(c.get("name") if isinstance(c, dict) else c).lower().strip() for c in (chips_already_used or [])}
         if chips_by_set is not None:
             avail = {n: {str(c).lower().strip() for c in chips_by_set.get(n) or []} for n in (1, 2)}
             if chips_available is not None:
@@ -1434,7 +1546,22 @@ class MultiPeriodOptimizer:
         else:
             allowed = all_chips if chips_available is None else {str(c).lower().strip() for c in chips_available}
             avail = {1: set(allowed), 2: set(allowed)}
-        avail[target_set] -= used - {forced}
+        if chips_already_used:
+            for item in chips_already_used:
+                if isinstance(item, dict):
+                    c_name = str(item.get("name", "")).lower().strip()
+                    c_ev = item.get("event")
+                    c_set = (
+                        1
+                        if (c_ev is not None and int(c_ev) <= SET_1_LAST_GW)
+                        else (2 if c_ev is not None else target_set)
+                    )
+                    if c_name != forced and c_name in avail.get(c_set, set()):
+                        avail[c_set].discard(c_name)
+                else:
+                    c_name = str(item).lower().strip()
+                    if c_name != forced and c_name in avail.get(target_set, set()):
+                        avail[target_set].discard(c_name)
         if forced:
             avail[target_set].add(forced)
         avail_lists = {n: sorted(avail[n] & all_chips) for n in (1, 2)}
@@ -1607,6 +1734,29 @@ class MultiPeriodOptimizer:
         sigma_est = float(xp_estimation_sd or 0.0)
         z = NormalDist().inv_cdf(self.config.decision_confidence)
 
+        price_col_m = "selling_price" if "selling_price" in current_squad_df else "value"
+        sell_price_of_m = dict(
+            zip(current_squad_df["element"].astype(int), current_squad_df[price_col_m].astype(float), strict=True)
+        )
+        now_cost_of_m = dict(
+            zip(current_squad_df["element"].astype(int), current_squad_df["value"].astype(float), strict=True)
+        )
+        eo_of_m: dict[int, float] = {}
+        for r in current_squad_df.to_dict(orient="records"):
+            eid = int(r["element"])
+            eo_of_m[eid] = max(
+                float(r.get("top10k_eo", 0.0) or 0.0),
+                float(r.get("effective_ownership", 0.0) or 0.0),
+                float(r.get("selected_by_percent", 0.0) or 0.0),
+            )
+
+        from fpl_oracle.config import SETTINGS
+
+        opt_cfg_m = SETTINGS.get("optimizer", {})
+        eo_megacap_threshold_m = float(opt_cfg_m.get("eo_megacap_threshold", 35.0))
+        eo_liquidation_hurdle_m = float(opt_cfg_m.get("eo_liquidation_hurdle", 2.50))
+        equity_drag_coeff_m = float(opt_cfg_m.get("equity_drag_coeff", 0.50))
+
         def exposure(cand: dict[str, Any]) -> dict[int, float]:
             weights: dict[int, float] = defaultdict(float)
             for idx, act in enumerate(cand["trajectory"]):
@@ -1620,13 +1770,39 @@ class MultiPeriodOptimizer:
                         weights[int(p)] += disc
             return weights
 
-        def confident(a: dict[str, Any], b: dict[str, Any], hurdle: float | None = None) -> dict[str, Any]:
+        def confident(
+            a: dict[str, Any],
+            b: dict[str, Any],
+            hurdle: float | None = None,
+            decay_ratio: float | None = None,
+        ) -> dict[str, Any]:
             wa, wb = exposure(a), exposure(b)
             sigma = sigma_est * math.sqrt(sum((wa.get(p, 0.0) - wb.get(p, 0.0)) ** 2 for p in set(wa) | set(wb)))
             delta = a["total_objective"] - b["total_objective"]
-            # A fixed one-point status-quo margin on top (owner's choice)
-            base_thresh = hurdle if hurdle is not None else stability_threshold
-            needed = max(base_thresh, z * sigma) + SEARCH_TOLERANCE
+
+            # Megacap transfer liquidation barrier and repurchase equity friction
+            sold_by_a = {int(x["element"]) for x in a.get("transfers_out", [])}
+            sold_by_b = {int(x["element"]) for x in b.get("transfers_out", [])}
+            liquidated_in_a = sold_by_a - sold_by_b
+
+            megacap_barrier = 0.0
+            equity_friction = 0.0
+            # Free Hit is a temporary 1-week squad that reverts without selling equity or talismans
+            if a.get("chip") != "freehit":
+                for e in liquidated_in_a:
+                    eo_e = eo_of_m.get(e, 0.0)
+                    if eo_e >= eo_megacap_threshold_m:
+                        megacap_barrier = max(megacap_barrier, eo_liquidation_hurdle_m)
+                    # Stored appreciation equity loss
+                    now_c = now_cost_of_m.get(e, sell_price_of_m.get(e, 0.0))
+                    sell_c = sell_price_of_m.get(e, now_c)
+                    if now_c > sell_c + 1e-4:
+                        eq_destroyed = (now_c - sell_c) / 10.0 if now_c > 20.0 else (now_c - sell_c)
+                        equity_friction += max(0.0, eq_destroyed) * equity_drag_coeff_m * 10.0
+
+            base_thresh = max(hurdle if hurdle is not None else stability_threshold, megacap_barrier)
+            effective_z = z * (decay_ratio if decay_ratio is not None else 1.0)
+            needed = max(base_thresh, effective_z * sigma) + equity_friction + SEARCH_TOLERANCE
             return {
                 "gain": round(delta, 2),
                 "uncertainty": round(sigma, 2),
@@ -1708,13 +1884,18 @@ class MultiPeriodOptimizer:
 
         def keep_candidates(cand: dict[str, Any]) -> list[int]:
             """The dearest players a plan sells this week that are good enough to start (at least its weakest
-            starter's forecast): a benched or injured player costs almost nothing to keep, so a tie means nothing."""
+            starter's forecast) or consensus megacaps: a benched or injured player costs almost nothing to keep, so a tie means nothing."""
             weakest = min((maps[target_gw].get(int(q), 0.0) for q in cand["trajectory"][0]["starters"]), default=0.0)
             sold = [int(x["element"]) for x in cand["transfers_out"]]
             return sorted(
-                (e for e in sold if e not in set(locked_out_ids or ()) and maps[target_gw].get(e, 0.0) >= weakest),
+                (
+                    e
+                    for e in sold
+                    if e not in set(locked_out_ids or ())
+                    and (maps[target_gw].get(e, 0.0) >= weakest or eo_of_m.get(e, 0.0) >= eo_megacap_threshold_m)
+                ),
                 key=lambda e: (-float(sell_price_of.get(e, 0.0)), -maps[target_gw].get(e, 0.0), e),
-            )[:KEEP_CHECKS]
+            )[: max(KEEP_CHECKS, 3)]
 
         same_chip = chip_of(top_cand)
         if rival_context and rival_context.get("rivals"):
@@ -1749,7 +1930,19 @@ class MultiPeriodOptimizer:
 
         if not forced and rec_plan["chip"] and hold_cand is not None:
             # Playing a chip now is judged against keeping it (which includes the same chip next week)
-            check = confident(rec_plan, hold_cand)
+            # Dynamic Hurdle Decay (P0): as target_gw approaches the pigeonhole drop-dead deadline for Set 1 / Set 2,
+            # the statistical hurdle decays to 0.0 to prevent chips expiring worthless (American option decay).
+            chips_in_set = len(avail_lists.get(target_set, []))
+            min_weeks_needed = max(1, 2 * chips_in_set - 1)
+            set_deadline = SET_1_LAST_GW if target_set == 1 else 38
+            drop_dead_gw = set_deadline - min_weeks_needed + 1
+            slack = max(0, drop_dead_gw - target_gw)
+            max_slack = max(1, set_deadline - min_weeks_needed - 1)
+            decay_ratio = min(1.0, slack / max_slack)
+
+            # When slack == 0 (at or past drop-dead deadline), hurdle decays to 0 to prevent forfeiture
+            chip_hurdle = (stability_threshold if stability_threshold > 0 else 0.0) * decay_ratio
+            check = confident(rec_plan, hold_cand, hurdle=chip_hurdle, decay_ratio=decay_ratio)
             if not check["passed"]:
                 stability_note = (
                     f"Keep the chip: playing it now gains {check['gain']:+.2f} xP over keeping it, within the "
@@ -1762,11 +1955,7 @@ class MultiPeriodOptimizer:
                 rec_plan["decision_check"] = dict(check, versus="keeping the chip")
         if not forced and not rec_plan["chip"] and rec_plan is not cand_roll:
             churn_pen = rec_plan.get("anti_churn_penalty", 0.0)
-            ft_hurdle = (
-                max(stability_threshold, self.config.ft_option_value) + churn_pen
-                if stability_threshold > 0
-                else churn_pen
-            )
+            ft_hurdle = max(stability_threshold, churn_pen) if stability_threshold > 0 else churn_pen
             check = confident(rec_plan, cand_roll, hurdle=ft_hurdle)
             if not check["passed"]:
                 stability_note = (
@@ -1893,6 +2082,17 @@ class MultiPeriodOptimizer:
 
             # Title chances compare points net of hits, like everything else the planner scores
             best_points = max(raw_points(plan_weeks(c)) - hit_points(c) for c in unique.values())
+            t_map: dict[int, int] = {}
+            if "team" in player_pool_df.columns:
+                t_map.update(dict(zip(player_pool_df["element"], player_pool_df["team"], strict=False)))
+            if "team" in current_squad_df.columns:
+                t_map.update(dict(zip(current_squad_df["element"], current_squad_df["team"], strict=False)))
+
+            opp_by_gw: dict[int, dict[int, int]] = {}
+            for gw_k, p_df in horizon_projections.items():
+                if "opponent_team" in p_df.columns and "element" in p_df.columns:
+                    opp_by_gw[gw_k] = dict(zip(p_df["element"], p_df["opponent_team"], strict=False))
+
             for cand in unique.values():
                 cand["league"] = win_probability(
                     plan_weeks(cand),
@@ -1904,6 +2104,8 @@ class MultiPeriodOptimizer:
                     sd_maps,
                     positions,
                     rival_cache,
+                    team_map=t_map,
+                    opponents_by_gw=opp_by_gw,
                 )
             tied = [
                 c
@@ -1928,10 +2130,43 @@ class MultiPeriodOptimizer:
                     sd_maps,
                     positions,
                     rival_cache,
+                    team_map=t_map,
+                    opponents_by_gw=opp_by_gw,
                 )["p_win"]
                 for c in tied
             }
-            choice = max(tied, key=lambda c: (level[id(c)], plan_key(c)), default=rec_plan)
+
+            def is_valid_tiebreak_candidate(cand: dict[str, Any]) -> bool:
+                if cand is rec_plan:
+                    return True
+                # Guardrail 1: Active Pitch Cover Guard
+                # A move selected for rival cover must place the covered player on the pitch (starters)
+                # or as primary sub with viable expected points (>= 2.5 xP). Placing a covered player at
+                # Sub 2 or Sub 3 on the bench provides zero on-pitch cover against the rival in Week 0.
+                if str(cand.get("source", "")).startswith("cover:"):
+                    cov_id = int(cand["source"].split(":")[1])
+                    t0 = cand["trajectory"][0]
+                    starters = set(t0.get("starters", []))
+                    bench = t0.get("bench", [])
+                    if cov_id not in starters:
+                        first_sub = bench[0] if bench else None
+                        if cov_id != first_sub or maps[target_gw].get(cov_id, 0.0) < 2.5:
+                            return False
+
+                # Guardrail 2: Pre-Chip Free Transfer Liquidity Shield
+                # If Bench Boost is scheduled in the immediate horizon (GW 0 or GW 1),
+                # entering the Bench Boost week with maximum banked FTs has high dynamic value.
+                # The league tie-breaker must not sacrifice an FT on a move that gives negative or zero
+                # expected points gain over rolling.
+                has_near_bboost = any(act.get("chip") == "bboost" for act in cand_roll["trajectory"][:2])
+                if has_near_bboost and cand.get("transfers_count", 0) > 0:
+                    if cand["trajectory"][0]["net_xp"] < cand_roll["trajectory"][0]["net_xp"] - 0.01:
+                        return False
+
+                return True
+
+            valid_tied = [c for c in tied if is_valid_tiebreak_candidate(c)]
+            choice = max(valid_tied, key=lambda c: (level[id(c)], plan_key(c)), default=rec_plan)
             tiebreak_reason = ""
             if (
                 choice is not rec_plan
@@ -1996,7 +2231,7 @@ class MultiPeriodOptimizer:
             def captained(p: int) -> tuple[float, dict[str, Any]]:
                 weeks = plan_weeks(rec_plan)
                 weeks[0] = week_weights(week0["starters"], p, week0.get("chip"), week0["bench"])
-                args = (horizon_gws, rival_context, maps, sd_maps, positions, rival_cache)
+                args = (horizon_gws, rival_context, maps, sd_maps, positions, rival_cache, t_map, opp_by_gw)
                 level = win_probability(weeks, held, raw_points(weeks) - rec_net + best_points, *args)
                 return level["p_win"], win_probability(weeks, held, best_points + hit_points(rec_plan), *args)
 
@@ -2010,12 +2245,30 @@ class MultiPeriodOptimizer:
             from fpl_oracle.league.strategy import league_strategy_advisor
 
             owners = sum(top in r["elements"] for r in rival_context["rivals"])
+            user_rank = rival_context.get("user_rank")
+            pts_gap = float(rival_context.get("points_gap", 0.0) or 0.0)
             posture = str(
                 rival_context.get("strategy_mode")
-                or ("DEFENDING_LEAD" if float(rival_context.get("points_gap", 0.0) or 0.0) >= 10.0 else "BALANCED_ATTACK")
+                or ("DEFENDING_LEAD" if (user_rank == 1 or pts_gap > 0.0) else "BALANCED_ATTACK")
             )
             primary_rival = rival_context["rivals"][0] if rival_context["rivals"] else {}
-            rival_cap = primary_rival.get("captain_element") or primary_rival.get("last_captain")
+            rival_cap = (
+                primary_rival.get("captain")
+                or primary_rival.get("captain_element")
+                or primary_rival.get("last_captain")
+            )
+            if rival_cap is None and rival_context.get("rivals"):
+                from collections import Counter
+
+                r_counts = Counter(p for r in rival_context["rivals"] for p in r.get("elements", []))
+                consensus_cands = [
+                    p
+                    for p, c in r_counts.items()
+                    if c >= max(1, len(rival_context["rivals"]) // 2) and p in week0["starters"]
+                ]
+                if consensus_cands:
+                    rival_cap = max(consensus_cands, key=lambda p: maps[target_gw].get(p, 0.0))
+
             cap_guidance = league_strategy_advisor.evaluate_captain_shadowing(
                 top_captain_id=int(lineup["captain"]["element"]),
                 starters_ids=week0["starters"],
@@ -2029,23 +2282,33 @@ class MultiPeriodOptimizer:
                 "shadow_guidance": cap_guidance,
             }
 
-            # Annotate candidate plans with rival shadow adjustments
-            if primary_rival:
-                rival_elems = set(int(e) for e in primary_rival.get("elements", []))
+            # Annotate candidate plans with rival shadow adjustments across tracked rivals
+            tracked_rivals = rival_context.get("rivals", [])
+            if tracked_rivals:
                 for cand in unique.values():
-                    if cand.get("transfers_out"):
+                    if cand.get("transfers_out") or cand.get("transfers_in"):
                         adj, reasons = league_strategy_advisor.compute_rival_shadow_adjustment(
-                            transfers_out=cand["transfers_out"],
-                            transfers_in=cand["transfers_in"],
-                            rival_elements=rival_elems,
+                            transfers_out=cand.get("transfers_out", []),
+                            transfers_in=cand.get("transfers_in", []),
+                            rival_elements=tracked_rivals,
                             posture=posture,
                         )
                         cand["rival_shadow_adjustment"] = adj
                         cand["rival_shadow_reasons"] = reasons
-            if (
-                pick != top
-                and scored[pick][0] > scored[top][0] + 0.005
-                and scored[pick][1]["p_win"] >= (scored[top][1]["p_win"])
+            shield_id = cap_guidance.get("captain_id")
+            should_shield = (
+                posture == "DEFENDING_LEAD"
+                and cap_guidance.get("should_switch")
+                and shield_id is not None
+                and int(shield_id) in week0["starters"]
+                and (maps[target_gw].get(top, 0.0) - maps[target_gw].get(int(shield_id), 0.0)) * extra < cap_needed
+            )
+            if should_shield:
+                pick = int(shield_id)
+
+            if pick != top and (
+                should_shield
+                or (scored[pick][0] > scored[top][0] + 0.005 and scored[pick][1]["p_win"] >= (scored[top][1]["p_win"]))
             ):
                 rows = lineup["starters"].set_index("element")
                 old_cap = dict(lineup["captain"])
@@ -2088,8 +2351,8 @@ class MultiPeriodOptimizer:
                         "instead_of": old_cap["web_name"],
                         "points_given_up": given_up,
                         "needed": round(cap_needed, 2),
-                        "p_win_before": rec_plan["league"]["p_win"],
-                        "p_win_after": scored[pick][1]["p_win"],
+                        "p_win_before": (rec_plan.get("league") or {}).get("p_win", 0.0),
+                        "p_win_after": (scored.get(pick, (0.0, {}))[1] or {}).get("p_win", 0.0),
                     },
                 )
                 rec_plan["league"] = scored[pick][1]
@@ -2118,6 +2381,200 @@ class MultiPeriodOptimizer:
         scheduled = {a["chip"]: a["gameweek"] for a in rec_plan["trajectory"] if a["chip"] and a["chip"] != forced}
 
         candidate_plans = list(unique.values())
+
+        # Phase 1 & 2 Peak Frontier: Stochastic Recourse Tree Optimization & Adversarial Minimax Gating
+        stochastic_evals = []
+        try:
+            from fpl_oracle.optimise.stochastic import stochastic_optimizer
+
+            scenarios = stochastic_optimizer.generate_scenario_tree(horizon_projections, target_gw)
+            stochastic_evals = stochastic_optimizer.evaluate_candidates(candidate_plans, scenarios, target_gw)
+            eval_map = {e.plan_id: e for e in stochastic_evals}
+            for cand in candidate_plans:
+                plan_id = cand.get("plan_id", cand.get("label", cand.get("source", "Plan")))
+                ev = eval_map.get(plan_id)
+                if ev:
+                    cand["stochastic_robustness"] = {
+                        "expected_recourse_utility": ev.expected_stochastic_utility,
+                        "downside_worst_case": ev.downside_worst_case,
+                        "robustness_index": ev.robustness_index,
+                        "tier": ev.recommendation_tier,
+                    }
+            rec_id = rec_plan.get("plan_id", rec_plan.get("label", rec_plan.get("source", "Plan")))
+            if rec_id in eval_map:
+                ev = eval_map[rec_id]
+                rec_plan["stochastic_robustness"] = {
+                    "expected_recourse_utility": ev.expected_stochastic_utility,
+                    "downside_worst_case": ev.downside_worst_case,
+                    "robustness_index": ev.robustness_index,
+                    "tier": ev.recommendation_tier,
+                }
+            elif stochastic_evals:
+                top_ev = stochastic_evals[0]
+                rec_plan["stochastic_robustness"] = {
+                    "expected_recourse_utility": top_ev.expected_stochastic_utility,
+                    "downside_worst_case": top_ev.downside_worst_case,
+                    "robustness_index": top_ev.robustness_index,
+                    "tier": top_ev.recommendation_tier,
+                }
+        except Exception as exc:
+            logger.debug("Stochastic recourse evaluation skipped: %s", exc)
+
+        # Multi-Rival Adversarial Minimax Evaluation
+        multi_minimax_res = None
+        try:
+            if rival_context and rival_context.get("rivals"):
+                from fpl_oracle.league.minimax import minimax_solver
+
+                user_pts = float(rival_context.get("user_points", 0.0) or 0.0)
+                user_xp = float(rec_plan.get("net_expected_points", 50.0))
+                multi_minimax_res = minimax_solver.evaluate_multi_rival_game(
+                    user_candidates=candidate_plans,
+                    rival_profiles=rival_context["rivals"],
+                    player_pool=player_pool_df,
+                    target_gw=target_gw,
+                    user_base_points=user_pts,
+                    user_base_xp=user_xp,
+                    hurdle=1.20,
+                )
+                for idx, cand in enumerate(candidate_plans):
+                    cand["adversarial_minimax"] = {
+                        "guaranteed_worst_case_win_prob": multi_minimax_res.global_worst_case_guarantees[idx],
+                        "expected_pack_rank": multi_minimax_res.expected_ranks[idx],
+                        "pack_win_rate": multi_minimax_res.pack_win_rates[idx],
+                        "bottleneck_rival": multi_minimax_res.bottleneck_rivals[idx],
+                        "rival_worst_threat": multi_minimax_res.rival_worst_threats[idx],
+                    }
+                rec_id = rec_plan.get("plan_id", rec_plan.get("label", rec_plan.get("source", "Plan")))
+                cand_idx = next(
+                    (
+                        i
+                        for i, c in enumerate(candidate_plans)
+                        if c.get("plan_id") == rec_id or c.get("label") == rec_id
+                    ),
+                    0,
+                )
+                rec_plan["adversarial_minimax"] = candidate_plans[cand_idx]["adversarial_minimax"]
+        except Exception as exc:
+            logger.debug("Adversarial minimax evaluation skipped: %s", exc)
+
+        # Active Closed-Loop Stochastic & Minimax Promotion Gating
+        hurdle = 1.20
+        incumbent = rec_plan
+        rec_downside = incumbent.get("stochastic_robustness", {}).get("downside_worst_case", -math.inf)
+        rec_wc = incumbent.get("adversarial_minimax", {}).get("guaranteed_worst_case_win_prob", 0.0)
+        rec_tier = incumbent.get("stochastic_robustness", {}).get("tier", "VIABLE")
+
+        is_incumbent_roll = (
+            incumbent is cand_roll
+            or incumbent.get("source") == "roll"
+            or incumbent.get("plan_type") == "ROLL_TRANSFER"
+            or incumbent.get("transfers_count", len(incumbent.get("transfers_in", []))) == 0
+        )
+        rejected_roll_alt = incumbent.get("rejected_alternative") if is_incumbent_roll else None
+        has_near_chip = any(act.get("chip") in ("bboost", "3xc") for act in cand_roll.get("trajectory", [])[:2])
+
+        def _elem_ids(t_list: Any) -> set[int]:
+            ids: set[int] = set()
+            for p in t_list or []:
+                if isinstance(p, dict):
+                    ids.add(int(p.get("element", 0)))
+                else:
+                    try:
+                        ids.add(int(p))
+                    except (ValueError, TypeError):
+                        pass
+            return ids
+
+        eligible_promotions = []
+        for cand in candidate_plans:
+            if cand is incumbent or not cand.get("hit_allowed") or cand.get("chip") != incumbent.get("chip"):
+                continue
+            if kept_ids and not (kept_ids <= {int(p) for p in cand["trajectory"][0]["elements"]}):
+                continue
+
+            cand_tf_count = cand.get("transfers_count", len(cand.get("transfers_in", [])))
+
+            # When incumbent is a roll plan (0 transfers), guard against circular overrides and transfer churn
+            if is_incumbent_roll and cand_tf_count > 0:
+                # 1. Circular override guard: do not re-promote an alternative rejected by the Bayesian roll hurdle
+                if rejected_roll_alt and rejected_roll_alt.get("versus") == "rolling":
+                    rej_ins = _elem_ids(rejected_roll_alt.get("ins"))
+                    rej_outs = _elem_ids(rejected_roll_alt.get("outs"))
+                    cand_ins = _elem_ids(cand.get("transfers_in"))
+                    cand_outs = _elem_ids(cand.get("transfers_out"))
+                    if cand_ins == rej_ins and cand_outs == rej_outs:
+                        continue
+
+                # 2. Banked FT option value accounting: burning FTs consumes future flexibility
+                ft_option_val = getattr(self.config, "ft_option_value", 1.80)
+                option_cost = cand_tf_count * ft_option_val
+
+                # 3. Near-horizon chip protection: entering Bench Boost/Triple Captain with banked FTs is high value
+                if has_near_chip and float(cand.get("pure_xp_gain", 0.0)) < option_cost:
+                    continue
+
+                # 4. Adjusted objective gap penalizing FT consumption
+                adjusted_incumbent_obj = float(incumbent.get("total_objective", 0.0)) + option_cost
+                adj_gap = adjusted_incumbent_obj - float(cand.get("total_objective", 0.0))
+                if adj_gap > hurdle:
+                    continue
+
+                gap = adj_gap
+            else:
+                gap = float(incumbent.get("total_objective", 0.0)) - float(cand.get("total_objective", 0.0))
+                if gap > hurdle:
+                    continue
+
+            c_downside = cand.get("stochastic_robustness", {}).get("downside_worst_case", -math.inf)
+            c_tier = cand.get("stochastic_robustness", {}).get("tier", "VIABLE")
+            c_wc = cand.get("adversarial_minimax", {}).get("guaranteed_worst_case_win_prob", 0.0)
+
+            stoch_promotes = (c_downside >= rec_downside + 1.0) or (
+                c_tier == "ROBUST_DOMINANT" and rec_tier in ("VIABLE", "FRAGILE_SUBOPTIMAL")
+            )
+            minimax_promotes = c_wc >= rec_wc + 0.05
+
+            if stoch_promotes or minimax_promotes:
+                eligible_promotions.append(
+                    {
+                        "cand": cand,
+                        "stoch_promotes": stoch_promotes,
+                        "minimax_promotes": minimax_promotes,
+                        "downside_gain": c_downside - rec_downside,
+                        "wc_gain": c_wc - rec_wc,
+                        "gap": gap,
+                    }
+                )
+
+        if eligible_promotions:
+            best_promo = max(
+                eligible_promotions,
+                key=lambda x: (x["minimax_promotes"], x["wc_gain"], x["downside_gain"], plan_key(x["cand"])),
+            )
+            promoted_cand = best_promo["cand"]
+            promoted_cand["stochastic_minimax_gated"] = True
+
+            reason_parts = []
+            if best_promo["minimax_promotes"]:
+                reason_parts.append(f"Minimax guarantee +{best_promo['wc_gain'] * 100:.1f}% vs rival")
+            if best_promo["stoch_promotes"]:
+                reason_parts.append(f"Stochastic downside shield +{best_promo['downside_gain']:.2f} xP")
+            gate_reason = " & ".join(reason_parts)
+
+            promoted_cand["stochastic_minimax_gating"] = {
+                "demoted_plan": incumbent.get("source", "incumbent"),
+                "points_given_up": round(best_promo["gap"], 2),
+                "hurdle": hurdle,
+                "reason": gate_reason,
+            }
+            rec_plan = promoted_cand
+            rec_plan["recommendation_summary"] = (
+                f"Robust Minimax Guard: Promoted plan ({gate_reason}). "
+                f"Forecast gap ({best_promo['gap']:.2f} xP) sits safely within the {hurdle:.2f} xP uncertainty hurdle."
+            )
+            rec_chip = rec_plan["chip"]
+            scheduled = {a["chip"]: a["gameweek"] for a in rec_plan["trajectory"] if a["chip"] and a["chip"] != forced}
 
         if rejected_hit is not None and rec_plan["hits"] == 0:
             hit_verdict = f"{rejected_hit['hit_verdict']} Best hit plan not recommended."
@@ -2204,6 +2661,18 @@ class MultiPeriodOptimizer:
         return {
             "recommended_plan": rec_plan,
             "candidate_plans": candidate_plans,
+            "stochastic_evaluations": [
+                {
+                    "plan_id": e.plan_id,
+                    "label": e.label,
+                    "expected_stochastic_utility": e.expected_stochastic_utility,
+                    "downside_worst_case": e.downside_worst_case,
+                    "robustness_index": e.robustness_index,
+                    "tier": e.recommendation_tier,
+                }
+                for e in stochastic_evals
+            ],
+            "adversarial_minimax": rec_plan.get("adversarial_minimax"),
             "hit_verdict": hit_verdict,
             "stability_note": stability_note,
             "recommended_chip": rec_chip,

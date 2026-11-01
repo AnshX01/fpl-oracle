@@ -1,5 +1,5 @@
 """
-Attacking component model and player share reconciliation engine (WI-3.3).
+Attacking component model and player share reconciliation engine.
 Predicts expected goals and assists from each player's share of his team's chances given he plays, and
 reconciles them so every team's players add up to the market (or Dixon-Coles) team goals.
 """
@@ -59,7 +59,7 @@ def share_offset(X: pd.DataFrame, minutes: np.ndarray, target: str) -> np.ndarra
 
 class AttackingModel(BaseComponent):
     """
-    Player attacking expectation component with coherent team-goal reconciliation (WI-3.3).
+    Player attacking expectation component with coherent team-goal reconciliation.
     E[goals | plays] is an explicit share model (share_offset) with LightGBM learning a multiplicative
     correction on top, so a correction shrinks towards "no change" rather than towards the average player.
     """
@@ -168,7 +168,7 @@ class AttackingModel(BaseComponent):
         availability: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        WI-3.3: Reconcile player-level expectations with team-level expectations.
+        Reconcile player-level expectations with team-level expectations.
 
         Rescales player goals and assists within each team-fixture so that:
             sum_{p in team} availability_p * E[goals_p] == PLAYER_GOALS_PER_TEAM_GOAL * implied_team_xG
@@ -262,7 +262,7 @@ class AttackingModel(BaseComponent):
                 new_s_goals = float(np.sum(reconciled_goals[idx] * avail[idx]))
                 goal_shares[idx] = reconciled_goals[idx] * avail[idx] / lambda_goals
                 logger.debug(
-                    "WI-3.3: Reconciled goals for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
+                    "Reconciled goals for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
                     key,
                     kappa_g,
                     lambda_team,
@@ -281,7 +281,7 @@ class AttackingModel(BaseComponent):
                 new_s_assists = float(np.sum(reconciled_assists[idx] * avail[idx]))
                 assist_shares[idx] = reconciled_assists[idx] * avail[idx] / lambda_assists
                 logger.debug(
-                    "WI-3.3: Reconciled assists for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
+                    "Reconciled assists for group %s: kappa=%.4f (lambda=%.3f, raw_sum=%.3f, reconciled_sum=%.3f)",
                     key,
                     kappa_a,
                     lambda_assists,
@@ -304,7 +304,7 @@ class AttackingModel(BaseComponent):
         market_scoring_chance: np.ndarray | None = None,
     ) -> dict[str, np.ndarray]:
         """
-        Produce expected goals and assists, reconciling with team fixture expected goals (WI-3.3).
+        Produce expected goals and assists, reconciling with team fixture expected goals.
         `minutes` is the minutes model's output: E[goals] = P(plays) * E[goals | plays], with E[goals | plays]
         from the share model at the minutes he is expected to play when he plays.
         """
@@ -323,12 +323,9 @@ class AttackingModel(BaseComponent):
         # 1. Base individual predictions from Tweedie regressors
         # Strictly extract only numeric FEATURE_COLUMNS for booster evaluation
         feat_cols = getattr(self.reg_goals, "feature_name_", None)
-        if feat_cols is not None:
-            use_cols = [c for c in feat_cols if c in X.columns]
-        else:
-            use_cols = [c for c in FEATURE_COLUMNS if c in X.columns]
-
-        X_feat = X[use_cols].copy()
+        if feat_cols is None:
+            feat_cols = list(FEATURE_COLUMNS)
+        X_feat = X.reindex(columns=feat_cols, fill_value=0.0).copy()
         for c in X_feat.columns:
             X_feat[c] = pd.to_numeric(X_feat[c], errors="coerce").fillna(0.0)
 
@@ -353,7 +350,7 @@ class AttackingModel(BaseComponent):
 
         # Set pieces need no extra term: FPL xG / xA already count penalties and set-piece chances, so a
         # taker's rolling rates carry them (a flat boost on top double-counted them at serving time only).
-        # 3. Team-level reconciliation (WI-3.3)
+        # 3. Team-level reconciliation
         if reconcile:
             availability = (
                 np.clip(pd.to_numeric(X["chance_of_playing"], errors="coerce").fillna(100.0).values / 100.0, 0.0, 1.0)

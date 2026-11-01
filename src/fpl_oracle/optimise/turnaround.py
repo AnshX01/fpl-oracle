@@ -1,5 +1,5 @@
 """
-Midweek European & Domestic Cup Quick-Turnaround Minutes Discount Engine (Hall of Fame Feature 4).
+Midweek European & Domestic Cup Quick-Turnaround Minutes Discount Engine.
 Quantifies rotation and fatigue risk when outfield players play 70+ minutes in midweek
 European (UCL, UEL, UECL) or domestic cup (Carabao Cup, FA Cup) fixtures with short turnaround (<72 hours).
 Zero hardcoded player names in production code.
@@ -87,13 +87,22 @@ class TurnaroundDragService:
         if not has_cols and not midweek_data:
             return res
 
+        # Prevent double-counting only when explicitly flagged
+        already_applied = bool(
+            res.get("turnaround_drag_applied", False).all()
+            if isinstance(res.get("turnaround_drag_applied"), pd.Series)
+            else res.get("turnaround_drag_applied", False)
+        )
+        if already_applied:
+            return res
+
         for idx, row in res.iterrows():
             elem_id = int(row["element"])
             pos = str(row.get("position", "MID")).upper()
 
             # Retrieve turnaround hours and midweek minutes
             t_hours = None
-            m_mins = 90.0
+            m_mins = None
 
             if midweek_data and elem_id in midweek_data:
                 entry = midweek_data[elem_id]
@@ -101,10 +110,40 @@ class TurnaroundDragService:
                 m_mins = float(entry.get("midweek_minutes", 90.0))
             elif has_cols and pd.notna(row["turnaround_hours"]):
                 t_hours = float(row["turnaround_hours"])
-                m_mins = float(row.get("midweek_minutes", 90.0))
+                if "midweek_minutes" in row and pd.notna(row["midweek_minutes"]):
+                    m_mins = float(row["midweek_minutes"])
 
+            # Rested players or negligible minutes (< 45) face zero turnaround drag
+            is_rested = (m_mins is not None and m_mins < 45.0) or (
+                "congestion_fatigue_factor" in res.columns
+                and pd.notna(row.get("congestion_fatigue_factor"))
+                and float(row["congestion_fatigue_factor"]) >= 1.0
+                and "midweek_minutes" not in row
+            )
+            if is_rested:
+                if "congestion_fatigue_factor" in res.columns:
+                    cfg = float(res.loc[idx, "congestion_fatigue_factor"])
+                    if 0.0 < cfg < 1.0:
+                        if "expected_points" in res.columns:
+                            res.loc[idx, "expected_points"] = round(float(res.loc[idx, "expected_points"]) / cfg, 2)
+                        if "expected_minutes" in res.columns:
+                            res.loc[idx, "expected_minutes"] = round(float(res.loc[idx, "expected_minutes"]) / cfg, 1)
+                        res.loc[idx, "congestion_fatigue_factor"] = 1.0
+                res.loc[idx, "midweek_fatigue_risk"] = False
+                continue
+
+            # Prevent double-counting: if congestion was already applied with explicit midweek minutes
+            if (
+                "congestion_fatigue_factor" in res.columns
+                and "midweek_minutes" in row
+                and pd.notna(row["midweek_minutes"])
+            ):
+                res.loc[idx, "midweek_fatigue_risk"] = True
+                continue
+
+            effective_mins = m_mins if m_mins is not None else 90.0
             if t_hours is not None:
-                mult = self.calculate_multiplier(t_hours, pos, m_mins)
+                mult = self.calculate_multiplier(t_hours, pos, effective_mins)
                 if mult < 1.0:
                     res.loc[idx, "midweek_fatigue_risk"] = True
                     # Discount expected minutes if available
@@ -120,6 +159,7 @@ class TurnaroundDragService:
                         orig_xp = float(res.loc[idx, "expected_points"])
                         res.loc[idx, "expected_points"] = round(orig_xp * mult, 2)
 
+        res["turnaround_drag_applied"] = True
         return res
 
 

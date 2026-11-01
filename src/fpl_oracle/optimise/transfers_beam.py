@@ -6,12 +6,12 @@ Features:
 - 2026/27 Banking of up to 5 free transfers (cost -4 per extra)
 - Multi-gameweek discounted horizon beam search (5-GW stateful trajectory)
 - Explicit identical-horizon candidate comparison (Roll vs 1-Transfer vs 2-Transfers vs Hits)
-- Future-hit avoidance derived from multi-GW vs greedy trajectories (T3)
-- Free-transfer option value quantification (T4)
-- Robustness re-ranking and no-regret move marking across projection noise (T5)
-- Probabilistic price change sensitivity toggle (pure xP vs price movement) (T6)
-- Dynamic roadmap generated from actual trajectory player picks, fixtures & DGW/BGW tags (T7)
-- Plan stability threshold (STABILITY_THRESHOLD_XP = 0.3) to prevent churn (T8)
+- Future-hit avoidance derived from multi-GW vs greedy trajectories
+- Free-transfer option value quantification
+- Robustness re-ranking and no-regret move marking across projection noise
+- Probabilistic price change sensitivity toggle (pure xP vs price movement)
+- Dynamic roadmap generated from actual trajectory player picks, fixtures & DGW/BGW tags
+- Plan stability threshold (STABILITY_THRESHOLD_XP = 0.3) to prevent churn
 """
 
 import logging
@@ -298,6 +298,33 @@ class TransferOptimizer:
         moves.sort(key=lambda m: float(m.get("immediate_gain", 0.0)), reverse=True)
         return moves
 
+    def _select_seed_transfers(self, cand_1_moves: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Selects seed 1-transfer moves to combine into 2-transfer candidate moves.
+        Includes top positive moves alongside the top 2 budget-generating downgrade moves
+        (sorted by bank_delta descending, even if immediate xP gain is negative) to enable
+        multi-transfer funding cascades.
+        """
+        if not cand_1_moves:
+            return []
+
+        top_positive = cand_1_moves[:4]
+        downgrades = sorted(
+            [m for m in cand_1_moves if m.get("bank_delta", 0) > 0],
+            key=lambda m: (m.get("bank_delta", 0), m.get("immediate_gain", 0.0)),
+            reverse=True,
+        )
+
+        seed_moves = list(top_positive)
+        seen = {(tuple(m["transfers_in"]), tuple(m["transfers_out"])) for m in seed_moves}
+        for dm in downgrades[:2]:
+            m_key = (tuple(dm["transfers_in"]), tuple(dm["transfers_out"]))
+            if m_key not in seen:
+                seen.add(m_key)
+                seed_moves.append(dm)
+
+        return seed_moves
+
     def _get_candidate_2_transfers(
         self,
         elements: set[int],
@@ -314,7 +341,8 @@ class TransferOptimizer:
         """Memoised: the chip and date comparison beams revisit identical squads with identical inputs."""
         import copy
 
-        seeds = tuple((tuple(m["transfers_in"]), tuple(m["transfers_out"]), m["bank_delta"]) for m in cand_1_moves[:4])
+        seed_moves = self._select_seed_transfers(cand_1_moves)
+        seeds = tuple((tuple(m["transfers_in"]), tuple(m["transfers_out"]), m["bank_delta"]) for m in seed_moves)
         key = (
             id(pool_df),
             id(player_map),
@@ -365,8 +393,8 @@ class TransferOptimizer:
         if not cand_1_moves:
             return moves_2
 
-        top_1 = cand_1_moves[:4]
-        for m1 in top_1:
+        seed_moves = self._select_seed_transfers(cand_1_moves)
+        for m1 in seed_moves:
             out1 = m1["transfers_out"][0]
             in1 = m1["transfers_in"][0]
             mid_bank = bank + m1["bank_delta"]
@@ -454,7 +482,10 @@ class TransferOptimizer:
         next_ft0, hit_points0 = next_free_transfers(initial_ft, transfers_count, chip=active_chip)
         hits0 = hit_points0 // 4
         hit_cost0 = hits0 * self.hit_penalty
-        xp0, cap0, form0 = _fast_eval_squad_formation(curr_elements, pmap0)
+        xp0, cap0, form0, bench_xp0, _ = _fast_eval_squad_full(curr_elements, pmap0)
+        is_bb = initial_action.get("plan_type") == "BENCH_BOOST" or initial_action.get("chip") == "bboost"
+        if is_bb:
+            xp0 += bench_xp0
         net_xp0 = xp0 - hit_cost0
 
         step0_record = {
@@ -724,6 +755,11 @@ class TransferOptimizer:
         target_gw_df = clean_projections[target_gw]
         target_pmap = player_maps[target_gw]
 
+        opt_cfg = SETTINGS.get("optimizer", {})
+        eo_megacap_threshold = float(opt_cfg.get("eo_megacap_threshold", 35.0))
+        eo_liquidation_hurdle = float(opt_cfg.get("eo_liquidation_hurdle", 2.50))
+        equity_drag_coeff = float(opt_cfg.get("equity_drag_coeff", 0.50))
+
         # Build Lineup Optimizer representation for current squad (GW target_gw)
         curr_squad_target = target_gw_df[target_gw_df["element"].isin(initial_elements)].copy()
         if len(curr_squad_target) < 15:
@@ -734,9 +770,7 @@ class TransferOptimizer:
         )
         base_xp = curr_lineup["total_gameweek_expected_points"]
 
-        # ----------------------------------------------------------------------
         # Branch 0: Roll Action
-        # ----------------------------------------------------------------------
         roll_action = {
             "plan_type": "ROLL_TRANSFER",
             "transfers_in": [],
@@ -787,9 +821,7 @@ class TransferOptimizer:
             "trajectory": roll_traj["history"],
         }
 
-        # ----------------------------------------------------------------------
         # Candidate 1-Transfer Moves at Target GW
-        # ----------------------------------------------------------------------
         cand_1_moves = self._get_candidate_1_transfers(
             elements=initial_elements,
             bank=initial_bank,
@@ -847,6 +879,28 @@ class TransferOptimizer:
             in_momentum = buy_row.get("transfers_in_event", 0) - buy_row.get("transfers_out_event", 0)
             price_delta = 0.1 if in_momentum > 50000 else 0.0
 
+            # Repurchase equity friction
+            now_cost_1 = (
+                float(sell_row.get("value", sell_row.get("now_cost", 0.0))) / 10.0
+                if float(sell_row.get("value", 0.0)) > 20.0
+                else float(sell_row.get("value", 0.0))
+            )
+            sell_p_1 = float(m["sell_prices"][out_id]) / 10.0
+            equity_destroyed_1 = max(0.0, round(now_cost_1 - sell_p_1, 2))
+            equity_friction_1 = round(equity_destroyed_1 * equity_drag_coeff * 10.0, 2)
+            adjusted_horizon_gain = round(horizon_gain - equity_friction_1, 2)
+
+            # Megacap ownership detection
+            out_eo_1 = max(
+                float(sell_row.get("top10k_eo", 0.0) or 0.0),
+                float(sell_row.get("effective_ownership", 0.0) or 0.0),
+                float(sell_row.get("selected_by_percent", 0.0) or 0.0),
+            )
+            out_cop_1 = float(
+                sell_row.get("chance_of_playing", 100.0) if pd.notna(sell_row.get("chance_of_playing")) else 100.0
+            )
+            is_megacap_1 = (out_eo_1 >= eo_megacap_threshold) and (out_cop_1 > 0.0)
+
             plan_dict = {
                 "plan_type": "1_TRANSFER",
                 "transfers_count": 1,
@@ -883,12 +937,17 @@ class TransferOptimizer:
                 "horizon_hit_cost": round(traj["total_hits"] * self.hit_penalty, 2),
                 "horizon_net_xp": round(traj["total_net_xp"], 2),
                 "accumulated_discounted_net_xp": round(traj["accumulated_discounted_net_xp"], 2),
-                "horizon_gain_vs_roll": horizon_gain,
-                "pure_xp_gain": horizon_gain,
+                "horizon_gain_vs_roll": adjusted_horizon_gain,
+                "pure_xp_gain": adjusted_horizon_gain,
+                "sells_megacap": is_megacap_1,
+                "megacap_name": sell_row["web_name"] if is_megacap_1 else None,
+                "megacap_eo": out_eo_1 if is_megacap_1 else 0.0,
+                "stored_equity_destroyed": equity_destroyed_1,
+                "equity_friction_penalty": equity_friction_1,
                 "price_movement_gain": price_delta,
                 "robust_score": 0.0,
                 "is_no_regret": False,
-                "recommendation_summary": f"Transfer out {sell_row['web_name']} -> {buy_row['web_name']} (+{gw_gain} xP, Horizon: {horizon_gain:+} xP)",
+                "recommendation_summary": f"Transfer out {sell_row['web_name']} -> {buy_row['web_name']} (+{gw_gain} xP, Horizon: {adjusted_horizon_gain:+} xP)",
                 "trajectory": traj["history"],
             }
             cand_1_plans.append(plan_dict)
@@ -900,9 +959,7 @@ class TransferOptimizer:
             )
             best_1_plan = cand_1_plans[0]
 
-        # ----------------------------------------------------------------------
         # Candidate 2-Transfer Moves at Target GW
-        # ----------------------------------------------------------------------
         cand_2_moves = self._get_candidate_2_transfers(
             elements=initial_elements,
             bank=initial_bank,
@@ -954,6 +1011,38 @@ class TransferOptimizer:
             gw_gain_2 = round(net_trial2_xp - base_xp, 2)
             horizon_gain_2 = round(traj["total_net_xp"] - roll_plan["horizon_net_xp"], 2)
 
+            # Repurchase equity friction and megacap detection for 2 transfers
+            equity_destroyed_2 = 0.0
+            sells_megacap_2 = False
+            megacap_name_2 = None
+            megacap_eo_2 = 0.0
+            for eid in out_ids:
+                p_item = target_pmap[eid]
+                now_c = (
+                    float(p_item.get("value", p_item.get("now_cost", 0.0))) / 10.0
+                    if float(p_item.get("value", 0.0)) > 20.0
+                    else float(p_item.get("value", 0.0))
+                )
+                sp = float(m["sell_prices"][eid]) / 10.0
+                if now_c > sp + 1e-4:
+                    equity_destroyed_2 += now_c - sp
+                e_eo = max(
+                    float(p_item.get("top10k_eo", 0.0) or 0.0),
+                    float(p_item.get("effective_ownership", 0.0) or 0.0),
+                    float(p_item.get("selected_by_percent", 0.0) or 0.0),
+                )
+                e_cop = float(
+                    p_item.get("chance_of_playing", 100.0) if pd.notna(p_item.get("chance_of_playing")) else 100.0
+                )
+                if e_eo >= eo_megacap_threshold and e_cop > 0.0:
+                    sells_megacap_2 = True
+                    megacap_name_2 = p_item["web_name"]
+                    megacap_eo_2 = max(megacap_eo_2, e_eo)
+
+            equity_destroyed_2 = round(equity_destroyed_2, 2)
+            equity_friction_2 = round(equity_destroyed_2 * equity_drag_coeff * 10.0, 2)
+            adjusted_horizon_gain_2 = round(horizon_gain_2 - equity_friction_2, 2)
+
             plan_dict_2 = {
                 "plan_type": "2_TRANSFERS",
                 "transfers_count": 2,
@@ -992,15 +1081,20 @@ class TransferOptimizer:
                 "horizon_hit_cost": round(traj["total_hits"] * self.hit_penalty, 2),
                 "horizon_net_xp": round(traj["total_net_xp"], 2),
                 "accumulated_discounted_net_xp": round(traj["accumulated_discounted_net_xp"], 2),
-                "horizon_gain_vs_roll": horizon_gain_2,
-                "pure_xp_gain": horizon_gain_2,
+                "horizon_gain_vs_roll": adjusted_horizon_gain_2,
+                "pure_xp_gain": adjusted_horizon_gain_2,
+                "sells_megacap": sells_megacap_2,
+                "megacap_name": megacap_name_2,
+                "megacap_eo": megacap_eo_2,
+                "stored_equity_destroyed": equity_destroyed_2,
+                "equity_friction_penalty": equity_friction_2,
                 "price_movement_gain": 0.0,
                 "robust_score": 0.0,
                 "is_no_regret": False,
                 "recommendation_summary": (
-                    f"Take 2 transfers (Net +{gw_gain_2} xP after {int(hit_cost_2)} pt hit, Horizon: {horizon_gain_2:+} xP)"
+                    f"Take 2 transfers (Net +{gw_gain_2} xP after {int(hit_cost_2)} pt hit, Horizon: {adjusted_horizon_gain_2:+} xP)"
                     if hit_cost_2 > 0
-                    else f"Take 2 free transfers (Net +{gw_gain_2} xP, Horizon: {horizon_gain_2:+} xP)"
+                    else f"Take 2 free transfers (Net +{gw_gain_2} xP, Horizon: {adjusted_horizon_gain_2:+} xP)"
                 ),
                 "trajectory": traj["history"],
             }
@@ -1010,18 +1104,14 @@ class TransferOptimizer:
             cand_2_plans.sort(key=lambda p: p["horizon_gain_vs_roll"], reverse=True)
             best_2_plan = cand_2_plans[0]
 
-        # ----------------------------------------------------------------------
         # Assemble Candidate Branches
-        # ----------------------------------------------------------------------
         candidate_plans = [roll_plan]
         if best_1_plan:
             candidate_plans.append(best_1_plan)
         if best_2_plan:
             candidate_plans.append(best_2_plan)
 
-        # ----------------------------------------------------------------------
-        # Robustness Re-ranking across Monte Carlo Scenarios (T5)
-        # ----------------------------------------------------------------------
+        # Robustness Re-ranking across Monte Carlo Scenarios
         if num_mc_scenarios > 0 and len(candidate_plans) > 1:
             win_counts = {i: 0.0 for i in range(len(candidate_plans))}
             for _ in range(num_mc_scenarios):
@@ -1047,9 +1137,7 @@ class TransferOptimizer:
                 plan["robustness_score"] = r_score
                 plan["is_no_regret"] = bool(r_score >= 0.70)
 
-        # ----------------------------------------------------------------------
-        # Future-Hit Avoidance Metric vs Greedy (T3)
-        # ----------------------------------------------------------------------
+        # Future-Hit Avoidance Metric vs Greedy
         greedy_res = self._run_greedy_trajectory(
             initial_elements=initial_elements,
             initial_bank=initial_bank,
@@ -1081,9 +1169,7 @@ class TransferOptimizer:
             ),
         }
 
-        # ----------------------------------------------------------------------
-        # Free Transfer Option Value (T4)
-        # ----------------------------------------------------------------------
+        # Free Transfer Option Value
         traj_plus_1 = self._run_beam_search_trajectory(
             initial_action=roll_action,
             initial_elements=initial_elements,
@@ -1104,9 +1190,7 @@ class TransferOptimizer:
             f"(provides restructuring flexibility without incurring a -4 hit penalty)."
         )
 
-        # ----------------------------------------------------------------------
-        # Recommendation Selection & Plan Stability Threshold (T8)
-        # ----------------------------------------------------------------------
+        # Recommendation Selection & Plan Stability Threshold
         # Rank candidates by objective
         sort_key = (
             (lambda p: p["horizon_gain_vs_roll"] + (p.get("price_movement_gain", 0.0) * 1.5))
@@ -1129,8 +1213,26 @@ class TransferOptimizer:
                         has_ruled_out_starter = True
                         break
 
-        # Apply stability threshold
+        # Apply Megacap Transfer Liquidation Barrier and Stability Threshold
+        sells_megacap = bool(top_candidate.get("sells_megacap", False))
+        megacap_name = top_candidate.get("megacap_name", "megacap talisman")
+        megacap_eo = float(top_candidate.get("megacap_eo", 0.0))
+
         if (
+            top_candidate["plan_type"] != "ROLL_TRANSFER"
+            and sells_megacap
+            and top_candidate["horizon_gain_vs_roll"] < eo_liquidation_hurdle
+            and not has_ruled_out_starter
+        ):
+            recommended_plan = roll_plan
+            recommended_plan["recommendation_summary"] = (
+                f"Roll transfer recommended. Megacap Liquidation Shield active: Selling consensus talisman "
+                f"'{megacap_name}' ({megacap_eo:.1f}% ownership) requires a net horizon gain of at least "
+                f"+{eo_liquidation_hurdle:.2f} xP (candidate plan offers only +{top_candidate['horizon_gain_vs_roll']:.2f} xP)."
+            )
+            recommended_plan["megacap_shield_applied"] = True
+            recommended_plan["shielded_element_name"] = megacap_name
+        elif (
             top_candidate["plan_type"] != "ROLL_TRANSFER"
             and top_candidate["expected_gain"] < stability_threshold
             and not has_ruled_out_starter
@@ -1143,18 +1245,14 @@ class TransferOptimizer:
         else:
             recommended_plan = top_candidate
 
-        # ----------------------------------------------------------------------
-        # Dynamic Roadmap Generation (T7)
-        # ----------------------------------------------------------------------
+        # Dynamic Roadmap Generation
         roadmap = self._generate_dynamic_roadmap(
             trajectory=recommended_plan.get("trajectory", roll_plan["trajectory"]),
             clean_projections=clean_projections,
             player_maps=player_maps,
         )
 
-        # ----------------------------------------------------------------------
         # Hit Verdict
-        # ----------------------------------------------------------------------
         hit_verdict = "No hit recommended"
         if recommended_plan.get("hits", 0) > 0:
             hit_verdict = (

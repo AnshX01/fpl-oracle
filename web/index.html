@@ -28,7 +28,7 @@
     <div class="container topbar-inner">
       <div class="brand">
         <div class="brand-name">FPL Oracle</div>
-        <div class="brand-sub num">{{ deadlineLine }}</div>
+        <div class="brand-sub num"><span v-if="gameState.season">{{ gameState.season }} · </span>{{ deadlineLine }}</div>
       </div>
       <div class="top-actions">
         <ui-button variant="primary" size="sm" icon="refresh-cw" :loading="adviceBusy" :disabled="adviceBusy" aria-label="Refresh advice" @click="refreshAll()"><span class="hide-sm">Refresh</span></ui-button>
@@ -95,7 +95,7 @@
         <p class="muted">{{ card.two_line_reasoning }}</p>
         <div class="stats">
           <div class="stat"><span class="stat-label">Points hit</span><span class="stat-value">{{ card.transfers.hit_cost ? card.transfers.hit_cost + ' points' : 'None' }}</span></div>
-          <div class="stat"><span class="stat-label">Bank after moves</span><span class="stat-value">£{{ card.transfers.bank_after.toFixed(1) }}m</span></div>
+          <div class="stat"><span class="stat-label">Bank after moves</span><span class="stat-value">£{{ Number(card.transfers.bank_after || 0).toFixed(1) }}m</span></div>
           <div class="stat"><span class="stat-label">Free transfers next week</span><span class="stat-value">{{ card.transfers.ft_next_gw }}</span></div>
         </div>
         <div v-if="adviceCurrent" class="row">
@@ -188,6 +188,66 @@
           <p v-else class="muted">{{ leagueFallback }}</p>
         </section>
 
+        <!-- 7. Strategy Frontier (Peak Frontier Risk Profiles) -->
+        <section v-if="paretoFrontier && paretoFrontier.length" class="sec" data-testid="pareto-section">
+          <h3 class="sec-title">Strategy Frontier <span class="subtle">Risk-calibrated plans</span></h3>
+          <div class="stack-sm">
+            <div v-for="pt in paretoFrontier" :key="pt.strategy_profile" class="item-row">
+              <span><strong>{{ pt.strategy_profile.replace(/_/g, ' ') }}</strong> <span class="meta">{{ pt.label }} · {{ pt.rationale }}</span></span>
+              <span class="num">{{ pt.expected_stochastic_utility.toFixed(1) }} pts</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. Multi-Gameweek Trajectory Roadmap -->
+        <section v-if="trajectoryBoard && trajectoryBoard.steps && trajectoryBoard.steps.length" class="sec" data-testid="trajectory-section">
+          <h3 class="sec-title">Transfer Trajectory <span class="subtle">GW{{ trajectoryBoard.start_gw }} - GW{{ trajectoryBoard.end_gw }} ({{ trajectoryBoard.total_cumulative_xp.toFixed(1) }} total xP)</span></h3>
+          <div class="stack-sm">
+            <div v-for="st in trajectoryBoard.steps" :key="st.gameweek" class="item-row">
+              <span>
+                <strong>GW{{ st.gameweek }}</strong>
+                <span v-if="st.transfers_in.length" class="meta">
+                  <span v-for="ti in st.transfers_in" :key="ti.element">+{{ ti.web_name }} </span>
+                  <span v-for="to in st.transfers_out" :key="to.element">-{{ to.web_name }} </span>
+                </span>
+                <span v-else class="meta">Roll FT · {{ st.formation }} · C: {{ st.captain ? st.captain.web_name : 'None' }}</span>
+                <span v-if="st.active_chip" class="mark vc">{{ st.chip_display_name }}</span>
+              </span>
+              <span class="num">{{ st.predicted_points.toFixed(1) }} pts <span class="subtle">£{{ st.bank_millions.toFixed(1) }}m</span></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 9. Top-10k Elite Effective Ownership Radar -->
+        <section v-if="eliteOwnership && eliteOwnership.elite_differentials && eliteOwnership.elite_differentials.length" class="sec" data-testid="elite-ownership-section">
+          <h3 class="sec-title">Elite Ownership Radar <span class="subtle">Top-10k active cohort</span></h3>
+          <div class="stack-sm">
+            <div v-for="diff in eliteOwnership.elite_differentials.slice(0, 4)" :key="diff.element" class="item-row">
+              <span><strong>{{ diff.web_name }}</strong> <span class="meta">{{ diff.position }} · Top-10k EO: {{ diff.elite_effective_ownership_pct }}% (Overall: {{ diff.overall_ownership_pct }}%)</span></span>
+              <span class="mark">Lev {{ diff.differential_leverage_index }}</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 10. Markowitz Squad Portfolio Volatility & Covariance -->
+        <section v-if="squadCovariance" class="sec" data-testid="portfolio-covariance-section">
+          <h3 class="sec-title">Portfolio Risk Budget <span class="subtle">{{ squadCovariance.portfolio_type }} · Sharpe {{ squadCovariance.sharpe_ratio.toFixed(2) }}</span></h3>
+          <div class="stack-sm">
+            <div class="item-row">
+              <span><strong>Lineup Volatility</strong> <span class="meta">Independent: ±{{ squadCovariance.independent_volatility.toFixed(1) }} pts</span></span>
+              <span class="num">±{{ squadCovariance.portfolio_volatility.toFixed(1) }} pts</span>
+            </div>
+            <div v-if="squadCovariance.defensive_stack_risk !== 0" class="item-row">
+              <span><strong>Backline Double-Up Risk</strong> <span class="meta">Teammate CS correlation</span></span>
+              <span class="num" :class="squadCovariance.defensive_stack_risk > 0 ? 'neg' : 'pos'">{{ squadCovariance.defensive_stack_risk > 0 ? '+' : '' }}{{ squadCovariance.defensive_stack_risk.toFixed(1) }} pts²</span>
+            </div>
+            <div v-if="squadCovariance.opponent_hedge_benefit !== 0" class="item-row">
+              <span><strong>Fixture Hedge Dampening</strong> <span class="meta">Opposing attacker vs defense</span></span>
+              <span class="num pos">-{{ squadCovariance.opponent_hedge_benefit.toFixed(1) }} pts²</span>
+            </div>
+          </div>
+        </section>
+
         <!-- Basis and caution -->
         <section class="sec">
           <p class="subtle" data-testid="data-basis">{{ basisText }}</p>
@@ -208,13 +268,13 @@
           <div class="pos-title">Starting XI</div>
           <div v-for="p in teamRows.starters" :key="p.element" class="item-row">
             <span>{{ p.web_name }}<span v-if="p.is_captain" class="mark">C</span><span v-if="p.is_vice_captain" class="mark vc">VC</span><span class="meta">{{ joinMeta(p.position, p.team_short, priceText(p)) }}</span>
-              <span class="fixtures"><span v-for="f in p.fixtures" :key="f.event" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}{{ f.is_home ? '' : ' (a)' }}</span></span></span>
+              <span class="fixtures"><span v-for="f in p.fixtures" :key="f.event + '_' + f.opp_short + '_' + (f.is_home ? 'h' : 'a')" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}{{ f.is_home ? '' : ' (a)' }}</span></span></span>
             <span class="num">{{ pts(p.expected_points) }} points<span v-if="p.flag" class="meta">{{ p.flag }}</span></span>
           </div>
           <div class="pos-title">Bench</div>
           <div v-for="p in teamRows.bench" :key="p.element" class="item-row">
             <span>{{ p.web_name }}<span class="meta">{{ joinMeta(p.label, p.position, p.team_short, priceText(p)) }}</span>
-              <span class="fixtures"><span v-for="f in p.fixtures" :key="f.event" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}{{ f.is_home ? '' : ' (a)' }}</span></span></span>
+              <span class="fixtures"><span v-for="f in p.fixtures" :key="f.event + '_' + f.opp_short + '_' + (f.is_home ? 'h' : 'a')" class="fix" :class="'fdr-' + f.difficulty">{{ f.opp_short }}{{ f.is_home ? '' : ' (a)' }}</span></span></span>
             <span class="num">{{ pts(p.expected_points) }} points<span v-if="p.flag" class="meta">{{ p.flag }}</span></span>
           </div>
         </glass-card>
@@ -229,12 +289,26 @@
           <p v-else class="note"><ui-icon name="circle-check" :size="16"></ui-icon>All 15 players are available.</p>
         </glass-card>
 
+        <glass-card v-if="priceRadar && priceRadar.total_tracked" title="Nightly Price Radar" subtitle="Predictions for tonight's 01:30 UK market update">
+          <div v-if="(priceRadar.urgent_rises && priceRadar.urgent_rises.length) || (priceRadar.urgent_falls && priceRadar.urgent_falls.length)" class="stack-sm">
+            <div v-for="r in priceRadar.urgent_rises" :key="'rise_' + r.element_id" class="item-row">
+              <span><strong>{{ r.web_name }}</strong> <span class="subtle">£{{ r.now_cost }}m · {{ r.net_transfers > 0 ? '+' : '' }}{{ Number(r.net_transfers).toLocaleString() }} net</span></span>
+              <ui-badge tone="success">{{ (r.p_rise * 100).toFixed(0) }}% Rise Tonight</ui-badge>
+            </div>
+            <div v-for="r in priceRadar.urgent_falls" :key="'fall_' + r.element_id" class="item-row">
+              <span><strong>{{ r.web_name }}</strong> <span class="subtle">£{{ r.now_cost }}m · {{ Number(r.net_transfers).toLocaleString() }} net</span></span>
+              <ui-badge tone="danger">{{ (r.p_fall * 100).toFixed(0) }}% Drop Tonight</ui-badge>
+            </div>
+          </div>
+          <p v-else class="note"><ui-icon name="circle-check" :size="16"></ui-icon>No imminent price rises or drops in your squad tonight.</p>
+        </glass-card>
+
         <glass-card title="Your money" subtitle="Before this week's moves" :class="{ outdated: !adviceCurrent }">
           <div class="stats">
-            <div class="stat"><span class="stat-label">Squad value</span><span class="stat-value">£{{ Number(squad.total_squad_value).toFixed(1) }}m</span></div>
-            <div class="stat"><span class="stat-label">Selling value</span><span class="stat-value">£{{ Number(squad.total_selling_value).toFixed(1) }}m</span></div>
-            <div class="stat"><span class="stat-label">In the bank</span><span class="stat-value">£{{ Number(squad.bank_millions).toFixed(1) }}m</span></div>
-            <div class="stat"><span class="stat-label">Free transfers</span><span class="stat-value">{{ squad.free_transfers }}</span></div>
+            <div class="stat"><span class="stat-label">Squad value</span><span class="stat-value">£{{ Number(squad.total_squad_value || 0).toFixed(1) }}m</span></div>
+            <div class="stat"><span class="stat-label">Selling value</span><span class="stat-value">£{{ Number(squad.total_selling_value || 0).toFixed(1) }}m</span></div>
+            <div class="stat"><span class="stat-label">In the bank</span><span class="stat-value">£{{ Number(squad.bank_millions || 0).toFixed(1) }}m</span></div>
+            <div class="stat"><span class="stat-label">Free transfers</span><span class="stat-value">{{ squad.free_transfers != null ? squad.free_transfers : 0 }}</span></div>
           </div>
           <div v-if="squad.has_bank_override || squad.has_ft_override" class="row">
             <span class="note"><ui-icon name="info" :size="16"></ui-icon>Bank or free transfers were set by hand.</span>
@@ -253,8 +327,32 @@
         <div class="empty"><strong>No standings to show</strong>{{ leagueFallback }}</div>
       </glass-card>
       <template v-else>
-        <glass-card :title="card.rivals.league_name" :subtitle="leagueAsOf">
+        <glass-card :title="card.rivals.league_name || 'Mini-league'" :subtitle="leagueAsOf">
           <p class="muted">{{ standing.text }}</p>
+        </glass-card>
+
+        <!-- Live Matchday Safety Score (LiveFPL Parity) -->
+        <glass-card v-if="liveMatchday && liveMatchday.safety_score" title="Matchday Safety Score" :subtitle="liveMatchday.safety_score.benchmark_source">
+          <div class="stats">
+            <div class="stat"><span class="stat-label">Safety Threshold</span><span class="stat-value">{{ liveMatchday.safety_score.safety_score }} pts</span></div>
+            <div class="stat"><span class="stat-label">Your Live Net</span><span class="stat-value">{{ liveMatchday.safety_score.user_live_net_points }} pts</span></div>
+            <div class="stat"><span class="stat-label">Safety Buffer</span><span class="stat-value">{{ (liveMatchday.safety_score.safety_gap > 0 ? '+' : '') + liveMatchday.safety_score.safety_gap }} pts</span></div>
+            <div class="stat">
+              <span class="stat-label">Projected Arrow</span>
+              <ui-badge :tone="liveMatchday.safety_score.projected_arrow === 'GREEN_ARROW' ? 'success' : (liveMatchday.safety_score.projected_arrow === 'RED_ARROW' ? 'danger' : 'neutral')">
+                {{ liveMatchday.safety_score.projected_arrow.replace('_', ' ') }}
+              </ui-badge>
+            </div>
+          </div>
+          <p class="subtle" style="margin-top: 0.75rem;">{{ liveMatchday.safety_score.summary_text }}</p>
+          <div v-if="liveMatchday.safety_score.field_effective_ownership" style="margin-top: 0.5rem;" class="stack-sm">
+            <div class="pos-title">Top Template Threats (Effective Ownership)</div>
+            <div class="row" style="flex-wrap: wrap; gap: 0.5rem;">
+              <span v-for="(eo, player) in liveMatchday.safety_score.field_effective_ownership" :key="player" class="meta" style="background: rgba(255,255,255,0.06); padding: 0.2rem 0.5rem; border-radius: 4px;">
+                {{ player }}: <strong>{{ eo }}%</strong>
+              </span>
+            </div>
+          </div>
         </glass-card>
         <glass-card title="Standings">
           <div class="table-wrap stack-rows">

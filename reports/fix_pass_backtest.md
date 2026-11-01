@@ -1,70 +1,303 @@
-# Proxy Simulation: Mini-League Monte Carlo Replay (Synthetic League States)
+# Exploratory historical replay
 
-**Generated:** 2026-10-19T17:27:43.572209  
-**Methodology:** Proxy simulation across historical gameweeks with strict `assert_no_future_data` barriers.  
-**Sample Size:** 26 overlapping scenarios across 3 seasons (2023-24, 2024-25, 2025-26).  
-**Model Brier Score:** 0.2154  
-**Naive Reference Brier (Uniform):** 0.3868  
-**Naive Reference Brier (Points Lead):** 0.3310  
-**Skill Demonstrated:** Yes  
+Not forward evidence or production-readiness certification.
 
-> [!NOTE]
-> Real mini-league standings and squad pick histories are private manager data requiring authenticated API access.
-> League states and rival squad compositions are modeled as synthetic proxies subject to 100% strict FPL legality rules
-> (15-man squad within £100.0m budget, 11 starters with 1 GKP, 3-5 DEF, 2-5 MID, 1-3 FWD, max 3 players per club).
-
----
-
-## 1. Squad Points Comparison vs Naive References
-
-| Strategy | Mean Actual Pts / GW | Uplift vs Strategy |
-| :--- | :---: | :---: |
-| **Clipped season-mean proxy** | **52.09** | - |
-| **Previous GW Hauler** | 44.52 | +7.57 |
-| **Season Average** | 51.84 | +0.26 |
-| **Template (Total Points)** | 50.44 | +1.66 |
-
----
-
-## 2. Real Historical Scenarios & Outcomes
-
-| Scenario | Season | Horizon | Initial Lead | Forecast Win Prob (%) | Naive Lead Prob (%) | Winner | Brier | Legality |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 2023-24 GW10-15 Narrow Lead | 2023-24 | 5 GW | +12 pts | 88.3% | 25.8% | Clipped season-mean proxy | 0.0137 | PASS |
-| 2023-24 GW15-20 Winter Chase | 2023-24 | 5 GW | -15 pts | 59.2% | 17.7% | Clipped season-mean proxy | 0.1665 | PASS |
-| 2023-24 GW20-25 Tight Battle | 2023-24 | 5 GW | +5 pts | 82.0% | 23.5% | Season Average | 0.6724 | PASS |
-| 2023-24 GW25-30 Spring Deficit | 2023-24 | 5 GW | -8 pts | 70.7% | 19.0% | Clipped season-mean proxy | 0.0858 | PASS |
-| 2023-24 GW30-35 Solid Margin | 2023-24 | 5 GW | +22 pts | 98.8% | 29.4% | Clipped season-mean proxy | 0.0001 | PASS |
-| 2023-24 GW33-38 Final Chase | 2023-24 | 5 GW | -18 pts | 41.6% | 17.1% | Season Average | 0.1731 | PASS |
-| 2023-24 GW35-38 Late Squeeze | 2023-24 | 3 GW | +6 pts | 84.1% | 25.9% | Recent Form | 0.7073 | PASS |
-| 2023-24 GW37-38 Penultimate Sprint | 2023-24 | 1 GW | -3 pts | 61.3% | 23.6% | Clipped season-mean proxy | 0.1498 | PASS |
-| 2024-25 GW10-15 Early Deficit | 2024-25 | 5 GW | -10 pts | 61.0% | 18.6% | Clipped season-mean proxy | 0.1521 | PASS |
-| 2024-25 GW15-20 Winter Margin | 2024-25 | 5 GW | +18 pts | 95.5% | 27.9% | Clipped season-mean proxy | 0.0020 | PASS |
-| 2024-25 GW20-25 Midseason Clash | 2024-25 | 5 GW | -5 pts | 69.3% | 19.5% | Recent Form | 0.4802 | PASS |
-| 2024-25 GW25-30 Spring Lead | 2024-25 | 5 GW | +14 pts | 66.9% | 26.5% | Clipped season-mean proxy | 0.1096 | PASS |
-| 2024-25 GW28-33 Dead Heat | 2024-25 | 5 GW | +0 pts | 75.6% | 21.9% | Recent Form | 0.5715 | PASS |
-| 2024-25 GW30-35 Deep Chase | 2024-25 | 5 GW | -20 pts | 0.0% | 16.7% | Season Average | 0.0000 | PASS |
-| 2024-25 GW33-38 Run-In Finale | 2024-25 | 5 GW | +10 pts | 93.4% | 25.1% | Clipped season-mean proxy | 0.0044 | PASS |
-| 2024-25 GW35-38 Late Chase | 2024-25 | 3 GW | -7 pts | 56.1% | 19.8% | Clipped season-mean proxy | 0.1927 | PASS |
-| 2024-25 GW37-38 Penultimate Round | 2024-25 | 1 GW | +4 pts | 74.8% | 31.2% | Clipped season-mean proxy | 0.0635 | PASS |
-| 2025-26 GW10-15 Autumn Run | 2025-26 | 5 GW | +8 pts | 73.7% | 24.4% | Recent Form | 0.5432 | PASS |
-| 2025-26 GW15-20 Winter Surge | 2025-26 | 5 GW | -12 pts | 30.5% | 18.2% | Season Average | 0.0930 | PASS |
-| 2025-26 GW20-25 Midseason Clash | 2025-26 | 5 GW | +15 pts | 84.8% | 26.8% | Clipped season-mean proxy | 0.0231 | PASS |
-| 2025-26 GW25-30 Spring Shift | 2025-26 | 5 GW | -6 pts | 56.6% | 19.3% | Recent Form | 0.3204 | PASS |
-| 2025-26 GW28-33 Spring Stretch | 2025-26 | 5 GW | +7 pts | 79.8% | 24.1% | Clipped season-mean proxy | 0.0408 | PASS |
-| 2025-26 GW30-35 Run-In Pressure | 2025-26 | 5 GW | -16 pts | 32.0% | 17.5% | Recent Form | 0.1024 | PASS |
-| 2025-26 GW33-38 Final Stretch | 2025-26 | 5 GW | +12 pts | 73.4% | 25.8% | Season Average | 0.5388 | PASS |
-| 2025-26 GW35-38 Late Sprint | 2025-26 | 3 GW | +2 pts | 55.9% | 24.2% | Clipped season-mean proxy | 0.1945 | PASS |
-| 2025-26 GW37-38 Penultimate Round | 2025-26 | 1 GW | -2 pts | 44.7% | 24.1% | Season Average | 0.1998 | PASS |
-
----
-
-## 3. Reliability Calibration Curve
-
-| Forecast Bin | Sample Count | Mean Forecast Win Prob (%) | Realized Win Frequency (%) |
-| :---: | :---: | :---: | :---: |
-| 0%-20% | 1 | 0.0% | 0.0% |
-| 20%-40% | 2 | 31.2% | 0.0% |
-| 40%-60% | 6 | 52.3% | 50.0% |
-| 60%-80% | 10 | 70.6% | 60.0% |
-| 80%-100% | 7 | 89.6% | 71.4% |
+```json
+{
+  "rounds_evaluated": [
+    1,
+    2,
+    3
+  ],
+  "oracle_total": 152.0,
+  "user_total": 237.0,
+  "baseline_total": 118.0,
+  "average_manager_total": 158.0,
+  "hindsight_total": 428.0,
+  "oracle_uplift_over_baseline": 34.0,
+  "oracle_uplift_over_average": -6.0,
+  "oracle_captain_success_rate": 0.0,
+  "baseline_captain_success_rate": 33.3,
+  "mean_spearman": 0.619,
+  "mean_pearson": 0.5,
+  "mean_mae": 1.34,
+  "per_gw_results": [
+    {
+      "gw": 1,
+      "oracle": 26.0,
+      "user": 81.0,
+      "baseline": 23.0,
+      "average": 57.0,
+      "hindsight": 145.0,
+      "captain": "Bruno Borges Fernandes",
+      "captain_pts": 2,
+      "spearman": 0.449,
+      "pearson": 0.34,
+      "mae": 1.64,
+      "starters": [
+        {
+          "name": "Bruno Borges Fernandes",
+          "pos": "MID",
+          "xP": 6.41,
+          "actual": 2,
+          "is_cap": true
+        },
+        {
+          "name": "Harry Maguire",
+          "pos": "DEF",
+          "xP": 4.42,
+          "actual": 1,
+          "is_cap": false
+        },
+        {
+          "name": "Karl Darlow",
+          "pos": "GKP",
+          "xP": 3.91,
+          "actual": 0,
+          "is_cap": false
+        },
+        {
+          "name": "James Tarkowski",
+          "pos": "DEF",
+          "xP": 4.44,
+          "actual": 6,
+          "is_cap": false
+        },
+        {
+          "name": "Morgan Gibbs-White",
+          "pos": "MID",
+          "xP": 4.74,
+          "actual": 2,
+          "is_cap": false
+        },
+        {
+          "name": "Igor Thiago Nascimento Rodrigues",
+          "pos": "FWD",
+          "xP": 4.28,
+          "actual": 0,
+          "is_cap": false
+        },
+        {
+          "name": "Antoine Semenyo",
+          "pos": "MID",
+          "xP": 4.63,
+          "actual": 2,
+          "is_cap": false
+        },
+        {
+          "name": "Ollie Watkins",
+          "pos": "FWD",
+          "xP": 4.42,
+          "actual": 0,
+          "is_cap": false
+        },
+        {
+          "name": "Dominik Szoboszlai",
+          "pos": "MID",
+          "xP": 5.49,
+          "actual": 8,
+          "is_cap": false
+        },
+        {
+          "name": "Virgil van Dijk",
+          "pos": "DEF",
+          "xP": 4.57,
+          "actual": 2,
+          "is_cap": false
+        },
+        {
+          "name": "Enzo Fern\u00e1ndez",
+          "pos": "MID",
+          "xP": 4.75,
+          "actual": 1,
+          "is_cap": false
+        }
+      ]
+    },
+    {
+      "gw": 2,
+      "oracle": 80.0,
+      "user": 104.0,
+      "baseline": 74.0,
+      "average": 52.0,
+      "hindsight": 160.0,
+      "captain": "Dominik Szoboszlai",
+      "captain_pts": 4,
+      "spearman": 0.676,
+      "pearson": 0.58,
+      "mae": 1.23,
+      "starters": [
+        {
+          "name": "Dominik Szoboszlai",
+          "pos": "MID",
+          "xP": 5.67,
+          "actual": 4,
+          "is_cap": true
+        },
+        {
+          "name": "Virgil van Dijk",
+          "pos": "DEF",
+          "xP": 4.83,
+          "actual": 1,
+          "is_cap": false
+        },
+        {
+          "name": "Adrien Truffert",
+          "pos": "DEF",
+          "xP": 4.21,
+          "actual": 4,
+          "is_cap": false
+        },
+        {
+          "name": "Caoimh\u00edn Kelleher",
+          "pos": "GKP",
+          "xP": 3.77,
+          "actual": 2,
+          "is_cap": false
+        },
+        {
+          "name": "Cole Palmer",
+          "pos": "MID",
+          "xP": 4.79,
+          "actual": 7,
+          "is_cap": false
+        },
+        {
+          "name": "Dominic Calvert-Lewin",
+          "pos": "FWD",
+          "xP": 4.79,
+          "actual": 8,
+          "is_cap": false
+        },
+        {
+          "name": "Jo\u00e3o Pedro Junqueira de Jesus",
+          "pos": "FWD",
+          "xP": 4.45,
+          "actual": 9,
+          "is_cap": false
+        },
+        {
+          "name": "Morgan Rogers",
+          "pos": "MID",
+          "xP": 4.48,
+          "actual": 5,
+          "is_cap": false
+        },
+        {
+          "name": "Bruno Borges Fernandes",
+          "pos": "MID",
+          "xP": 4.94,
+          "actual": 23,
+          "is_cap": false
+        },
+        {
+          "name": "Harry Maguire",
+          "pos": "DEF",
+          "xP": 4.43,
+          "actual": 4,
+          "is_cap": false
+        },
+        {
+          "name": "Matheus Santos Carneiro da Cunha",
+          "pos": "MID",
+          "xP": 4.45,
+          "actual": 9,
+          "is_cap": false
+        }
+      ]
+    },
+    {
+      "gw": 3,
+      "oracle": 46.0,
+      "user": 52.0,
+      "baseline": 21.0,
+      "average": 49.0,
+      "hindsight": 123.0,
+      "captain": "Dominik Szoboszlai",
+      "captain_pts": 3,
+      "spearman": 0.733,
+      "pearson": 0.58,
+      "mae": 1.16,
+      "starters": [
+        {
+          "name": "Dominik Szoboszlai",
+          "pos": "MID",
+          "xP": 5.75,
+          "actual": 3,
+          "is_cap": true
+        },
+        {
+          "name": "Virgil van Dijk",
+          "pos": "DEF",
+          "xP": 4.6,
+          "actual": 6,
+          "is_cap": false
+        },
+        {
+          "name": "Antoine Semenyo",
+          "pos": "MID",
+          "xP": 4.75,
+          "actual": 6,
+          "is_cap": false
+        },
+        {
+          "name": "Caoimh\u00edn Kelleher",
+          "pos": "GKP",
+          "xP": 3.9,
+          "actual": 2,
+          "is_cap": false
+        },
+        {
+          "name": "Erling Haaland",
+          "pos": "FWD",
+          "xP": 5.37,
+          "actual": 9,
+          "is_cap": false
+        },
+        {
+          "name": "Igor Thiago Nascimento Rodrigues",
+          "pos": "FWD",
+          "xP": 4.37,
+          "actual": 2,
+          "is_cap": false
+        },
+        {
+          "name": "Maxim De Cuyper",
+          "pos": "DEF",
+          "xP": 4.11,
+          "actual": 4,
+          "is_cap": false
+        },
+        {
+          "name": "Nathan Collins",
+          "pos": "DEF",
+          "xP": 4.81,
+          "actual": 1,
+          "is_cap": false
+        },
+        {
+          "name": "Pascal Gro\u00df",
+          "pos": "MID",
+          "xP": 4.42,
+          "actual": 1,
+          "is_cap": false
+        },
+        {
+          "name": "Phil Foden",
+          "pos": "MID",
+          "xP": 4.8,
+          "actual": 1,
+          "is_cap": false
+        },
+        {
+          "name": "Bryan Mbeumo",
+          "pos": "MID",
+          "xP": 4.31,
+          "actual": 8,
+          "is_cap": false
+        }
+      ]
+    }
+  ]
+}
+```

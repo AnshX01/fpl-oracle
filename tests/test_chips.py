@@ -27,10 +27,12 @@ def test_remaining_chips_set_boundaries():
     assert "freehit" in status["set_1_remaining"]
     assert "bboost" in status["set_1_remaining"]
 
-    # Set 2 chips should all remain untouched since GW < 20
-    assert len(status["set_2_remaining"]) == 4
+    # Set 2 chips: wildcard resets for Set 2; single-use chips played in Set 1 (3xc) are consumed
+    assert len(status["set_2_remaining"]) == 3
     assert "wildcard" in status["set_2_remaining"]
-    assert "3xc" in status["set_2_remaining"]
+    assert "3xc" not in status["set_2_remaining"]
+    assert "freehit" in status["set_2_remaining"]
+    assert "bboost" in status["set_2_remaining"]
 
 
 @pytest.mark.slow

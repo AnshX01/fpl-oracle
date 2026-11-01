@@ -235,7 +235,16 @@ class AdvicePublisher:
                 from fpl_oracle.briefing.decision_card import decision_card_generator
 
                 card = await decision_card_generator.generate_decision_card(include_league=False)
-                plans = await get_contingency_plans(detailed=False)
+                plans = await get_contingency_plans(
+                    detailed=True,
+                    primary_plan=card.get("rec_plan") or decision_card_generator.last_recommended_plan,
+                    horizon_projections=decision_card_generator.last_horizon_projections,
+                    user_squad_df=decision_card_generator.last_user_squad_df,
+                    bank=decision_card_generator.last_bank,
+                    free_transfers=decision_card_generator.last_free_transfers,
+                    target_gw=card.get("gameweek") or decision_card_generator.last_target_gw,
+                )
+                card["contingency_plans"] = plans
                 if not squad.get("captain") or not card.get("captain") or not plans.get("plan_a"):
                     raise ValueError("Core advice incomplete")
                 if differ := _disagreement(squad, card):
@@ -326,7 +335,11 @@ class AdvicePublisher:
                     )
                     if attempt == 1 or "unverifiable" in changed.categories:
                         self.current.update(
-                            status="refresh_required", result=None, stage="Team data changed again. Refresh when ready"
+                            status="refresh_required",
+                            result=None,
+                            stage="Team data changed again. Refresh when ready",
+                            error="Team data changed again during solve. Refresh required.",
+                            error_type="SourceChangedTwice",
                         )
                         return
                     # A new pinned snapshot uses the current cache facts. Derived

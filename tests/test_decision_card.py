@@ -430,7 +430,7 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
                 new=AsyncMock(
                     return_value={
                         "league_name": "Test League",
-                        "standings": [{"entry": 1, "rank": 1, "total": 500}, {"entry": 2, "rank": 2, "total": 490}],
+                        "standings": [{"entry": 1, "rank": 1, "total": 500}, {"entry": 2, "rank": 2, "total": 480}],
                     }
                 ),
             ),
@@ -440,7 +440,7 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
                     return_value={
                         "rival_selection_mode": "chasers_in_window",
                         "rival_squads": [
-                            {"entry_id": 2, "player_name": "Rival Leader", "rank": 1, "total_points": 490, "squad": []}
+                            {"entry_id": 2, "player_name": "Rival Leader", "rank": 1, "total_points": 480, "squad": []}
                         ],
                         "template_players": [{"web_name": "Template"}],
                         "differential_players": [{"web_name": "Differential"}],
@@ -455,7 +455,7 @@ def test_decision_card_error_path_honest_reporting(configured_advisor):
             card = await decision_card_generator.generate_decision_card()
             rivals = card["rivals"]
             assert rivals["exposure_players"] == ["Template"] and rivals["differential_players"] == ["Differential"]
-            assert rivals["posture"] == "DEFENDING_LEAD" and rivals["nearest_below_gap"] == 10
+            assert rivals["posture"] == "DEFENDING_LEAD" and rivals["nearest_below_gap"] == 20
             assert rivals["nearest_above_gap"] is None
             wp = card["win_prob"]
             assert wp["status"] == "error"

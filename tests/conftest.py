@@ -1,3 +1,5 @@
+import atexit
+import gc
 import os
 import shutil
 import sys
@@ -18,10 +20,35 @@ shutil.copytree(
 )
 os.environ["FPL_ORACLE_DATA_DIR"] = str(_DATA_COPY)
 
+
+def _cleanup_test_data():
+    """Ensure the ephemeral test data copy is deleted on exit."""
+    try:
+        # Close open SQLite file handles on Windows before deletion
+        if "fpl_oracle.data.store" in sys.modules:
+            try:
+                sys.modules["fpl_oracle.data.store"].engine.dispose()
+            except Exception:
+                pass
+        gc.collect()
+        temp_dir = _DATA_COPY.parent
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
+atexit.register(_cleanup_test_data)
+
 pytest_plugins = ["tests.repair_fixtures"]
 
 
 import pytest  # noqa: E402
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Clean up the isolated temporary test data copy after test run finishes."""
+    _cleanup_test_data()
 
 
 @pytest.fixture(autouse=True)

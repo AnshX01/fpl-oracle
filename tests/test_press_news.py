@@ -15,7 +15,10 @@ BBC = "https://www.bbc.co.uk/sport/football/articles/abc"
 def _boot():
     teams = [NS(id=1, name="Chelsea", short_name="CHE"), NS(id=2, name="Everton", short_name="EVE"),
              NS(id=3, name="Aston Villa", short_name="AVL"), NS(id=4, name="Man Utd", short_name="MUN")]  # fmt: skip
-    mk = lambda i, n, t, f="X": NS(id=i, web_name=n, team=t, first_name=f, second_name=n)  # noqa: E731
+
+    def mk(i, n, t, f="X"):
+        return NS(id=i, web_name=n, team=t, first_name=f, second_name=n)  # noqa: E731
+
     return NS(
         teams=teams,
         elements=[mk(10, "Martinez", 1), mk(11, "Martinez", 3), mk(12, "Haaland", 2), mk(13, "Silva", 4, "Bernardo")],
@@ -137,5 +140,43 @@ def test_known_false_positives_from_live_feeds_are_not_evidence():
         "Haaland had his first two strikes ruled out for offside.",
         '"Hopefully that is the case," said Haaland, "but you just keep working."',
         "Everton were reduced to ten men after a red card for Haaland.",
+        "when the opportunity knocked for Haaland.",
+        "Haaland knocked it long for a teammate to control into the path of another.",
+        "Mohammed Kudus and Haaland sent hopeful efforts off target.",
+        "How England hopeful Haaland is giving his club a big decision to make",
+        "Saka to be ruled out for six weeks amid concern over Haaland who went off against Everton",
     ):
         assert press.extract_article_evidence(_art(text), "", idx) == [], text
+
+
+def test_non_football_articles_and_common_surnames_rejected():
+    boot = _boot()
+
+    def mk(i, n, t, f="X"):
+        return NS(id=i, web_name=n, team=t, first_name=f, second_name=n)
+
+    boot.elements.append(mk(64, "Smith", 1))  # Chelsea
+    idx = press.PlayerIndex(boot)
+
+    # Rugby article
+    rugby_art = _art(
+        "England back Smith totalled 22 points from two tries and six conversions",
+        link="https://www.skysports.com/rugby-union/news/12040/13600779/cup",
+    )
+    assert press.extract_article_evidence(rugby_art, "", idx) == []
+
+    # Darts article
+    darts_art = _art(
+        "before Smith quickly pulled away with a 14-dart hold",
+        link="https://www.skysports.com/darts/news/12040/13603670/darts",
+    )
+    assert press.extract_article_evidence(darts_art, "", idx) == []
+
+    # Common surname without club mention rejected
+    generic_art = _art("Smith was ruled out with a heavy knock")
+    assert press.extract_article_evidence(generic_art, "", idx) == []
+
+    # Common surname with club mention accepted
+    chelsea_art = _art("Chelsea confirm Smith is ruled out with a hamstring tear")
+    evs = press.extract_article_evidence(chelsea_art, "", idx)
+    assert len(evs) == 1 and evs[0].player_id == 64 and evs[0].category == EvidenceCategory.RULED_OUT

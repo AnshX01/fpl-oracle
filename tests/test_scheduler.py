@@ -68,6 +68,7 @@ async def test_scheduler_job_registration():
         "holdout_forward",
         "history_refresh",
         "odds_snapshot",
+        "deadline_sentinel",
     ]
     for j_id in expected_ids:
         assert j_id in registered_ids

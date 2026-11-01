@@ -72,7 +72,7 @@ class WeeklyBriefingGenerator:
             is_stale = is_stale or history_stale
         is_stale = is_stale or state.is_stale
         available_chips = state.chips_remaining_set_1 if target_gw <= 19 else state.chips_remaining_set_2
-        chips_used = [c["name"] for c in state.chips_used if (c["event"] <= 19) == (target_gw <= 19)]
+        chips_used = [c["name"] for c in state.chips_used if (int(c.get("event", 0) or 0) <= 19) == (target_gw <= 19)]
         transfers_res = await analysis_service.joint_plan(
             current_squad_df=user_squad_df,
             player_pool_df=target_df,

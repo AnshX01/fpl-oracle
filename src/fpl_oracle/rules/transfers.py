@@ -1,5 +1,5 @@
 """
-Centralised FPL Transfer & Chip Rules Module (WI-1.3, WI-1.4).
+Centralised FPL Transfer & Chip Rules Module.
 Deterministic functions for:
 1. Selling price oracle with 50% profit retention rounded down (tenths of a million).
 2. Free transfer banking state machine across normal gameweeks and chip deployments.
@@ -28,7 +28,7 @@ def sell_price(purchase_tenths: int, current_tenths: int) -> int:
     return purchase_tenths + (profit // 2)
 
 
-# Named config constant for post-chip free-transfer state transition rule (WI-1.3, WI-1.4).
+# Named config constant for post-chip free-transfer state transition rule.
 # Banked transfers are preserved through a Wildcard or Free Hit with no extra transfer: confirmed in the 2026-27
 # game (a mini-league rival who played a GW5 Wildcard had 1 free transfer in GW6 and took a hit for a second).
 POST_CHIP_FT_RULE_DEFAULT: Literal["preserve", "preserve_plus_one"] = "preserve"
@@ -127,6 +127,11 @@ def validate_chip_legality(
                 c_name = str(item.get("name", "")).lower()
                 c_ev = item.get("event")
                 if c_ev is not None:
+                    if int(c_ev) == target_gw:
+                        return (
+                            False,
+                            f"A chip ('{c_name}') has already been deployed in Gameweek {target_gw}. Only 1 chip may be active per gameweek.",
+                        )
                     c_set = 1 if int(c_ev) <= SET_1_LAST_GW else 2
                     if c_set == current_set:
                         used_in_set.add(c_name)
@@ -143,5 +148,9 @@ def validate_chip_legality(
 
     if chip_lower in used_in_set:
         return False, f"Chip '{chip}' has already been deployed in Set {current_set}."
+
+    # Non-wildcard chips can only be used ONCE across the entire season
+    if chip_lower != "wildcard" and chip_lower in used_in_all:
+        return False, f"Chip '{chip}' is single-use and has already been deployed this season."
 
     return True, f"Chip '{chip}' is legal for deployment in GW{target_gw} (Set {current_set})."

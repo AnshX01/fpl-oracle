@@ -277,7 +277,7 @@ class ProjectionEngine:
                 "exp_bonus_pts": "sum",
                 "p_starts": "max",
                 "p_min60": "max",
-                "p_clean_sheet": "mean",
+                "p_clean_sheet": lambda s: float(1.0 - np.prod(1.0 - np.clip(s.to_numpy(dtype=float), 0.0, 1.0))),
                 "was_home": "first",
                 "is_home": "first",
                 "opponent_team": "first",
@@ -313,6 +313,15 @@ class ProjectionEngine:
             for col, sign in (("p10", -1.0), ("p50", -1.0), ("p90", 1.0)):
                 combined = np.round(np.maximum(0.0, xp_total + sign * widths[col].to_numpy()), 2)
                 dgw_grouped.loc[is_dgw_player, col] = combined[is_dgw_player]
+
+        # Enforce quantile monotonicity: p10 <= p50 <= p90 unconditionally across all projections
+        p10_all = dgw_grouped["p10"].to_numpy(dtype=float)
+        p50_all = dgw_grouped["p50"].to_numpy(dtype=float)
+        p90_all = dgw_grouped["p90"].to_numpy(dtype=float)
+        p50_all = np.maximum(p50_all, p10_all)
+        p90_all = np.maximum(p90_all, p50_all)
+        dgw_grouped["p50"] = np.round(p50_all, 2)
+        dgw_grouped["p90"] = np.round(p90_all, 2)
 
         # Blank gameweek zeroing
         bgw_zero_cols = [
@@ -352,6 +361,48 @@ class ProjectionEngine:
             )
         )
         dgw_grouped["dgw_covariance_calibrated"] = False
+
+        # Phase 3 Peak Frontier: Spatial Threat & Underlying Bayesian Finishing Integration
+        try:
+            from fpl_oracle.ml.components.underlying_metrics import underlying_metrics_engine
+
+            dgw_grouped = underlying_metrics_engine.enhance_projections(dgw_grouped)
+        except Exception as exc:
+            logger.debug("Underlying metrics enhancement skipped: %s", exc)
+
+        # European Turnaround & Midweek Congestion Fatigue Engine
+        try:
+            from fpl_oracle.ml.components.congestion import turnaround_congestion_engine
+
+            team_short_map = (
+                {t.id: t.short_name for t in bootstrap.teams} if bootstrap and hasattr(bootstrap, "teams") else None
+            )
+            dgw_grouped = turnaround_congestion_engine.apply_congestion_to_projections(
+                dgw_grouped, target_gw, team_short_map=team_short_map, fixtures=fixtures
+            )
+        except Exception as exc:
+            logger.debug("Turnaround congestion enhancement skipped: %s", exc)
+
+        # Tactical Archetype Matchup Engine
+        try:
+            from fpl_oracle.ml.components.tactical_matchups import tactical_matchup_engine
+
+            team_short_map = (
+                {t.id: t.short_name for t in bootstrap.teams} if bootstrap and hasattr(bootstrap, "teams") else None
+            )
+            dgw_grouped = tactical_matchup_engine.enhance_projections(dgw_grouped, team_short_map=team_short_map)
+        except Exception as exc:
+            logger.debug("Tactical matchup enhancement skipped: %s", exc)
+
+        # Unconditional final quantile monotonicity guarantee: p10 <= p50 <= p90
+        p10_final = dgw_grouped["p10"].to_numpy(dtype=float)
+        p50_final = dgw_grouped["p50"].to_numpy(dtype=float)
+        p90_final = dgw_grouped["p90"].to_numpy(dtype=float)
+        p50_final = np.maximum(p50_final, p10_final)
+        p90_final = np.maximum(p90_final, p50_final)
+        dgw_grouped["p50"] = np.round(p50_final, 2)
+        dgw_grouped["p90"] = np.round(p90_final, 2)
+
         self._cache[cache_key] = (dgw_grouped.copy(), now_ts)
 
         return dgw_grouped

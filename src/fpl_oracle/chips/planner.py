@@ -89,8 +89,9 @@ class ChipPlanner:
                 else:
                     used_set_2.add(c_name)
 
-        remaining_set_1 = [c for c in ALL_CHIPS if c not in used_set_1]
-        remaining_set_2 = [c for c in ALL_CHIPS if c not in used_set_2]
+        used_all = used_set_1 | used_set_2
+        remaining_set_1 = [c for c in ALL_CHIPS if (c not in used_set_1 if c == "wildcard" else c not in used_all)]
+        remaining_set_2 = [c for c in ALL_CHIPS if (c not in used_set_2 if c == "wildcard" else c not in used_all)]
 
         return {
             "set_1_used": list(used_set_1),
@@ -128,7 +129,10 @@ class ChipPlanner:
         Returns: (expected_gain_vs_baseline, confidence, baseline_no_chip_xp, with_chip_xp).
         Gain is 0.0 with confidence "UNAVAILABLE" when the simulator cannot measure it; nothing is invented.
         """
-        gw_df = horizon_projections.get(gw, current_squad_df)
+        gw_df = horizon_projections.get(gw)
+        if gw_df is None or len(gw_df) <= 15:
+            # Beyond-horizon or missing snapshot: use full candidate pool (~600 players) from available projections
+            gw_df = next((df for df in horizon_projections.values() if len(df) > 15), current_squad_df)
         is_dgw = gw in dgw_gws
         is_bgw = gw in bgw_gws
         is_beyond_horizon = gw > (current_gw + 4)
@@ -154,14 +158,24 @@ class ChipPlanner:
             res = chip_simulator.evaluate_triple_captain(gw, squad_gw if len(squad_gw) == 15 else gw_df)
             gain = res.get("expected_gain")
             if gain is not None:
-                baseline_xp = float(res.get("captain_expected_points", 0.0)) * 2.0 + 38.0
+                if "current_squad_xp" in res:
+                    baseline_xp = float(res["current_squad_xp"])
+                elif "lineup" in res:
+                    baseline_xp = float(res["lineup"].get("total_gameweek_expected_points", 50.0)) - gain
+                else:
+                    baseline_xp = float(res.get("captain_expected_points", 0.0)) * 2.0 + 38.0
                 with_chip_xp = baseline_xp + gain
 
         elif chip == "bboost":
             res = chip_simulator.evaluate_bench_boost(gw, squad_gw)
             gain = res.get("expected_gain")
             if gain is not None:
-                baseline_xp = 48.0
+                if "current_squad_xp" in res:
+                    baseline_xp = float(res["current_squad_xp"])
+                elif "lineup" in res:
+                    baseline_xp = float(res["lineup"].get("starters_expected_points", 48.0))
+                else:
+                    baseline_xp = 48.0
                 with_chip_xp = baseline_xp + gain
 
         elif chip == "freehit":
@@ -179,7 +193,8 @@ class ChipPlanner:
                 with_chip_xp = float(res.get("wildcard_squad_xp", baseline_xp + gain))
 
         if gain is None:
-            out = (0.0, "UNAVAILABLE", round(baseline_xp, 1), round(baseline_xp, 1))
+            confidence = "LOW_CONFIDENCE (Beyond 5-GW Horizon)" if is_beyond_horizon else "UNAVAILABLE"
+            out = (0.0, confidence, round(baseline_xp, 1), round(baseline_xp, 1))
             if hasattr(self, "_utility_cache"):
                 self._utility_cache[cache_key] = out
             return out
@@ -305,7 +320,7 @@ class ChipPlanner:
 
         if chip_curr == "freehit":
             return {
-                "cross_awareness_alert": "FREE HIT ACTIVE: Squad is temporary for this gameweek only. Saved free transfers will carry over to next gameweek.",
+                "cross_awareness_alert": "FREE HIT ACTIVE: Squad is temporary for this gameweek only. Under official 2024+ rules, your banked free transfers are preserved entering next gameweek.",
                 "transfer_action_guidance": "Do not make permanent transfers; your pre-Free-Hit squad will automatically return next week.",
                 "hit_penalty_multiplier": 1.0,
             }
@@ -318,7 +333,7 @@ class ChipPlanner:
         elif chip_next == "wildcard":
             return {
                 "cross_awareness_alert": f"UPCOMING WILDCARD IN GW{next_gw}: Do not take transfer hits this week.",
-                "transfer_action_guidance": "Roll your transfer or make a 1-week aggressive punt. All transfers will be reset by the Wildcard next gameweek.",
+                "transfer_action_guidance": "Roll your transfer to bank flexibility for post-Wildcard gameweeks (banked free transfers are preserved under 2024+ rules), or make an aggressive 1-week punt without hits as the squad will be restructured next week.",
                 "hit_penalty_multiplier": 2.5,  # Strong penalty against hits before wildcard
             }
         elif chip_next == "freehit":
@@ -364,7 +379,9 @@ class ChipPlanner:
         bgw_gws = [b["gameweek"] for b in bgw_list if b["gameweek"] >= current_gw]
 
         # Ben Crellin Playbook: include prospective cup-clash BGW and DGW milestones
-        prospective = fixture_calendar.project_prospective_blank_and_double_gameweeks(current_gw=current_gw, confirmed_calendar=calendar)
+        prospective = fixture_calendar.project_prospective_blank_and_double_gameweeks(
+            current_gw=current_gw, confirmed_calendar=calendar
+        )
         all_dgw_gws = sorted(set(dgw_gws) | {d["gameweek"] for d in prospective["prospective_double_gameweeks"]})
         all_bgw_gws = sorted(set(bgw_gws) | {b["gameweek"] for b in prospective["prospective_blank_gameweeks"]})
 
@@ -510,7 +527,11 @@ class ChipPlanner:
         # ----------------------------------------------------------------------
         # SET 2 PLANNING (GW 20 to 38)
         # ----------------------------------------------------------------------
-        set_2_remaining = chips_status["set_2_remaining"]
+        # Single-use chips scheduled in Set 1 must not be scheduled again in Set 2
+        scheduled_single_use_set1 = {
+            chip for chip, gw in set1_best_assign.items() if chip != "wildcard" and gw is not None
+        }
+        set_2_remaining = [c for c in chips_status["set_2_remaining"] if c not in scheduled_single_use_set1]
         available_gws_set_2 = list(range(max(20, current_gw), 39))
 
         set2_best_assign, set2_best_gain, set2_alternatives = self.optimize_joint_assignment(

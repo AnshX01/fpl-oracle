@@ -4,6 +4,11 @@ Persists API cache, snapshots, user profile, decisions log, and chat sessions.
 """
 
 import json
+import random
+import sqlite3
+import time
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -16,8 +21,10 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    event,
     text,
 )
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from fpl_oracle.config import DATA_DIR, DB_PATH
@@ -40,8 +47,8 @@ class APICacheEntry(Base):
 class RawSnapshot(Base):
     __tablename__ = "raw_snapshots"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    endpoint = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    endpoint = Column(String(255), nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), index=True)
     payload_json = Column(Text, nullable=False)
 
 
@@ -114,13 +121,66 @@ class ModelVersionRecord(Base):
 
 
 # Engine and session initialization
-engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+engine = create_engine(
+    f"sqlite:///{DB_PATH}",
+    connect_args={"check_same_thread": False, "timeout": 30.0},
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        pass
+    finally:
+        cursor.close()
+
+
+def retry_on_db_lock(max_retries: int = 5, base_delay: float = 0.05, max_delay: float = 0.5):
+    """
+    Decorator for database write transactions.
+    Retries on SQLite database locked / busy OperationalError with exponential
+    backoff and jitter to ensure extreme concurrency resilience under heavy parallel writes.
+    """
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            last_err = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (OperationalError, DBAPIError, sqlite3.OperationalError) as e:
+                    err_msg = str(e).lower()
+                    if "locked" in err_msg or "busy" in err_msg:
+                        last_err = e
+                        if attempt < max_retries - 1:
+                            delay = min(max_delay, base_delay * (2**attempt)) + random.uniform(0.01, 0.05)
+                            time.sleep(delay)
+                            continue
+                    raise
+            if last_err:
+                raise last_err
+
+        return wrapper
+
+    return decorator
 
 
 def init_db():
     """Create tables if they do not exist and ensure schema is up to date."""
     Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.execute(text("PRAGMA busy_timeout=30000"))
+            conn.commit()
+        except Exception:
+            pass
     # Additive SQLite migration preserves all existing data and NOT NULL columns.
     with engine.begin() as conn:
         names = {r[1] for r in conn.execute(text("PRAGMA table_info(user_profile)"))}
@@ -136,6 +196,17 @@ def init_db():
             conn.commit()
         except Exception:
             pass
+        for idx_stmt in (
+            "CREATE INDEX IF NOT EXISTS ix_raw_snapshots_endpoint_created ON raw_snapshots (endpoint, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_api_cache_expires ON api_cache (expires_at)",
+            "CREATE INDEX IF NOT EXISTS ix_chat_messages_session ON chat_messages (session_id, created_at DESC, id DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_job_runs_started ON job_runs (started_at DESC)",
+        ):
+            try:
+                conn.execute(text(idx_stmt))
+                conn.commit()
+            except Exception:
+                pass
 
 
 init_db()
@@ -164,6 +235,22 @@ class DataStore:
 
     def get_session(self) -> Session:
         return self.session_factory()
+
+    @contextmanager
+    def transaction(self) -> Generator[Session, None, None]:
+        """
+        Safe transaction context manager with automatic rollback on error.
+        Ensures connections returned to pool never carry uncommitted or aborted transaction locks.
+        """
+        session = self.get_session()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
     def get_cache_entry(self, key: str) -> tuple[dict[str, Any], datetime, datetime] | None:
         """Return (data, updated_at, expires_at) if valid cache entry exists."""
@@ -201,8 +288,17 @@ class DataStore:
                     return None
         return None
 
+    @retry_on_db_lock()
+    def delete_cache_entry(self, key: str):
+        """Delete a cache entry from persistent SQLite storage."""
+        with self.transaction() as session:
+            entry = session.query(APICacheEntry).filter(APICacheEntry.key == key).first()
+            if entry:
+                session.delete(entry)
+
+    @retry_on_db_lock()
     def set_cache(self, key: str, data: Any, ttl_seconds: int):
-        with self.get_session() as session:
+        with self.transaction() as session:
             now = datetime.now(UTC)
             expires_at = datetime.fromtimestamp(now.timestamp() + ttl_seconds, tz=UTC)
             data_str = json.dumps(data)
@@ -214,13 +310,12 @@ class DataStore:
             else:
                 entry = APICacheEntry(key=key, data_json=data_str, updated_at=now, expires_at=expires_at)
                 session.add(entry)
-            session.commit()
 
+    @retry_on_db_lock()
     def save_snapshot(self, endpoint: str, data: Any):
-        with self.get_session() as session:
+        with self.transaction() as session:
             rec = RawSnapshot(endpoint=endpoint, created_at=datetime.now(UTC), payload_json=json.dumps(data))
             session.add(rec)
-            session.commit()
 
     def get_latest_snapshot(self, endpoint: str) -> tuple[dict[str, Any], datetime] | None:
         """Retrieve most recent raw snapshot as ultimate fallback."""
@@ -362,8 +457,9 @@ class DataStore:
                 updated_at=profile.updated_at if isinstance(profile.updated_at, datetime) else None,
             )
 
+    @retry_on_db_lock()
     def update_profile(self, **kwargs):
-        with self.get_session() as session:
+        with self.transaction() as session:
             profile = session.query(UserProfile).filter(UserProfile.id == 1).first()
             if not profile:
                 profile = UserProfile(id=1, bank_override_enabled=0, ft_override_enabled=0)
@@ -387,7 +483,7 @@ class DataStore:
                 if kwargs["free_transfers"] is None:
                     profile.free_transfers = 1
             profile.updated_at = datetime.now(UTC)
-            session.commit()
+            session.flush()
             session.refresh(profile)
             self._sync_profile_json(profile)
 
@@ -402,15 +498,16 @@ class DataStore:
             )
             return [{"role": m.role, "content": m.content} for m in reversed(msgs)]
 
+    @retry_on_db_lock()
     def add_chat_message(self, role: str, content: str, session_id: str = "default"):
-        with self.get_session() as session:
+        with self.transaction() as session:
             msg = ChatMessage(session_id=session_id, role=role, content=content, created_at=datetime.now(UTC))
             session.add(msg)
-            session.commit()
 
+    @retry_on_db_lock()
     def save_price_snapshots(self, snapshots: list[dict[str, Any]]):
         """Save a batch of player price predictions / urgency records."""
-        with self.get_session() as session:
+        with self.transaction() as session:
             now = datetime.now(UTC)
             for s in snapshots:
                 rec = PriceSnapshotRecord(
@@ -425,7 +522,6 @@ class DataStore:
                     snapshot_time=now,
                 )
                 session.add(rec)
-            session.commit()
 
     def get_latest_price_snapshots(self, limit: int = 50) -> list[dict[str, Any]]:
         with self.get_session() as session:
@@ -447,22 +543,23 @@ class DataStore:
                 for r in rows
             ]
 
+    @retry_on_db_lock()
     def record_job_start(self, job_id: str, job_name: str) -> int:
-        with self.get_session() as session:
+        with self.transaction() as session:
             run = JobRunRecord(job_id=job_id, job_name=job_name, status="RUNNING", started_at=datetime.now(UTC))
             session.add(run)
-            session.commit()
+            session.flush()
             return int(run.id)
 
+    @retry_on_db_lock()
     def record_job_finish(self, run_id: int, status: str, duration_seconds: float, details: str = ""):
-        with self.get_session() as session:
+        with self.transaction() as session:
             run = session.query(JobRunRecord).filter(JobRunRecord.id == run_id).first()
             if run:
                 run.status = status  # type: ignore[assignment]
                 run.completed_at = datetime.now(UTC)  # type: ignore[assignment]
                 run.duration_seconds = duration_seconds  # type: ignore[assignment]
                 run.details = details  # type: ignore[assignment]
-                session.commit()
 
     def get_job_runs(self, limit: int = 50) -> list[dict[str, Any]]:
         with self.get_session() as session:
@@ -481,6 +578,7 @@ class DataStore:
                 for r in runs
             ]
 
+    @retry_on_db_lock()
     def save_model_version(
         self,
         version: str,
@@ -491,7 +589,7 @@ class DataStore:
         is_active: bool = True,
         notes: str = "",
     ):
-        with self.get_session() as session:
+        with self.transaction() as session:
             if is_active:
                 session.query(ModelVersionRecord).update({"is_active": 0})
             existing = session.query(ModelVersionRecord).filter(ModelVersionRecord.version == version).first()
@@ -515,7 +613,6 @@ class DataStore:
                     notes=notes,
                 )
                 session.add(rec)
-            session.commit()
 
     def get_model_versions(self) -> list[dict[str, Any]]:
         with self.get_session() as session:

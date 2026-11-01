@@ -117,6 +117,80 @@ class FPLClient:
         dt = self._cache_timestamps.get(ns_key) or self._cache_timestamps.get(cache_key)
         return dt.isoformat() if dt else None
 
+    def _safe_disk_key(self, key: str) -> str:
+        """Sanitize a cache key or endpoint for safe filesystem persistence."""
+        sanitized = "".join(c if (c.isalnum() or c in ".-_") else "_" for c in key)
+        return f"{sanitized}.json"
+
+    def _save_disk_cache(self, key: str, data: Any) -> None:
+        """Persist JSON payload to data/cache/ for filesystem-level fallback."""
+        try:
+            import json
+
+            from fpl_oracle.config import CACHE_DIR
+
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            disk_path = CACHE_DIR / self._safe_disk_key(key)
+            now_iso = datetime.now(UTC).isoformat()
+            payload = {
+                "saved_at": now_iso,
+                "key": key,
+                "data": data,
+            }
+            tmp_path = disk_path.with_suffix(".tmp")
+            tmp_path.write_text(json.dumps(payload, default=str), encoding="utf-8")
+            tmp_path.replace(disk_path)
+        except Exception as e:
+            logger.warning(f"Failed to persist disk cache for {key}: {e}")
+
+    def _load_disk_cache(self, key: str) -> tuple[Any, datetime] | None:
+        """Load JSON payload from data/cache/ if available."""
+        try:
+            import json
+
+            from fpl_oracle.config import CACHE_DIR
+
+            disk_path = CACHE_DIR / self._safe_disk_key(key)
+            if disk_path.exists():
+                raw = json.loads(disk_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict) and "data" in raw and "saved_at" in raw:
+                    try:
+                        saved_dt = datetime.fromisoformat(raw["saved_at"])
+                        if saved_dt.tzinfo is None:
+                            saved_dt = saved_dt.replace(tzinfo=UTC)
+                    except Exception:
+                        saved_dt = datetime.now(UTC)
+                    return raw["data"], saved_dt
+                else:
+                    mtime = datetime.fromtimestamp(disk_path.stat().st_mtime, tz=UTC)
+                    return raw, mtime
+        except Exception as e:
+            logger.warning(f"Failed to read disk cache for {key}: {e}")
+        return None
+
+    def _get_degraded_fallback(self, endpoint: str) -> Any | None:
+        """Produce safe minimal fallback data if upstream is dead and all caches are cold."""
+        clean_ep = endpoint.strip("/")
+        if "bootstrap-static" in clean_ep:
+            return {"elements": [], "teams": [], "events": [], "element_types": [], "chips": []}
+        elif clean_ep.startswith("fixtures"):
+            return []
+        elif "/live" in clean_ep:
+            return {"elements": []}
+        elif "/picks" in clean_ep:
+            return {"picks": [], "entry_history": None, "active_chip": None}
+        elif clean_ep.startswith("entry/") and "/history" in clean_ep:
+            return {"current": [], "past": [], "chips": []}
+        elif clean_ep.startswith("entry/") and "/transfers" in clean_ep:
+            return []
+        elif clean_ep.startswith("entry/"):
+            return {"id": 0, "name": "Manager", "player_first_name": "", "player_last_name": ""}
+        elif clean_ep.startswith("leagues-classic"):
+            return {"league": {"id": 0, "name": "League"}, "standings": {"results": []}}
+        elif "event-status" in clean_ep:
+            return {"status": [], "leagues": "Updated"}
+        return None
+
     async def _fetch_json(
         self, endpoint: str, cache_key: str, ttl_seconds: int, retries: int = 3, force_refresh: bool = False
     ) -> tuple[dict[str, Any], bool]:
@@ -158,6 +232,7 @@ class FPLClient:
             if cache_res is not None:
                 data, upd = cache_res
                 _remember_entry(data, False, upd)
+                self.is_stale_mode = False
                 return data, False
 
         # Request coalescing: if an identical request is already in flight, await it
@@ -170,7 +245,9 @@ class FPLClient:
                 pass
 
         # Create coalesced task
-        task = asyncio.create_task(self._do_fetch_json(endpoint, cache_key, ttl_seconds, retries))
+        task = asyncio.create_task(
+            self._do_fetch_json(endpoint, cache_key, ttl_seconds, retries, orig_cache_key=orig_cache_key)
+        )
         self._in_flight[cache_key] = task
         try:
             res = await task
@@ -180,7 +257,7 @@ class FPLClient:
             self._in_flight.pop(cache_key, None)
 
     async def _do_fetch_json(
-        self, endpoint: str, cache_key: str, ttl_seconds: int, retries: int
+        self, endpoint: str, cache_key: str, ttl_seconds: int, retries: int, orig_cache_key: str | None = None
     ) -> tuple[dict[str, Any], bool]:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         backoff = 1.0
@@ -191,23 +268,94 @@ class FPLClient:
                     await asyncio.sleep(self.rate_delay)
                 try:
                     client = self.get_http_client()
-                    resp = await client.get(url)
-                    if resp.status_code == 200:
-                        data = resp.json()
+                    headers = dict(self.headers)
+                    if not hasattr(self, "_etags"):
+                        self._etags = {}
+                    if cache_key in self._etags:
+                        headers["If-None-Match"] = self._etags[cache_key]
+
+                    resp = await client.get(url, headers=headers)
+
+                    # Robust Content-Type and Cloudflare Challenge inspection
+                    content_type = resp.headers.get("content-type", "").lower()
+                    raw_text = resp.text.strip()
+                    is_html = (
+                        "text/html" in content_type
+                        or "application/xhtml+xml" in content_type
+                        or raw_text.startswith(("<!DOCTYPE", "<!doctype", "<html", "<HTML"))
+                        or "<html" in raw_text[:200].lower()
+                        or ("cloudflare" in raw_text[:400].lower() and "<body" in raw_text[:400].lower())
+                    )
+
+                    is_retryable = (
+                        resp.status_code == 429
+                        or (500 <= resp.status_code < 600)
+                        or (resp.status_code == 403 and is_html)
+                        or is_html
+                    )
+
+                    if resp.status_code == 200 and not is_html:
+                        try:
+                            data = resp.json()
+                        except Exception as json_err:
+                            logger.warning(
+                                f"JSON decode failed for {url} ({json_err}). Attempt {attempt + 1}/{retries}"
+                            )
+                            jittered_delay = backoff * (0.8 + 0.4 * random.random())
+                            await asyncio.sleep(jittered_delay)
+                            backoff *= 2.0
+                            continue
+
+                        etag = resp.headers.get("ETag")
+                        if etag:
+                            self._etags[cache_key] = etag
                         now_dt = datetime.now(UTC)
-                        # Save in cache and snapshot store
+                        # Save in cache, SQLite snapshot store, and local disk cache
                         cache_manager.set(cache_key, data, ttl_seconds)
-                        data_store.save_snapshot(endpoint, data)
+                        if orig_cache_key and orig_cache_key != cache_key:
+                            cache_manager.set(orig_cache_key, data, ttl_seconds)
+                        try:
+                            data_store.save_snapshot(endpoint, data)
+                        except Exception as snap_err:
+                            logger.warning(f"Failed to persist raw snapshot for {endpoint}: {snap_err}")
+                        self._save_disk_cache(cache_key, data)
+                        if orig_cache_key and orig_cache_key != cache_key:
+                            self._save_disk_cache(orig_cache_key, data)
+
                         self.revision += 1
                         self.last_sync_time = now_dt
                         self._cache_timestamps[cache_key] = now_dt
+                        if orig_cache_key:
+                            self._cache_timestamps[orig_cache_key] = now_dt
                         self.is_stale_mode = False
                         return data, False
-                    elif resp.status_code in [429, 500, 502, 503, 504]:
-                        logger.warning(f"FPL API error {resp.status_code} for {url}. Attempt {attempt + 1}/{retries}")
-                        # Exponential backoff with random jitter (0.8x to 1.2x)
-                        jittered_delay = backoff * (0.8 + 0.4 * random.random())
-                        await asyncio.sleep(jittered_delay)
+
+                    elif resp.status_code == 304:
+                        # HTTP 304 Not Modified: cache revalidated
+                        cached = (
+                            cache_manager.get_with_meta(cache_key)
+                            or (cache_manager.get_with_meta(orig_cache_key) if orig_cache_key else None)
+                            or cache_manager.get_stale_with_meta(cache_key)
+                            or (cache_manager.get_stale_with_meta(orig_cache_key) if orig_cache_key else None)
+                        )
+                        if cached:
+                            cache_manager.set(cache_key, cached[0], ttl_seconds)
+                            self.revision += 1
+                            self.last_sync_time = datetime.now(UTC)
+                            self.is_stale_mode = False
+                            return cached[0], False
+
+                    elif is_retryable:
+                        log_desc = "Cloudflare HTML challenge" if is_html else f"HTTP {resp.status_code}"
+                        logger.warning(f"FPL API error ({log_desc}) for {url}. Attempt {attempt + 1}/{retries}")
+                        delay = backoff * (0.8 + 0.4 * random.random())
+                        retry_after = resp.headers.get("Retry-After")
+                        if retry_after:
+                            try:
+                                delay = max(delay, min(float(retry_after), 15.0))
+                            except (ValueError, TypeError):
+                                pass
+                        await asyncio.sleep(delay)
                         backoff *= 2.0
                     else:
                         logger.error(f"FPL API client error {resp.status_code} for {url}: {resp.text[:100]}")
@@ -218,13 +366,17 @@ class FPLClient:
                     await asyncio.sleep(jittered_delay)
                     backoff *= 2.0
 
-        # Fallback 1: Stale cache entry
-        stale_entry = cache_manager.get_stale_with_meta(cache_key)
+        # Fallback 1: Stale cache entry (in-memory or SQLite)
+        stale_entry = cache_manager.get_stale_with_meta(cache_key) or (
+            cache_manager.get_stale_with_meta(orig_cache_key) if orig_cache_key else None
+        )
         if stale_entry is not None:
             data, upd = stale_entry
             logger.warning(f"Using stale cached data for {cache_key} (timestamp: {upd})")
             self.is_stale_mode = True
             self._cache_timestamps[cache_key] = upd
+            if orig_cache_key:
+                self._cache_timestamps[orig_cache_key] = upd
             return data, True
 
         # Fallback 2: Latest raw snapshot from SQLite
@@ -234,7 +386,38 @@ class FPLClient:
             logger.warning(f"Using historic raw snapshot for {endpoint} (timestamp: {upd})")
             self.is_stale_mode = True
             self._cache_timestamps[cache_key] = upd
+            if orig_cache_key:
+                self._cache_timestamps[orig_cache_key] = upd
             return data, True
+
+        # Fallback 3: Local disk cache from data/cache/
+        disk_entry = (
+            self._load_disk_cache(cache_key)
+            or (self._load_disk_cache(orig_cache_key) if orig_cache_key else None)
+            or self._load_disk_cache(endpoint)
+        )
+        if disk_entry is not None:
+            data, upd = disk_entry
+            logger.warning(f"Using local disk cached data for {cache_key} (timestamp: {upd})")
+            self.is_stale_mode = True
+            self._cache_timestamps[cache_key] = upd
+            if orig_cache_key:
+                self._cache_timestamps[orig_cache_key] = upd
+            return data, True
+
+        # Fallback 4: Degraded minimal fallback
+        degraded = self._get_degraded_fallback(endpoint)
+        if degraded is not None:
+            now_dt = datetime.now(UTC)
+            logger.warning(
+                f"FPL API unreachable for {url} and no cached fallback exists. "
+                f"Serving minimal degraded fallback structure."
+            )
+            self.is_stale_mode = True
+            self._cache_timestamps[cache_key] = now_dt
+            if orig_cache_key:
+                self._cache_timestamps[orig_cache_key] = now_dt
+            return degraded, True
 
         raise RuntimeError(f"FPL API unreachable for {url} and no cached fallback or snapshot exists.")
 
@@ -287,6 +470,18 @@ class FPLClient:
         )
         return SquadPicks.model_validate(raw), is_stale
 
+    async def get_manager_team(
+        self, manager_id: int, gw: int | None = None, force_refresh: bool = False
+    ) -> tuple[SquadPicks, bool]:
+        """
+        Fetch manager's team squad picks for the specified or current gameweek.
+        Resilient against Cloudflare challenges and 503 errors.
+        """
+        if gw is None:
+            curr, _ = await self.get_current_and_next_gw()
+            gw = curr or 1
+        return await self.get_manager_picks(manager_id, gw, force_refresh=force_refresh)
+
     async def get_manager_transfers(
         self, manager_id: int, force_refresh: bool = False
     ) -> tuple[list[TransferHistoryItem], bool]:
@@ -312,18 +507,22 @@ class FPLClient:
         return await self._fetch_json("event-status/", cache_key, ttl)
 
     async def get_current_and_next_gw(self) -> tuple[int | None, int | None]:
-        """Always derive current and next gameweeks live from API."""
-        bootstrap, _ = await self.get_bootstrap_static()
-        curr_gw = None
-        next_gw = None
-        for ev in bootstrap.events:
-            if ev.is_current:
-                curr_gw = ev.id
-            if ev.is_next:
-                next_gw = ev.id
-        if next_gw is None and curr_gw is not None and curr_gw < 38:
-            next_gw = curr_gw + 1
-        return curr_gw, next_gw
+        """Always derive current and next gameweeks live from API with safe error handling."""
+        try:
+            bootstrap, _ = await self.get_bootstrap_static()
+            curr_gw = None
+            next_gw = None
+            for ev in bootstrap.events:
+                if ev.is_current:
+                    curr_gw = ev.id
+                if ev.is_next:
+                    next_gw = ev.id
+            if next_gw is None and curr_gw is not None and curr_gw < 38:
+                next_gw = curr_gw + 1
+            return curr_gw, next_gw
+        except Exception as e:
+            logger.warning(f"Failed to derive current and next gameweeks: {e}")
+            return None, None
 
 
 fpl_client = FPLClient()

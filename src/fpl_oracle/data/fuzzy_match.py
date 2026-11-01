@@ -50,6 +50,8 @@ class FuzzyPlayerMatcher:
         """
         Fuzzy match a single player name string against element candidates with
         club and position disambiguation and shared surname collision resolution (F-010).
+        Strictly gates by team ID and position before matching surnames to prevent
+        accidental homonym and attribute collisions.
         """
         # Extract potential club or position hints from query if not explicitly passed
         club_hint = str(club).lower().strip() if club is not None else None
@@ -58,6 +60,8 @@ class FuzzyPlayerMatcher:
             if match_paren:
                 cand_tag = match_paren.group(1).strip().lower()
                 if team_map and any(cand_tag == str(t_name).lower() for t_name in team_map.values()):
+                    club_hint = cand_tag
+                elif team_map and any(cand_tag == str(t_id) for t_id in team_map.keys()):
                     club_hint = cand_tag
 
         pos_hint = str(position).upper().strip() if position is not None else None
@@ -69,64 +73,109 @@ class FuzzyPlayerMatcher:
 
         cleaned = clean_query(query)
         if not cleaned:
-            return {"query": query, "matched": None, "confidence": 0.0, "alternatives": []}
+            return {"query": query, "cleaned": "", "matched": None, "confidence": 0.0, "alternatives": []}
 
         cleaned_norm = strip_accents(cleaned).lower()
+        query_tokens = cleaned_norm.split()
+        is_single_token = len(query_tokens) == 1
 
-        # Check how many candidates share this exact surname in elements list
+        def _matches_club(elem: Element) -> bool:
+            if not club_hint:
+                return True
+            elem_team_id_str = str(elem.team).lower().strip()
+            ch = club_hint.lower().strip()
+            if ch == elem_team_id_str:
+                return True
+            elem_team_name = (team_map.get(elem.team, "") if team_map else "").lower()
+            if elem_team_name and (ch == elem_team_name or ch in elem_team_name or elem_team_name in ch):
+                return True
+            return False
+
+        def _matches_pos(elem: Element) -> bool:
+            if not pos_hint:
+                return True
+            ph = pos_hint.upper().strip()
+            if ph == "GK":
+                ph = "GKP"
+            elif ph in ("1", "2", "3", "4"):
+                ph = {"1": "GKP", "2": "DEF", "3": "MID", "4": "FWD"}[ph]
+            elem_pos = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}.get(elem.element_type, "MID")
+            return ph == elem_pos
+
+        # Check how many candidates share this exact surname or single-word token in elements list
         surname_matches = [
             e
             for e in elements
             if strip_accents(str(e.second_name or "")).lower() == cleaned_norm
-            or strip_accents(e.web_name).lower() == cleaned_norm
+            or (is_single_token and strip_accents(e.web_name).lower() == cleaned_norm)
+            or (is_single_token and cleaned_norm in strip_accents(str(e.second_name or "")).lower().split())
         ]
         has_surname_collision = len(surname_matches) > 1
+        is_surname_query = len(surname_matches) >= 1 and is_single_token
+
+        # Filter surname candidates strictly by club and position gates
+        gated_surname_matches = [e for e in surname_matches if _matches_club(e) and _matches_pos(e)]
 
         scored_candidates = []
         for elem in elements:
             web_name_norm = strip_accents(elem.web_name).lower()
             first_name_norm = strip_accents(str(elem.first_name or "")).lower()
             second_name_norm = strip_accents(str(elem.second_name or "")).lower()
-            full_name_norm = f"{first_name_norm} {second_name_norm}"
+            full_name_norm = f"{first_name_norm} {second_name_norm}".strip()
 
-            team_name = (team_map.get(elem.team, "") if team_map else "").lower()
             elem_pos = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}.get(elem.element_type, "MID")
-            matches_club = bool(club_hint and (club_hint == team_name or club_hint == str(elem.team).lower()))
-            matches_pos = bool(pos_hint and pos_hint == elem_pos)
+            matches_club = _matches_club(elem)
+            matches_pos = _matches_pos(elem)
 
-            # 1. Exact full name or web name match
-            if cleaned_norm in (full_name_norm, web_name_norm):
-                score = 1.0
-            # 2. Surname-only query
-            elif cleaned_norm == second_name_norm:
-                if has_surname_collision:
-                    if matches_club:
-                        score = 0.95
-                    elif club_hint:
-                        score = 0.20
-                    elif matches_pos:
-                        score = 0.90
-                    elif pos_hint:
-                        score = 0.20
+            # Strict gating for surname queries
+            if is_surname_query:
+                is_this_surname = (
+                    cleaned_norm == second_name_norm
+                    or cleaned_norm == web_name_norm
+                    or cleaned_norm in second_name_norm.split()
+                )
+                if is_this_surname:
+                    if not matches_club or not matches_pos:
+                        # Disqualified: violates club or position gate
+                        score = 0.0
+                    elif has_surname_collision:
+                        if len(gated_surname_matches) == 1 and elem.id == gated_surname_matches[0].id:
+                            # Ambiguity resolved by club or position gate
+                            score = 0.95
+                        else:
+                            # Ambiguity unresolved (multiple candidates remain valid)
+                            score = 0.40
                     else:
-                        # Ambiguity penalty for shared surnames without resolving context
-                        score = 0.40
+                        # Unique surname in active player population matching club and position
+                        score = 0.95
                 else:
-                    score = 0.95
+                    score = 0.0
             else:
-                r1 = difflib.SequenceMatcher(None, cleaned_norm, web_name_norm).ratio()
-                r2 = difflib.SequenceMatcher(None, cleaned_norm, full_name_norm).ratio()
-                r3 = difflib.SequenceMatcher(None, cleaned_norm, second_name_norm).ratio()
-
-                if cleaned_norm in full_name_norm:
-                    score = max(r1, r2, r3, 0.90)
+                # 1. Exact full name match
+                if cleaned_norm == full_name_norm:
+                    score = 1.0 if (matches_club and matches_pos) else 0.50
+                # 2. Exact web name match for non-colliding / multi-token query
+                elif cleaned_norm == web_name_norm:
+                    score = 0.95 if (matches_club and matches_pos) else 0.45
                 else:
-                    score = max(r1, r2, r3)
+                    r1 = difflib.SequenceMatcher(None, cleaned_norm, web_name_norm).ratio()
+                    r2 = difflib.SequenceMatcher(None, cleaned_norm, full_name_norm).ratio()
+                    r3 = difflib.SequenceMatcher(None, cleaned_norm, second_name_norm).ratio()
 
-                if matches_club:
-                    score = min(1.0, score + 0.15)
-                elif club_hint and score > 0.4:
-                    score = max(0.1, score - 0.25)
+                    if cleaned_norm in full_name_norm:
+                        score = max(r1, r2, r3, 0.90)
+                    else:
+                        score = max(r1, r2, r3)
+
+                    if matches_club and club_hint:
+                        score = min(1.0, score + 0.15)
+                    elif club_hint and not matches_club and score > 0.3:
+                        score = max(0.0, score - 0.35)
+
+                    if matches_pos and pos_hint:
+                        score = min(1.0, score + 0.10)
+                    elif pos_hint and not matches_pos and score > 0.3:
+                        score = max(0.0, score - 0.35)
 
             if score >= 0.30:
                 team_short = team_map.get(elem.team, str(elem.team)) if team_map else str(elem.team)
@@ -134,7 +183,7 @@ class FuzzyPlayerMatcher:
                     {
                         "element": elem.id,
                         "web_name": elem.web_name,
-                        "full_name": f"{elem.first_name} {elem.second_name}",
+                        "full_name": f"{elem.first_name} {elem.second_name}".strip(),
                         "team": elem.team,
                         "team_short": team_short,
                         "position": elem_pos,
@@ -178,7 +227,7 @@ class FuzzyPlayerMatcher:
                 "matched": None,
                 "confidence": scored_candidates[0]["score"] if scored_candidates else 0.0,
                 "alternatives": scored_candidates[:4],
-                "ambiguity_detected": has_surname_collision,
+                "ambiguity_detected": bool(has_surname_collision and is_surname_query),
             }
 
     def extract_names_from_raw(self, raw_input: str | list[Any]) -> list[str]:

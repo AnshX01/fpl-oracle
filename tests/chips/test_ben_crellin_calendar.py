@@ -2,7 +2,6 @@
 Unit tests for Ben Crellin BGW/DGW Calendar Projection & Pre-Emptive Chip Choreography.
 """
 
-
 from fpl_oracle.chips.calendar import FixtureCalendar
 
 

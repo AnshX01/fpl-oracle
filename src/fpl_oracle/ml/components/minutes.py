@@ -142,12 +142,9 @@ class MinutesModel(BaseComponent):
             }
 
         feat_cols = getattr(self.clf_starts, "feature_name_", None)
-        if feat_cols is not None:
-            use_cols = [c for c in feat_cols if c in X.columns]
-        else:
-            use_cols = [c for c in FEATURE_COLUMNS if c in X.columns]
-
-        X_feat = X[use_cols].copy()
+        if feat_cols is None:
+            feat_cols = list(FEATURE_COLUMNS)
+        X_feat = X.reindex(columns=feat_cols, fill_value=0.0).copy()
         for c in X_feat.columns:
             X_feat[c] = pd.to_numeric(X_feat[c], errors="coerce").fillna(0.0)
 

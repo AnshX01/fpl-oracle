@@ -250,7 +250,7 @@ class DefConModel(BaseComponent):
 
         p_defcon = self.calibrator.calibrate(probs_raw)
 
-        # Goalkeepers are not DefCon-eligible
-        p_defcon = np.where(pos_is_gkp, 0.0, p_defcon)
+        # Goalkeepers are not DefCon-eligible, and players with near-zero expected actions have 0 DefCon probability
+        p_defcon = np.where(pos_is_gkp | (probs_raw <= 1e-4) | (pred_mu <= 0.01), 0.0, p_defcon)
 
         return {"p_defcon": p_defcon, "expected_defcon_actions": pred_mu}

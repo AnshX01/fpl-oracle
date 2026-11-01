@@ -907,6 +907,8 @@ class FeatureEngineering:
         # chronological order has to be per canonical_id (raw spellings differ across seasons).
         if "canonical_id" not in df.columns:
             if "element" in df.columns and "season" in df.columns:
+                if player_identity_resolver._history_df is not df:
+                    player_identity_resolver.load(history_df=df)
                 names = df["name"] if "name" in df.columns else [""] * len(df)
                 df["canonical_id"] = [
                     player_identity_resolver.resolve_canonical_id(elem_id=e, season=s, full_name=n)
@@ -1281,6 +1283,32 @@ class FeatureEngineering:
                     except Exception as e:
                         logger.warning("Could not read master_history.csv for live features: %s", e)
 
+        from fpl_oracle.utils.season import derive_season
+
+        curr_season = derive_season(format="hyphen")
+
+        # Strict temporal guard: Filter history_df so matches at or after target_gw in current season
+        # (or kicked off at or after target_gw deadline) cannot contaminate live feature calculations.
+        if history_df is not None and not history_df.empty:
+            if "season" in history_df.columns and "round" in history_df.columns:
+                is_future_gw = (history_df["season"].astype(str) == curr_season) & (
+                    pd.to_numeric(history_df["round"], errors="coerce") >= target_gw
+                )
+                if is_future_gw.any():
+                    history_df = history_df[~is_future_gw].copy()
+
+            # If target event deadline is known, exclude any match with kickoff >= deadline
+            events = getattr(bootstrap, "events", []) or []
+            target_event = next((e for e in events if getattr(e, "id", None) == target_gw), None)
+            deadline_str = getattr(target_event, "deadline_time", None) if target_event else None
+            if deadline_str and "kickoff_time" in history_df.columns and "season" in history_df.columns:
+                deadline_dt = pd.to_datetime(deadline_str, errors="coerce")
+                if pd.notnull(deadline_dt):
+                    ko_dt = pd.to_datetime(history_df["kickoff_time"], errors="coerce")
+                    is_post_deadline = (history_df["season"].astype(str) == curr_season) & (ko_dt >= deadline_dt)
+                    if is_post_deadline.any():
+                        history_df = history_df[~is_post_deadline].copy()
+
         team_history_map: dict[Any, dict[str, float]] = {}
         reuse_context = (
             cache_key is not None
@@ -1408,12 +1436,12 @@ class FeatureEngineering:
 
                 # Extract as-of team rolling metrics using unshifted latest completed match stats
                 my_t_stats = (
-                    team_history_map.get(("2026-27", "latest", my_t_name))
+                    team_history_map.get((curr_season, "latest", my_t_name))
                     or team_history_map.get(("latest", my_t_name))
                     or team_history_map.get(my_t_name)
                 )
                 opp_t_stats = (
-                    team_history_map.get(("2026-27", "latest", opp_t_name))
+                    team_history_map.get((curr_season, "latest", opp_t_name))
                     or team_history_map.get(("latest", opp_t_name))
                     or team_history_map.get(opp_t_name)
                 )

@@ -16,19 +16,19 @@ def evolve_rival(rival, maps, mode):
             return None
         if not elements.issubset(pool):
             return None
+        bank = float(rival.get("bank_itb", 0.0) or 0.0)
         if mode == "one_transfer_per_week":
-            # No rival bank or buying basis is assumed. Only same-position,
-            # non-price-increasing replacements with legal club counts are used.
             choices = []
             for outgoing in sorted(elements):
                 counts = {}
                 for e in elements - {outgoing}:
                     team = pool[e]["team"]
                     counts[team] = counts.get(team, 0) + 1
+                max_affordable = float(pool[outgoing]["value"]) + bank
                 for incoming, row in pool.items():
                     if incoming in elements or row["position"] != pool[outgoing]["position"]:
                         continue
-                    if row["value"] > pool[outgoing]["value"] or counts.get(row["team"], 0) >= 3:
+                    if float(row["value"]) > max_affordable or counts.get(row["team"], 0) >= 3:
                         continue
                     gain = float(row["expected_points"]) - float(pool[outgoing]["expected_points"])
                     if gain > 0:
@@ -36,11 +36,11 @@ def evolve_rival(rival, maps, mode):
             if choices:
                 _, _, outgoing, incoming = max(choices)
                 elements = elements - {outgoing} | {incoming}
+                bank += float(pool[outgoing]["value"]) - float(pool[incoming]["value"])
         elif mode == "restructure_at_start" and not path:
-            # An optimistic WC-like threat envelope, not known chip availability.
             import pandas as pd
 
-            budget = sum(float(pool[e]["value"]) for e in elements)
+            budget = sum(float(pool[e]["value"]) for e in elements) + bank
             try:
                 solved = squad_optimizer.solve_best_squad(pd.DataFrame(pool.values()), budget)
                 elements = set(int(e) for e in solved["squad"]["element"])

@@ -10,7 +10,11 @@ from pathlib import Path
 
 from fpl_oracle.data.features import FEATURE_COLUMNS, FEATURE_SCHEMA_HASH
 
-DOC_PATH = Path("fpl_oracle_system_architecture.md")
+DOC_PATH = (
+    Path("docs/system_architecture.md")
+    if Path("docs/system_architecture.md").exists()
+    else Path("fpl_oracle_system_architecture.md")
+)
 N = len(FEATURE_COLUMNS)
 
 CLUSTERS = [

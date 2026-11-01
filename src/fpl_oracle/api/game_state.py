@@ -148,6 +148,13 @@ class GameStateManager:
         phase = GameweekPhase.PRE_DEADLINE
         if is_live:
             phase = GameweekPhase.LIVE
+        elif (
+            curr_gw
+            and curr_fixtures
+            and any(f.started for f in curr_fixtures)
+            and not all(f.finished for f in curr_fixtures)
+        ):
+            phase = GameweekPhase.LIVE
         elif curr_gw and curr_fixtures and all(f.finished for f in curr_fixtures):
             if not bonus_added or not leagues_updated:
                 phase = GameweekPhase.BONUS_PENDING
@@ -181,8 +188,8 @@ class GameStateManager:
             # If fewer than 20 teams play or any team plays 0
             if len(teams_in_gw) < 20 and gw >= (curr_gw or 1):
                 blank_gws.append(gw)
-            # If any team plays 2 or more fixtures
-            if any(count >= 2 for count in teams_in_gw.values()):
+            # If any team plays 2 or more fixtures in upcoming/current gameweeks
+            if any(count >= 2 for count in teams_in_gw.values()) and gw >= (curr_gw or 1):
                 double_gws.append(gw)
 
         state = GameState(

@@ -141,22 +141,32 @@ class RivalAnalyzer:
 
     def calculate_chips_status(self, chips_used_list: list[dict[str, Any]], current_gw: int) -> dict[str, Any]:
         """
-        Remaining chips for the set currently in play (set 1: GW1-19, set 2: GW20-38). A chip burned in the
-        other set does not count, and an unused set 1 chip is gone after GW19.
+        Remaining chips for the set currently in play.
+        In official FPL:
+        - Only Wildcard has 2 sets (Set 1: GW1-19, Set 2: GW20-38).
+        - Free Hit, Bench Boost, and Triple Captain are strictly ONCE PER SEASON.
         """
         in_set_1 = current_gw <= 19
         aliases = {"bboost": "bench_boost", "3xc": "triple_captain"}
-        used_now = {
-            aliases.get(c.get("name", ""), c.get("name", ""))
-            for c in chips_used_list
-            if (int(c.get("event") or 0) <= 19) == in_set_1
+
+        # Season-long single-use chips: Free Hit, Bench Boost, Triple Captain
+        season_used = {
+            aliases.get(c.get("name", ""), c.get("name", "")) for c in chips_used_list if c.get("name") != "wildcard"
         }
         wc_set1_used = any(c.get("name") == "wildcard" and int(c.get("event") or 0) <= 19 for c in chips_used_list)
+        wc_set2_used = any(c.get("name") == "wildcard" and int(c.get("event") or 0) > 19 for c in chips_used_list)
 
         remaining = []
-        for chip in ("wildcard", "freehit", "bench_boost", "triple_captain"):
-            if chip not in used_now:
-                remaining.append(f"wildcard_set{1 if in_set_1 else 2}" if chip == "wildcard" else chip)
+        if in_set_1:
+            if not wc_set1_used:
+                remaining.append("wildcard_set1")
+        else:
+            if not wc_set2_used:
+                remaining.append("wildcard_set2")
+
+        for chip in ("freehit", "bench_boost", "triple_captain"):
+            if chip not in season_used:
+                remaining.append(chip)
 
         return {
             "chips_used": chips_used_list,
@@ -260,6 +270,22 @@ class RivalAnalyzer:
                     ]
                     chip_status = self.calculate_chips_status(burned_chips, current_gw)
 
+                    entry_hist = getattr(picks_resp, "entry_history", None) or {}
+                    raw_bank = (
+                        getattr(entry_hist, "bank", 0)
+                        if hasattr(entry_hist, "bank")
+                        else (entry_hist.get("bank", 0) if isinstance(entry_hist, dict) else 0)
+                    )
+                    total_tx = (
+                        getattr(entry_hist, "total_transfers", 0)
+                        if hasattr(entry_hist, "total_transfers")
+                        else (entry_hist.get("total_transfers", 0) if isinstance(entry_hist, dict) else 0)
+                    )
+                    raw_bank_val = float(raw_bank or 0)
+                    bank_itb = (
+                        raw_bank_val if (isinstance(raw_bank, float) and raw_bank < 15.0) else (raw_bank_val / 10.0)
+                    )
+
                     rival_squads.append(
                         {
                             "entry_id": entry_id,
@@ -267,17 +293,22 @@ class RivalAnalyzer:
                             "entry_name": entry_dict.get("entry_name", ""),
                             "rank": entry_dict.get("rank", 0),
                             "total_points": entry_dict.get("total", 0),
+                            "bank_itb": bank_itb,
+                            "total_transfers": int(total_tx or 0),
                             "captain_element": cap_elem,
                             "chips_used": [c["name"] for c in burned_chips],
                             "chips_remaining": chip_status["chips_remaining"],
                             "set1_wildcard_expired": chip_status["set1_wildcard_expired"],
-                            "picks_status": "OBSERVED_PRIOR_GW",
+                            "picks_status": "LOCKED_OFFICIAL_PICKS"
+                            if observed_gw == target_gw
+                            else "OBSERVED_PRIOR_GW",
                             "observed_gameweek": observed_gw,
                             "released_gameweek_chip": observed_chip,
-                            "upcoming_transfers_known": False,
+                            "upcoming_transfers_known": bool(observed_gw == target_gw),
                             "transfers_visibility_note": (
-                                f"Rival transfers for Gameweek {target_gw} are private until the deadline. "
-                                f"Picks reflect confirmed lineups from Gameweek {observed_gw}."
+                                f"Official confirmed Gameweek {target_gw} picks locked after deadline."
+                                if observed_gw == target_gw
+                                else f"Rival transfers for Gameweek {target_gw} are private until the deadline. Picks reflect confirmed lineups from Gameweek {observed_gw}."
                             ),
                             "squad": squad_elements,
                         }
@@ -312,8 +343,10 @@ class RivalAnalyzer:
                 eid = int(r["element"])
                 is_start = bool(r.get("is_starter", True))
                 is_cap = bool(r.get("is_captain", False))
-                if is_start:
-                    user_eo_map[eid] = 200.0 if is_cap else 100.0
+                is_tc = bool(r.get("is_triple_captain", False) or r.get("multiplier", 1) == 3)
+                is_bb = bool(r.get("is_bench_boost", False))
+                if is_start or is_bb:
+                    user_eo_map[eid] = 300.0 if (is_cap and is_tc) else (200.0 if is_cap else 100.0)
 
         # Calculate Effective Ownership (EO) % and Net Exposure
         eo_records = []

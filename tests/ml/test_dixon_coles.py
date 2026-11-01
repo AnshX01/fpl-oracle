@@ -16,9 +16,16 @@ def test_dixon_coles_fit_and_centering():
     assert len(model.alphas) >= 20
     assert len(model.deltas) >= 20
 
-    # Identifiability: sum of alphas must be zero
+    # Identifiability: sum of alphas and sum of deltas must be zero
     alpha_sum = sum(model.alphas.values())
     assert abs(alpha_sum) < 1e-4, f"Alphas must be zero-centered, got sum={alpha_sum}"
+
+    delta_sum = sum(model.deltas.values())
+    assert abs(delta_sum) < 1e-4, f"Deltas must be zero-centered, got sum={delta_sum}"
+
+    # League baseline intercept
+    assert hasattr(model, "mu_0")
+    assert 0.0 < model.mu_0 < 0.6, f"League intercept mu_0 expected in (0.0, 0.6), got {model.mu_0}"
 
     # Positive home advantage
     assert model.gamma > 0.05, f"Home advantage gamma should be positive, got {model.gamma}"

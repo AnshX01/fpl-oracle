@@ -119,6 +119,16 @@ class JobExecutionTracker:
                 "duration_seconds": 0.0,
                 "details": "Awaiting initial execution",
             },
+            "deadline_sentinel": {
+                "name": "Automated 90-Minute Deadline Leak Sentinel",
+                "schedule": "Every 60s (<= 90m to deadline)",
+                "status": "IDLE",
+                "last_run": None,
+                "next_run": None,
+                "run_count": 0,
+                "duration_seconds": 0.0,
+                "details": "Awaiting initial execution",
+            },
         }
         self.triggered_deadline_alerts: set[tuple[int, str]] = set()
         self.retrained_gameweeks: set[int] = set()
@@ -139,10 +149,30 @@ class JobExecutionTracker:
 tracker = JobExecutionTracker()
 
 
-# ====================================================================
+# JOB 8: Automated 90-Minute Deadline Sentinel
+async def deadline_sentinel_job():
+    job_id = "deadline_sentinel"
+    job_name = tracker.jobs_state[job_id]["name"]
+    start_t = datetime.now(UTC)
+    run_id = data_store.record_job_start(job_id, job_name)
+    tracker.update_job_start(job_id)
+
+    try:
+        from fpl_oracle.news.leak_watchdog import deadline_watchdog
+
+        new_leaks = await deadline_watchdog.poll_verified_sources_async()
+        details = f"Deadline Sentinel scan complete: {len(new_leaks)} new leaks parsed."
+        dur = (datetime.now(UTC) - start_t).total_seconds()
+        tracker.update_job_finish(job_id, True, dur, details)
+        data_store.record_job_finish(run_id, "SUCCESS", dur, details)
+    except Exception as e:
+        logger.error(f"[Deadline Sentinel] Job failed: {e}", exc_info=True)
+        dur = (datetime.now(UTC) - start_t).total_seconds()
+        tracker.update_job_finish(job_id, False, dur, str(e))
+        data_store.record_job_finish(run_id, "FAILED", dur, str(e))
+
+
 # JOB 1: Live Cadence Data Refresh
-# 60s during live matches, 10m otherwise
-# ====================================================================
 async def cadence_refresh_job():
     job_id = "cadence_refresh"
     job_name = tracker.jobs_state[job_id]["name"]
@@ -174,10 +204,7 @@ async def cadence_refresh_job():
         logger.warning(f"[Scheduler] {job_name} failed: {e}")
 
 
-# ====================================================================
 # JOB 2: News & RSS Feed Ingestion
-# Runs every 20 minutes
-# ====================================================================
 async def news_refresh_job():
     job_id = "news_refresh"
     job_name = tracker.jobs_state[job_id]["name"]
@@ -205,10 +232,7 @@ async def news_refresh_job():
         logger.warning(f"[Scheduler] {job_name} failed: {e}")
 
 
-# ====================================================================
 # JOB 3: Hourly Price Change Snapshot
-# Runs hourly
-# ====================================================================
 async def price_snapshot_job():
     job_id = "price_snapshot"
     job_name = tracker.jobs_state[job_id]["name"]
@@ -217,7 +241,7 @@ async def price_snapshot_job():
     tracker.update_job_start(job_id)
 
     try:
-        boot, _ = await fpl_client.get_bootstrap_static()
+        boot, is_stale = await fpl_client.get_bootstrap_static()
         predictions = price_change_predictor.analyze_price_changes(boot)
 
         # Store snapshots of top 40 volatile players
@@ -228,7 +252,11 @@ async def price_snapshot_job():
         falls = sum(1 for p in predictions if p["direction"] in ("FALL_IMMINENT", "LIKELY_FALL"))
 
         dur = (datetime.now(UTC) - start_t).total_seconds()
-        details = f"Logged price snapshot for {len(top_volatile)} players (Rising: {rises}, Falling: {falls})"
+        cutoff_info = f", Cutoff: {predictions[0]['hours_to_cutoff']:.1f}h" if predictions else ""
+        details = (
+            f"Logged price snapshot for {len(top_volatile)} players "
+            f"(Rising: {rises}, Falling: {falls}{cutoff_info}, Stale: {is_stale})"
+        )
         data_store.record_job_finish(run_id, "SUCCESS", dur, details)
         tracker.update_job_finish(job_id, True, dur, details)
         logger.info(f"[Scheduler] {job_name} complete in {dur:.2f}s: {details}")
@@ -240,10 +268,7 @@ async def price_snapshot_job():
         logger.warning(f"[Scheduler] {job_name} failed: {e}")
 
 
-# ====================================================================
 # JOB 4: Retrain Trigger on Event Status Bonus Finalized
-# Checks every 15 minutes
-# ====================================================================
 async def retrain_trigger_job():
     job_id = "retrain_trigger"
     job_name = tracker.jobs_state[job_id]["name"]
@@ -270,10 +295,7 @@ async def retrain_trigger_job():
         logger.warning(f"[Scheduler] {job_name} failed: {e}")
 
 
-# ====================================================================
 # JOB 5: Pre-Deadline Alert & Briefing Regeneration
-# Checks every 5 minutes for -24h, -3h, -1h thresholds
-# ====================================================================
 async def deadline_alert_job():
     job_id = "deadline_alert"
     job_name = tracker.jobs_state[job_id]["name"]
@@ -295,13 +317,14 @@ async def deadline_alert_job():
         ]
 
         triggered_window = None
-        for tag, low, high in windows:
-            if low <= sec <= high:
-                key = (target_gw, tag)
-                if key not in tracker.triggered_deadline_alerts:
-                    triggered_window = tag
-                    tracker.triggered_deadline_alerts.add(key)
-                    break
+        if sec is not None:
+            for tag, low, high in windows:
+                if low <= sec <= high:
+                    key = (target_gw, tag)
+                    if key not in tracker.triggered_deadline_alerts:
+                        triggered_window = tag
+                        tracker.triggered_deadline_alerts.add(key)
+                        break
 
         if triggered_window:
             logger.info(
@@ -313,9 +336,8 @@ async def deadline_alert_job():
             await weekly_briefing_generator.generate_briefing()
             details = f"Alert {triggered_window} executed for GW{target_gw}: Refreshed briefing & team news."
         else:
-            details = (
-                f"GW{target_gw} deadline countdown: {sec / 3600.0:.1f} hours remaining. No alert threshold reached."
-            )
+            remaining_str = f"{sec / 3600.0:.1f} hours remaining" if sec is not None else "Unknown remaining time"
+            details = f"GW{target_gw} deadline countdown: {remaining_str}. No alert threshold reached."
 
         dur = (datetime.now(UTC) - start_t).total_seconds()
         data_store.record_job_finish(run_id, "SUCCESS", dur, details)
@@ -328,10 +350,7 @@ async def deadline_alert_job():
         logger.warning(f"[Scheduler] {job_name} failed: {e}")
 
 
-# ====================================================================
 # JOB 6: Forward Holdout Pre-Deadline Freeze & Post-GW Scoring (Requirement G6)
-# Checks every 15 minutes to freeze predictions or score finished GW
-# ====================================================================
 async def history_refresh_job():
     from fpl_oracle.data.historical import historical_manager
 
@@ -500,6 +519,7 @@ async def run_job_on_demand(job_id: str) -> dict[str, Any]:
         "holdout_forward": holdout_forward_job,
         "history_refresh": history_refresh_job,
         "odds_snapshot": odds_snapshot_job,
+        "deadline_sentinel": deadline_sentinel_job,
     }
 
     if job_id not in job_map:
@@ -557,9 +577,18 @@ def start_scheduler():
             next_run_time=datetime.now(UTC),
         )
 
+        # Job 8: Deadline Sentinel leak monitor every 60 seconds
+        scheduler.add_job(
+            deadline_sentinel_job,
+            "interval",
+            seconds=60,
+            id="deadline_sentinel",
+            replace_existing=True,
+        )
+
         try:
             scheduler.start()
-            logger.info("[Scheduler] All 8 automated background jobs registered and scheduler started.")
+            logger.info("[Scheduler] All 9 automated background jobs registered and scheduler started.")
         except RuntimeError:
             logger.warning(
                 "[Scheduler] No running asyncio event loop. Scheduler jobs registered; starting deferred until event loop starts."
