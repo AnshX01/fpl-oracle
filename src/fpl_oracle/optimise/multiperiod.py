@@ -2029,6 +2029,19 @@ class MultiPeriodOptimizer:
                     cand_roll, base_plan = latest(cand_roll), latest(base_plan)
                     hold_cand = latest(hold_cand) if hold_cand is not None else None
                     plan_now = latest(by_name[name])
+            # Cannibalization guard: a keep trial must not sacrifice an even dearer owned asset
+            # or a consensus megacap (e.g. selling Haaland to keep Palmer).
+            if plan_now is not None:
+                new_sales = {int(x["element"]) for x in plan_now["transfers_out"]} - sold_now
+                max_kept_price = max((float(sell_price_of.get(k, 0.0)) for k in trial), default=0.0)
+                cannibalized = any(
+                    float(sell_price_of.get(s, 0.0)) > max_kept_price
+                    or eo_of_m.get(s, 0.0) >= eo_megacap_threshold_m
+                    for s in new_sales
+                )
+                if cannibalized:
+                    continue
+
             # A keep may not undo the decision the base plan passed: it must still beat keeping the chip
             # (for a chip plan) or rolling (for a transfer plan) by the same margin.
             versus = base_plan.get("decision_check", {}).get("versus")
