@@ -197,6 +197,12 @@ def is_safe_quote(quote: str | None) -> tuple[bool, str]:
         re.IGNORECASE,
     ):
         return False, "Speculative question phrasing detected in quote"
+    # Reject web page boilerplate, error messages, and unavailable stream/blog notices
+    if re.search(
+        r"\b(?:sorry,?\s+this\s+(?:blog|video|page|article|content|stream)\s+is\s+(?:currently\s+)?unavailable|page\s+not\s+found|404\s+not\s+found|content\s+unavailable|video\s+unavailable)\b",
+        lower_q,
+    ):
+        return False, "Web boilerplate or unavailable notice detected in quote"
     return True, "Safe"
 
 

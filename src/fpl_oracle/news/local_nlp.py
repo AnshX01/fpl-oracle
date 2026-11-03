@@ -141,6 +141,13 @@ class LocalCalibratedNLPEngine:
         ):
             return BAND_AVAILABLE, "historical narrative recap", text.strip()
 
+        # Reject web page boilerplate and unavailable blog/video error notices
+        if re.search(
+            r"\b(?:sorry,?\s+this\s+(?:blog|video|page|article|content|stream)\s+is\s+(?:currently\s+)?unavailable|page\s+not\s+found|404\s+not\s+found|content\s+unavailable|video\s+unavailable)\b",
+            lower,
+        ):
+            return BAND_AVAILABLE, "web boilerplate notice ignored", text.strip()
+
         # Check for negation overrides (e.g. "not ruled out", "not a major concern")
         is_negated_doubt = bool(re.search(r"\bnot\s+(ruled out|a doubt|serious|out)\b", lower))
         if is_negated_doubt:
